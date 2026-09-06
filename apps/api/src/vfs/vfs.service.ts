@@ -135,14 +135,15 @@ export class VfsService {
   }
 
   async rm(namespaceId: string, rawPath: string, recursive: boolean): Promise<void> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
 
     if (segments.length === 0) {
       throw new VfsInvalidOperationError(canonical);
     }
 
-    await this.repo.removeNode(namespaceId, root.id, segments, recursive, this.maxSyncDeleteNodes);
+    const maxSyncDeleteNodes = resolveEffectiveLimit(limits.maxSyncDeleteNodes, this.maxSyncDeleteNodes);
+    await this.repo.removeNode(namespaceId, root.id, segments, recursive, maxSyncDeleteNodes);
   }
 
   async ls(

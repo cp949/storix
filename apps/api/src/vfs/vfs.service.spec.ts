@@ -381,7 +381,10 @@ describe('VfsService', () => {
 
   describe('rm', () => {
     it('root 경로(/)는 VfsInvalidOperationError를 던진다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
 
       await expect(service.rm(NAMESPACE_ID, '/', true)).rejects.toThrow(VfsInvalidOperationError);
       expect(repo.removeNode).not.toHaveBeenCalled();
@@ -390,12 +393,43 @@ describe('VfsService', () => {
     it('recursive 값과 설정된 MAX_SYNC_DELETE_NODES를 repository에 전달한다', async () => {
       config.getOrThrow.mockReturnValue('42');
       service = createService();
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.removeNode.mockResolvedValue(undefined);
 
       await service.rm(NAMESPACE_ID, '/a', true);
 
       expect(repo.removeNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], true, 42);
+    });
+
+    it('namespace의 maxSyncDeleteNodes가 전역보다 작으면 그 값을 repository에 전달한다', async () => {
+      config.getOrThrow.mockReturnValue('1000');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: 3, maxSyncCopyNodes: null },
+      });
+      repo.removeNode.mockResolvedValue(undefined);
+
+      await service.rm(NAMESPACE_ID, '/a', true);
+
+      expect(repo.removeNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], true, 3);
+    });
+
+    it('namespace의 maxSyncDeleteNodes가 전역보다 크면 전역값을 상한으로 전달한다', async () => {
+      config.getOrThrow.mockReturnValue('5');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: 999, maxSyncCopyNodes: null },
+      });
+      repo.removeNode.mockResolvedValue(undefined);
+
+      await service.rm(NAMESPACE_ID, '/a', true);
+
+      expect(repo.removeNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], true, 5);
     });
   });
 });
