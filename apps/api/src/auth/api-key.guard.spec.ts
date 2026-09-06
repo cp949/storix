@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { jest } from '@jest/globals';
 import { Reflector } from '@nestjs/core';
 import type { ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
@@ -49,5 +48,11 @@ describe('ApiKeyGuard', () => {
 
   it('키가 일치하지 않으면 InvalidApiKeyError를 던진다', () => {
     expect(() => guard.canActivate(createContext('Bearer wrong-key'))).toThrow(InvalidApiKeyError);
+  });
+
+  it('후보 키가 유효 키와 문자열 길이는 같지만 바이트 길이가 다르면 크래시 없이 InvalidApiKeyError를 던진다', () => {
+    const multiByteGuard = new ApiKeyGuard(reflector, ['abcde']); // 유효 키는 5바이트
+    // '가나다라마'는 length===5(JS 문자열 길이)이지만 UTF-8로는 15바이트다
+    expect(() => multiByteGuard.canActivate(createContext('Bearer 가나다라마'))).toThrow(InvalidApiKeyError);
   });
 });

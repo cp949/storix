@@ -104,6 +104,8 @@ services:
       MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-5368709120}
       MAX_SYNC_DELETE_NODES: ${MAX_SYNC_DELETE_NODES:-1000}
       MAX_SYNC_COPY_NODES: ${MAX_SYNC_COPY_NODES:-1000}
+      API_KEY: '${API_KEY:?API_KEY must be set — generate with: openssl rand -hex 32}'
+      API_KEY_PREVIOUS: ${API_KEY_PREVIOUS:-}
     depends_on:
       postgres:
         condition: service_healthy
