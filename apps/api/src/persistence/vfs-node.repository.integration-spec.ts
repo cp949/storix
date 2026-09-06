@@ -120,6 +120,7 @@ describe('VfsNodeRepository', () => {
         maxFileSizeBytes: null,
         maxSyncDeleteNodes: null,
         maxSyncCopyNodes: null,
+        encryptionPolicy: 'NONE',
       });
       expect(result?.root).toMatchObject({ name: '', type: 'DIRECTORY' });
     });
@@ -138,6 +139,7 @@ describe('VfsNodeRepository', () => {
         maxFileSizeBytes: '2048',
         maxSyncDeleteNodes: 3,
         maxSyncCopyNodes: 4,
+        encryptionPolicy: 'NONE',
       });
     });
 
@@ -433,13 +435,20 @@ describe('VfsNodeRepository', () => {
   });
 
   function makeBlobData(
-    overrides: Partial<{ storageKey: string; size: string; mimeType: string; sha256: string }> = {},
+    overrides: Partial<{
+      storageKey: string;
+      size: string;
+      mimeType: string;
+      sha256: string;
+      encryptionIv: Buffer | null;
+    }> = {},
   ) {
     return {
       storageKey: `blobs/00/${randomUUID()}`,
       size: '0',
       mimeType: 'application/octet-stream',
       sha256: '0'.repeat(64),
+      encryptionIv: null,
       ...overrides,
     };
   }
@@ -1105,8 +1114,8 @@ describe('VfsNodeRepository', () => {
     });
   });
 
-  describe('getBlobStorageKey', () => {
-    it('존재하는 blob의 storage key를 반환한다', async () => {
+  describe('getBlobStorageInfo', () => {
+    it('존재하는 blob의 storage key와 encryptionIv를 반환한다', async () => {
       const namespace = await createNamespace('blob-key-ns');
       const root = await repository.getRoot(namespace.id);
       const file = await createFile(namespace.id, root!.id, 'a.txt');
@@ -1114,17 +1123,17 @@ describe('VfsNodeRepository', () => {
         .getRepository(BlobEntity)
         .findOneByOrFail({ id: file.blobId as string });
 
-      const key = await repository.getBlobStorageKey(namespace.id, file.blobId as string);
+      const info = await repository.getBlobStorageInfo(namespace.id, file.blobId as string);
 
-      expect(key).toBe(expected.storageKey);
+      expect(info).toEqual({ storageKey: expected.storageKey, encryptionIv: expected.encryptionIv });
     });
 
     it('존재하지 않는 blobId는 null을 반환한다', async () => {
       const namespace = await createNamespace('blob-key-missing-ns');
 
-      const key = await repository.getBlobStorageKey(namespace.id, randomUUID());
+      const info = await repository.getBlobStorageInfo(namespace.id, randomUUID());
 
-      expect(key).toBeNull();
+      expect(info).toBeNull();
     });
   });
 });

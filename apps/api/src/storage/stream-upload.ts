@@ -11,7 +11,7 @@ export interface StreamedUpload {
 }
 
 export async function uploadStream(
-  storage: BlobStorage,
+  storage: Pick<BlobStorage, 'put' | 'delete'>,
   key: string,
   source: Readable,
   contentType: string,

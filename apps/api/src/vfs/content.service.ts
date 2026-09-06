@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { parsePositiveInt } from '../common/env-parsing.js';
+import { EncryptingPutTarget, getEncrypted } from '../encryption/encrypted-content.js';
+import { MASTER_KEY } from '../encryption/encryption.constants.js';
+import { EncryptionPolicy } from '../persistence/entities/namespace.entity.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
@@ -14,7 +17,7 @@ import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
-import { requireRoot, requireRootWithLimits } from './require-root.js';
+import { requireRootWithLimits } from './require-root.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
@@ -57,6 +60,7 @@ export class ContentService {
     private readonly repo: VfsNodeRepository,
     private readonly keyGenerator: StorageKeyGenerator,
     @Inject(BLOB_STORAGE) private readonly blobStorage: BlobStorage,
+    @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
     this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('MAX_FILE_SIZE_BYTES'), 1);
@@ -67,7 +71,7 @@ export class ContentService {
     rawPath: string,
     parents: boolean,
   ): Promise<{ status: number; body: VfsNodeResponseDto }> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
 
     if (segments.length === 0) {
@@ -75,13 +79,19 @@ export class ContentService {
     }
 
     const storageKey = this.keyGenerator.generate();
-    await this.blobStorage.put(storageKey, Readable.from(Buffer.alloc(0)), 'application/octet-stream');
+    const encryptionIv = await this.putBlobBytes(
+      storageKey,
+      Readable.from(Buffer.alloc(0)),
+      'application/octet-stream',
+      limits.encryptionPolicy,
+    );
 
     const outcome = await this.repo.touchFile(namespaceId, root.id, segments, parents, {
       storageKey,
       size: '0',
       mimeType: 'application/octet-stream',
       sha256: EMPTY_SHA256,
+      encryptionIv,
     });
 
     return {
@@ -120,14 +130,19 @@ export class ContentService {
 
     const mimeType = normalizeMimeType(options.contentType);
     const storageKey = this.keyGenerator.generate();
-    const uploaded = await uploadStream(this.blobStorage, storageKey, source, mimeType, maxFileSizeBytes);
+    const putTarget =
+      limits.encryptionPolicy === 'ENCRYPTED'
+        ? new EncryptingPutTarget(this.blobStorage, this.requireMasterKey())
+        : this.blobStorage;
+    const uploaded = await uploadStream(putTarget, storageKey, source, mimeType, maxFileSizeBytes);
+    const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
 
     const outcome = await this.repo.putFileContent(
       namespaceId,
       root.id,
       segments,
       options.parents,
-      { storageKey, size: String(uploaded.size), mimeType, sha256: uploaded.sha256 },
+      { storageKey, size: String(uploaded.size), mimeType, sha256: uploaded.sha256, encryptionIv },
       parseIfMatch(options.ifMatch),
       options.force,
     );
@@ -143,7 +158,7 @@ export class ContentService {
     rawPath: string,
     rangeHeader: string | undefined,
   ): Promise<ContentPayload> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
     const target = segments.length === 0 ? root : await this.repo.resolvePath(namespaceId, root.id, segments);
 
@@ -154,25 +169,55 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
-    const storageKey = await this.repo.getBlobStorageKey(namespaceId, target.blobId as string);
+    const blobInfo = await this.repo.getBlobStorageInfo(namespaceId, target.blobId as string);
+    const { storageKey, encryptionIv } = blobInfo as { storageKey: string; encryptionIv: Buffer | null };
     const totalSize = Number(target.size);
     const mimeType = target.mimeType ?? 'application/octet-stream';
 
     if (!rangeHeader) {
-      const stream = await this.blobStorage.get(storageKey as string);
+      const stream =
+        limits.encryptionPolicy === 'ENCRYPTED'
+          ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey())
+          : await this.blobStorage.get(storageKey);
       return { name: target.name, mimeType, status: 200, contentLength: totalSize, stream };
     }
 
     const range = parseRange(rangeHeader, totalSize);
-    const stream = await this.blobStorage.get(storageKey as string, range);
+    const stream =
+      limits.encryptionPolicy === 'ENCRYPTED'
+        ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey(), range)
+        : await this.blobStorage.get(storageKey, range);
 
     return {
       name: target.name,
       mimeType,
       status: 206,
-      contentLength: range.end - range.start + 1,
       contentRange: `bytes ${range.start}-${range.end}/${totalSize}`,
+      contentLength: range.end - range.start + 1,
       stream,
     };
+  }
+
+  private async putBlobBytes(
+    storageKey: string,
+    stream: Readable,
+    contentType: string,
+    encryptionPolicy: EncryptionPolicy,
+  ): Promise<Buffer | null> {
+    if (encryptionPolicy !== 'ENCRYPTED') {
+      await this.blobStorage.put(storageKey, stream, contentType);
+      return null;
+    }
+
+    const target = new EncryptingPutTarget(this.blobStorage, this.requireMasterKey());
+    await target.put(storageKey, stream, contentType);
+    return target.getIv();
+  }
+
+  private requireMasterKey(): Buffer {
+    if (!this.masterKey) {
+      throw new Error('ENCRYPTED namespace인데 ENCRYPTION_MASTER_KEY가 설정되지 않음 — 데이터 일관성 위반');
+    }
+    return this.masterKey;
   }
 }

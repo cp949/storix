@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
+import { EncryptionModule } from '../encryption/encryption.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { ContentService } from './content.service.js';
@@ -8,7 +9,7 @@ import { PathResolver } from './path-resolver.js';
 import { VfsService } from './vfs.service.js';
 
 @Module({
-  imports: [PersistenceModule, StorageModule],
+  imports: [PersistenceModule, StorageModule, EncryptionModule],
   controllers: [FsController],
   providers: [VfsService, ContentService, PathResolver],
 })

@@ -79,6 +79,7 @@ describe('requireRootWithLimits', () => {
       maxFileSizeBytes: null,
       maxSyncDeleteNodes: null,
       maxSyncCopyNodes: null,
+      encryptionPolicy: 'NONE',
     };
     const repo = {
       getRootWithLimits: jest

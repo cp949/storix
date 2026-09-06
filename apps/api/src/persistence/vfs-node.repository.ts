@@ -16,7 +16,7 @@ import {
 } from '../vfs/vfs.errors.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
-import { NamespaceEntity } from './entities/namespace.entity.js';
+import { EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 
 export interface VfsNodeRecord {
@@ -35,6 +35,7 @@ export interface NamespaceResourceLimits {
   readonly maxFileSizeBytes: string | null;
   readonly maxSyncDeleteNodes: number | null;
   readonly maxSyncCopyNodes: number | null;
+  readonly encryptionPolicy: EncryptionPolicy;
 }
 
 export interface VfsNodeMatch extends VfsNodeRecord {
@@ -53,6 +54,7 @@ export interface BlobData {
   readonly size: string;
   readonly mimeType: string;
   readonly sha256: string;
+  readonly encryptionIv: Buffer | null;
 }
 
 export type PutFileOutcome =
@@ -186,6 +188,7 @@ export class VfsNodeRepository {
         maxFileSizeBytes: namespace.maxFileSizeBytes,
         maxSyncDeleteNodes: namespace.maxSyncDeleteNodes,
         maxSyncCopyNodes: namespace.maxSyncCopyNodes,
+        encryptionPolicy: namespace.encryptionPolicy,
       },
     };
   }
@@ -810,9 +813,12 @@ export class VfsNodeRepository {
     });
   }
 
-  async getBlobStorageKey(namespaceId: string, blobId: string): Promise<string | null> {
+  async getBlobStorageInfo(
+    namespaceId: string,
+    blobId: string,
+  ): Promise<{ storageKey: string; encryptionIv: Buffer | null } | null> {
     const blob = await this.blobRepo.findOneBy({ id: blobId, namespaceId });
-    return blob ? blob.storageKey : null;
+    return blob ? { storageKey: blob.storageKey, encryptionIv: blob.encryptionIv } : null;
   }
 
   private async lockParentChain(
