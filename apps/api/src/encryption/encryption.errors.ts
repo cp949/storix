@@ -1,0 +1,8 @@
+export class NamespaceEncryptionNotConfiguredError extends Error {
+  readonly code = 'NAMESPACE_ENCRYPTION_NOT_CONFIGURED';
+  readonly status = 400;
+
+  constructor() {
+    super('ENCRYPTION_MASTER_KEY가 설정되지 않아 ENCRYPTED namespace를 생성할 수 없음');
+  }
+}
