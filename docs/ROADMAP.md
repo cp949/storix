@@ -131,7 +131,7 @@ storix/
 - [x] SEC-01: **서비스 간 인증** — API key 발급. 키를 슬라이스(현재 키 + 이전
       키)로 관리해 무중단 로테이션을 지원한다(imgproxy
       `IMGPROXY_KEY`/`IMGPROXY_SALT` 패턴 참고).
-- [x] SEC-02: **리소스 상한** — namespace별 업로드 크기·요청 크기 상한. DoS
+- [x] SEC-02: **리소스 상한** — namespace별 업로드 크기·전역 JSON/urlencoded 요청 본문 크기 상한. DoS
       방어를 보안 기반 범위에 포함한다.
 - [ ] SEC-03: **암호화 정책 구현** — ADR-0001에서 설계만 된 `ENCRYPTED`
       policy를 `EncryptedBlobStorage` decorator로 실제 구현.

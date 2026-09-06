@@ -2,6 +2,7 @@ import { Body, Controller, INestApplication, Module, Post } from '@nestjs/common
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { configureBodyParsers } from './body-parser.js';
+import { DomainErrorFilter } from './domain-error.filter.js';
 
 @Controller('probe')
 class ProbeController {
@@ -20,6 +21,7 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [ProbeModule] }).compile();
     app = moduleRef.createNestApplication({ bodyParser: false });
+    app.useGlobalFilters(new DomainErrorFilter());
     configureBodyParsers(app);
     await app.init();
   });
@@ -35,9 +37,14 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
   });
 
   it('16KB를 초과하는 JSON 바디는 413을 반환한다', async () => {
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .post('/probe/echo')
       .send({ value: 'x'.repeat(20_000) })
       .expect(413);
+
+    expect(response.body).toMatchObject({
+      code: 'BAD_REQUEST',
+      requestId: expect.any(String),
+    });
   });
 });

@@ -1,6 +1,6 @@
 # namespace별 리소스 상한은 전역값을 상한으로 하는 오버라이드 컬럼으로 구현한다
 
-Storix는 파일 업로드 크기(`MAX_FILE_SIZE_BYTES`)와 동기 mv/cp/rm 처리 노드 수
+Storix는 파일 업로드 크기(`MAX_FILE_SIZE_BYTES`)와 동기 cp/rm 처리 노드 수
 (`MAX_SYNC_DELETE_NODES`/`MAX_SYNC_COPY_NODES`) 상한을 배포 전체에 적용되는 전역
 env var로만 관리해왔다(SEC-02). namespace별로 더 타이트한 상한을 걸 수 있도록
 `NamespaceEntity`에 nullable 컬럼 3개(`maxFileSizeBytes`, `maxSyncDeleteNodes`,
@@ -9,6 +9,10 @@ env var로만 관리해왔다(SEC-02). namespace별로 더 타이트한 상한�
 유지한다 — namespace가 전역보다 더 관대한 상한을 가질 수는 없다. 값 설정/변경
 API는 만들지 않는다: 운영자가 DB를 직접 갱신하는 것으로 충분한 빈도이고, 관리
 API는 `apps/admin` 단계나 별도 후속 티켓에 더 맞는 성격이다.
+
+JSON/urlencoded 제어 요청은 namespace별 상한을 두지 않고 16KB 고정 상한을 적용한다.
+이는 파일 콘텐츠가 아닌 메타데이터 요청을 조기에 차단하는 전역 DoS 안전망이며,
+raw `PUT .../fs/content` 업로드는 이 파서를 우회해 위 파일 크기 상한을 적용받는다.
 
 ## Considered Options
 

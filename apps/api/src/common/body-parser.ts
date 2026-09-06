@@ -12,6 +12,8 @@ export function isRawUploadRoute(req: Pick<Request, 'method' | 'path'>): boolean
   return req.method === 'PUT' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/content');
 }
 
+// JSON/urlencoded 요청은 제어 데이터만 다루므로 namespace별 조정 대신 고정 상한으로
+// 조기 차단한다. raw 업로드는 이 파서를 우회하고 별도 파일 크기 상한을 적용한다.
 const JSON_BODY_LIMIT = '16kb';
 
 function matchesContentType(req: Request, expected: string): boolean {

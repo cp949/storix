@@ -323,6 +323,22 @@ describe('Migration: InitSchema', () => {
         repo.save(repo.create({ name: 'limits-invalid-owner', maxSyncDeleteNodes: 0 })),
       ).rejects.toThrow();
     });
+
+    it('파일 크기 상한이 0이면 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'limits-invalid-file-size', maxFileSizeBytes: '0' })),
+      ).rejects.toThrow();
+    });
+
+    it('동기 복사 노드 상한이 0이면 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'limits-invalid-copy-nodes', maxSyncCopyNodes: 0 })),
+      ).rejects.toThrow();
+    });
   });
 });
 
