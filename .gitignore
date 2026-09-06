@@ -1,0 +1,16 @@
+.scratch/
+docs/superpowers/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# 환경 변수
+.env
+.env.*
+!.env.example

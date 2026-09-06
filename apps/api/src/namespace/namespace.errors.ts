@@ -1,0 +1,44 @@
+export class NamespaceAlreadyExistsError extends Error {
+  readonly code = 'NAMESPACE_ALREADY_EXISTS';
+  readonly status = 409;
+
+  constructor(readonly namespaceName: string) {
+    super(`이미 존재하는 namespace name: ${namespaceName}`);
+  }
+}
+
+export class IdempotencyKeyReusedError extends Error {
+  readonly code = 'IDEMPOTENCY_KEY_REUSED';
+  readonly status = 422;
+
+  constructor(readonly idempotencyKey: string) {
+    super(`같은 Idempotency-Key가 다른 요청에 재사용됨: ${idempotencyKey}`);
+  }
+}
+
+export class IdempotencyKeyRequiredError extends Error {
+  readonly code = 'IDEMPOTENCY_KEY_REQUIRED';
+  readonly status = 400;
+
+  constructor() {
+    super('Idempotency-Key 헤더가 필요함');
+  }
+}
+
+export class NamespaceInvalidNameError extends Error {
+  readonly code = 'NAMESPACE_INVALID_NAME';
+  readonly status = 400;
+
+  constructor(readonly namespaceName: unknown) {
+    super(`유효하지 않은 namespace name: ${JSON.stringify(namespaceName)}`);
+  }
+}
+
+export class NamespaceNotFoundError extends Error {
+  readonly code = 'NAMESPACE_NOT_FOUND';
+  readonly status = 404;
+
+  constructor(readonly namespaceId: string) {
+    super(`존재하지 않는 namespace: ${namespaceId}`);
+  }
+}
