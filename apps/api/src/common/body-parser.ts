@@ -12,6 +12,8 @@ export function isRawUploadRoute(req: Pick<Request, 'method' | 'path'>): boolean
   return req.method === 'PUT' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/content');
 }
 
+const JSON_BODY_LIMIT = '16kb';
+
 function matchesContentType(req: Request, expected: string): boolean {
   const contentType = req.headers['content-type'];
   return typeof contentType === 'string' && contentType.split(';')[0].trim().toLowerCase() === expected;
@@ -33,6 +35,7 @@ export function configureBodyParsers(app: INestApplication): void {
   httpAdapter.use((req: Request, res: Response, next: NextFunction) => requestContextMiddleware.use(req, res, next));
   httpAdapter.use(
     json({
+      limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
     }),
@@ -40,6 +43,7 @@ export function configureBodyParsers(app: INestApplication): void {
   httpAdapter.use(
     urlencoded({
       extended: true,
+      limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),
