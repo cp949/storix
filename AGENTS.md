@@ -2,7 +2,11 @@
 
 ### Issue tracker
 
-Issues and specs live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Issues and specs live as GitHub issues in this repo. Use the `gh` CLI for all operations. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles, label strings equal to their names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), all registered on `cp949/storix`. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
