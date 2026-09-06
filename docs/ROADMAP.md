@@ -18,6 +18,11 @@ Storix를 사내 전용 서버에서 **고객이 자기 인프라에 self-host�
 업로드/다운로드, mv/rm/cp(Blob-level COW), orphan Blob GC, 구조화 로깅 +
 requestId.
 
+모노레포 전환(`MONO-01`~`MONO-07`) 완료: `apps/api`·`apps/admin`·`apps/demo`·
+`packages/` 구조로 전환, pnpm + Turborepo 도입, `Dockerfile` 베이스 이미지를
+Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. 저장소 구조
+전환" 체크리스트 참고.
+
 확인된 갭:
 
 - 호출 서버 ↔ Storix 간 서비스 인증 없음
@@ -25,10 +30,6 @@ requestId.
 - 감사 로그(누가/언제/어떤 namespace·파일에 접근) 없음
 - CI/의존성 취약점 스캔 없음 (`.github` 부재)
 - Blob 저장소가 MinIO SDK 구현 하나에 결합
-- 단일 프로젝트 구조: `apps/`·`packages/` 분리 없음, 향후 admin/demo/CLI를 얹을
-  자리 없음
-- `Dockerfile` 베이스 이미지가 `node:22.22-slim` — 확정한 Node 엔진 하한
-  (`>=24.18`)과 불일치
 
 ## 실행 순서
 
