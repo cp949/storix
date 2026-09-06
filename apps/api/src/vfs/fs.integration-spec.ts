@@ -663,6 +663,26 @@ describe('Fs HTTP contract', () => {
       expect((response.body as { code: string }).code).toBe('VFS_FILE_TOO_LARGE');
     });
 
+    it('namespace의 max_file_size_bytes가 전역 한도보다 작으면 그 값을 넘는 요청을 413 VFS_FILE_TOO_LARGE로 거부한다', async () => {
+      const namespaceId = await createNamespace('put-namespace-limit-ns');
+      const namespaceLimit = 100;
+      // 전역 한도(MAX_FILE_SIZE_BYTES=1MiB)보다는 훨씬 작지만 namespace 한도보다는 큰
+      // 크기로 요청해, 실제로 namespace 한도가 적용되는지(전역 한도만 걸리는 게 아닌지)를
+      // HTTP 스택 전체(라우팅~DB~에러 필터)를 통해 검증한다.
+      await migrationDataSource
+        .getRepository(NamespaceEntity)
+        .update(namespaceId, { maxFileSizeBytes: String(namespaceLimit) });
+
+      const response = await request(httpServer)
+        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/ns-limited.bin' })
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.alloc(namespaceLimit + 1))
+        .expect(413);
+
+      expect(response.body.code).toBe('VFS_FILE_TOO_LARGE');
+    });
+
     it('GET content 대상이 없으면 404 VFS_NODE_NOT_FOUND를 반환한다', async () => {
       const namespaceId = await createNamespace('get-missing-ns');
 
