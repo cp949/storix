@@ -4,7 +4,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { ContentService } from './content.service.js';
 import { PathResolver } from './path-resolver.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
@@ -33,6 +33,7 @@ function makeRoot(): VfsNodeRecord {
 describe('ContentService', () => {
   let repo: {
     getRoot: jest.Mock<() => Promise<VfsNodeRecord | null>>;
+    getRootWithLimits: jest.Mock<() => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>>;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
     touchFile: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
     putFileContent: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
@@ -60,6 +61,7 @@ describe('ContentService', () => {
   beforeEach(() => {
     repo = {
       getRoot: jest.fn(),
+      getRootWithLimits: jest.fn(),
       resolvePath: jest.fn(),
       touchFile: jest.fn(),
       putFileContent: jest.fn(),
@@ -120,7 +122,10 @@ describe('ContentService', () => {
     };
 
     it('root 경로(/)는 VfsIsDirectoryError를 던진다', async () => {
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
 
       await expect(
         service.putContent(NAMESPACE_ID, '/', Readable.from(Buffer.from('x')), noOptions),
@@ -128,7 +133,10 @@ describe('ContentService', () => {
     });
 
     it('대상이 directory면 VfsIsDirectoryError를 던진다', async () => {
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.resolvePath.mockResolvedValue(
         makeNode({ type: 'DIRECTORY', blobId: null, size: null, mimeType: null }),
       );
@@ -141,7 +149,10 @@ describe('ContentService', () => {
     it('Content-Length가 상한을 넘으면 stream을 읽지 않고 VfsFileTooLargeError를 던진다', async () => {
       config.getOrThrow.mockReturnValue('10');
       service = createService();
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.resolvePath.mockResolvedValue(null);
 
       await expect(
@@ -154,7 +165,10 @@ describe('ContentService', () => {
     });
 
     it('Content-Type을 정규화해 blob mimeType으로 저장한다', async () => {
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.resolvePath.mockResolvedValue(null);
       repo.putFileContent.mockResolvedValue({ kind: 'created', node: makeNode() });
 
@@ -175,7 +189,10 @@ describe('ContentService', () => {
     });
 
     it('If-Match 헤더를 정수 version으로 변환해 전달한다', async () => {
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE' }));
       repo.putFileContent.mockResolvedValue({ kind: 'replaced', node: makeNode() });
 
@@ -196,7 +213,10 @@ describe('ContentService', () => {
     });
 
     it('If-Match 헤더가 빈 문자열이면 version 체크 없이 null로 전달한다', async () => {
-      repo.getRoot.mockResolvedValue(makeRoot());
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE' }));
       repo.putFileContent.mockResolvedValue({ kind: 'replaced', node: makeNode() });
 
@@ -214,6 +234,57 @@ describe('ContentService', () => {
         null,
         false,
       );
+    });
+
+    it('namespace 상한이 전역보다 작으면 namespace 상한을 적용해 거부한다', async () => {
+      config.getOrThrow.mockReturnValue('1000');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: '10', maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
+      repo.resolvePath.mockResolvedValue(null);
+
+      await expect(
+        service.putContent(NAMESPACE_ID, '/a', Readable.from(Buffer.from('x')), {
+          ...noOptions,
+          contentLength: '11',
+        }),
+      ).rejects.toThrow(VfsFileTooLargeError);
+    });
+
+    it('namespace 상한이 전역보다 크면 전역값을 상한으로 적용한다', async () => {
+      config.getOrThrow.mockReturnValue('10');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: '1000', maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
+      repo.resolvePath.mockResolvedValue(null);
+
+      await expect(
+        service.putContent(NAMESPACE_ID, '/a', Readable.from(Buffer.from('x')), {
+          ...noOptions,
+          contentLength: '11',
+        }),
+      ).rejects.toThrow(VfsFileTooLargeError);
+    });
+
+    it('namespace 상한이 없으면(null) 전역값을 그대로 적용한다', async () => {
+      config.getOrThrow.mockReturnValue('10');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
+      repo.resolvePath.mockResolvedValue(null);
+
+      await expect(
+        service.putContent(NAMESPACE_ID, '/a', Readable.from(Buffer.from('x')), {
+          ...noOptions,
+          contentLength: '11',
+        }),
+      ).rejects.toThrow(VfsFileTooLargeError);
     });
   });
 

@@ -13,7 +13,8 @@ import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
-import { requireRoot } from './require-root.js';
+import { resolveEffectiveLimit } from '../common/resource-limit.js';
+import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
@@ -95,7 +96,7 @@ export class ContentService {
     source: Readable,
     options: PutContentOptions,
   ): Promise<{ status: number; body: VfsNodeResponseDto }> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
 
     if (segments.length === 0) {
@@ -107,20 +108,19 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
+    const maxFileSizeBytes = resolveEffectiveLimit(
+      limits.maxFileSizeBytes === null ? null : Number(limits.maxFileSizeBytes),
+      this.maxFileSizeBytes,
+    );
+
     const contentLength = options.contentLength !== undefined ? Number(options.contentLength) : undefined;
-    if (contentLength !== undefined && contentLength > this.maxFileSizeBytes) {
-      throw new VfsFileTooLargeError(this.maxFileSizeBytes);
+    if (contentLength !== undefined && contentLength > maxFileSizeBytes) {
+      throw new VfsFileTooLargeError(maxFileSizeBytes);
     }
 
     const mimeType = normalizeMimeType(options.contentType);
     const storageKey = this.keyGenerator.generate();
-    const uploaded = await uploadStream(
-      this.blobStorage,
-      storageKey,
-      source,
-      mimeType,
-      this.maxFileSizeBytes,
-    );
+    const uploaded = await uploadStream(this.blobStorage, storageKey, source, mimeType, maxFileSizeBytes);
 
     const outcome = await this.repo.putFileContent(
       namespaceId,
