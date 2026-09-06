@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 export type NamespaceStatus = 'ACTIVE' | 'DELETING' | 'DELETED';
-export type EncryptionPolicy = 'NONE';
+export type EncryptionPolicy = 'NONE' | 'ENCRYPTED';
 
 @Entity('namespace')
 export class NamespaceEntity {

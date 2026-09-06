@@ -14,6 +14,7 @@ import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { AddBlobZeroSince1788800000000 } from '../persistence/migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from '../persistence/migrations/1788700000000-AddIdempotencyKey.js';
 import { AddNamespaceResourceLimits1789000000000 } from '../persistence/migrations/1789000000000-AddNamespaceResourceLimits.js';
+import { AddEncryptionSupport1789100000000 } from '../persistence/migrations/1789100000000-AddEncryptionSupport.js';
 import { InitSchema1788637362016 } from '../persistence/migrations/1788637362016-InitSchema.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
 
@@ -69,6 +70,7 @@ describe('GcJob 통합', () => {
         AddIdempotencyKey1788700000000,
         AddBlobZeroSince1788800000000,
         AddNamespaceResourceLimits1789000000000,
+        AddEncryptionSupport1789100000000,
       ],
     });
     await dataSource.initialize();

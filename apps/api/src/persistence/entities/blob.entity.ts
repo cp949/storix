@@ -20,6 +20,9 @@ export class BlobEntity {
   @Column({ type: 'char', length: 64 })
   sha256: string;
 
+  @Column({ name: 'encryption_iv', type: 'bytea', nullable: true })
+  encryptionIv: Buffer | null;
+
   @Column({ name: 'reference_count', type: 'integer', default: 0 })
   referenceCount: number;
 

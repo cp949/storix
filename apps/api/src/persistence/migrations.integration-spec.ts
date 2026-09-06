@@ -8,6 +8,7 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
 import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
+import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
 import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
 
 describe('Migration: InitSchema', () => {
@@ -26,6 +27,7 @@ describe('Migration: InitSchema', () => {
         AddIdempotencyKey1788700000000,
         AddBlobZeroSince1788800000000,
         AddNamespaceResourceLimits1789000000000,
+        AddEncryptionSupport1789100000000,
       ],
     });
     await dataSource.initialize();
@@ -337,6 +339,73 @@ describe('Migration: InitSchema', () => {
 
       await expect(
         repo.save(repo.create({ name: 'limits-invalid-copy-nodes', maxSyncCopyNodes: 0 })),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('암호화 정책 및 blob.encryption_iv 컬럼', () => {
+    it('encryption_policy에 ENCRYPTED를 허용한다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+      const saved = await repo.save(repo.create({ name: 'encrypted-ns-owner', encryptionPolicy: 'ENCRYPTED' }));
+
+      expect(saved.encryptionPolicy).toBe('ENCRYPTED');
+    });
+
+    it('encryption_policy에 정의되지 않은 값은 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'invalid-policy-owner', encryptionPolicy: 'AES' as never })),
+      ).rejects.toThrow();
+    });
+
+    it('blob.encryption_iv는 기본적으로 NULL이고, 16바이트 Buffer를 저장하고 조회할 수 있다', async () => {
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'blob-iv-owner' }));
+      const blobRepo = dataSource.getRepository(BlobEntity);
+      const withoutIv = await blobRepo.save(
+        blobRepo.create({
+          namespaceId: namespace.id,
+          storageKey: 'blobs/00/no-iv',
+          size: '0',
+          mimeType: 'application/octet-stream',
+          sha256: '0'.repeat(64),
+        }),
+      );
+      expect(withoutIv.encryptionIv).toBeNull();
+
+      const iv = Buffer.from('0'.repeat(32), 'hex');
+      const withIv = await blobRepo.save(
+        blobRepo.create({
+          namespaceId: namespace.id,
+          storageKey: 'blobs/00/with-iv',
+          size: '0',
+          mimeType: 'application/octet-stream',
+          sha256: '1'.repeat(64),
+          encryptionIv: iv,
+        }),
+      );
+      const found = await blobRepo.findOneByOrFail({ id: withIv.id });
+
+      expect(found.encryptionIv).toEqual(iv);
+    });
+
+    it('16바이트가 아닌 encryption_iv는 CHECK 제약 위반으로 거부된다', async () => {
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'blob-iv-invalid-owner' }));
+      const blobRepo = dataSource.getRepository(BlobEntity);
+
+      await expect(
+        blobRepo.save(
+          blobRepo.create({
+            namespaceId: namespace.id,
+            storageKey: 'blobs/00/bad-iv',
+            size: '0',
+            mimeType: 'application/octet-stream',
+            sha256: '2'.repeat(64),
+            encryptionIv: Buffer.from('ab', 'hex'),
+          }),
+        ),
       ).rejects.toThrow();
     });
   });
