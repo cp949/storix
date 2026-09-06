@@ -1,11 +1,12 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
+import { EncryptionModule } from '../encryption/encryption.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { NamespaceController } from './namespace.controller.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Module({
-  imports: [PersistenceModule],
+  imports: [PersistenceModule, EncryptionModule],
   controllers: [NamespaceController],
   providers: [NamespaceService],
 })

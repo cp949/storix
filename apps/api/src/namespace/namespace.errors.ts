@@ -42,3 +42,12 @@ export class NamespaceNotFoundError extends Error {
     super(`존재하지 않는 namespace: ${namespaceId}`);
   }
 }
+
+export class NamespaceInvalidEncryptionPolicyError extends Error {
+  readonly code = 'NAMESPACE_INVALID_ENCRYPTION_POLICY';
+  readonly status = 400;
+
+  constructor(readonly value: unknown) {
+    super(`유효하지 않은 encryptionPolicy: ${JSON.stringify(value)}`);
+  }
+}

@@ -28,6 +28,7 @@ describe('Namespace HTTP contract', () => {
     process.env.DB_USERNAME = container.getUsername();
     process.env.DB_PASSWORD = container.getPassword();
     process.env.DB_NAME = container.getDatabase();
+    process.env.ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -189,5 +190,15 @@ describe('Namespace HTTP contract', () => {
     const response = await request(app.getHttpServer()).get('/api/v1/namespaces').expect(200);
 
     expect(response.body).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'list-ns' })]));
+  });
+
+  it('encryptionPolicy를 ENCRYPTED로 생성할 수 있다', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'ns-encrypted-create')
+      .send({ name: 'encrypted-ns', encryptionPolicy: 'ENCRYPTED' })
+      .expect(201);
+
+    expect(response.body).toMatchObject({ name: 'encrypted-ns', encryptionPolicy: 'ENCRYPTED' });
   });
 });

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Repository } from 'typeorm';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
@@ -44,6 +45,7 @@ describe('NamespaceService', () => {
       namespaceRepo as unknown as Repository<NamespaceEntity>,
       idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
       provisioningRepo as unknown as NamespaceProvisioningRepository,
+      null,
     );
   });
 
@@ -56,7 +58,7 @@ describe('NamespaceService', () => {
 
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE');
       expect(idempotencyRepo.insert).toHaveBeenCalledWith(
         expect.objectContaining({ key: 'key-1', responseStatus: 201 }),
       );
@@ -66,7 +68,7 @@ describe('NamespaceService', () => {
       const storedBody = { id: 'ns-1', name: 'acme' };
       idempotencyRepo.findOneBy.mockResolvedValue({
         key: 'key-1',
-        requestHash: canonicalJsonHash({ name: 'acme' }),
+        requestHash: canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE' }),
         responseStatus: 201,
         responseBody: storedBody,
       } as unknown as IdempotencyKeyEntity);
@@ -111,6 +113,29 @@ describe('NamespaceService', () => {
       const result = await service.create('key-1', 'acme');
 
       expect(result.status).toBe(201);
+    });
+
+    it('encryptionPolicy가 ENCRYPTED이고 마스터 키가 없으면 NamespaceEncryptionNotConfiguredError를 던진다', async () => {
+      await expect(service.create('key-1', 'acme', 'ENCRYPTED')).rejects.toThrow(
+        NamespaceEncryptionNotConfiguredError,
+      );
+      expect(provisioningRepo.createWithRoot).not.toHaveBeenCalled();
+    });
+
+    it('마스터 키가 설정되어 있으면 ENCRYPTED namespace 생성을 그대로 진행한다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        Buffer.alloc(32),
+      );
+      idempotencyRepo.findOneBy.mockResolvedValue(null);
+      provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity({ encryptionPolicy: 'ENCRYPTED' }));
+
+      const result = await service.create('key-1', 'acme', 'ENCRYPTED');
+
+      expect(result.status).toBe(201);
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED');
     });
   });
 

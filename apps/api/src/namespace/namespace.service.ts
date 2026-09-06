@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryDeepPartialEntity, Repository } from 'typeorm';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { MASTER_KEY } from '../encryption/encryption.constants.js';
+import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
-import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
 import { IdempotencyKeyReusedError, NamespaceAlreadyExistsError, NamespaceNotFoundError } from './namespace.errors.js';
@@ -26,10 +28,19 @@ export class NamespaceService {
     @InjectRepository(NamespaceEntity) private readonly namespaceRepo: Repository<NamespaceEntity>,
     @InjectRepository(IdempotencyKeyEntity) private readonly idempotencyRepo: Repository<IdempotencyKeyEntity>,
     private readonly provisioningRepo: NamespaceProvisioningRepository,
+    @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
   ) {}
 
-  async create(idempotencyKey: string, name: string): Promise<CreateNamespaceResult> {
-    const requestHash = canonicalJsonHash({ name });
+  async create(
+    idempotencyKey: string,
+    name: string,
+    encryptionPolicy: EncryptionPolicy = 'NONE',
+  ): Promise<CreateNamespaceResult> {
+    if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
+      throw new NamespaceEncryptionNotConfiguredError();
+    }
+
+    const requestHash = canonicalJsonHash({ name, encryptionPolicy });
 
     const existing = await this.idempotencyRepo.findOneBy({ key: idempotencyKey });
     if (existing) {
@@ -45,7 +56,7 @@ export class NamespaceService {
     }
 
     try {
-      const namespace = await this.provisioningRepo.createWithRoot(name);
+      const namespace = await this.provisioningRepo.createWithRoot(name, encryptionPolicy);
       const body = toNamespaceResponse(namespace);
       await this.recordIdempotency(idempotencyKey, requestHash, 201, body);
       return { status: 201, body };

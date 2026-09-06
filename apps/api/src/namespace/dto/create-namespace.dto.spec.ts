@@ -1,11 +1,11 @@
-import { NamespaceInvalidNameError } from '../namespace.errors.js';
+import { NamespaceInvalidEncryptionPolicyError, NamespaceInvalidNameError } from '../namespace.errors.js';
 import { parseCreateNamespaceRequest } from './create-namespace.dto.js';
 
 describe('parseCreateNamespaceRequest', () => {
-  it('유효한 name을 그대로 반환한다', () => {
+  it('유효한 name을 그대로 반환하고 encryptionPolicy는 NONE으로 기본 설정한다', () => {
     const result = parseCreateNamespaceRequest({ name: 'acme-01' });
 
-    expect(result).toEqual({ name: 'acme-01' });
+    expect(result).toEqual({ name: 'acme-01', encryptionPolicy: 'NONE' });
   });
 
   it('name이 없으면 NamespaceInvalidNameError를 던진다', () => {
@@ -33,9 +33,15 @@ describe('parseCreateNamespaceRequest', () => {
     expect(() => parseCreateNamespaceRequest('acme')).toThrow(NamespaceInvalidNameError);
   });
 
-  it('encryptionPolicy 필드가 함께 와도 무시하고 name만 사용한다', () => {
+  it('encryptionPolicy로 ENCRYPTED를 지정할 수 있다', () => {
     const result = parseCreateNamespaceRequest({ name: 'acme', encryptionPolicy: 'ENCRYPTED' });
 
-    expect(result).toEqual({ name: 'acme' });
+    expect(result).toEqual({ name: 'acme', encryptionPolicy: 'ENCRYPTED' });
+  });
+
+  it('encryptionPolicy가 유효하지 않은 값이면 거부한다', () => {
+    expect(() => parseCreateNamespaceRequest({ name: 'acme', encryptionPolicy: 'AES' })).toThrow(
+      NamespaceInvalidEncryptionPolicyError,
+    );
   });
 });
