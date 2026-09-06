@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { Transform } from 'node:stream';
-import type { Readable } from 'node:stream';
+import { pipeline, Transform } from 'node:stream';
+import type { Duplex, Readable } from 'node:stream';
 import type { BlobRange, BlobStorage } from '../storage/blob-storage.js';
 
 export const IV_LENGTH = 16;
@@ -22,13 +22,26 @@ export function incrementCounter(iv: Buffer, blocks: number): Buffer {
   return counter;
 }
 
+// Node의 Readable.pipe()는 destination에만 'error' 리스너를 붙인다. 그래서 source
+// (실제로는 MinIO HTTP 응답 스트림)가 중간에 실패하면 그 오류가 destination으로
+// 전파되지 않아 소비자는 영원히 대기하고, 아무도 처리하지 않은 source의 'error'는
+// uncaughtException이 되어 프로세스를 죽인다. 반대로 소비자가 결과 스트림을 파괴해도
+// source는 살아남아 MinIO HTTP 소켓이 샌다. pipeline()은 양방향으로 오류를 전파하고
+// 한쪽이 끝나거나 파괴되면 나머지도 파괴하므로 두 문제를 모두 없앤다.
+// 콜백은 비워둔다 — 오류는 destination에도 그대로 전파되므로 호출자가 처리한다.
+function pipeThrough<T extends Duplex>(source: Readable, destination: T): T {
+  pipeline(source, destination, () => undefined);
+  return destination;
+}
+
 function dropLeadingBytes(source: Readable, count: number): Readable {
   if (count === 0) {
     return source;
   }
 
   let remaining = count;
-  return source.pipe(
+  return pipeThrough(
+    source,
     new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         if (remaining === 0) {
@@ -59,7 +72,7 @@ export class EncryptingPutTarget {
   async put(key: string, stream: Readable, contentType?: string): Promise<void> {
     const iv = randomBytes(IV_LENGTH);
     const cipher = createCipheriv(ALGORITHM, this.masterKey, iv);
-    await this.inner.put(key, stream.pipe(cipher), contentType);
+    await this.inner.put(key, pipeThrough(stream, cipher), contentType);
     this.iv = iv;
   }
 
@@ -84,13 +97,13 @@ export async function getEncrypted(
 ): Promise<Readable> {
   if (!range) {
     const cipherStream = await inner.get(key);
-    return cipherStream.pipe(createDecipheriv(ALGORITHM, masterKey, iv));
+    return pipeThrough(cipherStream, createDecipheriv(ALGORITHM, masterKey, iv));
   }
 
   const blockOffset = Math.floor(range.start / BLOCK_SIZE) * BLOCK_SIZE;
   const discard = range.start - blockOffset;
   const cipherStream = await inner.get(key, { start: blockOffset, end: range.end });
   const counter = incrementCounter(iv, blockOffset / BLOCK_SIZE);
-  const decrypted = cipherStream.pipe(createDecipheriv(ALGORITHM, masterKey, counter));
+  const decrypted = pipeThrough(cipherStream, createDecipheriv(ALGORITHM, masterKey, counter));
   return dropLeadingBytes(decrypted, discard);
 }

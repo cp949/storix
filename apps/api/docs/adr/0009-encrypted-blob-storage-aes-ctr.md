@@ -1,9 +1,15 @@
-# 암호화 정책은 AES-256-CTR 기반 EncryptedBlobStorage decorator로 구현한다
+# 암호화 정책은 AES-256-CTR 기반 put 래퍼 + get 헬퍼로 구현한다
 
-ADR-0001에서 설계만 해둔 `ENCRYPTED` 정책(SEC-03)을 구현한다. `BlobStorage` 뒤에
-`EncryptedBlobStorage` decorator를 끼우고, 알고리즘은 AES-256-CTR을 쓴다. CTR은
-블록 경계 기준으로 임의 오프셋부터 복호화를 시작할 수 있어(오프셋을 16바이트
-블록으로 내림 → 그 지점부터 복호화 → 앞쪽 여분 바이트를 버림), 기존
+ADR-0001에서 설계만 해둔 `ENCRYPTED` 정책(SEC-03)을 구현한다. 알고리즘은
+AES-256-CTR을 쓴다. 구현 형태는 `BlobStorage` 전체를 감싸는 decorator가 아니라,
+업로드용 `EncryptingPutTarget` 클래스(`put`/`delete`만 구현)와 다운로드용
+`getEncrypted()` 자유 함수로 나눈다 — `BlobStorage.put`이 `void`를 반환하는데
+호출자는 생성된 IV를 돌려받아 `blob` row에 저장해야 해서, 인터페이스를 그대로
+유지하는 decorator가 성립하지 않기 때문이다(ADR-0001이 예고한
+`EncryptedBlobStorage` decorator 이름은 이 형태로 대체한다).
+
+CTR은 블록 경계 기준으로 임의 오프셋부터 복호화를 시작할 수 있어(오프셋을
+16바이트 블록으로 내림 → 그 지점부터 복호화 → 앞쪽 여분 바이트를 버림), 기존
 `content.service.ts`의 Range GET(206 Partial Content)이 암호화 여부와 무관하게
 동일하게 동작한다. AEAD(GCM 등) 인증 태그는 두지 않는다 — 지금도 다운로드
 시점에 무결성 검증을 하지 않으므로(업로드 시점 `Blob.sha256`만 존재) 퇴행이

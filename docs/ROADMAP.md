@@ -134,7 +134,7 @@ storix/
 - [x] SEC-02: **리소스 상한** — namespace별 업로드 크기·전역 JSON/urlencoded 요청 본문 크기 상한. DoS
       방어를 보안 기반 범위에 포함한다.
 - [x] SEC-03: **암호화 정책 구현** — ADR-0001에서 설계만 된 `ENCRYPTED`
-      policy를 `EncryptedBlobStorage` decorator로 실제 구현.
+      policy를 AES-256-CTR(`EncryptingPutTarget` + `getEncrypted`)로 실제 구현.
 - [ ] SEC-04: **감사 로그** — 누가/언제/어떤 namespace·파일에 접근했는지 기록.
       현재의 구조화 로깅(티켓 08)은 운영 디버깅용이며 감사 로그와 목적이
       다르다.

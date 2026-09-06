@@ -106,6 +106,7 @@ services:
       MAX_SYNC_COPY_NODES: ${MAX_SYNC_COPY_NODES:-1000}
       API_KEY: '${API_KEY:?API_KEY must be set — generate with: openssl rand -hex 32}'
       API_KEY_PREVIOUS: ${API_KEY_PREVIOUS:-}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

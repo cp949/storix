@@ -175,4 +175,28 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     expect(response.headers['content-range']).toBe('bytes 10-4009/5000');
     expect(response.text).toBe(plaintext.slice(10, 4010));
   });
+
+  // EncryptionBootGuard 단위 테스트는 가드를 직접 new 해서 검증하므로, 가드가
+  // EncryptionModule providers에서 빠지거나 EncryptionModule이 모듈 그래프에서
+  // 끊겨도 잡히지 않는다. 실제 앱과 동일한 모듈 구성으로 부팅시켜 배선을 검증한다.
+  it('ENCRYPTED namespace가 있는데 마스터 키가 없으면 앱 부팅이 실패한다', async () => {
+    await createEncryptedNamespace(`enc-boot-${randomUUID()}`);
+
+    // 같은 프로세스에서 이어지는 테스트들이 마스터 키를 필요로 하므로 반드시 복구한다.
+    delete process.env.ENCRYPTION_MASTER_KEY;
+    let guardedApp: INestApplication | undefined;
+
+    try {
+      // 모듈 배선 자체는 성공해야 한다 — 실패는 부팅 훅에서만 일어난다.
+      const moduleRef = await Test.createTestingModule({
+        imports: [ConfigModule.forRoot({ isGlobal: true }), NamespaceModule, VfsModule],
+      }).compile();
+      guardedApp = moduleRef.createNestApplication({ bodyParser: false });
+
+      await expect(guardedApp.init()).rejects.toThrow(/ENCRYPTED namespace/);
+    } finally {
+      process.env.ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
+      await guardedApp?.close().catch(() => undefined);
+    }
+  }, 60000);
 });

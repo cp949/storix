@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { randomBytes } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import type { BlobRange, BlobStorage } from '../storage/blob-storage.js';
 import { EncryptingPutTarget, getEncrypted, incrementCounter } from './encrypted-content.js';
 
@@ -42,6 +42,33 @@ class FakeBlobStorage implements Pick<BlobStorage, 'put' | 'get' | 'delete'> {
       throw new Error(`no object: ${key}`);
     }
     return data;
+  }
+}
+
+// 실제 MinIO get() 스트림처럼 일부 바이트를 흘린 뒤 중간에 실패하는 source를
+// 흉내낸다(네트워크 끊김, S3 5xx, 동시 삭제 등).
+class FailingBlobStorage implements Pick<BlobStorage, 'get'> {
+  readonly issued: PassThrough[] = [];
+
+  constructor(private readonly failure: Error | null) {}
+
+  async get(): Promise<Readable> {
+    const stream = new PassThrough();
+    this.issued.push(stream);
+    stream.write(randomBytes(64));
+    if (this.failure) {
+      const failure = this.failure;
+      setImmediate(() => stream.destroy(failure));
+    }
+    return stream;
+  }
+
+  lastIssued(): PassThrough {
+    const stream = this.issued.at(-1);
+    if (!stream) {
+      throw new Error('get()이 아직 호출되지 않음');
+    }
+    return stream;
   }
 }
 
@@ -151,5 +178,40 @@ describe('EncryptingPutTarget / getEncrypted 왕복', () => {
     await target.delete('blobs/00/to-delete');
 
     expect(() => storage.raw('blobs/00/to-delete')).toThrow();
+  });
+});
+
+describe('getEncrypted 스트림 오류 전파', () => {
+  const masterKey = randomBytes(32);
+  const iv = randomBytes(16);
+
+  it('range 없이 읽는 도중 source가 실패하면 반환 스트림도 error를 낸다', async () => {
+    const storage = new FailingBlobStorage(new Error('minio 연결 끊김'));
+
+    const decrypted = await getEncrypted(storage, 'blobs/00/broken', iv, masterKey);
+
+    await expect(streamToBuffer(decrypted)).rejects.toThrow('minio 연결 끊김');
+    expect(storage.lastIssued().destroyed).toBe(true);
+  });
+
+  it('range 요청 도중 source가 실패해도 반환 스트림이 error를 낸다', async () => {
+    const storage = new FailingBlobStorage(new Error('minio 연결 끊김'));
+
+    // start가 블록 경계에 정렬되지 않아 dropLeadingBytes 단계까지 거치는 경로다.
+    const decrypted = await getEncrypted(storage, 'blobs/00/broken', iv, masterKey, { start: 10, end: 4000 });
+
+    await expect(streamToBuffer(decrypted)).rejects.toThrow('minio 연결 끊김');
+    expect(storage.lastIssued().destroyed).toBe(true);
+  });
+
+  it('반환 스트림을 파괴하면 source도 함께 파괴된다(다운로드 중단 시 소켓 누수 방지)', async () => {
+    const storage = new FailingBlobStorage(null);
+
+    const decrypted = await getEncrypted(storage, 'blobs/00/aborted', iv, masterKey, { start: 10, end: 4000 });
+    decrypted.resume();
+    decrypted.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(storage.lastIssued().destroyed).toBe(true);
   });
 });
