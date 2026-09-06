@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
+import { Public } from '../auth/public.decorator.js';
 import { MinioHealthIndicator } from './minio-health.indicator.js';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

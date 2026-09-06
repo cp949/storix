@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { jest } from '@jest/globals';
@@ -5,6 +6,7 @@ import { HealthIndicatorResult, TerminusModule, TypeOrmHealthIndicator } from '@
 import request from 'supertest';
 import { HealthController } from './health.controller.js';
 import { MinioHealthIndicator } from './minio-health.indicator.js';
+import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
 
 describe('HealthController', () => {
   let app: INestApplication;
@@ -61,5 +63,9 @@ describe('HealthController', () => {
     });
 
     await request(app.getHttpServer()).get('/health/ready').expect(503);
+  });
+
+  it('헬스체크는 인증 없이 접근 가능하도록 @Public()이 적용되어 있다', () => {
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, HealthController)).toBe(true);
   });
 });
