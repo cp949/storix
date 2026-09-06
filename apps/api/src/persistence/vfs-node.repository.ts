@@ -31,6 +31,12 @@ export interface VfsNodeRecord {
   readonly version: number;
 }
 
+export interface NamespaceResourceLimits {
+  readonly maxFileSizeBytes: string | null;
+  readonly maxSyncDeleteNodes: number | null;
+  readonly maxSyncCopyNodes: number | null;
+}
+
 export interface VfsNodeMatch extends VfsNodeRecord {
   readonly relativeSegments: string[];
 }
@@ -159,6 +165,29 @@ export class VfsNodeRepository {
 
     const root = await this.nodeRepo.findOneBy({ namespaceId, parentId: IsNull() });
     return root ? toRecord(root) : null;
+  }
+
+  async getRootWithLimits(
+    namespaceId: string,
+  ): Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null> {
+    const namespace = await this.namespaceRepo.findOneBy({ id: namespaceId });
+    if (!namespace) {
+      return null;
+    }
+
+    const root = await this.nodeRepo.findOneBy({ namespaceId, parentId: IsNull() });
+    if (!root) {
+      return null;
+    }
+
+    return {
+      root: toRecord(root),
+      limits: {
+        maxFileSizeBytes: namespace.maxFileSizeBytes,
+        maxSyncDeleteNodes: namespace.maxSyncDeleteNodes,
+        maxSyncCopyNodes: namespace.maxSyncCopyNodes,
+      },
+    };
   }
 
   async resolvePath(namespaceId: string, rootId: string, segments: string[]): Promise<VfsNodeRecord | null> {

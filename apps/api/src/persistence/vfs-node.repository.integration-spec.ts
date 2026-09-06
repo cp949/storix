@@ -108,6 +108,44 @@ describe('VfsNodeRepository', () => {
     });
   });
 
+  describe('getRootWithLimits', () => {
+    it('namespace 상한 값이 NULL이면 limits도 모두 null이다', async () => {
+      const namespace = await createNamespace('root-limits-null-ns');
+
+      const result = await repository.getRootWithLimits(namespace.id);
+
+      expect(result?.limits).toEqual({
+        maxFileSizeBytes: null,
+        maxSyncDeleteNodes: null,
+        maxSyncCopyNodes: null,
+      });
+      expect(result?.root).toMatchObject({ name: '', type: 'DIRECTORY' });
+    });
+
+    it('namespace에 설정된 상한 값을 함께 반환한다', async () => {
+      const namespace = await createNamespace('root-limits-set-ns');
+      await dataSource.getRepository(NamespaceEntity).update(namespace.id, {
+        maxFileSizeBytes: '2048',
+        maxSyncDeleteNodes: 3,
+        maxSyncCopyNodes: 4,
+      });
+
+      const result = await repository.getRootWithLimits(namespace.id);
+
+      expect(result?.limits).toEqual({
+        maxFileSizeBytes: '2048',
+        maxSyncDeleteNodes: 3,
+        maxSyncCopyNodes: 4,
+      });
+    });
+
+    it('존재하지 않는 namespace면 null을 반환한다', async () => {
+      const result = await repository.getRootWithLimits(randomUUID());
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('resolvePath', () => {
     it('중첩된 디렉터리 경로를 순서대로 resolve한다', async () => {
       const namespace = await createNamespace('resolve-ns');

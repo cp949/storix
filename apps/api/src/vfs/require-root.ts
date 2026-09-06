@@ -1,5 +1,5 @@
 import { isUuid } from '../common/uuid.js';
-import { VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 export async function requireRoot(repo: VfsNodeRepository, namespaceId: string): Promise<VfsNodeRecord> {
@@ -13,4 +13,20 @@ export async function requireRoot(repo: VfsNodeRepository, namespaceId: string):
   }
 
   return root;
+}
+
+export async function requireRootWithLimits(
+  repo: VfsNodeRepository,
+  namespaceId: string,
+): Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits }> {
+  if (!isUuid(namespaceId)) {
+    throw new VfsNamespaceNotFoundError(namespaceId);
+  }
+
+  const result = await repo.getRootWithLimits(namespaceId);
+  if (!result) {
+    throw new VfsNamespaceNotFoundError(namespaceId);
+  }
+
+  return result;
 }
