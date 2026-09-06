@@ -1,7 +1,12 @@
 import { jest } from '@jest/globals';
 import type { ConfigService } from '@nestjs/config';
 import { encodeCursor } from '../common/keyset-cursor.js';
-import { VfsNodeMatch, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import {
+  NamespaceResourceLimits,
+  VfsNodeMatch,
+  VfsNodeRecord,
+  VfsNodeRepository,
+} from '../persistence/vfs-node.repository.js';
 import { PathResolver } from './path-resolver.js';
 import {
   VfsAlreadyExistsError,
@@ -37,6 +42,7 @@ function makeMatch(overrides: Partial<VfsNodeMatch> = {}): VfsNodeMatch {
 describe('VfsService', () => {
   let repo: {
     getRoot: jest.Mock<() => Promise<VfsNodeRecord | null>>;
+    getRootWithLimits: jest.Mock<() => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>>;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
     listChildren: jest.Mock<() => Promise<VfsNodeRecord[]>>;
     findRecursive: jest.Mock<() => Promise<VfsNodeMatch[]>>;
@@ -56,6 +62,7 @@ describe('VfsService', () => {
   beforeEach(() => {
     repo = {
       getRoot: jest.fn(),
+      getRootWithLimits: jest.fn(),
       resolvePath: jest.fn(),
       listChildren: jest.fn(),
       findRecursive: jest.fn(),
@@ -287,7 +294,10 @@ describe('VfsService', () => {
 
   describe('copy', () => {
     it('source가 root(/)이면 VfsInvalidOperationError를 던진다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
 
       await expect(service.copy(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(
         VfsInvalidOperationError,
@@ -298,7 +308,10 @@ describe('VfsService', () => {
     it('repository에 source/destination segments, destinationParents, MAX_SYNC_COPY_NODES를 그대로 전달한다', async () => {
       config.getOrThrow.mockReturnValue('7');
       service = createService();
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
       await service.copy(NAMESPACE_ID, '/a', '/dest', true);
@@ -307,13 +320,44 @@ describe('VfsService', () => {
     });
 
     it('복사에 성공하면 201과 repository가 반환한 최종 경로를 반환한다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null },
+      });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
       const result = await service.copy(NAMESPACE_ID, '/a', '/dest', false);
 
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ path: '/dest/b', name: 'b' });
+    });
+
+    it('namespace의 maxSyncCopyNodes가 전역보다 작으면 그 값을 repository에 전달한다', async () => {
+      config.getOrThrow.mockReturnValue('1000');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: 3 },
+      });
+      repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
+
+      await service.copy(NAMESPACE_ID, '/a', '/dest', false);
+
+      expect(repo.copyNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], ['dest'], false, 3);
+    });
+
+    it('namespace의 maxSyncCopyNodes가 전역보다 크면 전역값을 상한으로 전달한다', async () => {
+      config.getOrThrow.mockReturnValue('5');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: 999 },
+      });
+      repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
+
+      await service.copy(NAMESPACE_ID, '/a', '/dest', false);
+
+      expect(repo.copyNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], ['dest'], false, 5);
     });
   });
 

@@ -11,7 +11,8 @@ import {
 import { VfsNodeType } from '../persistence/entities/vfs-node.entity.js';
 import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { joinChildPath, PathResolver } from './path-resolver.js';
-import { requireRoot } from './require-root.js';
+import { requireRoot, requireRootWithLimits } from './require-root.js';
+import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import {
   VfsAlreadyExistsError,
   VfsInvalidCursorError,
@@ -101,7 +102,7 @@ export class VfsService {
     rawDestination: string,
     destinationParents: boolean,
   ): Promise<{ status: number; body: VfsNodeResponseDto }> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const source = this.pathResolver.resolve(rawSource);
     const destination = this.pathResolver.resolve(rawDestination);
 
@@ -109,13 +110,14 @@ export class VfsService {
       throw new VfsInvalidOperationError(source.canonical);
     }
 
+    const maxSyncCopyNodes = resolveEffectiveLimit(limits.maxSyncCopyNodes, this.maxSyncCopyNodes);
     const result = await this.repo.copyNode(
       namespaceId,
       root.id,
       source.segments,
       destination.segments,
       destinationParents,
-      this.maxSyncCopyNodes,
+      maxSyncCopyNodes,
     );
 
     return { status: 201, body: toNodeResponse(result.node, result.finalPath) };
