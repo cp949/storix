@@ -7,6 +7,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
+import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
 import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
 
 describe('Migration: InitSchema', () => {
@@ -20,7 +21,12 @@ describe('Migration: InitSchema', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000, AddBlobZeroSince1788800000000],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+      ],
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -281,6 +287,43 @@ describe('Migration: InitSchema', () => {
       expect(updated.zeroSince).toBeInstanceOf(Date);
     });
   });
+
+  describe('namespace 리소스 상한 컬럼', () => {
+    it('생성 시 세 컬럼 모두 NULL이다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+      const saved = await repo.save(repo.create({ name: 'limits-null-owner' }));
+
+      expect(saved.maxFileSizeBytes).toBeNull();
+      expect(saved.maxSyncDeleteNodes).toBeNull();
+      expect(saved.maxSyncCopyNodes).toBeNull();
+    });
+
+    it('값을 채워 넣고 조회할 수 있다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+      const saved = await repo.save(
+        repo.create({
+          name: 'limits-set-owner',
+          maxFileSizeBytes: '1000',
+          maxSyncDeleteNodes: 5,
+          maxSyncCopyNodes: 5,
+        }),
+      );
+
+      const found = await repo.findOneByOrFail({ id: saved.id });
+
+      expect(found.maxFileSizeBytes).toBe('1000');
+      expect(found.maxSyncDeleteNodes).toBe(5);
+      expect(found.maxSyncCopyNodes).toBe(5);
+    });
+
+    it('0 이하 값은 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'limits-invalid-owner', maxSyncDeleteNodes: 0 })),
+      ).rejects.toThrow();
+    });
+  });
 });
 
 describe('Migration: AddBlobZeroSince backfill', () => {
@@ -306,9 +349,14 @@ describe('Migration: AddBlobZeroSince backfill', () => {
   });
 
   it('reference_count=0인 기존 blob에 zero_since를 백필한다', async () => {
-    const namespaceRepo = preBackfillDataSource.getRepository(NamespaceEntity);
-    const namespace = await namespaceRepo.save(
-      namespaceRepo.create({ name: 'backfill-test-ns' }),
+    // AddNamespaceResourceLimits 이전 스키마에는 리소스 상한 컬럼이 없으므로,
+    // 이미 그 컬럼을 알고 있는 NamespaceEntity를 통한 insert 대신 raw SQL을 사용한다
+    // (아래 blob insert가 zero_since 컬럼을 피해가는 것과 동일한 이유)
+    const namespaceId = randomUUID();
+    await preBackfillDataSource.query(
+      `INSERT INTO namespace (id, name, encryption_policy, status, created_at, updated_at)
+       VALUES ($1, $2, 'NONE', 'ACTIVE', now(), now())`,
+      [namespaceId, 'backfill-test-ns'],
     );
 
     // 마이그레이션 전에 reference_count=0인 blob을 삽입
@@ -318,7 +366,7 @@ describe('Migration: AddBlobZeroSince backfill', () => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
       [
         blobId,
-        namespace.id,
+        namespaceId,
         'blobs/ab/backfill-test',
         '100',
         'application/octet-stream',

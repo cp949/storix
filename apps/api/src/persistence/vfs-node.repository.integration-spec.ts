@@ -8,6 +8,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
+import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
 import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
@@ -36,7 +37,12 @@ describe('VfsNodeRepository', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000, AddBlobZeroSince1788800000000],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+      ],
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

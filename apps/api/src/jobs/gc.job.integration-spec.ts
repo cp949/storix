@@ -13,6 +13,7 @@ import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { AddBlobZeroSince1788800000000 } from '../persistence/migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from '../persistence/migrations/1788700000000-AddIdempotencyKey.js';
+import { AddNamespaceResourceLimits1789000000000 } from '../persistence/migrations/1789000000000-AddNamespaceResourceLimits.js';
 import { InitSchema1788637362016 } from '../persistence/migrations/1788637362016-InitSchema.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
 
@@ -63,7 +64,12 @@ describe('GcJob 통합', () => {
       url: pgContainer.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000, AddBlobZeroSince1788800000000],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+      ],
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

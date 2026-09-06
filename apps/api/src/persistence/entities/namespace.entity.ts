@@ -22,6 +22,15 @@ export class NamespaceEntity {
   @Column({ type: 'varchar', length: 16, default: 'ACTIVE' })
   status: NamespaceStatus;
 
+  @Column({ name: 'max_file_size_bytes', type: 'bigint', nullable: true })
+  maxFileSizeBytes: string | null;
+
+  @Column({ name: 'max_sync_delete_nodes', type: 'integer', nullable: true })
+  maxSyncDeleteNodes: number | null;
+
+  @Column({ name: 'max_sync_copy_nodes', type: 'integer', nullable: true })
+  maxSyncCopyNodes: number | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
