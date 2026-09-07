@@ -1,0 +1,11 @@
+# .github/workflows/versity-demo-smoke.yml 전용 override — docker-compose.yml +
+# docker-compose.versity-demo.yml과 함께 세 번째 -f로 넘긴다.
+#
+# 데모 목적(docker-compose.versity-demo.yml)에는 versitygw 호스트 포트 노출이
+# 없다(minio도 마찬가지로 노출 안 함 — API 서버를 거치는 사용이 기본 전제).
+# 하지만 스모크 테스트는 presigned-download URL을 CI 러너에서 직접 curl로
+# 검증해야 하므로, 그 경우에만 versitygw를 호스트에 노출한다.
+services:
+  versitygw:
+    ports:
+      - '7070:7070'
