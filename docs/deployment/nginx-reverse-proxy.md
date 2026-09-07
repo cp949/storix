@@ -37,11 +37,17 @@ presigned-download 발급이 500나므로, `MINIO_REGION`을 설정해 이 호�
   CA가 발급한 인증서로 교체한다. `nginx-cert-init`(self-signed 생성)은 로컬
   재현/통합 테스트 전용이며 운영에는 쓰지 않는다.
 - `server_name localhost;`를 실제 공개 도메인으로 교체한다.
-- `MINIO_PUBLIC_ENDPOINT`를 그 도메인으로, `MINIO_PUBLIC_PORT=443`,
-  `MINIO_PUBLIC_USE_SSL=true`로 설정한다. 포트를 443(기본 HTTPS 포트)으로
-  맞추는 이유: 표준 포트는 HTTP `Host` 헤더에서 생략되고 presigned 서명도 같은
-  규칙으로 계산되므로, 포트를 다르게 매핑하면(로컬 재현의 `8443`처럼) 서명과
-  실제 요청의 Host 헤더가 어긋난다.
+- `MINIO_PUBLIC_ENDPOINT`를 그 도메인으로, `MINIO_PUBLIC_PORT`를 클라이언트가
+  실제로 접속하는 포트와 동일한 값으로, `MINIO_PUBLIC_USE_SSL=true`로 설정한다.
+  규칙은 "서명에 쓰인 포트 = 클라이언트가 실제 접속하는 포트"가 전부다 — 위
+  로컬 재현의 `8443`처럼 비표준 포트도 그 자체로는 문제없다(자동 통합
+  테스트도 testcontainers가 할당한 임의 포트로 검증한다). 443을 권장하는 건
+  정확성이 아니라 편의 때문이다: 표준 HTTPS 포트는 URL/Host 헤더에서
+  생략되어 더 깔끔한 presigned URL이 나온다.
+- `MINIO_REGION`을 비워두지 않는다 — presigned URL 발급마다 리전 자동 조회가
+  공개 프록시로 실제 네트워크 왕복을 시도한다(방화벽·split-horizon DNS
+  환경에서는 로컬 재현과 동일하게 500날 수 있다). 값 자체는 MinIO 서버
+  설정과만 맞으면 되고, 기본 `us-east-1`이면 충분하다.
 
 ## 왜 `$http_host`이고 `$host`가 아닌가
 
