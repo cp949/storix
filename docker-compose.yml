@@ -104,7 +104,7 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-storix}
       MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
       MINIO_REGION: ${MINIO_REGION:-}
-      BACKUP_DIR: /backups
+      BACKUP_DIR: ${BACKUP_DIR:-/backups}
     volumes:
       - ./backups:/backups
     depends_on:
@@ -137,7 +137,11 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-storix}
       MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
       MINIO_REGION: ${MINIO_REGION:-}
-      RESTORE_SOURCE_DIR: ${RESTORE_SOURCE_DIR:?RESTORE_SOURCE_DIR must be set to a specific backup directory, e.g. /backups/2026-09-08T12-00-00-000Z}
+      # `${VAR:?}` 마커는 profile 필터링보다 먼저, 파일 전체에 대해 평가된다 —
+      # 여기에 쓰면 restore profile을 쓰지 않는 모든 compose 명령까지 중단시킨다.
+      # 미설정(빈 문자열) 검출은 RestoreJob 생성자가 실제 복구 실행 시점에만
+      # 담당한다.
+      RESTORE_SOURCE_DIR: ${RESTORE_SOURCE_DIR:-}
       RESTORE_FORCE: ${RESTORE_FORCE:-false}
     volumes:
       - ./backups:/backups
