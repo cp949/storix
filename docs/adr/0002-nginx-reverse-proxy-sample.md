@@ -26,7 +26,7 @@ ADR-0013(STORAGE-02, `apps/api/docs/adr/`)은 presigned URL의 내부/외부 Min
   `localhost`이므로(`presigned-download.integration-spec.ts`와 동일 원칙), 이 값이어야
   자동화 통합 테스트가 성립한다. 운영 배포 문서에는 실제 도메인으로 교체하라는
   자리표시자로 남긴다.
-- 이 구성을 검증할 때 `MINIO_PUBLIC_ENDPOINT`/`MINIO_PUBLIC_PORT`/`MINIO_PUBLIC_USE_SSL`을
+- 이 구성을 검증할 때 `STORAGE_PUBLIC_ENDPOINT`/`STORAGE_PUBLIC_PORT`/`STORAGE_PUBLIC_USE_SSL`을
   실제 클라이언트가 nginx에 접속하는 host/port/scheme과 동일하게 맞춘다(로컬
   수동 검증은 `localhost`/`8443`/`true`, 자동 통합 테스트는 testcontainers가
   할당하는 임의 포트를 그대로 씀 — 특정 포트가 필수인 게 아니라 서명 값과

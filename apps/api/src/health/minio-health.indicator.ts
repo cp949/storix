@@ -1,14 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { HealthIndicatorResult, HealthIndicatorService } from '@nestjs/terminus';
 import { Client } from 'minio';
-import { MINIO_BUCKET, MINIO_CLIENT } from '../storage/storage.constants.js';
+import { STORAGE_BUCKET, STORAGE_CLIENT } from '../storage/storage.constants.js';
 
 @Injectable()
 export class MinioHealthIndicator {
   constructor(
     private readonly healthIndicatorService: HealthIndicatorService,
-    @Inject(MINIO_CLIENT) private readonly client: Client,
-    @Inject(MINIO_BUCKET) private readonly bucket: string,
+    @Inject(STORAGE_CLIENT) private readonly client: Client,
+    @Inject(STORAGE_BUCKET) private readonly bucket: string,
   ) {}
 
   async check(key: string): Promise<HealthIndicatorResult> {

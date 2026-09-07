@@ -92,12 +92,12 @@ describe('대용량 스트리밍', () => {
     process.env.DB_USERNAME = postgresContainer.getUsername();
     process.env.DB_PASSWORD = postgresContainer.getPassword();
     process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.MINIO_ENDPOINT = minioContainer.getHost();
-    process.env.MINIO_PORT = String(minioContainer.getPort());
-    process.env.MINIO_USE_SSL = 'false';
-    process.env.MINIO_ACCESS_KEY = minioContainer.getUsername();
-    process.env.MINIO_SECRET_KEY = minioContainer.getPassword();
-    process.env.MINIO_BUCKET = 'storix-streaming-test';
+    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORAGE_USE_SSL = 'false';
+    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORAGE_BUCKET = 'storix-streaming-test';
     process.env.MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
     process.env.MAX_SYNC_DELETE_NODES = '1000';
     process.env.MAX_SYNC_COPY_NODES = '1000';
@@ -109,7 +109,7 @@ describe('대용량 스트리밍', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.MINIO_BUCKET);
+    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

@@ -38,17 +38,17 @@ describe('presigned-download HTTP 계약', () => {
     process.env.DB_USERNAME = postgresContainer.getUsername();
     process.env.DB_PASSWORD = postgresContainer.getPassword();
     process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.MINIO_ENDPOINT = minioContainer.getHost();
-    process.env.MINIO_PORT = String(minioContainer.getPort());
-    process.env.MINIO_USE_SSL = 'false';
-    process.env.MINIO_ACCESS_KEY = minioContainer.getUsername();
-    process.env.MINIO_SECRET_KEY = minioContainer.getPassword();
-    process.env.MINIO_BUCKET = 'storix-presigned-test';
+    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORAGE_USE_SSL = 'false';
+    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORAGE_BUCKET = 'storix-presigned-test';
     // 테스트 환경에서는 testcontainers가 노출하는 주소가 곧 "외부에서 접근 가능한"
     // 주소이므로 내부/퍼블릭 값을 동일하게 맞춘다.
-    process.env.MINIO_PUBLIC_ENDPOINT = minioContainer.getHost();
-    process.env.MINIO_PUBLIC_PORT = String(minioContainer.getPort());
-    process.env.MINIO_PUBLIC_USE_SSL = 'false';
+    process.env.STORAGE_PUBLIC_ENDPOINT = minioContainer.getHost();
+    process.env.STORAGE_PUBLIC_PORT = String(minioContainer.getPort());
+    process.env.STORAGE_PUBLIC_USE_SSL = 'false';
     process.env.MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
     process.env.MAX_SYNC_DELETE_NODES = '1000';
     process.env.MAX_SYNC_COPY_NODES = '1000';
@@ -62,7 +62,7 @@ describe('presigned-download HTTP 계약', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.MINIO_BUCKET);
+    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

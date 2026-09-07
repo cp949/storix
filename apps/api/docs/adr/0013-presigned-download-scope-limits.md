@@ -13,9 +13,9 @@ presigned URL **발급** 요청은 기록되지만, 발급된 URL로 클라이�
 **실제 콘텐츠 조회**는 Storix를 거치지 않아 `audit_log`에 남지 않는다 — ADR-0010이 이미
 인증 실패 요청에 대해 남긴 "완전한 기록으로 오해하면 안 됨" 경고와 같은 종류의 공백이다.
 
-발급용 minio Client는 내부 통신용(`MINIO_ENDPOINT`/`MINIO_PORT`/`MINIO_USE_SSL`)과
-별개로 `MINIO_PUBLIC_ENDPOINT`/`MINIO_PUBLIC_PORT`/`MINIO_PUBLIC_USE_SSL`을 전부
-분리해 구성한다(자격증명·`MINIO_PATH_STYLE`·`MINIO_REGION`은 내부 설정 재사용).
+발급용 minio Client는 내부 통신용(`STORAGE_ENDPOINT`/`STORAGE_PORT`/`STORAGE_USE_SSL`)과
+별개로 `STORAGE_PUBLIC_ENDPOINT`/`STORAGE_PUBLIC_PORT`/`STORAGE_PUBLIC_USE_SSL`을 전부
+분리해 구성한다(자격증명·`STORAGE_PATH_STYLE`·`STORAGE_REGION`은 내부 설정 재사용).
 presigned 서명은 서명 시점 Client의 host/port/scheme으로 만들어지므로, STORAGE-03이
 예고한 "공개 도메인(443/TLS) → nginx → 내부 MinIO(9000/HTTP)" 배포에서 host만
 분리하면 서명된 URL의 scheme/port가 내부값으로 남아 외부에서 접근 불가능해진다.
@@ -25,7 +25,7 @@ presigned 서명은 서명 시점 Client의 host/port/scheme으로 만들어지�
 - **임시 복호화 사본을 만들어 `ENCRYPTED` namespace도 presigned 지원**: TTL 관리·정리
   로직·추가 저장 공간이 필요하고, 복호화된 사본이 잠시라도 별도 위치에 존재하게 돼
   공격 표면이 늘어난다. STORAGE-02 스코프를 넘는다고 보고 보류했다.
-- **`MINIO_PUBLIC_ENDPOINT`만 분리하고 port/TLS는 내부 설정 재사용**: env var 수가
+- **`STORAGE_PUBLIC_ENDPOINT`만 분리하고 port/TLS는 내부 설정 재사용**: env var 수가
   적어 단순하지만, TLS를 종료하는 리버스 프록시(STORAGE-03) 뒤에서는 서명이 깨지는
   실제 배포 형태를 지원하지 못해 보류했다.
 

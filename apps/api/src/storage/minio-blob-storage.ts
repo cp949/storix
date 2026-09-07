@@ -68,7 +68,7 @@ export class MinioBlobStorage implements BlobStorage {
 
   async getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string> {
     if (!this.presignedClient) {
-      throw new Error('MINIO_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음');
+      throw new Error('STORAGE_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음');
     }
     const reqParams = contentDisposition ? { 'response-content-disposition': contentDisposition } : undefined;
     return this.presignedClient.presignedGetObject(this.bucket, key, expirySeconds, reqParams);

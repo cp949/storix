@@ -71,12 +71,12 @@ describe('Fs HTTP contract', () => {
     process.env.DB_USERNAME = postgresContainer.getUsername();
     process.env.DB_PASSWORD = postgresContainer.getPassword();
     process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.MINIO_ENDPOINT = minioContainer.getHost();
-    process.env.MINIO_PORT = String(minioContainer.getPort());
-    process.env.MINIO_USE_SSL = 'false';
-    process.env.MINIO_ACCESS_KEY = minioContainer.getUsername();
-    process.env.MINIO_SECRET_KEY = minioContainer.getPassword();
-    process.env.MINIO_BUCKET = 'storix-fs-test';
+    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORAGE_USE_SSL = 'false';
+    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORAGE_BUCKET = 'storix-fs-test';
     process.env.MAX_FILE_SIZE_BYTES = String(MAX_FILE_SIZE_BYTES);
     process.env.MAX_SYNC_DELETE_NODES = '5';
     process.env.MAX_SYNC_COPY_NODES = '5';
@@ -88,7 +88,7 @@ describe('Fs HTTP contract', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.MINIO_BUCKET);
+    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

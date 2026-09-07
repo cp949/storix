@@ -17,8 +17,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-storix}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-storix-secret}
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-storix}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-storix-secret}
     volumes:
       - minio-data:/data
     healthcheck:
@@ -32,8 +32,8 @@ services:
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
-        mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY:-storix} ${MINIO_SECRET_KEY:-storix-secret} &&
-        mc mb --ignore-existing local/${MINIO_BUCKET:-storix}
+        mc alias set local http://minio:9000 ${STORAGE_ACCESS_KEY:-storix} ${STORAGE_SECRET_KEY:-storix-secret} &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET:-storix}
     depends_on:
       minio:
         condition: service_healthy
@@ -65,14 +65,14 @@ services:
       DB_USERNAME: ${DB_USERNAME:-storix}
       DB_PASSWORD: ${DB_PASSWORD:-storix}
       DB_NAME: ${DB_NAME:-storix}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: 'false'
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
-      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
-      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
-      MINIO_REGION: ${MINIO_REGION:-}
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
       ORPHAN_GRACE_PERIOD: ${ORPHAN_GRACE_PERIOD:-86400}
     depends_on:
       postgres:
@@ -96,14 +96,14 @@ services:
       DB_USERNAME: ${DB_USERNAME:-storix}
       DB_PASSWORD: ${DB_PASSWORD:-storix}
       DB_NAME: ${DB_NAME:-storix}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: 'false'
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
-      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
-      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
-      MINIO_REGION: ${MINIO_REGION:-}
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
     volumes:
       - ./backups:/backups
@@ -129,14 +129,14 @@ services:
       DB_USERNAME: ${DB_USERNAME:-storix}
       DB_PASSWORD: ${DB_PASSWORD:-storix}
       DB_NAME: ${DB_NAME:-storix}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: 'false'
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
-      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
-      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
-      MINIO_REGION: ${MINIO_REGION:-}
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
       # `${VAR:?}` 마커는 profile 필터링보다 먼저, 파일 전체에 대해 평가된다 —
       # 여기에 쓰면 restore profile을 쓰지 않는 모든 compose 명령까지 중단시킨다.
       # 미설정(빈 문자열) 검출은 RestoreJob 생성자가 실제 복구 실행 시점에만
@@ -168,17 +168,17 @@ services:
       DB_USERNAME: ${DB_USERNAME:-storix}
       DB_PASSWORD: ${DB_PASSWORD:-storix}
       DB_NAME: ${DB_NAME:-storix}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: 'false'
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
-      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
-      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
-      MINIO_REGION: ${MINIO_REGION:-}
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
-      MINIO_PUBLIC_PORT: ${MINIO_PUBLIC_PORT:-9000}
-      MINIO_PUBLIC_USE_SSL: ${MINIO_PUBLIC_USE_SSL:-false}
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
+      STORAGE_PUBLIC_PORT: ${STORAGE_PUBLIC_PORT:-9000}
+      STORAGE_PUBLIC_USE_SSL: ${STORAGE_PUBLIC_USE_SSL:-false}
       MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-5368709120}
       MAX_SYNC_DELETE_NODES: ${MAX_SYNC_DELETE_NODES:-1000}
       MAX_SYNC_COPY_NODES: ${MAX_SYNC_COPY_NODES:-1000}

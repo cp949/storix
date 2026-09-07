@@ -153,8 +153,8 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 - [x] STORAGE-01: MinIO 구현체에 커스텀 엔드포인트 설정(`Endpoint`,
       path-style 옵션) 노출 — S3/MinIO/VersityGW 공통 지원
 - [x] STORAGE-02: **Presigned download URL 발급** — `BlobStorage`에 presigned
-      URL 메서드를 추가한다. 내부 통신용 `MINIO_ENDPOINT`와 외부에서 접근
-      가능한 `MINIO_PUBLIC_ENDPOINT`를 분리해 설정한다(같은 값을 쓰면 서명된
+      URL 메서드를 추가한다. 내부 통신용 `STORAGE_ENDPOINT`와 외부에서 접근
+      가능한 `STORAGE_PUBLIC_ENDPOINT`를 분리해 설정한다(같은 값을 쓰면 서명된
       URL의 host가 내부 전용 이름이 되어 외부에서 못 찾는다). 발급 API는
       `SEC-01` 인증을 거친다.
 - [x] STORAGE-03: **nginx reverse-proxy 샘플** — `docker-compose`에 nginx
