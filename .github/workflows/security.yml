@@ -1,0 +1,47 @@
+name: 보안 스캔
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    name: 의존성 취약점 검사
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+      - name: Node 설정
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - name: 의존성 설치
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: HIGH 이상 의존성 취약점 차단
+        run: pnpm audit --audit-level=high
+
+  container-image-audit:
+    name: API 이미지 취약점 검사
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+      - name: API runtime 이미지 빌드
+        run: docker build -t storix-api:security -f apps/api/Dockerfile .
+      - name: HIGH 이상 이미지 취약점 차단
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: storix-api:security
+          format: table
+          exit-code: '1'
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln
