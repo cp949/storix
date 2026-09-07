@@ -1,6 +1,7 @@
 import { ArgumentsHost, Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DomainErrorFilter } from './domain-error.filter.js';
+import type { ErrorReporter } from '../observability/error-reporter.js';
 
 function createHost(requestId = 'req-1') {
   const json = jest.fn();
@@ -8,11 +9,15 @@ function createHost(requestId = 'req-1') {
   const host = {
     switchToHttp: () => ({
       getResponse: () => ({ status }),
-      getRequest: () => ({ requestId }),
+      getRequest: () => ({ requestId, method: 'POST', originalUrl: '/namespaces/ns-1/files' }),
     }),
   } as unknown as ArgumentsHost;
 
   return { host, json, status };
+}
+
+function createFakeErrorReporter(): jest.Mocked<ErrorReporter> {
+  return { report: jest.fn() };
 }
 
 class FooError extends Error {
@@ -135,6 +140,43 @@ describe('DomainErrorFilter', () => {
     expect(json).toHaveBeenCalledWith({
       code: 'BAD_REQUEST',
       message: 'Unexpected token b in JSON',
+      requestId: 'req-1',
+    });
+  });
+
+  it('500 에러가 발생하면 주입된 ErrorReporter.report를 호출한다', () => {
+    const errorReporter = createFakeErrorReporter();
+    const filterWithReporter = new DomainErrorFilter(errorReporter);
+    const { host } = createHost();
+    const originalError = new Error('storage key sk-123.bin 읽기 실패');
+
+    filterWithReporter.catch(originalError, host);
+
+    expect(errorReporter.report).toHaveBeenCalledWith(originalError, {
+      requestId: 'req-1',
+      path: 'POST /namespaces/ns-1/files',
+    });
+  });
+
+  it('4xx 에러는 ErrorReporter.report를 호출하지 않는다', () => {
+    const errorReporter = createFakeErrorReporter();
+    const filterWithReporter = new DomainErrorFilter(errorReporter);
+    const { host } = createHost();
+
+    filterWithReporter.catch(new FooError('foo happened'), host);
+
+    expect(errorReporter.report).not.toHaveBeenCalled();
+  });
+
+  it('ErrorReporter가 주입되지 않아도 500 처리에 영향을 주지 않는다', () => {
+    const filterWithoutReporter = new DomainErrorFilter();
+    const { host, json, status } = createHost();
+
+    expect(() => filterWithoutReporter.catch(new Error('boom'), host)).not.toThrow();
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error',
       requestId: 'req-1',
     });
   });
