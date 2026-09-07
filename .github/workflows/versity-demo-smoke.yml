@@ -1,0 +1,108 @@
+name: VersityGW 데모 스모크 테스트
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.versity-demo.yml'
+      - 'docker-compose.versity-demo.ci.yml'
+      - 'apps/api/**'
+      - '.github/workflows/versity-demo-smoke.yml'
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.versity-demo.yml'
+      - 'docker-compose.versity-demo.ci.yml'
+      - 'apps/api/**'
+      - '.github/workflows/versity-demo-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_FILES: >-
+    -f docker-compose.yml
+    -f docker-compose.versity-demo.yml
+    -f docker-compose.versity-demo.ci.yml
+
+jobs:
+  smoke:
+    name: VersityGW 백엔드 업로드/다운로드 라운드트립
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+
+      - name: .env 생성
+        run: |
+          cp .env.example .env
+          API_KEY=$(openssl rand -hex 32)
+          sed -i "s|^API_KEY=.*|API_KEY=${API_KEY}|" .env
+          sed -i "s|^STORAGE_PUBLIC_ENDPOINT=.*|STORAGE_PUBLIC_ENDPOINT=localhost|" .env
+          sed -i "s|^STORAGE_PUBLIC_PORT=.*|STORAGE_PUBLIC_PORT=7070|" .env
+          echo "API_KEY=${API_KEY}" >> "$GITHUB_ENV"
+
+      - name: VersityGW 백엔드 스택 기동
+        run: docker compose ${{ env.COMPOSE_FILES }} up -d --build
+
+      - name: app 헬스체크 대기 (/health/ready)
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:3000/health/ready > /dev/null; then
+              echo "app ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::app이 /health/ready에 응답하지 않음 (60초 타임아웃)" >&2
+          exit 1
+
+      - name: 업로드/다운로드/presigned-download 라운드트립
+        run: |
+          set -euo pipefail
+
+          payload="versity-demo smoke $(date -u +%FT%TZ)"
+          auth_header="Authorization: Bearer ${API_KEY}"
+
+          namespace_response=$(curl -sf -X POST http://localhost:3000/api/v1/namespaces \
+            -H "$auth_header" \
+            -H "Idempotency-Key: versity-smoke-$(date +%s)" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"versity-smoke","encryptionPolicy":"NONE"}')
+          namespace_id=$(echo "$namespace_response" | jq -r '.id')
+          echo "namespace: $namespace_id"
+
+          curl -sf -X PUT "http://localhost:3000/api/v1/namespaces/${namespace_id}/fs/content?path=smoke.txt&parents=true" \
+            -H "$auth_header" \
+            -H 'Content-Type: text/plain' \
+            --data-binary "$payload" > /dev/null
+
+          downloaded=$(curl -sf "http://localhost:3000/api/v1/namespaces/${namespace_id}/fs/content?path=smoke.txt" \
+            -H "$auth_header")
+          if [ "$downloaded" != "$payload" ]; then
+            echo "::error::API content 다운로드 결과 불일치: 기대='$payload' 실제='$downloaded'" >&2
+            exit 1
+          fi
+
+          presigned_response=$(curl -sf "http://localhost:3000/api/v1/namespaces/${namespace_id}/fs/presigned-download?path=smoke.txt" \
+            -H "$auth_header")
+          presigned_url=$(echo "$presigned_response" | jq -r '.url')
+          echo "presigned url: $presigned_url"
+
+          presigned_content=$(curl -sf "$presigned_url")
+          if [ "$presigned_content" != "$payload" ]; then
+            echo "::error::presigned URL 다운로드 결과 불일치: 기대='$payload' 실제='$presigned_content'" >&2
+            exit 1
+          fi
+
+          echo "VersityGW 백엔드 업로드/다운로드/presigned-download 라운드트립 성공"
+
+      - name: 컨테이너 로그 출력 (실패 시 진단용)
+        if: always()
+        run: docker compose ${{ env.COMPOSE_FILES }} logs
+
+      - name: 컨테이너 정리
+        if: always()
+        run: docker compose ${{ env.COMPOSE_FILES }} down -v
