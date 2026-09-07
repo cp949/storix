@@ -68,6 +68,14 @@ export class RestoreJob {
 
   private async restoreObjectsFromLocalDir(sourceDir: string): Promise<number> {
     const minioDir = path.join(sourceDir, 'minio');
+    if (!(await this.pathExists(minioDir))) {
+      // 백업 시점에 MinIO object가 하나도 없었다면 BackupJob이 'minio/'
+      // 디렉터리 자체를 만들지 않는다(mirrorObjectsToLocalDir의 mkdir이
+      // list() 루프 본문 안에서만 실행되므로). 이 경우는 정상적인
+      // "object 0건짜리 백업"이지 오류가 아니다.
+      return 0;
+    }
+
     const filePaths = await this.listFilesRecursively(minioDir);
     let count = 0;
     for (const filePath of filePaths) {
@@ -76,6 +84,18 @@ export class RestoreJob {
       count += 1;
     }
     return count;
+  }
+
+  private async pathExists(target: string): Promise<boolean> {
+    try {
+      await fs.stat(target);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false;
+      }
+      throw error;
+    }
   }
 
   private async listFilesRecursively(dir: string): Promise<string[]> {
