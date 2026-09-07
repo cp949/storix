@@ -55,7 +55,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       );
       this.errorReporter?.report(exception instanceof Error ? exception : new Error(String(exception)), {
         requestId: request.requestId,
-        path: `${request.method} ${request.originalUrl ?? request.url}`,
+        path: `${request.method} ${request.path}`,
       });
       response.status(500).json({
         code: 'INTERNAL_ERROR',

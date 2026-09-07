@@ -9,7 +9,7 @@ function createHost(requestId = 'req-1') {
   const host = {
     switchToHttp: () => ({
       getResponse: () => ({ status }),
-      getRequest: () => ({ requestId, method: 'POST', originalUrl: '/namespaces/ns-1/files' }),
+      getRequest: () => ({ requestId, method: 'POST', path: '/namespaces/ns-1/files' }),
     }),
   } as unknown as ArgumentsHost;
 
@@ -155,6 +155,31 @@ describe('DomainErrorFilter', () => {
     expect(errorReporter.report).toHaveBeenCalledWith(originalError, {
       requestId: 'req-1',
       path: 'POST /namespaces/ns-1/files',
+    });
+  });
+
+  it('요청 URL에 쿼리스트링이 있어도 ErrorReporter에는 쿼리스트링을 제외한 path만 전달한다', () => {
+    const errorReporter = createFakeErrorReporter();
+    const filterWithReporter = new DomainErrorFilter(errorReporter);
+    const json = jest.fn();
+    const status = jest.fn(() => ({ json }));
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          requestId: 'req-1',
+          method: 'GET',
+          path: '/namespaces/ns-1/files',
+          originalUrl: '/namespaces/ns-1/files?presigned-signature=secret-token',
+        }),
+      }),
+    } as unknown as ArgumentsHost;
+
+    filterWithReporter.catch(new Error('boom'), host);
+
+    expect(errorReporter.report).toHaveBeenCalledWith(expect.any(Error), {
+      requestId: 'req-1',
+      path: 'GET /namespaces/ns-1/files',
     });
   });
 
