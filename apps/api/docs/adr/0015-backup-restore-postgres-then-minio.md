@@ -45,9 +45,15 @@ blob row를 커밋한다(object-먼저-metadata-나중). 따라서 Postgres 스�
 
 ## restore는 기본적으로 파괴적 작업을 거부한다
 
-`restore:run`은 대상 Postgres/MinIO가 비어있지 않으면 기본적으로 에러로 중단하고,
-`--force`를 명시해야 덮어쓰기를 진행한다. 오작동으로 라이브 인스턴스에 restore를
-돌려 데이터를 덮어쓰는 사고가, 복구 편의성보다 훨씬 비싸다.
+`restore:run`은 대상이 비어있지 않으면 기본적으로 에러로 중단하고,
+`RESTORE_FORCE=true`를 명시해야 덮어쓰기를 진행한다. 오작동으로 라이브 인스턴스에
+restore를 돌려 데이터를 덮어쓰는 사고가, 복구 편의성보다 훨씬 비싸다.
+
+"비어있지 않다"의 판정 기준은 Postgres의 namespace row 개수 하나뿐이다
+(`BackupRepository.hasExistingNamespaces()`). MinIO 버킷 내용은 이 게이트에서
+보지 않는다 — namespace가 0건이면 버킷에 떠도는 object가 남아 있어도 force 없이
+복구가 진행된다. namespace가 Storix 데이터의 최상위 소유자이므로, namespace가
+0건인 대상은 "지울 사용자 데이터가 없는" 인스턴스로 본다.
 
 ## 검증
 
