@@ -84,6 +84,73 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  backup:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ['pnpm', '--filter', '@storix/api', 'run', 'backup:run:prod']
+    profiles: ['backup']
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-storix}
+      DB_PASSWORD: ${DB_PASSWORD:-storix}
+      DB_NAME: ${DB_NAME:-storix}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: 'false'
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
+      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
+      MINIO_REGION: ${MINIO_REGION:-}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+  restore:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ['pnpm', '--filter', '@storix/api', 'run', 'restore:run:prod']
+    profiles: ['restore']
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-storix}
+      DB_PASSWORD: ${DB_PASSWORD:-storix}
+      DB_NAME: ${DB_NAME:-storix}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: 'false'
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-storix}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-storix-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-storix}
+      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-}
+      MINIO_REGION: ${MINIO_REGION:-}
+      RESTORE_SOURCE_DIR: ${RESTORE_SOURCE_DIR:?RESTORE_SOURCE_DIR must be set to a specific backup directory, e.g. /backups/2026-09-08T12-00-00-000Z}
+      RESTORE_FORCE: ${RESTORE_FORCE:-false}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
   app:
     build:
       context: .

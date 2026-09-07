@@ -21,8 +21,12 @@ blob row를 커밋한다(object-먼저-metadata-나중). 따라서 Postgres 스�
 
 - **Postgres**: `pg_dump` 논리 백업만 쓴다. PITR(`pg_basebackup`+WAL 아카이빙)은 단일
   고객 인스턴스 규모에서 과설계이고, WAL 목적지 관리라는 별도 운영 부담을 지운다.
-- **MinIO**: `mc mirror`로 로컬 경로에 복사한다. Blob이 불변(같은 storage key의 내용이
-  바뀌지 않음)이라 실행 중인 MinIO에 대해서도 무중단·증분 복사가 안전하다.
+- **MinIO**: 별도로 `mc` 바이너리를 이미지에 추가하지 않고, 이미 앱 전역에서
+  쓰는 `BlobStorage`(MinIO JS SDK 래퍼) 인터페이스로 버킷 전체를 순회하며
+  로컬 경로에 복사한다. `mc mirror`와 목표(무중단 전체 복사)는 같지만, 새
+  바이너리 의존성이 늘지 않고 기존 통합 테스트 하네스로 그대로 검증된다.
+  Blob이 불변이라는 성질은 동일하게 적용된다 — 실행 중인 MinIO에 대해서도
+  무중단·안전하게 복사할 수 있다.
 - **목적지**: 로컬 파일시스템만 지원한다. 오프호스트 반출과 보존(retention) 정책은
   운영자 책임으로 남기고, Storix는 백업마다 `{BACKUP_DIR}/{ISO8601}/` 형태의 타임스탬프
   디렉터리만 만들어 운영자가 자신의 툴(rsync, restic, logrotate류 등)로 다루기 쉽게

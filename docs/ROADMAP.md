@@ -168,7 +168,7 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
       인터페이스 + 활성화 목록 구조로 설계해 Prometheus/OTel 등 여러 개를
       동시에 켤 수 있게 한다(imgproxy `monitoring/`, `errorreport/` 패턴
       참고).
-- [ ] OPS-02: **백업/복구** — Storix는 Postgres(metadata) + MinIO(object)
+- [x] OPS-02: **백업/복구** — Storix는 Postgres(metadata) + MinIO(object)
       양쪽에 상태를 가지므로 참고할 기존 사례가 없다 — 별도로 설계해야 한다.
 
 ## 4. 배포/온보딩 경험
