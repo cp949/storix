@@ -22,7 +22,11 @@
     "migration:generate": "typeorm-ts-node-esm migration:generate -d src/persistence/data-source.ts",
     "migration:run:prod": "typeorm migration:run -d dist/persistence/data-source.js",
     "gc:run": "pnpm build && node dist/gc-main.js",
-    "gc:run:prod": "node dist/gc-main.js"
+    "gc:run:prod": "node dist/gc-main.js",
+    "backup:run": "pnpm build && node dist/backup-main.js",
+    "backup:run:prod": "node dist/backup-main.js",
+    "restore:run": "pnpm build && node dist/restore-main.js",
+    "restore:run:prod": "node dist/restore-main.js"
   },
   "dependencies": {
     "@nestjs/common": "12.0.1",

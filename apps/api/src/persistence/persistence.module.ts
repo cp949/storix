@@ -11,6 +11,7 @@ import { AuditLogRepository } from './audit-log.repository.js';
 import { BlobRepository } from './blob.repository.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
+import { BackupRepository } from './backup.repository.js';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { VfsNodeRepository } from './vfs-node.repository.js';
     }),
     TypeOrmModule.forFeature([NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity]),
   ],
-  providers: [NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository],
-  exports: [TypeOrmModule, NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository],
+  providers: [NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
+  exports: [TypeOrmModule, NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
 })
 export class PersistenceModule {}
