@@ -27,3 +27,7 @@ export function parseBoolean(value: string | undefined, fallback: boolean): bool
 
   return value.toLowerCase() === 'true';
 }
+
+export function parseOptionalString(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
+}

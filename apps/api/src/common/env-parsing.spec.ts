@@ -1,4 +1,4 @@
-import { parseBoolean, parsePositiveInt, requireEnv } from './env-parsing.js';
+import { parseBoolean, parseOptionalString, parsePositiveInt, requireEnv } from './env-parsing.js';
 
 describe('parsePositiveInt', () => {
   it('값이 없으면 fallback을 반환한다', () => {
@@ -39,6 +39,20 @@ describe('parseBoolean', () => {
   it('true가 아닌 값은 false로 처리한다', () => {
     expect(parseBoolean('false', true)).toBe(false);
     expect(parseBoolean('1', true)).toBe(false);
+  });
+});
+
+describe('parseOptionalString', () => {
+  it('값이 없으면 undefined를 반환한다', () => {
+    expect(parseOptionalString(undefined)).toBeUndefined();
+  });
+
+  it('빈 문자열이면 undefined를 반환한다', () => {
+    expect(parseOptionalString('')).toBeUndefined();
+  });
+
+  it('값이 있으면 그대로 반환한다', () => {
+    expect(parseOptionalString('us-east-1')).toBe('us-east-1');
   });
 });
 

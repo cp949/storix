@@ -150,7 +150,7 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 설정으로 노출하는 것으로 끝난다(imgproxy의 s3 백엔드 구조 참고). 기존
 `BlobStorage` 인터페이스는 유지한다. 별도 어댑터 계층은 만들지 않는다.
 
-- [ ] STORAGE-01: MinIO 구현체에 커스텀 엔드포인트 설정(`Endpoint`,
+- [x] STORAGE-01: MinIO 구현체에 커스텀 엔드포인트 설정(`Endpoint`,
       path-style 옵션) 노출 — S3/MinIO/VersityGW 공통 지원
 - [ ] STORAGE-02: **Presigned download URL 발급** — `BlobStorage`에 presigned
       URL 메서드를 추가한다. 내부 통신용 `MINIO_ENDPOINT`와 외부에서 접근
