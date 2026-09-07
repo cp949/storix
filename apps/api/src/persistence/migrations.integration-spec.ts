@@ -5,10 +5,12 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
 import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
 import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
+import { AddAuditLog1789200000000 } from './migrations/1789200000000-AddAuditLog.js';
 import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
 
 describe('Migration: InitSchema', () => {
@@ -21,13 +23,14 @@ describe('Migration: InitSchema', () => {
       type: 'postgres',
       url: container.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
       migrations: [
         InitSchema1788637362016,
         AddIdempotencyKey1788700000000,
         AddBlobZeroSince1788800000000,
         AddNamespaceResourceLimits1789000000000,
         AddEncryptionSupport1789100000000,
+        AddAuditLog1789200000000,
       ],
     });
     await dataSource.initialize();
@@ -407,6 +410,62 @@ describe('Migration: InitSchema', () => {
           }),
         ),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('audit_log 테이블', () => {
+    it('필수 필드만으로 row를 생성할 수 있고 나머지는 NULL이다', async () => {
+      const repo = dataSource.getRepository(AuditLogEntity);
+      const saved = await repo.save(
+        repo.create({ requestId: 'req-minimal', operation: 'FsController.ls', status: 200 }),
+      );
+
+      const found = await repo.findOneByOrFail({ id: saved.id });
+
+      expect(found.namespaceId).toBeNull();
+      expect(found.path).toBeNull();
+      expect(found.detail).toBeNull();
+      expect(found.caller).toBeNull();
+      expect(found.createdAt).toBeInstanceOf(Date);
+    });
+
+    it('존재하지 않는 namespace_id를 참조하면 FK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(AuditLogEntity);
+
+      await expect(
+        repo.save(
+          repo.create({
+            requestId: 'req-fk',
+            namespaceId: randomUUID(),
+            operation: 'FsController.mkdir',
+            status: 201,
+          }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('path/detail/caller를 채워 저장하고 그대로 조회한다', async () => {
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'audit-log-owner' }));
+      const repo = dataSource.getRepository(AuditLogEntity);
+
+      const saved = await repo.save(
+        repo.create({
+          requestId: 'req-full',
+          namespaceId: namespace.id,
+          operation: 'FsController.mv',
+          path: '/a.txt',
+          detail: { source: '/a.txt', destination: '/b.txt' },
+          caller: 'billing-service',
+          status: 200,
+        }),
+      );
+
+      const found = await repo.findOneByOrFail({ id: saved.id });
+
+      expect(found.path).toBe('/a.txt');
+      expect(found.detail).toEqual({ source: '/a.txt', destination: '/b.txt' });
+      expect(found.caller).toBe('billing-service');
     });
   });
 });
