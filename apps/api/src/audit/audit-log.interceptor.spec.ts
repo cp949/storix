@@ -90,7 +90,10 @@ describe('AuditLogInterceptor', () => {
   });
 
   it('응답이 끝나면 requestId/namespaceId/operation/path/status를 기록한다', (done) => {
-    const { context, response } = createContext({ namespaceId: 'ns-1' }, { query: { path: '/a.txt' } });
+    const { context, response } = createContext(
+      { namespaceId: '11111111-1111-1111-1111-111111111111' },
+      { query: { path: '/a.txt' } },
+    );
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
     createInterceptor()
@@ -99,7 +102,7 @@ describe('AuditLogInterceptor', () => {
         response.emit('close');
         expect(auditLogRepository.record).toHaveBeenCalledWith({
           requestId: 'req-1',
-          namespaceId: 'ns-1',
+          namespaceId: '11111111-1111-1111-1111-111111111111',
           operation: 'FsController.mkdir',
           path: '/a.txt',
           detail: null,
@@ -111,14 +114,29 @@ describe('AuditLogInterceptor', () => {
   });
 
   it('namespace 라우트처럼 params.id만 있으면 이를 namespaceId로 기록한다', (done) => {
-    const { context, response } = createContext({ id: 'ns-2' });
+    const { context, response } = createContext({ id: '22222222-2222-2222-2222-222222222222' });
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
     createInterceptor()
       .intercept(context, handler)
       .subscribe(() => {
         response.emit('close');
-        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({ namespaceId: 'ns-2' });
+        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({
+          namespaceId: '22222222-2222-2222-2222-222222222222',
+        });
+        done();
+      });
+  });
+
+  it('params.id가 UUID 형식이 아니면 namespaceId를 null로 기록한다', (done) => {
+    const { context, response } = createContext({ id: 'not-a-uuid' });
+    const handler: CallHandler = { handle: () => of({ ok: true }) };
+
+    createInterceptor()
+      .intercept(context, handler)
+      .subscribe(() => {
+        response.emit('close');
+        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({ namespaceId: null });
         done();
       });
   });

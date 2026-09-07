@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
+import { isUuid } from '../common/uuid.js';
 import { AuditLogRepository } from '../persistence/audit-log.repository.js';
 
 const CALLER_ID_HEADER = 'x-caller-id';
@@ -16,9 +17,19 @@ export function resolveCallerId(header: string | string[] | undefined): string |
   return typeof value === 'string' && VALID_CALLER_ID.test(value) ? value : null;
 }
 
+const MAX_AUDIT_STRING_LENGTH = 4096;
+const CONTROL_CHARS = /[\x00-\x1f]/g;
+
+// 요청 본문/쿼리는 공격자가 임의로 채울 수 있으므로, DB 컬럼(text/jsonb)이 거부하는
+// NUL 등 제어 문자를 저장 전에 제거하고 길이를 제한해 감사 로그 기록 자체가
+// 실패해 누락되는 일을 막는다.
+function sanitizeAuditString(value: string): string {
+  return value.replace(CONTROL_CHARS, '').slice(0, MAX_AUDIT_STRING_LENGTH);
+}
+
 function resolveStringField(source: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = source?.[key];
-  return typeof value === 'string' ? value : undefined;
+  return typeof value === 'string' ? sanitizeAuditString(value) : undefined;
 }
 
 @Injectable()
@@ -63,9 +74,11 @@ export class AuditLogInterceptor implements NestInterceptor {
     return next.handle();
   }
 
+  // params.id는 현재 NamespaceController(:id)만 쓰고 그 값은 항상 namespace id이므로 이 heuristic이
+  // 성립한다. 앞으로 :id를 다른 의미로 쓰는 컨트롤러가 생기면 이 가정을 재검토해야 한다.
   private resolveNamespaceId(request: Request): string | null {
     const value = request.params.namespaceId ?? request.params.id;
-    return typeof value === 'string' ? value : null;
+    return typeof value === 'string' && isUuid(value) ? value : null;
   }
 
   private resolvePath(request: Request): string | null {

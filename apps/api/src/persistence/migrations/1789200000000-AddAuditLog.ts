@@ -8,7 +8,7 @@ export class AddAuditLog1789200000000 implements MigrationInterface {
       CREATE TABLE "audit_log" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "request_id" varchar(200) NOT NULL,
-        "namespace_id" uuid REFERENCES "namespace" ("id"),
+        "namespace_id" uuid,
         "operation" varchar(128) NOT NULL,
         "path" text,
         "detail" jsonb,

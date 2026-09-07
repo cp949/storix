@@ -429,19 +429,21 @@ describe('Migration: InitSchema', () => {
       expect(found.createdAt).toBeInstanceOf(Date);
     });
 
-    it('존재하지 않는 namespace_id를 참조하면 FK 제약 위반으로 거부된다', async () => {
+    it('존재하지 않는 namespace_id를 참조해도 저장된다(감사 로그는 FK로 namespace 존재를 검증하지 않는다 — 존재하지 않는 namespace 접근 시도 자체가 기록 대상)', async () => {
       const repo = dataSource.getRepository(AuditLogEntity);
+      const unknownNamespaceId = randomUUID();
 
-      await expect(
-        repo.save(
-          repo.create({
-            requestId: 'req-fk',
-            namespaceId: randomUUID(),
-            operation: 'FsController.mkdir',
-            status: 201,
-          }),
-        ),
-      ).rejects.toThrow();
+      const saved = await repo.save(
+        repo.create({
+          requestId: 'req-unknown-namespace',
+          namespaceId: unknownNamespaceId,
+          operation: 'FsController.mkdir',
+          status: 404,
+        }),
+      );
+
+      const found = await repo.findOneByOrFail({ id: saved.id });
+      expect(found.namespaceId).toBe(unknownNamespaceId);
     });
 
     it('path/detail/caller를 채워 저장하고 그대로 조회한다', async () => {
