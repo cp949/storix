@@ -125,6 +125,36 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  nginx-cert-init:
+    image: alpine:3.21
+    profiles: ['nginx-demo']
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        apk add --no-cache openssl &&
+        openssl req -x509 -nodes -newkey rsa:2048 \
+          -keyout /certs/nginx.key -out /certs/nginx.crt \
+          -days 3650 \
+          -subj "/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    volumes:
+      - nginx-certs:/certs
+
+  nginx:
+    image: nginx:1.27-alpine
+    profiles: ['nginx-demo']
+    ports:
+      - '${NGINX_PUBLIC_PORT:-8443}:443'
+    volumes:
+      - nginx-certs:/etc/nginx/certs:ro
+      - ./docs/deployment/nginx-reverse-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      nginx-cert-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   minio-data:
+  nginx-certs:
