@@ -14,3 +14,6 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# 백업 산출물 — docker-compose의 backup/restore 서비스가 ./backups를 바인드 마운트한다
+/backups/

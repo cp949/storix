@@ -17,14 +17,16 @@ ENV NODE_ENV=production
 # postgresql-client(Debian bookworm 기본 저장소는 15만 제공 — 대상 Postgres
 # major(16)보다 낮은 client로는 pg_dump/pg_restore가 버전 불일치로 하드
 # 실패한다. PGDG 저장소로 정확한 major 버전을 설치한다.
+# 키는 armored(.asc) 그대로 signed-by에 지정한다 — bookworm의 apt는 armored 키를
+# 직접 읽으므로 gnupg/dearmor가 필요 없다.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
   && install -d /usr/share/postgresql-common/pgdg \
   && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc \
   && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends postgresql-client-16 \
-  && apt-get purge -y curl gnupg \
+  && apt-get purge -y curl \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=pruner /repo/out/json/ .
