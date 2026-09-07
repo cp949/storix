@@ -3,6 +3,7 @@ import path from 'node:path';
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { parsePositiveInt, requireEnv } from '../common/env-parsing.js';
+import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
@@ -18,6 +19,6 @@ export const AppDataSource = new DataSource({
   password: requireEnv('DB_PASSWORD'),
   database: requireEnv('DB_NAME'),
   synchronize: false,
-  entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+  entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
   migrations: [dirname + '/migrations/*.{ts,js}'],
 });
