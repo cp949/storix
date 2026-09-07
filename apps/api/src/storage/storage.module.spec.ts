@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { buildMinioClientOptions } from './storage.module.js';
+import { buildMinioClientOptions, buildMinioPublicClientOptions } from './storage.module.js';
 
 function stubConfig(values: Record<string, string | undefined>): ConfigService {
   return {
@@ -43,5 +43,51 @@ describe('buildMinioClientOptions', () => {
     const options = buildMinioClientOptions(stubConfig({ ...REQUIRED, MINIO_REGION: 'us-east-1' }));
 
     expect(options.region).toBe('us-east-1');
+  });
+});
+
+describe('buildMinioPublicClientOptions', () => {
+  it('MINIO_PUBLIC_ENDPOINT가 없으면 null을 반환한다', () => {
+    const options = buildMinioPublicClientOptions(stubConfig(REQUIRED));
+
+    expect(options).toBeNull();
+  });
+
+  it('MINIO_PUBLIC_ENDPOINT가 있으면 port/useSSL 기본값과 함께 옵션을 반환한다', () => {
+    const options = buildMinioPublicClientOptions(
+      stubConfig({ ...REQUIRED, MINIO_PUBLIC_ENDPOINT: 'storage.example.com' }),
+    );
+
+    expect(options?.endPoint).toBe('storage.example.com');
+    expect(options?.port).toBe(9000);
+    expect(options?.useSSL).toBe(false);
+  });
+
+  it('MINIO_PUBLIC_PORT/MINIO_PUBLIC_USE_SSL을 지정하면 그대로 반영한다', () => {
+    const options = buildMinioPublicClientOptions(
+      stubConfig({
+        ...REQUIRED,
+        MINIO_PUBLIC_ENDPOINT: 'storage.example.com',
+        MINIO_PUBLIC_PORT: '443',
+        MINIO_PUBLIC_USE_SSL: 'true',
+      }),
+    );
+
+    expect(options?.port).toBe(443);
+    expect(options?.useSSL).toBe(true);
+  });
+
+  it('MINIO_PATH_STYLE/MINIO_REGION은 내부 설정을 그대로 재사용한다', () => {
+    const options = buildMinioPublicClientOptions(
+      stubConfig({
+        ...REQUIRED,
+        MINIO_PUBLIC_ENDPOINT: 'storage.example.com',
+        MINIO_PATH_STYLE: 'false',
+        MINIO_REGION: 'us-east-1',
+      }),
+    );
+
+    expect(options?.pathStyle).toBe(false);
+    expect(options?.region).toBe('us-east-1');
   });
 });

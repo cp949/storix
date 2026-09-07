@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { parsePositiveInt } from '../common/env-parsing.js';
+import { buildContentDisposition } from './content-disposition.js';
 import { EncryptingPutTarget, getEncrypted } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { EncryptionPolicy } from '../persistence/entities/namespace.entity.js';
@@ -18,7 +19,7 @@ import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { requireRootWithLimits } from './require-root.js';
-import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
+import { VfsIsDirectoryError, VfsNodeNotFoundError, VfsPresignedEncryptedUnsupportedError } from './vfs.errors.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
 
@@ -39,6 +40,11 @@ export interface ContentPayload {
   readonly stream: Readable;
 }
 
+export interface PresignedDownloadPayload {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
 function parseIfMatch(raw: string | undefined): number | null {
   if (!raw) {
     return null;
@@ -54,6 +60,7 @@ function parseIfMatch(raw: string | undefined): number | null {
 @Injectable()
 export class ContentService {
   private readonly maxFileSizeBytes: number;
+  private readonly presignedUrlExpirySeconds: number;
 
   constructor(
     private readonly pathResolver: PathResolver,
@@ -64,6 +71,7 @@ export class ContentService {
     config: ConfigService,
   ) {
     this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('MAX_FILE_SIZE_BYTES'), 1);
+    this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('PRESIGNED_URL_EXPIRY_SECONDS'), 300);
   }
 
   async touch(
@@ -196,6 +204,34 @@ export class ContentService {
       contentLength: range.end - range.start + 1,
       stream,
     };
+  }
+
+  async getPresignedDownloadUrl(namespaceId: string, rawPath: string): Promise<PresignedDownloadPayload> {
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
+    const { canonical, segments } = this.pathResolver.resolve(rawPath);
+    const target = segments.length === 0 ? root : await this.repo.resolvePath(namespaceId, root.id, segments);
+
+    if (!target) {
+      throw new VfsNodeNotFoundError(canonical);
+    }
+    if (target.type === 'DIRECTORY') {
+      throw new VfsIsDirectoryError(canonical);
+    }
+    if (limits.encryptionPolicy === 'ENCRYPTED') {
+      throw new VfsPresignedEncryptedUnsupportedError(canonical);
+    }
+
+    const blobInfo = await this.repo.getBlobStorageInfo(namespaceId, target.blobId as string);
+    const { storageKey } = blobInfo as { storageKey: string; encryptionIv: Buffer | null };
+
+    const url = await this.blobStorage.getPresignedUrl(
+      storageKey,
+      this.presignedUrlExpirySeconds,
+      buildContentDisposition(target.name),
+    );
+    const expiresAt = new Date(Date.now() + this.presignedUrlExpirySeconds * 1000).toISOString();
+
+    return { url, expiresAt };
   }
 
   private async putBlobBytes(

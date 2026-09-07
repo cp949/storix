@@ -149,6 +149,11 @@ export class FsController {
     await this.sendContent(res, payload, true);
   }
 
+  @Get('presigned-download')
+  presignedDownload(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
+    return this.contentService.getPresignedDownloadUrl(namespaceId, path ?? '');
+  }
+
   @Get('ls')
   ls(
     @Param('namespaceId') namespaceId: string,

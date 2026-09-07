@@ -16,6 +16,7 @@ export class MinioBlobStorage implements BlobStorage {
   constructor(
     private readonly client: Client,
     private readonly bucket: string,
+    private readonly presignedClient: Client | null,
   ) {}
 
   async put(key: string, stream: Readable, contentType?: string): Promise<void> {
@@ -63,5 +64,13 @@ export class MinioBlobStorage implements BlobStorage {
         yield { key: item.name, lastModified: item.lastModified };
       }
     }
+  }
+
+  async getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string> {
+    if (!this.presignedClient) {
+      throw new Error('MINIO_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음');
+    }
+    const reqParams = contentDisposition ? { 'response-content-disposition': contentDisposition } : undefined;
+    return this.presignedClient.presignedGetObject(this.bucket, key, expirySeconds, reqParams);
   }
 }

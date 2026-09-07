@@ -15,4 +15,5 @@ export interface BlobStorage {
   get(key: string, range?: BlobRange): Promise<Readable>;
   delete(key: string): Promise<void>;
   list(prefix?: string): AsyncIterable<BlobObjectInfo>;
+  getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string>;
 }

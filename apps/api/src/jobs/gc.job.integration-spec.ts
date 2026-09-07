@@ -85,7 +85,7 @@ describe('GcJob 통합', () => {
       secretKey: minioContainer.getPassword(),
     });
     await client.makeBucket(bucket);
-    storage = new MinioBlobStorage(client, bucket);
+    storage = new MinioBlobStorage(client, bucket, null);
 
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'gc-job-owner' }));

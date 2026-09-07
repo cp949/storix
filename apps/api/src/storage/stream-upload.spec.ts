@@ -26,6 +26,10 @@ class RecordingBlobStorage implements BlobStorage {
     throw new Error('구현되지 않음');
   }
 
+  async getPresignedUrl(_key: string, _expirySeconds: number, _contentDisposition?: string): Promise<string> {
+    throw new Error('구현되지 않음');
+  }
+
   async delete(key: string): Promise<void> {
     this.deletedKeys.push(key);
   }
@@ -41,6 +45,10 @@ class PromptlyFailingBlobStorage implements BlobStorage {
   }
 
   async get(_key: string, _range?: BlobRange): Promise<Readable> {
+    throw new Error('구현되지 않음');
+  }
+
+  async getPresignedUrl(_key: string, _expirySeconds: number, _contentDisposition?: string): Promise<string> {
     throw new Error('구현되지 않음');
   }
 
@@ -71,6 +79,10 @@ class SlowConsumingBlobStorage implements BlobStorage {
   }
 
   async get(_key: string, _range?: BlobRange): Promise<Readable> {
+    throw new Error('구현되지 않음');
+  }
+
+  async getPresignedUrl(_key: string, _expirySeconds: number, _contentDisposition?: string): Promise<string> {
     throw new Error('구현되지 않음');
   }
 

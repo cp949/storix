@@ -114,3 +114,12 @@ export class VfsCopyLimitExceededError extends Error {
     super(`복사 대상 Node 수가 상한(${maxNodes})을 초과함`);
   }
 }
+
+export class VfsPresignedEncryptedUnsupportedError extends Error {
+  readonly code = 'VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED';
+  readonly status = 409;
+
+  constructor(readonly path: string) {
+    super(`ENCRYPTED namespace는 presigned 다운로드를 지원하지 않음: ${path}`);
+  }
+}

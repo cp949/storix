@@ -51,7 +51,7 @@ describe('ContentService', () => {
     delete: jest.Mock<() => Promise<void>>;
     list: jest.Mock;
   };
-  let config: { getOrThrow: jest.Mock<() => string> };
+  let config: { getOrThrow: jest.Mock<() => string>; get: jest.Mock<() => string | undefined> };
   let masterKey: Buffer | null;
   let service: ContentService;
 
@@ -80,7 +80,10 @@ describe('ContentService', () => {
       delete: jest.fn(),
       list: jest.fn(),
     };
-    config = { getOrThrow: jest.fn<() => string>().mockReturnValue('1000') };
+    config = {
+      getOrThrow: jest.fn<() => string>().mockReturnValue('1000'),
+      get: jest.fn<() => string | undefined>().mockReturnValue(undefined),
+    };
     masterKey = null;
     service = createService();
   });

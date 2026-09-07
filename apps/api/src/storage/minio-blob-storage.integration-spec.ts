@@ -19,7 +19,7 @@ describe('MinioBlobStorage', () => {
       secretKey: container.getPassword(),
     });
     await client.makeBucket(bucket);
-    storage = new MinioBlobStorage(client, bucket);
+    storage = new MinioBlobStorage(client, bucket, client);
   }, 120000);
 
   afterAll(async () => {
@@ -81,5 +81,34 @@ describe('MinioBlobStorage', () => {
     for await (const chunk of stream) chunks.push(chunk as Buffer);
 
     expect(Buffer.concat(chunks).length).toBe(0);
+  });
+
+  it('presigned URL로 실제 콘텐츠를 직접 받을 수 있다', async () => {
+    const key = 'blobs/ab/test-presigned';
+    await storage.put(key, Readable.from(Buffer.from('presigned content')));
+
+    const url = await storage.getPresignedUrl(key, 300);
+    const response = await fetch(url);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('presigned content');
+  });
+
+  it('contentDisposition을 넘기면 응답 헤더에 그대로 반영된다', async () => {
+    const key = 'blobs/ab/test-presigned-disposition';
+    await storage.put(key, Readable.from(Buffer.from('with filename')));
+
+    const url = await storage.getPresignedUrl(key, 300, 'attachment; filename="report.txt"');
+    const response = await fetch(url);
+
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="report.txt"');
+  });
+
+  it('presignedClient가 없으면 에러를 던진다', async () => {
+    const storageWithoutPublicClient = new MinioBlobStorage(client, bucket, null);
+
+    await expect(storageWithoutPublicClient.getPresignedUrl('any-key', 300)).rejects.toThrow(
+      'MINIO_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음',
+    );
   });
 });

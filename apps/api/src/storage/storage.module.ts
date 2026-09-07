@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { ClientOptions } from 'minio';
 import { Client } from 'minio';
 import { parseBoolean, parseOptionalString, parsePositiveInt } from '../common/env-parsing.js';
-import { BLOB_STORAGE, MINIO_BUCKET, MINIO_CLIENT } from './storage.constants.js';
+import { BLOB_STORAGE, MINIO_BUCKET, MINIO_CLIENT, MINIO_PUBLIC_CLIENT } from './storage.constants.js';
 import { MinioBlobStorage } from './minio-blob-storage.js';
 import { StorageKeyGenerator } from './storage-key-generator.js';
 
@@ -28,11 +28,41 @@ export function buildMinioClientOptions(config: ConfigService): ClientOptions {
   };
 }
 
+// presigned URL 서명은 서명 시점 Client의 host/port/scheme으로 만들어진다. 외부에서
+// 접근 가능한 값(MINIO_PUBLIC_*)이 내부 통신용(MINIO_ENDPOINT 등)과 다를 수 있어
+// 별도 Client로 분리한다(ADR-0013). MINIO_PUBLIC_ENDPOINT가 없으면 presigned 기능을
+// 안 쓰는 배포로 보고 null을 반환한다 — MinioBlobStorage.getPresignedUrl 호출 시점에
+// 에러가 나며, 부팅 자체는 막지 않는다.
+export function buildMinioPublicClientOptions(config: ConfigService): ClientOptions | null {
+  const endPoint = parseOptionalString(config.get<string>('MINIO_PUBLIC_ENDPOINT'));
+  if (!endPoint) {
+    return null;
+  }
+
+  return {
+    endPoint,
+    port: parsePositiveInt(config.get<string>('MINIO_PUBLIC_PORT'), 9000),
+    useSSL: parseBoolean(config.get<string>('MINIO_PUBLIC_USE_SSL'), false),
+    accessKey: config.getOrThrow<string>('MINIO_ACCESS_KEY'),
+    secretKey: config.getOrThrow<string>('MINIO_SECRET_KEY'),
+    pathStyle: parseBoolean(config.get<string>('MINIO_PATH_STYLE'), true),
+    region: parseOptionalString(config.get<string>('MINIO_REGION')),
+  };
+}
+
 @Module({
   providers: [
     {
       provide: MINIO_CLIENT,
       useFactory: (config: ConfigService) => new Client(buildMinioClientOptions(config)),
+      inject: [ConfigService],
+    },
+    {
+      provide: MINIO_PUBLIC_CLIENT,
+      useFactory: (config: ConfigService) => {
+        const options = buildMinioPublicClientOptions(config);
+        return options ? new Client(options) : null;
+      },
       inject: [ConfigService],
     },
     {
@@ -42,8 +72,9 @@ export function buildMinioClientOptions(config: ConfigService): ClientOptions {
     },
     {
       provide: BLOB_STORAGE,
-      useFactory: (client: Client, bucket: string) => new MinioBlobStorage(client, bucket),
-      inject: [MINIO_CLIENT, MINIO_BUCKET],
+      useFactory: (client: Client, bucket: string, publicClient: Client | null) =>
+        new MinioBlobStorage(client, bucket, publicClient),
+      inject: [MINIO_CLIENT, MINIO_BUCKET, MINIO_PUBLIC_CLIENT],
     },
     StorageKeyGenerator,
   ],
