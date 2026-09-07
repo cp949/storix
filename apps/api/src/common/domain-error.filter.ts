@@ -1,5 +1,7 @@
-import { ArgumentsHost, Catch, ExceptionFilter, Logger } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import type { ErrorReporter } from '../observability/error-reporter.js';
+import { ERROR_REPORTER } from '../observability/observability.constants.js';
 
 interface DomainErrorShape {
   readonly code?: unknown;
@@ -35,8 +37,11 @@ export function resolveErrorMessage(exception: unknown, status: number): string 
 }
 
 @Catch()
+@Injectable()
 export class DomainErrorFilter implements ExceptionFilter {
   private readonly logger = new Logger(DomainErrorFilter.name);
+
+  constructor(@Optional() @Inject(ERROR_REPORTER) private readonly errorReporter?: ErrorReporter) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
@@ -48,6 +53,10 @@ export class DomainErrorFilter implements ExceptionFilter {
         exception instanceof Error ? exception.message : String(exception),
         exception instanceof Error ? exception.stack : undefined,
       );
+      this.errorReporter?.report(exception instanceof Error ? exception : new Error(String(exception)), {
+        requestId: request.requestId,
+        path: `${request.method} ${request.originalUrl ?? request.url}`,
+      });
       response.status(500).json({
         code: 'INTERNAL_ERROR',
         message: INTERNAL_ERROR_MESSAGE,

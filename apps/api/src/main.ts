@@ -3,10 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { configureBodyParsers } from './common/body-parser.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
+import type { ErrorReporter } from './observability/error-reporter.js';
+import { ERROR_REPORTER } from './observability/observability.constants.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.useGlobalFilters(new DomainErrorFilter());
+  app.useGlobalFilters(new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER)));
   configureBodyParsers(app);
   await app.listen(process.env.PORT ?? 3000);
 }
