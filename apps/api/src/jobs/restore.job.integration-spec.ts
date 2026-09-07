@@ -231,4 +231,48 @@ describe('RestoreJob 통합', () => {
 
     await fs.rm(emptyBackupRootDir, { recursive: true, force: true });
   });
+
+  it('RESTORE_SOURCE_DIR에 postgres.dump가 없으면 force여도 MinIO object를 지우기 전에 실패한다', async () => {
+    // 경로 오타로 force 복구를 돌리는 상황. clearExistingObjects()가 먼저 돌면
+    // 버킷만 비워지고 pg_restore는 실패해, 복구 전보다 나쁜 상태로 끝난다.
+    await dataSource.query('TRUNCATE namespace CASCADE');
+    await wipeBucket();
+
+    const liveStorageKey = `blobs/ab/${randomUUID()}`;
+    const liveContent = Buffer.from('live-object-must-survive-a-bad-restore');
+    await storage.put(liveStorageKey, Readable.from(liveContent));
+
+    const missingSourceDir = path.join(backupRootDir, 'does-not-exist-2026-01-01T00-00-00-000Z');
+    const job = new RestoreJob(
+      storage,
+      backupRepository,
+      new PgDumpCliTool(),
+      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: missingSourceDir, RESTORE_FORCE: 'true' }),
+    );
+
+    await expect(job.run()).rejects.toThrow('ENOENT');
+
+    const survived = await storage.get(liveStorageKey);
+    const chunks: Buffer[] = [];
+    for await (const chunk of survived) {
+      chunks.push(chunk as Buffer);
+    }
+    expect(Buffer.concat(chunks).equals(liveContent)).toBe(true);
+
+    await wipeBucket();
+  });
+
+  it('RESTORE_SOURCE_DIR가 빈 문자열이면 생성 시점에 거부한다', async () => {
+    // docker-compose는 `${RESTORE_SOURCE_DIR:-}`로 넘기므로 미설정 시 빈
+    // 문자열이 도착하고, ConfigService.getOrThrow는 빈 문자열을 통과시킨다.
+    expect(
+      () =>
+        new RestoreJob(
+          storage,
+          backupRepository,
+          new PgDumpCliTool(),
+          makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: '', RESTORE_FORCE: 'false' }),
+        ),
+    ).toThrow('RESTORE_SOURCE_DIR가 비어 있음');
+  });
 });

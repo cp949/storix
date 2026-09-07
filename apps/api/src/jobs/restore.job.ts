@@ -27,7 +27,16 @@ export class RestoreJob {
     private readonly pgTool: PgDumpCliTool,
     config: ConfigService,
   ) {
+    // docker-compose는 RESTORE_SOURCE_DIR를 `${RESTORE_SOURCE_DIR:-}`로 넘기므로
+    // 미설정 시 빈 문자열이 들어온다. ConfigService.getOrThrow는 undefined일 때만
+    // 던지고 빈 문자열은 그대로 통과시키므로(빈 값이면 sourceDir이 ''가 되어
+    // 상대경로 'postgres.dump'를 보게 된다), 빈 값도 여기서 함께 막는다.
     this.sourceDir = config.getOrThrow<string>('RESTORE_SOURCE_DIR');
+    if (this.sourceDir.trim() === '') {
+      throw new Error(
+        'RESTORE_SOURCE_DIR가 비어 있음 — 복구할 백업 디렉터리를 지정하십시오(예: /backups/2026-09-08T12-00-00-000Z)',
+      );
+    }
     this.force = parseBoolean(config.get<string>('RESTORE_FORCE'), false);
     this.connectionOptions = {
       host: config.getOrThrow<string>('DB_HOST'),
@@ -39,6 +48,12 @@ export class RestoreJob {
   }
 
   async run(): Promise<RestoreResult> {
+    // 파괴적 작업(clearExistingObjects/pg_restore --clean)에 들어가기 전에 백업
+    // 실체부터 확인한다. 경로 오타로 force 복구를 돌리면 대상 버킷만 비워 두고
+    // pg_restore가 실패해, 복구 전보다 나쁜 상태로 끝난다. ENOENT를 그대로
+    // 올려보내 어떤 파일이 없는지 스택에 남긴다.
+    await fs.access(path.join(this.sourceDir, 'postgres.dump'));
+
     const hasExistingData = await this.backupRepository.hasExistingNamespaces();
     if (hasExistingData && !this.force) {
       throw new RestoreTargetNotEmptyError();

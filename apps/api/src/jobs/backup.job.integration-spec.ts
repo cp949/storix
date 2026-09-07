@@ -115,6 +115,12 @@ describe('BackupJob 통합', () => {
     const dumpStat = await fs.stat(path.join(result.backupDir, 'postgres.dump'));
     expect(dumpStat.size).toBeGreaterThan(0);
 
+    // 성공한 백업은 `.partial` 작업 디렉터리를 남기지 않고 최종 이름으로
+    // rename돼 있어야 한다 — 운영자의 보존/회전 스크립트가 완결된 백업만
+    // 집어갈 수 있게 하는 표식이다.
+    expect(result.backupDir.endsWith('.partial')).toBe(false);
+    await expect(fs.access(`${result.backupDir}.partial`)).rejects.toThrow();
+
     const mirroredContent = await fs.readFile(path.join(result.backupDir, 'minio', storageKey));
     expect(mirroredContent.equals(content)).toBe(true);
   });

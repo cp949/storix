@@ -11,7 +11,13 @@ export interface PgConnectionOptions {
 
 function runProcess(command: string, args: string[], password: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env: { ...process.env, PGPASSWORD: password } });
+    // stdout은 읽지 않으므로 명시적으로 버린다 — 파이프로 열어 두면 나중에
+    // verbose 플래그가 붙었을 때 64KB 파이프 버퍼가 차서 자식이 블록된다.
+    // stderr만 파이프로 열고 아래에서 실제로 소비한다.
+    const child = spawn(command, args, {
+      env: { ...process.env, PGPASSWORD: password },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
