@@ -157,7 +157,7 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
       가능한 `MINIO_PUBLIC_ENDPOINT`를 분리해 설정한다(같은 값을 쓰면 서명된
       URL의 host가 내부 전용 이름이 되어 외부에서 못 찾는다). 발급 API는
       `SEC-01` 인증을 거친다.
-- [ ] STORAGE-03: **nginx reverse-proxy 샘플** — `docker-compose`에 nginx
+- [x] STORAGE-03: **nginx reverse-proxy 샘플** — `docker-compose`에 nginx
       서비스를 추가해 "공개 도메인 → nginx → 내부 MinIO" 패턴을 재현·검증한다.
       `Host` 헤더와 쿼리스트링을 그대로 통과시켜 presigned 서명이 깨지지
       않게 설정하고, 운영 배포 시 참조용 샘플 구성으로 문서화한다.
