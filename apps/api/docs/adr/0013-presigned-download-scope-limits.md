@@ -35,3 +35,6 @@ presigned 서명은 서명 시점 Client의 host/port/scheme으로 만들어지�
   배포는 기존 `/download`(Storix 프록시 스트리밍)를 계속 쓴다.
 - `audit_log`는 여전히 "모든 콘텐츠 접근의 완전한 기록"이 아니다(ADR-0010에 이미
   기록된 한계의 연장).
+- 발급된 presigned URL 자체가 TTL 동안 유효한 bearer 자격증명이다 — SEC-01 API
+  key 없이도 그 URL을 아는 누구나(브라우저 히스토리, HTTP referrer, 프록시 로그로
+  유출된 경우 포함) 콘텐츠를 받을 수 있다.

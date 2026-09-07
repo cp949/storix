@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 interface DomainErrorShape {
@@ -36,12 +36,18 @@ export function resolveErrorMessage(exception: unknown, status: number): string 
 
 @Catch()
 export class DomainErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(DomainErrorFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
     const request = host.switchToHttp().getRequest<Request>();
     const status = resolveErrorStatus(exception);
 
     if (status === 500) {
+      this.logger.error(
+        exception instanceof Error ? exception.message : String(exception),
+        exception instanceof Error ? exception.stack : undefined,
+      );
       response.status(500).json({
         code: 'INTERNAL_ERROR',
         message: INTERNAL_ERROR_MESSAGE,

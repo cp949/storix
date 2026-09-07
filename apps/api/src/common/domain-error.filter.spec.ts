@@ -1,4 +1,4 @@
-import { ArgumentsHost } from '@nestjs/common';
+import { ArgumentsHost, Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DomainErrorFilter } from './domain-error.filter.js';
 
@@ -99,6 +99,17 @@ describe('DomainErrorFilter', () => {
       message: 'Internal server error',
       requestId: 'req-1',
     });
+  });
+
+  it('500 응답 시 원본 예외 메시지와 스택을 logger.error로 남긴다', () => {
+    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { host } = createHost();
+    const originalError = new Error('storage key sk-123.bin 읽기 실패');
+
+    filter.catch(originalError, host);
+
+    expect(loggerErrorSpy).toHaveBeenCalledWith(originalError.message, originalError.stack);
+    loggerErrorSpy.mockRestore();
   });
 
   it('exception에 path가 있어도 500 응답에서는 노출하지 않는다', () => {

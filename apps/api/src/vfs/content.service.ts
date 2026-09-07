@@ -72,6 +72,9 @@ export class ContentService {
   ) {
     this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('MAX_FILE_SIZE_BYTES'), 1);
     this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('PRESIGNED_URL_EXPIRY_SECONDS'), 300);
+    if (this.presignedUrlExpirySeconds > 604800) {
+      throw new Error(`PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`);
+    }
   }
 
   async touch(
@@ -224,12 +227,13 @@ export class ContentService {
     const blobInfo = await this.repo.getBlobStorageInfo(namespaceId, target.blobId as string);
     const { storageKey } = blobInfo as { storageKey: string; encryptionIv: Buffer | null };
 
+    const issuedAt = Date.now();
     const url = await this.blobStorage.getPresignedUrl(
       storageKey,
       this.presignedUrlExpirySeconds,
       buildContentDisposition(target.name),
     );
-    const expiresAt = new Date(Date.now() + this.presignedUrlExpirySeconds * 1000).toISOString();
+    const expiresAt = new Date(issuedAt + this.presignedUrlExpirySeconds * 1000).toISOString();
 
     return { url, expiresAt };
   }
