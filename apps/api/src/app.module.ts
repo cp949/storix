@@ -4,6 +4,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { HealthModule } from './health/health.module.js';
 import { NamespaceModule } from './namespace/namespace.module.js';
+import { ObservabilityModule } from './observability/observability.module.js';
 import { VfsModule } from './vfs/vfs.module.js';
 
 @Module({
@@ -12,6 +13,7 @@ import { VfsModule } from './vfs/vfs.module.js';
     AuthModule,
     AuditModule,
     HealthModule,
+    ObservabilityModule,
     NamespaceModule,
     VfsModule,
   ],
