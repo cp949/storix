@@ -16,10 +16,10 @@ OPS-02. Postgres(metadata) + MinIO(object) 양쪽 상태를 갖는 배포의 재
 docker compose --profile backup run --rm backup
 ```
 
-`BACKUP_DIR`(기본 `/backups`, 호스트의 `./backups`에 바인드 마운트) 아래
+`STORIX_BACKUP_DIR`(기본 `/backups`, 호스트의 `./backups`에 바인드 마운트) 아래
 `{ISO8601 타임스탬프}/` 디렉터리에 `postgres.dump`(pg_dump custom format)와
 `minio/`(MinIO 버킷 전체 미러)를 남긴다. 실행마다 ENCRYPTED namespace가
-있으면 콘솔에 경고가 남는다 — `ENCRYPTION_MASTER_KEY`는 이 백업에 포함되지
+있으면 콘솔에 경고가 남는다 — `STORIX_ENCRYPTION_MASTER_KEY`는 이 백업에 포함되지
 않으므로 별도 채널(시크릿 매니저 등)에 반드시 따로 백업해야 한다.
 
 백업은 `{타임스탬프}.partial/`에 쓰인 뒤 전부 성공한 경우에만 최종 이름으로
@@ -50,14 +50,14 @@ docker compose stop app
 새 인스턴스(또는 데이터를 버릴 각오가 된 기존 인스턴스)에서:
 
 ```bash
-RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose --profile restore run --rm restore
+STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose --profile restore run --rm restore
 ```
 
 대상에 이미 namespace 데이터가 있으면 기본적으로 거부한다(`RestoreTargetNotEmptyError`).
 의도적으로 덮어쓰려면:
 
 ```bash
-RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z RESTORE_FORCE=true \
+STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z STORIX_RESTORE_FORCE=true \
   docker compose --profile restore run --rm restore
 ```
 
@@ -95,7 +95,7 @@ docker compose run --rm migrate
   지원한다.
 - point-in-time recovery(PITR)는 지원하지 않는다 — 백업 실행 시점 스냅샷만
   남는다.
-- `ENCRYPTION_MASTER_KEY` 백업은 이 절차에 포함되지 않는다 — 분실하면
+- `STORIX_ENCRYPTION_MASTER_KEY` 백업은 이 절차에 포함되지 않는다 — 분실하면
   `ENCRYPTED` namespace 데이터는 이 절차로 복구되지 않는다(ADR-0009).
 - 복구된 오브젝트의 Content-Type은 보존되지 않는다 — 전부
   `application/octet-stream`으로 복원되므로, presigned download가 필요한 파일은

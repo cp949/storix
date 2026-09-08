@@ -12,12 +12,12 @@ Postgres DB는 공유하고, NAS 기반 스토리지일 때는 WAS별로 Versity
 각 WAS 호스트의 `.env`에 공유 DB 접속 정보와 NAS 경로를 넣는다:
 
 ```bash
-DB_HOST=<전용 Postgres 호스트>
-DB_PORT=5432
-DB_USERNAME=<공유 DB 계정>
-DB_PASSWORD=<공유 DB 비밀번호>
-DB_NAME=<공유 DB 이름>
-VERSITYGW_DATA_PATH=/mnt/nas/storix-data
+STORIX_DB_HOST=<전용 Postgres 호스트>
+STORIX_DB_PORT=5432
+STORIX_DB_USERNAME=<공유 DB 계정>
+STORIX_DB_PASSWORD=<공유 DB 비밀번호>
+STORIX_DB_NAME=<공유 DB 이름>
+STORIX_VERSITYGW_DATA_PATH=/mnt/nas/storix-data
 ```
 
 그리고 base + VersityGW override로 기동한다:
@@ -27,21 +27,21 @@ docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
 ```
 
 `docker-compose.postgres.yml`은 겹치지 않는다 — 그 파일은 인스턴스 로컬
-Postgres 컨테이너를 추가하고 모든 서비스의 `DB_HOST`를 그쪽으로
+Postgres 컨테이너를 추가하고 모든 서비스의 `STORIX_DB_HOST`를 그쪽으로
 재정의하므로, 공유 DB 토폴로지와 정면으로 충돌한다.
 
 `.env` 값은 shell에서 export해도 동일하게 동작한다 — shell 환경 변수는
 `.env` 값보다 우선순위가 높을 뿐이다.
 
-`DB_HOST`를 비워두면 compose 파싱은 통과하고 `migrate`/`app`이 부팅
+`STORIX_DB_HOST`를 비워두면 compose 파싱은 통과하고 `migrate`/`app`이 부팅
 시점에 실패한다(base가 `${VAR:?}` 필수 마커를 쓰지 않는 이유는
-`docker-compose.yml` 상단 주석 참고). `VERSITYGW_DATA_PATH`를 비워두면
+`docker-compose.yml` 상단 주석 참고). `STORIX_VERSITYGW_DATA_PATH`를 비워두면
 named volume(`versitygw-data`)을 쓰는 단일 인스턴스 구성과 동일하게
 동작한다.
 
-### VERSITYGW_DATA_PATH는 WAS 호스트마다 달라지는 값이 아니다
+### STORIX_VERSITYGW_DATA_PATH는 WAS 호스트마다 달라지는 값이 아니다
 
-`VERSITYGW_DATA_PATH`는 **모든 WAS 호스트에서 동일한 NAS 경로**를
+`STORIX_VERSITYGW_DATA_PATH`는 **모든 WAS 호스트에서 동일한 NAS 경로**를
 가리켜야 한다 — 이 경로 자체는 공유 데이터이고, WAS별로 다른 건 그
 경로를 바라보는 VersityGW 게이트웨이 컨테이너뿐이다(ADR-0003 결정 3,
 Consequences 참고). 호스트마다 다른 하위 경로(예: `/mnt/nas/was-01`,
@@ -51,7 +51,7 @@ Consequences 참고). 호스트마다 다른 하위 경로(예: `/mnt/nas/was-01
 공유 DB를 대상으로 동작하는 backup/restore/gc(아래 절 참고)에도 그대로
 영향을 준다.
 
-`VERSITYGW_DATA_PATH`는 반드시 `/`로 시작하는 절대 경로여야 한다.
+`STORIX_VERSITYGW_DATA_PATH`는 반드시 `/`로 시작하는 절대 경로여야 한다.
 Docker Compose는 값이 절대 경로가 아니면 bind mount가 아니라 named
 volume 이름으로 조용히 해석한다 — 예를 들어 맨 앞의 `/`를 빠뜨린
 `mnt/nas/storix-data` 같은 오타는 에러 없이 로컬 named volume을 새로
@@ -82,13 +82,13 @@ posix 백엔드로 동시에 바라보는 구성에서, VersityGW의 posix 백�
 ## 운영 규칙 — backup/restore/gc는 함대당 한 곳에서만 실행
 
 base의 모든 서비스(`migrate`/`app`뿐 아니라 `backup`/`restore`/`gc`)가
-`.env`의 `DB_HOST`, 즉 **함대 전체가 공유하는 하나의 Postgres**를
+`.env`의 `STORIX_DB_HOST`, 즉 **함대 전체가 공유하는 하나의 Postgres**를
 대상으로 동작한다.
 
 - `backup`/`gc`/`restore`는 함대 중 오직 한 호스트(또는 별도 전용
   운영 호스트)에서만 실행한다. 여러 WAS 호스트에서 동시에 실행하는
   시나리오는 분석·지원되지 않는다.
-- `restore`(특히 `RESTORE_FORCE=true`)는 그것을 실행한 호스트만이
+- `restore`(특히 `STORIX_RESTORE_FORCE=true`)는 그것을 실행한 호스트만이
   아니라 **함대 전체가 공유하는 DB의 메타데이터를 통째로 리셋**한다.
   반드시 함대의 모든 WAS 인스턴스가 정지된 상태에서만 실행한다.
 

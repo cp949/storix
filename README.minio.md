@@ -2,7 +2,7 @@
 
 MinIO는 Storix가 초기 개발 편의상 먼저 붙인 S3 호환 백엔드다. 목표 기본
 백엔드는 VersityGW이고(`docs/adr/0003-versitygw-primary-backend-and-topology.md`),
-MinIO 지원은 `STORAGE_*` 벤더 중립 추상화 덕에 따라오는 결과다. 이 문서는
+MinIO 지원은 `STORIX_STORAGE_*` 벤더 중립 추상화 덕에 따라오는 결과다. 이 문서는
 `docker-compose.minio.yml` 조합을 처음부터 끝까지 따라가는 절차다. 파일 배치
 배경은 `docs/adr/0004-compose-file-layout.md`.
 
@@ -27,15 +27,15 @@ cp .env.example .env
 
 | 변수 | 값 | 비고 |
 |---|---|---|
-| `API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
-| `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | 임의 값 | app 접속 자격증명이자 MinIO root 자격증명(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`). MinIO 제약: user 3자 이상, password 8자 이상 |
-| `STORAGE_BUCKET` | 버킷 이름 | `minio-init`이 기동 시 생성 |
-| `DB_HOST` / `DB_PORT` / `DB_USERNAME` / `DB_PASSWORD` / `DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
-| `STORAGE_PUBLIC_ENDPOINT` / `STORAGE_PUBLIC_PORT` / `STORAGE_PUBLIC_USE_SSL` | 클라이언트가 접근 가능한 MinIO 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패 |
-| `STORAGE_REGION` | 예: `us-east-1` | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결) |
+| `STORIX_API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
+| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY` | 임의 값 | app 접속 자격증명이자 MinIO root 자격증명(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`). MinIO 제약: user 3자 이상, password 8자 이상 |
+| `STORIX_STORAGE_BUCKET` | 버킷 이름 | `minio-init`이 기동 시 생성 |
+| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
+| `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL` | 클라이언트가 접근 가능한 MinIO 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패 |
+| `STORIX_STORAGE_REGION` | 예: `us-east-1` | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결) |
 
-override가 덮어써서 무시되는 값: `STORAGE_ENDPOINT` / `STORAGE_PORT` /
-`STORAGE_USE_SSL`(`minio` / `9000` / `false`로 고정).
+override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
+`STORIX_STORAGE_USE_SSL`(`minio` / `9000` / `false`로 고정).
 
 ## 기동
 
@@ -45,7 +45,7 @@ override가 덮어써서 무시되는 값: `STORAGE_ENDPOINT` / `STORAGE_PORT` /
 docker compose -f docker-compose.yml -f docker-compose.minio.yml -f docker-compose.postgres.yml up -d --build
 ```
 
-운영(외부 Postgres, `.env`의 `DB_*` 사용):
+운영(외부 Postgres, `.env`의 `STORIX_DB_*` 사용):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.minio.yml up -d --build
@@ -70,13 +70,13 @@ Podman은 위 명령의 `docker compose`를 `podman-compose`로 바꾸면 된다
 정보를 넣는다. base는 버킷을 만들지 않으므로 버킷은 미리 만들어 둔다.
 
 ```bash
-STORAGE_ENDPOINT=minio.internal.example
-STORAGE_PORT=9000
-STORAGE_USE_SSL=false          # TLS를 쓰는 서버면 true
-STORAGE_PATH_STYLE=true
-STORAGE_ACCESS_KEY=<발급받은 access key>
-STORAGE_SECRET_KEY=<발급받은 secret key>
-STORAGE_BUCKET=storix
+STORIX_STORAGE_ENDPOINT=minio.internal.example
+STORIX_STORAGE_PORT=9000
+STORIX_STORAGE_USE_SSL=false          # TLS를 쓰는 서버면 true
+STORIX_STORAGE_PATH_STYLE=true
+STORIX_STORAGE_ACCESS_KEY=<발급받은 access key>
+STORIX_STORAGE_SECRET_KEY=<발급받은 secret key>
+STORIX_STORAGE_BUCKET=storix
 ```
 
 ```bash
@@ -86,8 +86,8 @@ docker compose up -d --build
 ## 동작 확인
 
 ```bash
-API_KEY=$(grep '^API_KEY=' .env | cut -d= -f2-)
-AUTH="Authorization: Bearer ${API_KEY}"
+STORIX_API_KEY=$(grep '^STORIX_API_KEY=' .env | cut -d= -f2-)
+AUTH="Authorization: Bearer ${STORIX_API_KEY}"
 
 # app 준비 대기
 until curl -sf http://localhost:3000/health/ready > /dev/null; do sleep 2; done
@@ -114,14 +114,14 @@ curl -sf "http://localhost:3000/api/v1/namespaces/${NS}/fs/ls?path=docs" -H "$AU
 
 ```bash
 C="-f docker-compose.yml -f docker-compose.minio.yml"
-AK=$(grep '^STORAGE_ACCESS_KEY=' .env | cut -d= -f2-)
-SK=$(grep '^STORAGE_SECRET_KEY=' .env | cut -d= -f2-)
-BK=$(grep '^STORAGE_BUCKET=' .env | cut -d= -f2-)
+AK=$(grep '^STORIX_STORAGE_ACCESS_KEY=' .env | cut -d= -f2-)
+SK=$(grep '^STORIX_STORAGE_SECRET_KEY=' .env | cut -d= -f2-)
+BK=$(grep '^STORIX_STORAGE_BUCKET=' .env | cut -d= -f2-)
 docker compose $C run --rm minio-init \
   "mc alias set local http://minio:9000 $AK $SK >/dev/null && mc ls -r local/$BK"
 ```
 
-`minio-init` 컨테이너 환경에는 `STORAGE_*`가 없으므로 값은 호스트 쪽에서
+`minio-init` 컨테이너 환경에는 `STORIX_STORAGE_*`가 없으므로 값은 호스트 쪽에서
 `.env`를 읽어 명령 문자열에 넣는다.
 
 ### presigned download (선택)
@@ -144,10 +144,10 @@ services:
 
 ```bash
 # .env
-STORAGE_PUBLIC_ENDPOINT=localhost
-STORAGE_PUBLIC_PORT=9000
-STORAGE_PUBLIC_USE_SSL=false
-STORAGE_REGION=us-east-1
+STORIX_STORAGE_PUBLIC_ENDPOINT=localhost
+STORIX_STORAGE_PUBLIC_PORT=9000
+STORIX_STORAGE_PUBLIC_USE_SSL=false
+STORIX_STORAGE_REGION=us-east-1
 ```
 
 ```bash
@@ -171,17 +171,17 @@ C="-f docker-compose.yml -f docker-compose.minio.yml"   # 개발이면 -f docker
 
 docker compose $C --profile gc run --rm gc
 docker compose $C --profile backup run --rm backup
-RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --profile restore run --rm restore
+STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --profile restore run --rm restore
 ```
 
 ## 특이사항·문제 해결
 
-- **`minio` 컨테이너가 바로 종료**: `STORAGE_ACCESS_KEY`가 3자 미만이거나
-  `STORAGE_SECRET_KEY`가 8자 미만이면 MinIO가 root 자격증명을 거부한다.
+- **`minio` 컨테이너가 바로 종료**: `STORIX_STORAGE_ACCESS_KEY`가 3자 미만이거나
+  `STORIX_STORAGE_SECRET_KEY`가 8자 미만이면 MinIO가 root 자격증명을 거부한다.
   `docker compose $C logs minio`로 확인.
-- **presigned-download가 500**: `STORAGE_REGION`이 비어 있으면 minio-js가 리전
-  자동 조회를 위해 `STORAGE_PUBLIC_ENDPOINT`로 실제 요청을 보내는데, 컨테이너
-  안에서 `localhost`는 app 자기 자신이라 실패한다. `STORAGE_REGION=us-east-1`
+- **presigned-download가 500**: `STORIX_STORAGE_REGION`이 비어 있으면 minio-js가 리전
+  자동 조회를 위해 `STORIX_STORAGE_PUBLIC_ENDPOINT`로 실제 요청을 보내는데, 컨테이너
+  안에서 `localhost`는 app 자기 자신이라 실패한다. `STORIX_STORAGE_REGION=us-east-1`
   (MinIO 기본 리전)을 설정한다.
 - **로그**: `docker compose $C logs -f app minio`.
 - **데이터 초기화**:

@@ -2,7 +2,7 @@
 
 S3는 관리형 서비스라 컨테이너로 띄울 대상이 없다. `docker-compose.s3.yml`은
 `app`/`gc`/`backup`/`restore`의 엔드포인트 관련 값만 AWS용으로 고정하고,
-자격증명·리전·버킷은 `.env`의 `STORAGE_*`를 그대로 쓴다. 이 문서는 그 조합을
+자격증명·리전·버킷은 `.env`의 `STORIX_STORAGE_*`를 그대로 쓴다. 이 문서는 그 조합을
 처음부터 끝까지 따라가는 절차다. 파일 배치 배경은
 `docs/adr/0004-compose-file-layout.md`.
 
@@ -10,7 +10,7 @@ S3는 관리형 서비스라 컨테이너로 띄울 대상이 없다. `docker-co
 
 - 오브젝트 스토리지를 직접 운영하지 않고 AWS에 맡길 때.
 - AWS가 아닌 S3 호환 서비스(예: 다른 클라우드의 S3 호환 스토리지)는 이 override
-  대신 base 단독 + `.env`의 `STORAGE_ENDPOINT` 등으로 붙인다(아래 "AWS 외 S3
+  대신 base 단독 + `.env`의 `STORIX_STORAGE_ENDPOINT` 등으로 붙인다(아래 "AWS 외 S3
   호환 서비스").
 
 ## 사전 준비
@@ -66,18 +66,18 @@ cp .env.example .env
 
 | 변수 | 값 | 비고 |
 |---|---|---|
-| `API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
-| `STORAGE_REGION` | 버킷의 리전(예: `ap-northeast-2`) | 필수. 비우면 리전 자동 조회로 요청마다 추가 왕복 |
-| `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | 위에서 발급한 IAM access key | 정적 키만 지원(IAM 역할·STS 세션 토큰 미지원) |
-| `STORAGE_BUCKET` | 미리 만든 버킷 이름 | |
-| `DB_HOST` / `DB_PORT` / `DB_USERNAME` / `DB_PASSWORD` / `DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
+| `STORIX_API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
+| `STORIX_STORAGE_REGION` | 버킷의 리전(예: `ap-northeast-2`) | 필수. 비우면 리전 자동 조회로 요청마다 추가 왕복 |
+| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY` | 위에서 발급한 IAM access key | 정적 키만 지원(IAM 역할·STS 세션 토큰 미지원) |
+| `STORIX_STORAGE_BUCKET` | 미리 만든 버킷 이름 | |
+| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
 
-override가 덮어써서 무시되는 값: `STORAGE_ENDPOINT` / `STORAGE_PORT` /
-`STORAGE_USE_SSL` / `STORAGE_PATH_STYLE`(`s3.amazonaws.com` / `443` / `true` /
-`false`)과 `STORAGE_PUBLIC_*`(내부와 같은 `s3.amazonaws.com:443`, S3는 애초에
+override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
+`STORIX_STORAGE_USE_SSL` / `STORIX_STORAGE_PATH_STYLE`(`s3.amazonaws.com` / `443` / `true` /
+`false`)과 `STORIX_STORAGE_PUBLIC_*`(내부와 같은 `s3.amazonaws.com:443`, S3는 애초에
 외부에서 접근 가능한 주소라 내부/외부 구분이 필요 없다).
 
-이 조합에는 `STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`를 root 자격증명으로 받는
+이 조합에는 `STORIX_STORAGE_ACCESS_KEY`/`STORIX_STORAGE_SECRET_KEY`를 root 자격증명으로 받는
 `minio`/`versitygw` 컨테이너가 없으므로 AWS 시크릿이 다른 서비스로 흘러가지
 않는다.
 
@@ -89,7 +89,7 @@ override가 덮어써서 무시되는 값: `STORAGE_ENDPOINT` / `STORAGE_PORT` /
 docker compose -f docker-compose.yml -f docker-compose.s3.yml -f docker-compose.postgres.yml up -d --build
 ```
 
-운영(외부 Postgres, `.env`의 `DB_*` 사용):
+운영(외부 Postgres, `.env`의 `STORIX_DB_*` 사용):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.s3.yml up -d --build
@@ -110,9 +110,9 @@ Podman은 위 명령의 `docker compose`를 `podman-compose`로 바꾸면 된다
 
 ### 리전 전용 엔드포인트가 필요할 때
 
-`STORAGE_ENDPOINT`는 `s3.amazonaws.com`으로 고정돼 있다. 리전에 따라
+`STORIX_STORAGE_ENDPOINT`는 `s3.amazonaws.com`으로 고정돼 있다. 리전에 따라
 `PermanentRedirect`(301)가 나면 `docker-compose.s3.yml`을 복사해 `x-s3-env`의
-`STORAGE_ENDPOINT`와 `app`의 `STORAGE_PUBLIC_ENDPOINT`를
+`STORIX_STORAGE_ENDPOINT`와 `app`의 `STORIX_STORAGE_PUBLIC_ENDPOINT`를
 `s3.<region>.amazonaws.com`으로 바꾸고 그 사본을 `-f`로 넘긴다.
 
 ### AWS 외 S3 호환 서비스
@@ -121,17 +121,17 @@ Podman은 위 명령의 `docker compose`를 `podman-compose`로 바꾸면 된다
 기동하고 `.env`에 그 서비스의 접속 정보를 넣는다:
 
 ```bash
-STORAGE_ENDPOINT=<서비스 엔드포인트 호스트>
-STORAGE_PORT=443
-STORAGE_USE_SSL=true
-STORAGE_PATH_STYLE=<서비스가 요구하는 값, 보통 true>
-STORAGE_REGION=<서비스가 요구하는 값>
-STORAGE_ACCESS_KEY=...
-STORAGE_SECRET_KEY=...
-STORAGE_BUCKET=...
-STORAGE_PUBLIC_ENDPOINT=<같은 호스트>
-STORAGE_PUBLIC_PORT=443
-STORAGE_PUBLIC_USE_SSL=true
+STORIX_STORAGE_ENDPOINT=<서비스 엔드포인트 호스트>
+STORIX_STORAGE_PORT=443
+STORIX_STORAGE_USE_SSL=true
+STORIX_STORAGE_PATH_STYLE=<서비스가 요구하는 값, 보통 true>
+STORIX_STORAGE_REGION=<서비스가 요구하는 값>
+STORIX_STORAGE_ACCESS_KEY=...
+STORIX_STORAGE_SECRET_KEY=...
+STORIX_STORAGE_BUCKET=...
+STORIX_STORAGE_PUBLIC_ENDPOINT=<같은 호스트>
+STORIX_STORAGE_PUBLIC_PORT=443
+STORIX_STORAGE_PUBLIC_USE_SSL=true
 ```
 
 ```bash
@@ -141,8 +141,8 @@ docker compose up -d --build
 ## 동작 확인
 
 ```bash
-API_KEY=$(grep '^API_KEY=' .env | cut -d= -f2-)
-AUTH="Authorization: Bearer ${API_KEY}"
+STORIX_API_KEY=$(grep '^STORIX_API_KEY=' .env | cut -d= -f2-)
+AUTH="Authorization: Bearer ${STORIX_API_KEY}"
 
 # app 준비 대기
 until curl -sf http://localhost:3000/health/ready > /dev/null; do sleep 2; done
@@ -171,7 +171,7 @@ curl -sf "http://localhost:3000/api/v1/namespaces/${NS}/fs/presigned-download?pa
 버킷 안의 실제 오브젝트 확인(AWS CLI):
 
 ```bash
-aws s3 ls "s3://$(grep '^STORAGE_BUCKET=' .env | cut -d= -f2-)" --recursive
+aws s3 ls "s3://$(grep '^STORIX_STORAGE_BUCKET=' .env | cut -d= -f2-)" --recursive
 ```
 
 Storix는 파일 경로가 아니라 생성된 storage key로 오브젝트를 저장하므로
@@ -188,7 +188,7 @@ C="-f docker-compose.yml -f docker-compose.s3.yml"   # 개발이면 -f docker-co
 
 docker compose $C --profile gc run --rm gc
 docker compose $C --profile backup run --rm backup
-RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --profile restore run --rm restore
+STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --profile restore run --rm restore
 ```
 
 `backup`은 버킷 전체를 로컬 `./backups`로 미러하므로 버킷 크기만큼 S3 egress
@@ -203,7 +203,7 @@ RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --profile
 - **정적 키만 지원**: EC2 인스턴스 프로파일·IAM 역할·STS 세션 토큰은 쓸 수
   없다. `MinioBlobStorage`가 minio SDK Client를 그대로 쓰기 때문이다
   (`apps/api/docs/adr/0012-minio-sdk-generic-s3-client.md`).
-- **presigned URL 만료**: `PRESIGNED_URL_EXPIRY_SECONDS` 상한은 SigV4 제한인
+- **presigned URL 만료**: `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` 상한은 SigV4 제한인
   604800초(7일)다. 초과하면 `app`이 부팅 시 종료된다.
 - **로그**: `docker compose $C logs -f app`.
 - **데이터 초기화**: `docker compose $C down -v`는 로컬 Postgres 볼륨만 지운다.
