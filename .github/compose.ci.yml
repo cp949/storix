@@ -1,0 +1,12 @@
+# .github/workflows/versity-demo-smoke.yml 전용 override — 루트의
+# docker-compose.yml + docker-compose.versitygw.yml + docker-compose.postgres.yml
+# 뒤에 네 번째 -f로 넘긴다. 사용자용 파일이 아니라 루트 밖에 둔다
+# (.github/workflows/ 안에 두면 GitHub이 워크플로 파일로 파싱하므로 그 바깥).
+#
+# 운영·개발 조합에는 versitygw 호스트 포트 노출이 없다(API 서버를 거치는 사용이
+# 기본 전제). 하지만 스모크 테스트는 presigned-download URL을 CI 러너에서 직접
+# curl로 검증해야 하므로, 그 경우에만 versitygw를 호스트에 노출한다.
+services:
+  versitygw:
+    ports:
+      - '7070:7070'
