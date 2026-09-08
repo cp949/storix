@@ -1,0 +1,59 @@
+# 로컬 MinIO 백엔드 override — base docker-compose.yml이 이미 기본값으로
+# minio를 쓰도록 되어 있어(app/gc/backup/restore의 STORAGE_ENDPOINT: minio
+# 하드코딩) 이 파일은 동작을 바꾸지 않는다. docker-compose.versity-demo.yml/
+# docker-compose.s3-demo.yml과 같은 자리에, 같은 사용법으로 존재해서
+# 파일 목록만 봐도 MinIO/VersityGW/S3 세 백엔드 예제가 다 있다는 걸 바로
+# 알 수 있게 하고, MinIO 쪽 STORAGE_* 값을 만질 자리를 base와 분리해
+# 마련하기 위한 문서화 목적 override다.
+#
+# 사용법 (base 파일과 함께 -f로 넘긴다 — 다른 두 -demo 파일과 동일한 방식):
+#   docker compose -f docker-compose.yml -f docker-compose.minio-demo.yml up
+#
+# 세 백엔드 예제 파일은 어느 것도 서로 우선하지 않는다 — 원하는 걸 골라 쓰면
+# 된다: docker-compose.minio-demo.yml(이 파일) / docker-compose.versity-demo.yml
+# / docker-compose.s3-demo.yml.
+
+services:
+  app:
+    environment:
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
+
+  gc:
+    environment:
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
+
+  backup:
+    environment:
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
+
+  restore:
+    environment:
+      STORAGE_ENDPOINT: minio
+      STORAGE_PORT: 9000
+      STORAGE_USE_SSL: 'false'
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
