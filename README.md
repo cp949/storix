@@ -257,6 +257,6 @@ pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 
 - 컨텍스트 목록: `CONTEXT-MAP.md`
 - api 도메인 용어: `apps/api/CONTEXT.md`
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
-- 배포/운영 절차(reverse-proxy, 백업/복구, 멀티 인스턴스): `docs/deployment/`
+- 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 멀티 인스턴스): `docs/deployment/`
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`

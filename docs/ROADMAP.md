@@ -184,7 +184,10 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
       고정돼 VersityGW-primary 방향(ADR-0003)과 같은 오독 위험 → `storage`로
       변경(클래스/파일명은 ADR-0016대로 `Minio*` 유지 — minio-js Client 타입
       결합은 그대로이므로).
-- [ ] DEPLOY-03: 스키마 마이그레이션/업그레이드 경로 문서화.
+- [x] DEPLOY-03: **스키마 마이그레이션/업그레이드 경로 문서화** — 자동
+      revert는 지원하지 않고 이미지 되돌리기(스키마 불변경)·백업 복구(스키마
+      변경)로 롤백 처리(ADR-0017). 범위는 single-instance만이며, 버전 식별은
+      태그 릴리즈(`API-02`) 도입 전까지 git 커밋 기준.
 - [ ] DEPLOY-04: `CHANGELOG.md` 도입 — Keep-a-changelog 스타일
       (Added/Changed/Fixed).
 - [x] DEPLOY-05: **컨테이너 런타임 문서화** — 로컬 개발/테스트는 Podman을
