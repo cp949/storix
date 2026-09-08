@@ -51,7 +51,7 @@ describe('ContentService', () => {
     delete: jest.Mock<() => Promise<void>>;
     list: jest.Mock;
   };
-  let config: { getOrThrow: jest.Mock<() => string>; get: jest.Mock<() => string | undefined> };
+  let config: { get: jest.Mock<(key: string) => string | undefined> };
   let masterKey: Buffer | null;
   let service: ContentService;
 
@@ -81,8 +81,10 @@ describe('ContentService', () => {
       list: jest.fn(),
     };
     config = {
-      getOrThrow: jest.fn<() => string>().mockReturnValue('1000'),
-      get: jest.fn<() => string | undefined>().mockReturnValue(undefined),
+      // 기존 getOrThrow 스텁이 모든 키에 '1000'을 돌려주던 것과 같은 조건을 유지한다.
+      get: jest
+        .fn<(key: string) => string | undefined>()
+        .mockImplementation((key) => (key === 'STORIX_MAX_FILE_SIZE_BYTES' ? '1000' : undefined)),
     };
     masterKey = null;
     service = createService();
@@ -172,7 +174,7 @@ describe('ContentService', () => {
     });
 
     it('Content-Length가 상한을 넘으면 stream을 읽지 않고 VfsFileTooLargeError를 던진다', async () => {
-      config.getOrThrow.mockReturnValue('10');
+      config.get.mockImplementation((key) => (key === 'STORIX_MAX_FILE_SIZE_BYTES' ? '10' : undefined));
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
       repo.resolvePath.mockResolvedValue(null);
@@ -250,7 +252,7 @@ describe('ContentService', () => {
     });
 
     it('namespace 상한이 전역보다 작으면 namespace 상한을 적용해 거부한다', async () => {
-      config.getOrThrow.mockReturnValue('1000');
+      config.get.mockImplementation((key) => (key === 'STORIX_MAX_FILE_SIZE_BYTES' ? '1000' : undefined));
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeRoot(),
@@ -267,7 +269,7 @@ describe('ContentService', () => {
     });
 
     it('namespace 상한이 전역보다 크면 전역값을 상한으로 적용한다', async () => {
-      config.getOrThrow.mockReturnValue('10');
+      config.get.mockImplementation((key) => (key === 'STORIX_MAX_FILE_SIZE_BYTES' ? '10' : undefined));
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeRoot(),
@@ -284,7 +286,7 @@ describe('ContentService', () => {
     });
 
     it('namespace 상한이 없으면(null) 전역값을 그대로 적용한다', async () => {
-      config.getOrThrow.mockReturnValue('10');
+      config.get.mockImplementation((key) => (key === 'STORIX_MAX_FILE_SIZE_BYTES' ? '10' : undefined));
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
       repo.resolvePath.mockResolvedValue(null);

@@ -6,7 +6,7 @@ import type { BlobObjectInfo, BlobStorage } from '../storage/blob-storage.js';
 
 describe('GcJob', () => {
   function makeConfig(gracePeriodSeconds: number): ConfigService {
-    return { getOrThrow: () => String(gracePeriodSeconds) } as unknown as ConfigService;
+    return { get: () => String(gracePeriodSeconds) } as unknown as ConfigService;
   }
 
   async function* emptyList(): AsyncIterable<BlobObjectInfo> {}

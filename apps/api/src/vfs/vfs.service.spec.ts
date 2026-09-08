@@ -52,7 +52,7 @@ describe('VfsService', () => {
     removeEmptyDirectory: jest.Mock<() => Promise<void>>;
     removeNode: jest.Mock<() => Promise<void>>;
   };
-  let config: { getOrThrow: jest.Mock<() => string> };
+  let config: { get: jest.Mock<(key: string) => string | undefined> };
   let service: VfsService;
 
   function createService(): VfsService {
@@ -72,7 +72,7 @@ describe('VfsService', () => {
       removeEmptyDirectory: jest.fn(),
       removeNode: jest.fn(),
     };
-    config = { getOrThrow: jest.fn<() => string>().mockReturnValue('1000') };
+    config = { get: jest.fn<(key: string) => string | undefined>().mockReturnValue('1000') };
     service = createService();
   });
 
@@ -306,7 +306,7 @@ describe('VfsService', () => {
     });
 
     it('repository에 source/destination segments, destinationParents, STORIX_MAX_SYNC_COPY_NODES를 그대로 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('7');
+      config.get.mockReturnValue('7');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
@@ -333,7 +333,7 @@ describe('VfsService', () => {
     });
 
     it('namespace의 maxSyncCopyNodes가 전역보다 작으면 그 값을 repository에 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('1000');
+      config.get.mockReturnValue('1000');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
@@ -347,7 +347,7 @@ describe('VfsService', () => {
     });
 
     it('namespace의 maxSyncCopyNodes가 전역보다 크면 전역값을 상한으로 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('5');
+      config.get.mockReturnValue('5');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
@@ -391,7 +391,7 @@ describe('VfsService', () => {
     });
 
     it('recursive 값과 설정된 STORIX_MAX_SYNC_DELETE_NODES를 repository에 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('42');
+      config.get.mockReturnValue('42');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
@@ -405,7 +405,7 @@ describe('VfsService', () => {
     });
 
     it('namespace의 maxSyncDeleteNodes가 전역보다 작으면 그 값을 repository에 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('1000');
+      config.get.mockReturnValue('1000');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
@@ -419,7 +419,7 @@ describe('VfsService', () => {
     });
 
     it('namespace의 maxSyncDeleteNodes가 전역보다 크면 전역값을 상한으로 전달한다', async () => {
-      config.getOrThrow.mockReturnValue('5');
+      config.get.mockReturnValue('5');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
