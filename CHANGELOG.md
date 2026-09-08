@@ -13,6 +13,9 @@
 - OpenAPI 스펙 초안(`apps/api/openapi.yaml`) — namespace/fs API 계약 문서(`API-01`)
 - 태그 push(`vX.Y.Z`) 트리거 릴리즈 워크플로 — CHANGELOG 섹션 추출 + GHCR
   이미지 배포(`API-02`)
+- 버저닝/breaking-change 정책 — 릴리즈 태그는 SemVer, breaking change는
+  `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로 표현(`API-03`,
+  `docs/adr/0007`, `apps/api/docs/adr/0020`)
 
 ## [0.1.0] - 2026-09-08
 

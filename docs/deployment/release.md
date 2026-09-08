@@ -10,9 +10,12 @@
 
 ## 절차
 
-1. **`CHANGELOG.md`를 버전 섹션으로 정리한다**(`main`에 병합되기 전, `dev`나
-   작업 브랜치에서). `[Unreleased]`를 `[X.Y.Z] - YYYY-MM-DD`로 바꾸고, 그 위에
-   새 빈 `[Unreleased]`를 추가한다.
+1. **`CHANGELOG.md`를 버전 섹션으로 정리하고 `apps/api/openapi.yaml`의
+   `info.version`을 같은 값으로 갱신한다**(`main`에 병합되기 전, `dev`나 작업
+   브랜치에서). `[Unreleased]`를 `[X.Y.Z] - YYYY-MM-DD`로 바꾸고, 그 위에 새 빈
+   `[Unreleased]`를 추가한다. `info.version`은 release 태그를 그대로 미러링하는
+   참고용 문자열이라 API 계약이 실제로 바뀌었는지와 무관하게 매번 갱신한다
+   (`apps/api/docs/adr/0020`).
 
    ```md
    ## [Unreleased]

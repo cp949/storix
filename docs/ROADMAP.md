@@ -210,8 +210,12 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
       CHANGELOG에서 해당 버전 섹션을 추출해 릴리즈 노트 생성 + `ghcr.io/cp949/storix`
       이미지 push. `package.json` 버전 동기화는 다루지 않음(ADR-0006, `API-03`으로
       위임). 절차: `docs/deployment/release.md`.
-- [ ] API-03: 버저닝/breaking-change 정책 수립 — 1.0 직전에 고정한다. 1~4번
-      기둥 진행 중 나오는 인터페이스 변경을 반영할 여유를 남기기 위함이다.
+- [x] API-03: **버저닝/breaking-change 정책 수립** — 릴리즈 태그는 SemVer,
+      breaking change는 `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로
+      표현한다(`docs/adr/0007`, `apps/api/docs/adr/0020`). `package.json` 4개의
+      version 필드는 버전 정보로 쓰지 않는다. `openapi.yaml`의 초안 문구·1.0
+      확정은 `apps/demo` 실사용 검증(로드맵 "실행 순서" 3번, 아직 미완료) 이후로
+      유지한다.
 
 ## 오픈 이슈
 
