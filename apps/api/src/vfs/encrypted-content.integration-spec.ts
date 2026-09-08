@@ -34,21 +34,21 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
 
-    process.env.DB_HOST = postgresContainer.getHost();
-    process.env.DB_PORT = String(postgresContainer.getPort());
-    process.env.DB_USERNAME = postgresContainer.getUsername();
-    process.env.DB_PASSWORD = postgresContainer.getPassword();
-    process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORAGE_PORT = String(minioContainer.getPort());
-    process.env.STORAGE_USE_SSL = 'false';
-    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
-    process.env.STORAGE_BUCKET = 'storix-encryption-test';
-    process.env.MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
-    process.env.MAX_SYNC_DELETE_NODES = '1000';
-    process.env.MAX_SYNC_COPY_NODES = '1000';
-    process.env.ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
+    process.env.STORIX_DB_HOST = postgresContainer.getHost();
+    process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
+    process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
+    process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
+    process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
+    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_USE_SSL = 'false';
+    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_BUCKET = 'storix-encryption-test';
+    process.env.STORIX_MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
+    process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
+    process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
+    process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
     minioClient = new MinioClient({
       endPoint: minioContainer.getHost(),
@@ -57,7 +57,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
+    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -110,7 +110,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
        WHERE vn.namespace_id = $1 AND vn.name = $2`,
       [namespaceId, path],
     );
-    const stream = await minioClient.getObject(process.env.STORAGE_BUCKET as string, rows[0].storage_key);
+    const stream = await minioClient.getObject(process.env.STORIX_STORAGE_BUCKET as string, rows[0].storage_key);
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(chunk as Buffer);
@@ -183,7 +183,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     await createEncryptedNamespace(`enc-boot-${randomUUID()}`);
 
     // 같은 프로세스에서 이어지는 테스트들이 마스터 키를 필요로 하므로 반드시 복구한다.
-    delete process.env.ENCRYPTION_MASTER_KEY;
+    delete process.env.STORIX_ENCRYPTION_MASTER_KEY;
     let guardedApp: INestApplication | undefined;
 
     try {
@@ -195,7 +195,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
 
       await expect(guardedApp.init()).rejects.toThrow(/ENCRYPTED namespace/);
     } finally {
-      process.env.ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
+      process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
       await guardedApp?.close().catch(() => undefined);
     }
   }, 60000);

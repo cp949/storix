@@ -3,9 +3,9 @@
 #
 # 이 파일이 하는 일:
 #   - minio 컨테이너와 버킷 초기화(minio-init)를 추가한다.
-#   - app/gc/backup/restore의 STORAGE_ENDPOINT/STORAGE_PORT/STORAGE_USE_SSL을
+#   - app/gc/backup/restore의 STORIX_STORAGE_ENDPOINT/STORIX_STORAGE_PORT/STORIX_STORAGE_USE_SSL을
 #     minio:9000(HTTP)으로 재정의한다 — 이 조합에서 .env의 그 세 값은 무시된다.
-#     STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY/STORAGE_BUCKET은 그대로 쓰이며,
+#     STORIX_STORAGE_ACCESS_KEY/STORIX_STORAGE_SECRET_KEY/STORIX_STORAGE_BUCKET은 그대로 쓰이며,
 #     MinIO root 자격증명과 초기 버킷 이름으로도 사용된다.
 #
 # 개발·검증용 nginx reverse-proxy 샘플(STORAGE-03)은 Storix 필수 구성이 아니라
@@ -13,12 +13,12 @@
 # (그 샘플의 conf가 minio:9000을 upstream으로 쓰므로 이 파일과 조합해야 한다).
 #
 # 이미 운영 중인 MinIO에 붙일 때는 이 파일을 쓰지 않는다 — base 단독으로
-# 기동하고 .env의 STORAGE_*에 그 서버의 접속 정보를 넣는다.
+# 기동하고 .env의 STORIX_STORAGE_*에 그 서버의 접속 정보를 넣는다.
 
 x-minio-env: &minio-env
-  STORAGE_ENDPOINT: minio
-  STORAGE_PORT: '9000'
-  STORAGE_USE_SSL: 'false'
+  STORIX_STORAGE_ENDPOINT: minio
+  STORIX_STORAGE_PORT: '9000'
+  STORIX_STORAGE_USE_SSL: 'false'
 
 x-minio-deps: &minio-deps
   minio:
@@ -47,8 +47,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-storix}
-      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-storix-secret}
+      MINIO_ROOT_USER: ${STORIX_STORAGE_ACCESS_KEY:-storix}
+      MINIO_ROOT_PASSWORD: ${STORIX_STORAGE_SECRET_KEY:-storix-secret}
     volumes:
       - minio-data:/data
     healthcheck:
@@ -62,8 +62,8 @@ services:
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
-        mc alias set local http://minio:9000 ${STORAGE_ACCESS_KEY:-storix} ${STORAGE_SECRET_KEY:-storix-secret} &&
-        mc mb --ignore-existing local/${STORAGE_BUCKET:-storix}
+        mc alias set local http://minio:9000 ${STORIX_STORAGE_ACCESS_KEY:-storix} ${STORIX_STORAGE_SECRET_KEY:-storix-secret} &&
+        mc mb --ignore-existing local/${STORIX_STORAGE_BUCKET:-storix}
     depends_on:
       minio:
         condition: service_healthy

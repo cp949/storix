@@ -18,11 +18,11 @@ import { BackupRepository } from './backup.repository.js';
     TypeOrmModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
         type: 'postgres' as const,
-        host: config.getOrThrow<string>('DB_HOST'),
-        port: parsePositiveInt(config.get<string>('DB_PORT'), 5432),
-        username: config.getOrThrow<string>('DB_USERNAME'),
-        password: config.getOrThrow<string>('DB_PASSWORD'),
-        database: config.getOrThrow<string>('DB_NAME'),
+        host: config.getOrThrow<string>('STORIX_DB_HOST'),
+        port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+        username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
+        password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
+        database: config.getOrThrow<string>('STORIX_DB_NAME'),
         synchronize: false,
         entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
       }),

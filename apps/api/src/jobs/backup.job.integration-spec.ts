@@ -46,12 +46,12 @@ describe('BackupJob 통합', () => {
 
   function baseConfigValues(): Record<string, string> {
     return {
-      BACKUP_DIR: backupRootDir,
-      DB_HOST: pgContainer.getHost(),
-      DB_PORT: String(pgContainer.getPort()),
-      DB_USERNAME: pgContainer.getUsername(),
-      DB_PASSWORD: pgContainer.getPassword(),
-      DB_NAME: pgContainer.getDatabase(),
+      STORIX_BACKUP_DIR: backupRootDir,
+      STORIX_DB_HOST: pgContainer.getHost(),
+      STORIX_DB_PORT: String(pgContainer.getPort()),
+      STORIX_DB_USERNAME: pgContainer.getUsername(),
+      STORIX_DB_PASSWORD: pgContainer.getPassword(),
+      STORIX_DB_NAME: pgContainer.getDatabase(),
     };
   }
 

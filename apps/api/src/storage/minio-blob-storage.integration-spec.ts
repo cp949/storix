@@ -108,7 +108,7 @@ describe('MinioBlobStorage', () => {
     const storageWithoutPublicClient = new MinioBlobStorage(client, bucket, null);
 
     await expect(storageWithoutPublicClient.getPresignedUrl('any-key', 300)).rejects.toThrow(
-      'STORAGE_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음',
+      'STORIX_STORAGE_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음',
     );
   });
 });

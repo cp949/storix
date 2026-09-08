@@ -51,8 +51,8 @@ export class VfsService {
     private readonly repo: VfsNodeRepository,
     config: ConfigService,
   ) {
-    this.maxSyncDeleteNodes = parsePositiveInt(config.getOrThrow<string>('MAX_SYNC_DELETE_NODES'), 1000);
-    this.maxSyncCopyNodes = parsePositiveInt(config.getOrThrow<string>('MAX_SYNC_COPY_NODES'), 1000);
+    this.maxSyncDeleteNodes = parsePositiveInt(config.getOrThrow<string>('STORIX_MAX_SYNC_DELETE_NODES'), 1000);
+    this.maxSyncCopyNodes = parsePositiveInt(config.getOrThrow<string>('STORIX_MAX_SYNC_COPY_NODES'), 1000);
   }
 
   async mkdir(

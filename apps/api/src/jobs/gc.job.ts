@@ -22,7 +22,7 @@ export class GcJob {
     private readonly blobRepository: BlobRepository,
     config: ConfigService,
   ) {
-    this.gracePeriodSeconds = parsePositiveInt(config.getOrThrow<string>('ORPHAN_GRACE_PERIOD'), 86400);
+    this.gracePeriodSeconds = parsePositiveInt(config.getOrThrow<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
   }
 
   async run(): Promise<GcResult> {
@@ -37,7 +37,7 @@ export class GcJob {
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을
   // 대조한다. storage key에는 namespace 정보가 없어 namespace 단위로 좁힐 수 없다.
-  // 'blobs/' prefix로 스캔 범위를 좁혀, STORAGE_BUCKET에 Storix가 만들지 않은
+  // 'blobs/' prefix로 스캔 범위를 좁혀, STORIX_STORAGE_BUCKET에 Storix가 만들지 않은
   // object가 섞여 있어도 삭제 대상에서 제외한다(StorageKeyGenerator.generate()
   // 참고: 모든 key는 `blobs/{shard}/{uuid}` 형식).
   private async collectOrphanObjects(cutoff: Date): Promise<number> {

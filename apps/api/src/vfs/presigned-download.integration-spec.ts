@@ -33,27 +33,27 @@ describe('presigned-download HTTP 계약', () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
 
-    process.env.DB_HOST = postgresContainer.getHost();
-    process.env.DB_PORT = String(postgresContainer.getPort());
-    process.env.DB_USERNAME = postgresContainer.getUsername();
-    process.env.DB_PASSWORD = postgresContainer.getPassword();
-    process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORAGE_PORT = String(minioContainer.getPort());
-    process.env.STORAGE_USE_SSL = 'false';
-    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
-    process.env.STORAGE_BUCKET = 'storix-presigned-test';
+    process.env.STORIX_DB_HOST = postgresContainer.getHost();
+    process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
+    process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
+    process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
+    process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
+    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_USE_SSL = 'false';
+    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_BUCKET = 'storix-presigned-test';
     // 테스트 환경에서는 testcontainers가 노출하는 주소가 곧 "외부에서 접근 가능한"
     // 주소이므로 내부/퍼블릭 값을 동일하게 맞춘다.
-    process.env.STORAGE_PUBLIC_ENDPOINT = minioContainer.getHost();
-    process.env.STORAGE_PUBLIC_PORT = String(minioContainer.getPort());
-    process.env.STORAGE_PUBLIC_USE_SSL = 'false';
-    process.env.MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
-    process.env.MAX_SYNC_DELETE_NODES = '1000';
-    process.env.MAX_SYNC_COPY_NODES = '1000';
-    process.env.PRESIGNED_URL_EXPIRY_SECONDS = '300';
-    process.env.ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
+    process.env.STORIX_STORAGE_PUBLIC_ENDPOINT = minioContainer.getHost();
+    process.env.STORIX_STORAGE_PUBLIC_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_PUBLIC_USE_SSL = 'false';
+    process.env.STORIX_MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
+    process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
+    process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
+    process.env.STORIX_PRESIGNED_URL_EXPIRY_SECONDS = '300';
+    process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
     const minioClient = new MinioClient({
       endPoint: minioContainer.getHost(),
@@ -62,7 +62,7 @@ describe('presigned-download HTTP 계약', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
+    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

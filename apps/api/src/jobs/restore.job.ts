@@ -27,23 +27,23 @@ export class RestoreJob {
     private readonly pgTool: PgDumpCliTool,
     config: ConfigService,
   ) {
-    // docker-compose는 RESTORE_SOURCE_DIR를 `${RESTORE_SOURCE_DIR:-}`로 넘기므로
+    // docker-compose는 STORIX_RESTORE_SOURCE_DIR를 `${STORIX_RESTORE_SOURCE_DIR:-}`로 넘기므로
     // 미설정 시 빈 문자열이 들어온다. ConfigService.getOrThrow는 undefined일 때만
     // 던지고 빈 문자열은 그대로 통과시키므로(빈 값이면 sourceDir이 ''가 되어
     // 상대경로 'postgres.dump'를 보게 된다), 빈 값도 여기서 함께 막는다.
-    this.sourceDir = config.getOrThrow<string>('RESTORE_SOURCE_DIR');
+    this.sourceDir = config.getOrThrow<string>('STORIX_RESTORE_SOURCE_DIR');
     if (this.sourceDir.trim() === '') {
       throw new Error(
-        'RESTORE_SOURCE_DIR가 비어 있음 — 복구할 백업 디렉터리를 지정하십시오(예: /backups/2026-09-08T12-00-00-000Z)',
+        'STORIX_RESTORE_SOURCE_DIR가 비어 있음 — 복구할 백업 디렉터리를 지정하십시오(예: /backups/2026-09-08T12-00-00-000Z)',
       );
     }
-    this.force = parseBoolean(config.get<string>('RESTORE_FORCE'), false);
+    this.force = parseBoolean(config.get<string>('STORIX_RESTORE_FORCE'), false);
     this.connectionOptions = {
-      host: config.getOrThrow<string>('DB_HOST'),
-      port: parsePositiveInt(config.get<string>('DB_PORT'), 5432),
-      username: config.getOrThrow<string>('DB_USERNAME'),
-      password: config.getOrThrow<string>('DB_PASSWORD'),
-      database: config.getOrThrow<string>('DB_NAME'),
+      host: config.getOrThrow<string>('STORIX_DB_HOST'),
+      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+      username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
+      password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
+      database: config.getOrThrow<string>('STORIX_DB_NAME'),
     };
   }
 

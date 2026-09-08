@@ -19,10 +19,10 @@ describe('parseMasterKey', () => {
   });
 
   it('길이가 64자가 아니면 에러를 던진다', () => {
-    expect(() => parseMasterKey('a'.repeat(63))).toThrow('ENCRYPTION_MASTER_KEY');
+    expect(() => parseMasterKey('a'.repeat(63))).toThrow('STORIX_ENCRYPTION_MASTER_KEY');
   });
 
   it('hex가 아닌 문자가 섞이면 에러를 던진다', () => {
-    expect(() => parseMasterKey('z'.repeat(64))).toThrow('ENCRYPTION_MASTER_KEY');
+    expect(() => parseMasterKey('z'.repeat(64))).toThrow('STORIX_ENCRYPTION_MASTER_KEY');
   });
 });

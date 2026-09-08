@@ -23,12 +23,12 @@ describe('Namespace HTTP contract', () => {
   beforeAll(async () => {
     container = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
 
-    process.env.DB_HOST = container.getHost();
-    process.env.DB_PORT = String(container.getPort());
-    process.env.DB_USERNAME = container.getUsername();
-    process.env.DB_PASSWORD = container.getPassword();
-    process.env.DB_NAME = container.getDatabase();
-    process.env.ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
+    process.env.STORIX_DB_HOST = container.getHost();
+    process.env.STORIX_DB_PORT = String(container.getPort());
+    process.env.STORIX_DB_USERNAME = container.getUsername();
+    process.env.STORIX_DB_PASSWORD = container.getPassword();
+    process.env.STORIX_DB_NAME = container.getDatabase();
+    process.env.STORIX_ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

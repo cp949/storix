@@ -49,9 +49,9 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 `docs/deployment/compose.nginx-demo.yml`에 있다(`docs/deployment/nginx-reverse-proxy.md`).
 
 ```bash
-cp .env.example .env   # API_KEY(openssl rand -hex 32) 등을 채운다
+cp .env.example .env   # STORIX_API_KEY(openssl rand -hex 32) 등을 채운다
 
-# 운영: VersityGW + 외부 Postgres(.env의 DB_HOST)
+# 운영: VersityGW + 외부 Postgres(.env의 STORIX_DB_HOST)
 docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
 # 개발: 위 + 로컬 Postgres
 docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml up -d

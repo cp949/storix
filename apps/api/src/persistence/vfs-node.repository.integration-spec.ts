@@ -855,7 +855,7 @@ describe('VfsNodeRepository', () => {
       ).rejects.toThrow(VfsNodeNotFoundError);
     });
 
-    it('MAX_SYNC_DELETE_NODES를 넘으면 작업 시작 전에 VfsDeleteLimitExceededError를 던지고 아무것도 삭제하지 않는다', async () => {
+    it('STORIX_MAX_SYNC_DELETE_NODES를 넘으면 작업 시작 전에 VfsDeleteLimitExceededError를 던지고 아무것도 삭제하지 않는다', async () => {
       const namespace = await createNamespace('rm-limit-ns');
       const root = await repository.getRoot(namespace.id);
       const dir = await repository.ensureDirectory(namespace.id, root!.id, ['big'], false);
@@ -1097,7 +1097,7 @@ describe('VfsNodeRepository', () => {
       ).rejects.toThrow(VfsNodeNotFoundError);
     });
 
-    it('MAX_SYNC_COPY_NODES를 넘으면 작업 시작 전에 VfsCopyLimitExceededError를 던지고 아무것도 만들지 않는다', async () => {
+    it('STORIX_MAX_SYNC_COPY_NODES를 넘으면 작업 시작 전에 VfsCopyLimitExceededError를 던지고 아무것도 만들지 않는다', async () => {
       const namespace = await createNamespace('cp-limit-ns');
       const root = await repository.getRoot(namespace.id);
       const dir = await repository.ensureDirectory(namespace.id, root!.id, ['big'], false);
