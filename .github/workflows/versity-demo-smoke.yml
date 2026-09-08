@@ -50,6 +50,10 @@ jobs:
           sed -i "s|^API_KEY=.*|API_KEY=${API_KEY}|" .env
           sed -i "s|^STORAGE_PUBLIC_ENDPOINT=.*|STORAGE_PUBLIC_ENDPOINT=localhost|" .env
           sed -i "s|^STORAGE_PUBLIC_PORT=.*|STORAGE_PUBLIC_PORT=7070|" .env
+          # STORAGE_REGION이 비어 있으면 presigned 발급 시 minio-js가 리전 자동
+          # 조회를 STORAGE_PUBLIC_ENDPOINT(localhost = app 컨테이너 자신)로
+          # 보내다 실패해 500난다(docs/deployment/nginx-reverse-proxy.md와 동일).
+          sed -i "s|^STORAGE_REGION=.*|STORAGE_REGION=us-east-1|" .env
           echo "API_KEY=${API_KEY}" >> "$GITHUB_ENV"
 
       - name: VersityGW 백엔드 스택 기동
