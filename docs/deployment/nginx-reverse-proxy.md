@@ -8,8 +8,14 @@ presigned download URL(STORAGE-02)은 발급 시점 Client의 host/port/scheme�
 
 ## 구성 파일
 
-`nginx-reverse-proxy.conf`(이 디렉터리) — 루트 `docker-compose.yml`의 `nginx`
-서비스가 그대로 마운트한다. 로컬 재현과 운영 배포가 같은 파일을 쓴다.
+`nginx-reverse-proxy.conf`(이 디렉터리) — `docker-compose.minio.yml`의 `nginx`
+서비스(`nginx-demo` profile)가 그대로 마운트한다. 로컬 재현과 운영 배포가 같은
+파일을 쓴다.
+
+이 샘플은 `proxy_pass http://minio:9000`으로 고정된 MinIO 전용 구성이라
+`docker-compose.minio.yml`에 들어 있다. VersityGW 앞에 두려면 upstream을
+`versitygw:7070`으로 바꾼 conf 사본이 필요하다 — 샘플의 백엔드 중립화는
+후속 작업이다.
 
 ## 로컬 재현 (docker-compose)
 
@@ -19,7 +25,8 @@ export STORAGE_PUBLIC_ENDPOINT=localhost
 export STORAGE_PUBLIC_PORT=8443
 export STORAGE_PUBLIC_USE_SSL=true
 export STORAGE_REGION=us-east-1
-docker compose --profile nginx-demo up -d --wait
+docker compose -f docker-compose.yml -f docker-compose.minio.yml -f docker-compose.postgres.yml \
+  --profile nginx-demo up -d --wait
 ```
 
 `nginx-cert-init` 서비스가 기동 시 self-signed 인증서를 생성하고(`nginx-certs`

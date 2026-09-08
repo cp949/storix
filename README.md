@@ -29,6 +29,43 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 자세한 배경: `apps/api/docs/adr/0003-file-copy-blob-level-cow.md`,
 `apps/api/docs/adr/0006-gc-zero-since-grace-period.md`.
 
+## 실행 (Docker Compose)
+
+`docker-compose.yml`(base)은 API 서버 `app`과 운영 잡(`migrate`/`gc`/`backup`/
+`restore`)만 정의한다. Postgres와 스토리지는 `.env`의 접속 정보로 외부 서비스에
+붙는다. 컨테이너를 추가하려면 override 파일을 `-f`로 겹친다.
+
+| 파일 | 추가·재정의하는 것 |
+|---|---|
+| `docker-compose.versitygw.yml` | VersityGW 컨테이너 + 버킷 초기화. 목표 기본 백엔드(`docs/adr/0003-versitygw-primary-backend-and-topology.md`) |
+| `docker-compose.minio.yml` | MinIO 컨테이너 + 버킷 초기화. nginx reverse-proxy 샘플(`nginx-demo` profile) 포함 |
+| `docker-compose.s3.yml` | AWS S3. 컨테이너 없음, 엔드포인트/TLS/path-style만 고정 |
+| `docker-compose.postgres.yml` | 개발·검증용 Postgres 컨테이너 |
+
+```bash
+cp .env.example .env   # API_KEY(openssl rand -hex 32) 등을 채운다
+
+# 운영: VersityGW + 외부 Postgres(.env의 DB_HOST)
+docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
+# 개발: 위 + 로컬 Postgres
+docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml up -d
+# 외부 DB + 외부 S3 호환 스토리지: 접속 정보만
+docker compose up -d
+```
+
+`-f` 나열을 줄이려면 원하는 override를 `docker-compose.override.yml`로 복사·수정하거나
+(gitignore됨, `docker compose up`만으로 자동 병합), `.env`의 `COMPOSE_FILE`을 쓴다
+(`.env.example` 상단 참고). Podman은 `docker compose`를 `podman-compose`로 바꾸면
+된다 — 단, podman-compose는 `.env`의 `COMPOSE_FILE`을 읽지 않으므로 쉘에서 export한다.
+
+운영 잡은 같은 `-f` 조합에 profile을 더해 실행한다(`docs/deployment/backup-restore.md`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.versitygw.yml --profile backup run --rm backup
+```
+
+배치 결정 배경: `docs/adr/0004-compose-file-layout.md`.
+
 ## 문서
 
 - 컨텍스트 목록: `CONTEXT-MAP.md`

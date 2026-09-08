@@ -4,6 +4,12 @@ OPS-02. Postgres(metadata) + MinIO(object) 양쪽 상태를 갖는 배포의 재
 절차다. 설계 배경은
 `../../apps/api/docs/adr/0015-backup-restore-postgres-then-minio.md` 참고.
 
+아래 `docker compose ...` 명령은 실제 배포에 쓰는 `-f` 조합(예:
+`-f docker-compose.yml -f docker-compose.versitygw.yml`)을 그대로 앞에 붙여
+실행한다 — 조합이 다르면 `backup`/`restore`가 다른 DB·스토리지를 본다.
+`docker-compose.override.yml`이나 `COMPOSE_FILE`로 조합을 고정해 두면
+(`README.md` 실행 절 참고) 아래 명령을 그대로 쓸 수 있다.
+
 ## 백업
 
 ```bash
