@@ -415,6 +415,20 @@ describe('VfsNodeRepository', () => {
       expect(report?.relativeSegments).toEqual(['a', 'report.pdf']);
     });
 
+    it('createdAt/updatedAt을 Date 인스턴스로 반환한다', async () => {
+      const namespace = await createNamespace('find-dates-ns');
+      const root = await repository.getRoot(namespace.id);
+      await buildTree(namespace, root!);
+
+      const items = await repository.findRecursive(namespace.id, root!.id, {}, null, 100);
+
+      for (const item of items) {
+        expect(item.createdAt).toBeInstanceOf(Date);
+        expect(item.updatedAt).toBeInstanceOf(Date);
+        expect(Number.isNaN(item.createdAt.getTime())).toBe(false);
+      }
+    });
+
     it('cursor 이후의 항목만 반환한다', async () => {
       const namespace = await createNamespace('find-cursor-ns');
       const root = await repository.getRoot(namespace.id);

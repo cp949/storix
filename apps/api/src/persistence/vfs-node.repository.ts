@@ -68,10 +68,10 @@ interface FindRecursiveRow {
   readonly blob_id: string | null;
   readonly size: string | null;
   readonly mime_type: string | null;
-  readonly created_at: Date;
-  readonly updated_at: Date;
+  readonly created_at: Date | string;
+  readonly updated_at: Date | string;
   readonly version: number;
-  readonly path_segments: string[];
+  readonly path_segments: string;
 }
 
 interface CopySourceRow {
@@ -98,6 +98,26 @@ function toRecord(entity: VfsNodeEntity): VfsNodeRecord {
   };
 }
 
+// raw SQL 경로는 TypeORM의 엔티티 하이드레이션을 안 거치므로, SQLite
+// 드라이버가 돌려주는 "2026-09-08 23:02:01" 같은 공백 구분·타임존 없는
+// 문자열을 Date로 그냥 넘기면 V8이 로컬 타임존으로 해석해버린다(Postgres는
+// 이미 Date 객체를 돌려주므로 이 문제가 없다). TypeORM의
+// AbstractSqliteDriver.prepareHydratedValue가 엔티티 경로에서 하는 것과
+// 같은 보정을 적용해 항상 UTC로 해석되게 한다.
+function parseSqlTimestamp(value: Date | string): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+  let normalized = value;
+  if (/^\d\d\d\d-\d\d-\d\d \d\d:\d\d/.test(normalized)) {
+    normalized = normalized.replace(' ', 'T');
+  }
+  if (/^\d\d\d\d-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(normalized)) {
+    normalized += 'Z';
+  }
+  return new Date(normalized);
+}
+
 function toMatch(row: FindRecursiveRow): VfsNodeMatch {
   return {
     id: row.id,
@@ -106,10 +126,10 @@ function toMatch(row: FindRecursiveRow): VfsNodeMatch {
     blobId: row.blob_id,
     size: row.size,
     mimeType: row.mime_type,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
+    createdAt: parseSqlTimestamp(row.created_at),
+    updatedAt: parseSqlTimestamp(row.updated_at),
     version: row.version,
-    relativeSegments: row.path_segments,
+    relativeSegments: row.path_segments.split('/'),
   };
 }
 
@@ -251,12 +271,12 @@ export class VfsNodeRepository {
     let sql = `
       WITH RECURSIVE subtree AS (
         SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, created_at, updated_at, version,
-               ARRAY[name]::text[] AS path_segments
+               CAST(name AS TEXT) AS path_segments
         FROM vfs_node
         WHERE namespace_id = $1 AND parent_id = $2
         UNION ALL
         SELECT vn.id, vn.namespace_id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type,
-               vn.created_at, vn.updated_at, vn.version, s.path_segments || vn.name
+               vn.created_at, vn.updated_at, vn.version, s.path_segments || '/' || vn.name
         FROM vfs_node vn
         INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
       )
