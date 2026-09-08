@@ -11,6 +11,7 @@ import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddId
 import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
 import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
 import { AddAuditLog1789200000000 } from './migrations/1789200000000-AddAuditLog.js';
+import { AddGcState1789300000000 } from './migrations/1789300000000-AddGcState.js';
 import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
 
 describe('Migration: InitSchema', () => {
@@ -31,6 +32,7 @@ describe('Migration: InitSchema', () => {
         AddNamespaceResourceLimits1789000000000,
         AddEncryptionSupport1789100000000,
         AddAuditLog1789200000000,
+        AddGcState1789300000000,
       ],
     });
     await dataSource.initialize();
@@ -468,6 +470,26 @@ describe('Migration: InitSchema', () => {
       expect(found.path).toBe('/a.txt');
       expect(found.detail).toEqual({ source: '/a.txt', destination: '/b.txt' });
       expect(found.caller).toBe('billing-service');
+    });
+  });
+
+  describe('gc_state 테이블', () => {
+    it('id=1 행이 아닌 값은 CHECK 제약 위반으로 거부된다', async () => {
+      await expect(
+        dataSource.query('INSERT INTO gc_state (id, last_completed_at) VALUES (2, now())'),
+      ).rejects.toThrow();
+    });
+
+    it('id=1 행은 upsert로 갱신할 수 있다', async () => {
+      await dataSource.query(
+        `INSERT INTO gc_state (id, last_completed_at) VALUES (1, now())
+         ON CONFLICT (id) DO UPDATE SET last_completed_at = now()`,
+      );
+
+      const result = await dataSource.query('SELECT last_completed_at FROM gc_state WHERE id = 1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].last_completed_at).not.toBeNull();
     });
   });
 });

@@ -10,9 +10,10 @@ VersityGW는 Storix의 목표 기본 스토리지 백엔드다
 
 - 새로 구축하는 운영 환경. NAS 기반이면 WAS마다 VersityGW를 1:1로 붙이고
   Postgres는 공유한다(`docs/deployment/multi-instance-versitygw.md`). 단,
-  gc/backup/restore는 이 1:1 구조와 무관하게 함대당 한 곳에서만 실행한다 —
+  backup/restore는 이 1:1 구조와 무관하게 함대당 한 곳에서만 실행한다 —
   각 WAS의 로컬 VersityGW는 같은 공유 NAS/DB를 보는 창구일 뿐이라, 호스트마다
-  돌리면 중복 실행이 된다(아래 "운영 잡" 참고).
+  돌리면 중복 실행이 된다(아래 "운영 잡" 참고). gc는 advisory lock으로 스스로
+  중복 실행을 막으므로 예외다.
 - 로컬 개발. 운영과 같은 백엔드로 개발하려면 이 조합에
   `docker-compose.postgres.yml`을 더한다.
 - 이미 운영 중인 VersityGW가 있으면 이 override 없이 base만 쓴다(아래 "기존
@@ -164,10 +165,16 @@ scheme을 넣는다. TLS 종료 프록시 뒤에 둘 때의 규칙은
 배포에 쓴 것과 같은 `-f` 조합에 profile을 더한다. 절차와 주의사항은
 `docs/deployment/backup-restore.md`.
 
-멀티 인스턴스(1:1 VersityGW + 공유 DB) 배치에서는 **함대 중 한 호스트에서만**
-실행한다. 모든 WAS 호스트가 같은 compose 파일을 갖고 있어 그대로 복사하면
-각 호스트의 로컬 VersityGW가 같은 공유 NAS/DB를 대상으로 중복 스캔·삭제를
-하게 된다.
+`backup`/`restore`는 멀티 인스턴스(1:1 VersityGW + 공유 DB) 배치에서
+**함대 중 한 호스트에서만** 실행한다. 모든 WAS 호스트가 같은 compose 파일을
+갖고 있어 그대로 복사하면 각 호스트가 같은 공유 NAS/DB를 대상으로 중복
+실행하게 된다.
+
+`gc`는 다르다 — Postgres advisory lock과 `STORIX_GC_MIN_INTERVAL`(기본
+3600초)로 스스로 중복 실행을 막는다: 다른 인스턴스가 지금 실행 중이거나
+`STORIX_GC_MIN_INTERVAL` 이내에 이미 완료했으면 조용히 건너뛴다. 모든 WAS
+호스트에 동일한 스케줄(예: cron)로 걸어도 실제로는 그중 한 인스턴스만
+스캔·삭제를 수행한다.
 
 ```bash
 C="-f docker-compose.yml -f docker-compose.versitygw.yml"   # 개발이면 -f docker-compose.postgres.yml 추가

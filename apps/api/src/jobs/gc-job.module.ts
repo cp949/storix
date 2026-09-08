@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { GcJob } from './gc.job.js';
+import { GcLock } from './gc-lock.js';
 
 // job별로 모듈을 분리한다 — NestFactory.createApplicationContext는 import된
 // 모듈의 모든 provider를 즉시(eager) 생성하므로, 한 모듈에 세 job을 묶으면
@@ -9,7 +10,7 @@ import { GcJob } from './gc.job.js';
 // 그쪽 전용 env var(STORIX_BACKUP_DIR, STORIX_RESTORE_SOURCE_DIR) 부재로 부팅이 실패한다.
 @Module({
   imports: [PersistenceModule, StorageModule],
-  providers: [GcJob],
-  exports: [GcJob],
+  providers: [GcJob, GcLock],
+  exports: [GcJob, GcLock],
 })
 export class GcJobModule {}

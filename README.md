@@ -208,6 +208,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_MAX_SYNC_COPY_NODES` | 선택 | `1000` | app | recursive cp 노드 수 상한 |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` | 선택 | `300` | app | presigned URL 만료(초). 상한 `604800`(7일), 초과하면 부팅 거부 |
 | `STORIX_ORPHAN_GRACE_PERIOD` | 선택 | `86400` | gc | 참조 0 이후 회수까지 유예(초) |
+| `STORIX_GC_MIN_INTERVAL` | 선택 | `3600` | gc | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초). advisory lock + 이 간격으로 함대 전체에서 한 인스턴스만 실행되게 한다 |
 | `STORIX_API_KEY` | 필수 | — | app | 서비스 간 인증 키. 공백만 있어도 거부 |
 | `STORIX_API_KEY_PREVIOUS` | 선택 | — | app | 키 로테이션 중 함께 유효한 이전 키 |
 | `STORIX_ENCRYPTION_MASTER_KEY` | 조건부 | — | app | ENCRYPTED namespace가 하나라도 있으면 필수. 64자 hex. 분실 시 복호화 불가 |

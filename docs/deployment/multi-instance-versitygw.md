@@ -79,18 +79,22 @@ posix 백엔드로 동시에 바라보는 구성에서, VersityGW의 posix 백�
 > 재기동한다. 동시 재기동 금지 — 첫 호스트가 완전히 기동(`migrate`
 > 완료)한 뒤에 다음 호스트를 재기동한다.
 
-## 운영 규칙 — backup/restore/gc는 함대당 한 곳에서만 실행
+## 운영 규칙 — backup/restore는 함대당 한 곳에서만 실행, gc는 자체 방지
 
 base의 모든 서비스(`migrate`/`app`뿐 아니라 `backup`/`restore`/`gc`)가
 `.env`의 `STORIX_DB_HOST`, 즉 **함대 전체가 공유하는 하나의 Postgres**를
 대상으로 동작한다.
 
-- `backup`/`gc`/`restore`는 함대 중 오직 한 호스트(또는 별도 전용
-  운영 호스트)에서만 실행한다. 여러 WAS 호스트에서 동시에 실행하는
-  시나리오는 분석·지원되지 않는다.
+- `backup`/`restore`는 함대 중 오직 한 호스트(또는 별도 전용 운영
+  호스트)에서만 실행한다. 여러 WAS 호스트에서 동시에 실행하는 시나리오는
+  분석·지원되지 않는다.
 - `restore`(특히 `STORIX_RESTORE_FORCE=true`)는 그것을 실행한 호스트만이
   아니라 **함대 전체가 공유하는 DB의 메타데이터를 통째로 리셋**한다.
   반드시 함대의 모든 WAS 인스턴스가 정지된 상태에서만 실행한다.
+- `gc`는 예외다. Postgres advisory lock과 `STORIX_GC_MIN_INTERVAL`(기본
+  3600초)로 스스로 중복 실행을 막는다 — 다른 인스턴스가 실행 중이거나
+  그 간격 이내에 이미 완료했으면 조용히 건너뛴다. 모든 WAS 호스트에 같은
+  스케줄로 걸어도 안전하다(`README.versitygw.md` "운영 잡" 참고).
 
 ## 스코프 밖
 

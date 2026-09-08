@@ -63,6 +63,7 @@ services:
     environment:
       <<: [*db-env, *storage-env]
       STORIX_ORPHAN_GRACE_PERIOD: ${STORIX_ORPHAN_GRACE_PERIOD:-86400}
+      STORIX_GC_MIN_INTERVAL: ${STORIX_GC_MIN_INTERVAL:-3600}
     depends_on:
       migrate:
         condition: service_completed_successfully
