@@ -5,16 +5,18 @@ on:
     branches: [dev]
     paths:
       - 'docker-compose.yml'
-      - 'docker-compose.versity-demo.yml'
-      - 'docker-compose.versity-demo.ci.yml'
+      - 'docker-compose.versitygw.yml'
+      - 'docker-compose.postgres.yml'
+      - '.github/compose.ci.yml'
       - '.env.example'
       - 'apps/api/**'
       - '.github/workflows/versity-demo-smoke.yml'
   pull_request:
     paths:
       - 'docker-compose.yml'
-      - 'docker-compose.versity-demo.yml'
-      - 'docker-compose.versity-demo.ci.yml'
+      - 'docker-compose.versitygw.yml'
+      - 'docker-compose.postgres.yml'
+      - '.github/compose.ci.yml'
       - '.env.example'
       - 'apps/api/**'
       - '.github/workflows/versity-demo-smoke.yml'
@@ -24,10 +26,14 @@ permissions:
   contents: read
 
 env:
+  # base + VersityGW 백엔드 + 러너 로컬 Postgres + CI 전용 포트 노출.
+  # 첫 -f 파일의 디렉터리(루트)가 project directory가 되므로 .github/ 아래
+  # 파일을 섞어도 상대 경로는 루트 기준으로 해석된다.
   COMPOSE_FILES: >-
     -f docker-compose.yml
-    -f docker-compose.versity-demo.yml
-    -f docker-compose.versity-demo.ci.yml
+    -f docker-compose.versitygw.yml
+    -f docker-compose.postgres.yml
+    -f .github/compose.ci.yml
 
 jobs:
   smoke:

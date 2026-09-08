@@ -2,39 +2,42 @@
 
 ADR-0003이 확정한 목표 배포 형태: 여러 Storix WAS(API 서버) 인스턴스가
 Postgres DB는 공유하고, NAS 기반 스토리지일 때는 WAS별로 VersityGW를
-1:1 전용 배치한다. 이 문서는 그 배치를 위한 override 파일 사용법과
-지켜야 할 운영 규칙을 다룬다. 배경은
-`../adr/0003-versitygw-primary-backend-and-topology.md` 참고.
+1:1 전용 배치한다. 이 문서는 그 배치를 위한 compose 조합과 지켜야 할
+운영 규칙을 다룬다. 배경은
+`../adr/0003-versitygw-primary-backend-and-topology.md`, compose 파일
+배치는 `../adr/0004-compose-file-layout.md` 참고.
 
 ## 사용법
 
-각 WAS 호스트에서:
+각 WAS 호스트의 `.env`에 공유 DB 접속 정보와 NAS 경로를 넣는다:
 
 ```bash
-export SHARED_DB_HOST=<전용 Postgres 호스트>
-export VERSITYGW_DATA_PATH=/mnt/nas/storix-data
-docker compose -f docker-compose.yml -f docker-compose.versity-demo.yml -f docker-compose.shared-db.yml up
+DB_HOST=<전용 Postgres 호스트>
+DB_PORT=5432
+DB_USERNAME=<공유 DB 계정>
+DB_PASSWORD=<공유 DB 비밀번호>
+DB_NAME=<공유 DB 이름>
+VERSITYGW_DATA_PATH=/mnt/nas/storix-data
 ```
 
-`SHARED_DB_HOST`/`VERSITYGW_DATA_PATH`는 위처럼 shell에서 export하는
-대신 다른 변수들처럼 `.env`에 넣어도 동일하게 동작한다 — shell 환경
-변수는 `.env` 값보다 우선순위가 높을 뿐이다.
+그리고 base + VersityGW override로 기동한다:
 
-로컬 `postgres`/`minio` 컨테이너는 지금처럼 같이 뜨지만 쓰이지 않는다 —
-정리는 스코프 밖이다(`docker-compose.versity-demo.yml`/
-`docker-compose.s3-demo.yml`과 같은 선례).
+```bash
+docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
+```
 
-`SHARED_DB_HOST`를 비워두면 `docker-compose.shared-db.yml`이 즉시
-실패한다(값이 필수임을 명시적으로 강제). 이 required-마커는 `up`뿐
-아니라 `down`/`logs`/`ps` 등 compose의 다른 모든 하위 명령에도 똑같이
-적용된다 — teardown이나 상태 확인을 할 때도 같은 `-f` 파일들과
-`SHARED_DB_HOST`를 그대로 넘겨야 한다. `VERSITYGW_DATA_PATH`를
-비워두면 named volume(`versitygw-data`)을 쓰는 기존 단일 인스턴스
-데모와 동일하게 동작한다.
+`docker-compose.postgres.yml`은 겹치지 않는다 — 그 파일은 인스턴스 로컬
+Postgres 컨테이너를 추가하고 모든 서비스의 `DB_HOST`를 그쪽으로
+재정의하므로, 공유 DB 토폴로지와 정면으로 충돌한다.
 
-공유 DB의 포트는 표준 포트(5432)만 지원한다. 접속 계정은
-`docker-compose.shared-db.yml`이 아니라 `.env`의 기존
-`DB_USERNAME`/`DB_PASSWORD`/`DB_NAME`에 넣는다.
+`.env` 값은 shell에서 export해도 동일하게 동작한다 — shell 환경 변수는
+`.env` 값보다 우선순위가 높을 뿐이다.
+
+`DB_HOST`를 비워두면 compose 파싱은 통과하고 `migrate`/`app`이 부팅
+시점에 실패한다(base가 `${VAR:?}` 필수 마커를 쓰지 않는 이유는
+`docker-compose.yml` 상단 주석 참고). `VERSITYGW_DATA_PATH`를 비워두면
+named volume(`versitygw-data`)을 쓰는 단일 인스턴스 구성과 동일하게
+동작한다.
 
 ### VERSITYGW_DATA_PATH는 WAS 호스트마다 달라지는 값이 아니다
 
@@ -78,10 +81,9 @@ posix 백엔드로 동시에 바라보는 구성에서, VersityGW의 posix 백�
 
 ## 운영 규칙 — backup/restore/gc는 함대당 한 곳에서만 실행
 
-`docker-compose.shared-db.yml`은 `migrate`/`app`뿐 아니라
-`backup`/`restore`/`gc`의 `DB_HOST`도 공유 DB로 재정의한다. 즉 이
-잡들은 이제 특정 WAS 호스트 로컬 DB가 아니라 **함대 전체가 공유하는
-하나의 Postgres**를 대상으로 동작한다.
+base의 모든 서비스(`migrate`/`app`뿐 아니라 `backup`/`restore`/`gc`)가
+`.env`의 `DB_HOST`, 즉 **함대 전체가 공유하는 하나의 Postgres**를
+대상으로 동작한다.
 
 - `backup`/`gc`/`restore`는 함대 중 오직 한 호스트(또는 별도 전용
   운영 호스트)에서만 실행한다. 여러 WAS 호스트에서 동시에 실행하는

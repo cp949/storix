@@ -1,0 +1,81 @@
+# VersityGW 백엔드 override — 목표 기본 스토리지 백엔드(ADR-0003). base
+# docker-compose.yml과 함께 -f로 겹쳐 쓴다:
+#   docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
+#
+# 이 파일이 하는 일:
+#   - versitygw 컨테이너(posix 백엔드, /data)와 버킷 초기화(versitygw-init)를
+#     추가한다.
+#   - app/gc/backup/restore의 STORAGE_ENDPOINT/STORAGE_PORT/STORAGE_USE_SSL을
+#     versitygw:7070(HTTP)으로 재정의한다 — 이 조합에서 .env의 그 세 값은
+#     무시된다. STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY/STORAGE_BUCKET은 그대로
+#     쓰이며, 게이트웨이의 root 자격증명과 초기 버킷 이름으로도 사용된다.
+#
+# 이미 운영 중인 VersityGW에 붙일 때는 이 파일을 쓰지 않는다 — base 단독으로
+# 기동하고 .env의 STORAGE_*에 그 게이트웨이의 접속 정보를 넣는다.
+#
+# VERSITYGW_DATA_PATH를 .env에 설정하면(예: /mnt/nas/storix-data) versitygw
+# 서비스의 볼륨이 named volume 대신 그 경로로 bind mount된다. 이 경로는 모든
+# WAS 호스트에서 동일한 값이어야 한다 — 공유되는 건 NAS 데이터 자체이고,
+# WAS별로 다른 건 그 경로를 바라보는 VersityGW 게이트웨이 컨테이너뿐이다
+# (ADR-0003, docs/deployment/multi-instance-versitygw.md). 비워두면 named
+# volume을 쓴다.
+
+x-versitygw-env: &versitygw-env
+  STORAGE_ENDPOINT: versitygw
+  STORAGE_PORT: '7070'
+  STORAGE_USE_SSL: 'false'
+
+x-versitygw-deps: &versitygw-deps
+  versitygw:
+    condition: service_healthy
+  versitygw-init:
+    condition: service_completed_successfully
+
+services:
+  app:
+    environment: *versitygw-env
+    depends_on: *versitygw-deps
+
+  gc:
+    environment: *versitygw-env
+    depends_on: *versitygw-deps
+
+  backup:
+    environment: *versitygw-env
+    depends_on: *versitygw-deps
+
+  restore:
+    environment: *versitygw-env
+    depends_on: *versitygw-deps
+
+  versitygw:
+    image: versity/versitygw:v1.8.0
+    environment:
+      ROOT_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
+      ROOT_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARGS: /data
+      # --health는 backend 서브커맨드보다 앞에 와야 하는 global flag라 VGW_ARGS로 전달한다.
+      VGW_ARGS: '--health /health'
+    volumes:
+      - ${VERSITYGW_DATA_PATH:-versitygw-data}:/data
+    healthcheck:
+      # alpine 베이스 이미지라 curl이 없다 — busybox wget 사용.
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:7070/health']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  versitygw-init:
+    image: minio/mc:latest
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        mc alias set local http://versitygw:7070 ${STORAGE_ACCESS_KEY:-storix} ${STORAGE_SECRET_KEY:-storix-secret} &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET:-storix}
+    depends_on:
+      versitygw:
+        condition: service_healthy
+
+volumes:
+  versitygw-data:

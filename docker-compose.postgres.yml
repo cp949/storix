@@ -1,0 +1,66 @@
+# 개발·검증용 Postgres 컨테이너 override — base docker-compose.yml(과 백엔드
+# override)에 -f로 겹쳐 쓴다:
+#   docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml up -d
+#
+# 운영에서는 이 파일을 쓰지 않는다 — .env의 DB_HOST에 외부 Postgres를 넣고
+# base 단독(또는 백엔드 override와 조합)으로 기동한다. 여러 WAS 인스턴스가
+# 하나의 Postgres를 공유하는 목표 토폴로지(ADR-0003)에서는 인스턴스마다 DB
+# 컨테이너를 두지 않는다.
+#
+# 이 파일이 하는 일:
+#   - postgres 컨테이너를 추가하고 .env의 DB_USERNAME/DB_PASSWORD/DB_NAME으로
+#     초기화한다.
+#   - migrate/app/gc/backup/restore의 DB_HOST/DB_PORT를 postgres:5432로
+#     재정의한다 — 이 조합에서 컨테이너 쪽은 .env의 DB_HOST/DB_PORT를 무시한다.
+#   - 호스트의 127.0.0.1:${DB_PORT:-5432}로 노출해, 호스트에서 직접 실행하는
+#     API 서버(pnpm dev)나 psql이 .env의 DB_HOST=localhost/DB_PORT 그대로
+#     접속할 수 있게 한다. 호스트에 이미 같은 포트를 쓰는 Postgres가 있으면
+#     .env의 DB_PORT를 다른 값으로 바꾼다.
+
+x-postgres-env: &postgres-env
+  DB_HOST: postgres
+  DB_PORT: '5432'
+
+x-postgres-deps: &postgres-deps
+  postgres:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-storix}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-storix}
+      POSTGRES_DB: ${DB_NAME:-storix}
+    ports:
+      - '127.0.0.1:${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-storix}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    environment: *postgres-env
+    depends_on: *postgres-deps
+
+  app:
+    environment: *postgres-env
+    depends_on: *postgres-deps
+
+  gc:
+    environment: *postgres-env
+    depends_on: *postgres-deps
+
+  backup:
+    environment: *postgres-env
+    depends_on: *postgres-deps
+
+  restore:
+    environment: *postgres-env
+    depends_on: *postgres-deps
+
+volumes:
+  postgres-data:

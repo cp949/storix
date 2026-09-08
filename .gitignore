@@ -15,5 +15,9 @@ coverage/
 .env.*
 !.env.example
 
+# 로컬 compose 조합 — 원하는 docker-compose.<대상>.yml을 이 이름으로 복사해 쓴다
+# (docker compose/podman-compose가 자동 병합). 개인 환경 설정이라 커밋하지 않는다.
+docker-compose.override.yml
+
 # 백업 산출물 — docker-compose의 backup/restore 서비스가 ./backups를 바인드 마운트한다
 /backups/
