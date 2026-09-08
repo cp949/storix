@@ -7,8 +7,11 @@
 # 사전 준비 (compose가 대신 해주지 않는다):
 #   - AWS 콘솔/CLI로 버킷을 미리 만들어 둔다(자동 생성 없음 — 자격증명에
 #     버킷 생성 권한까지 요구하지 않기 위해).
-#   - IAM 사용자를 만들고 해당 버킷에 대한 최소 권한(GetObject/PutObject/
-#     DeleteObject/ListBucket)만 부여한 access key를 발급한다.
+#   - IAM 사용자를 만들고 해당 버킷에 한정한 최소 권한 access key를 발급한다.
+#     Storix는 모든 업로드를 크기 미지정 스트림으로 보내 minio-js가 항상
+#     멀티파트 경로를 타므로 GetObject/PutObject/DeleteObject/ListBucket에
+#     더해 ListBucketMultipartUploads/AbortMultipartUpload/
+#     ListMultipartUploadParts가 필요하다. 정책 JSON은 README.s3.md 참고.
 #   - .env에 실제 발급값을 넣는다(전부 샘플 — 반드시 실제 값으로 교체):
 #       STORAGE_REGION=SAMPLE-ap-northeast-2
 #       STORAGE_ACCESS_KEY=AKIASAMPLEXXXXXXXXX
