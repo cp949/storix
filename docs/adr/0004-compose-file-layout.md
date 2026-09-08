@@ -33,9 +33,7 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
 2. **컨테이너 추가·연결 재정의는 `docker-compose.<대상>.yml` override로만 한다.**
    - `docker-compose.versitygw.yml` — VersityGW 컨테이너 + 버킷 초기화, 4개
      서비스의 `STORAGE_ENDPOINT/PORT/USE_SSL` 재정의. 목표 기본 백엔드(ADR-0003).
-   - `docker-compose.minio.yml` — MinIO 동일 패턴. `nginx-demo` profile(STORAGE-03
-     샘플)도 여기 둔다 — `nginx-reverse-proxy.conf`가 `minio:9000`으로 고정된
-     MinIO 전용 구성이기 때문이다.
+   - `docker-compose.minio.yml` — MinIO 동일 패턴.
    - `docker-compose.s3.yml` — 컨테이너 없음. 엔드포인트/443/SSL/path-style/
      `STORAGE_PUBLIC_*`만 AWS 값으로 고정. 자격증명·리전·버킷은 `.env`의
      `STORAGE_*`를 그대로 쓴다(`AWS_S3_*` 제거 — 이 조합에는 그 값을 root
@@ -46,9 +44,15 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
    - 세 백엔드 파일은 서로 우선하지 않는 동급이다. 파일 목록만으로 지원
      백엔드(VersityGW/MinIO/S3)를 알 수 있어야 하므로 `-demo` 접미사를 쓰지
      않는다.
-3. **CI 전용 override는 루트 밖(`.github/compose.ci.yml`)에 둔다.** 루트의
-   `docker-compose*` 목록은 사용자용 파일만 남긴다. `.github/workflows/` 안은
-   GitHub이 워크플로로 파싱하므로 그 바깥에 둔다.
+3. **Storix 구성 요소가 아닌 파일은 루트 밖에 둔다.** 루트의 `docker-compose*`
+   목록은 base + 백엔드 3종 + 개발 DB만 남긴다.
+   - CI 전용 override → `.github/compose.ci.yml`(`.github/workflows/` 안은 GitHub이
+     워크플로로 파싱하므로 그 바깥).
+   - 개발·검증용 nginx reverse-proxy 샘플(STORAGE-03) →
+     `docs/deployment/compose.nginx-demo.yml`(마운트하는 conf 파일 옆). nginx는
+     presigned URL이 TLS 종료 프록시 뒤에서 깨지지 않는지 재현하는 개발 도구이지
+     Storix 필수 구성이 아니다. 파일을 넘기는 것 자체가 opt-in이라 profile을 쓰지
+     않는다.
 4. **파일 안 중복은 YAML 앵커(`x-*` + `&`/`*`/`<<:`)로 제거한다.** base는
    `x-db-env`/`x-storage-env`/`x-api-build`, 각 override는 `x-<대상>-env`/
    `x-<대상>-deps`를 4~5개 서비스에 재사용한다. compose-spec 표준이며 docker
@@ -92,12 +96,12 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
 - ADR-0003 Consequences 1번("스택마다 전용 postgres를 새로 만드는 구조")은 이
   배치로 해소된다. 멀티 인스턴스 절차는
   `docs/deployment/multi-instance-versitygw.md`가 이 배치 기준으로 갱신됐다.
-- nginx reverse-proxy 샘플은 MinIO 전용으로 남는다(`docker-compose.minio.yml`).
-  VersityGW 앞에 두는 백엔드 중립 샘플(upstream 템플릿화 + 통합 테스트 반영)은
-  후속 작업이다.
+- nginx reverse-proxy 샘플은 `minio:9000` upstream 고정의 개발·검증 도구로
+  `docs/deployment/compose.nginx-demo.yml`에 둔다. Storix 필수 구성이 아니므로
+  백엔드 중립화(VersityGW upstream)는 계획하지 않는다.
 - 로컬 검증은 podman-compose `config`로 조합 6종(base 단독, +versitygw,
-  +versitygw+postgres+ci, +minio+postgres+nginx-demo, +minio, +s3; gc/backup/restore
-  profile 포함)의 병합 결과를 확인했다. 실 기동은 로컬 podman-compose의 기본
+  +versitygw+postgres+ci, +minio+postgres+`docs/deployment/compose.nginx-demo.yml`,
+  +minio, +s3; gc/backup/restore profile 포함)의 병합 결과를 확인했다. 실 기동은 로컬 podman-compose의 기본
   네트워크 DNS 결함 때문에 불가능하며, `dev` push 시
   `.github/workflows/versity-demo-smoke.yml`이 실제 Docker Compose로 검증한다.
 - `.env`의 `COMPOSE_FILE`을 docker compose가 읽는다는 것은 compose-go의 옵션 적용
