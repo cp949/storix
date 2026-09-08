@@ -20,6 +20,6 @@ export class HealthController {
   @Get('ready')
   @HealthCheck()
   ready() {
-    return this.health.check([() => this.db.pingCheck('database'), () => this.minio.check('minio')]);
+    return this.health.check([() => this.db.pingCheck('database'), () => this.minio.check('storage')]);
   }
 }

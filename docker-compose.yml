@@ -121,3 +121,18 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # curl은 이미지 축소를 위해 런타임에서 purge했으므로(apps/api/Dockerfile)
+    # Node 내장 fetch로 검사한다. /health/ready는 DB·스토리지 연결까지 확인한다 —
+    # /health/live(프로세스 생존만)보다 self-host 운영자에게 더 유용한 신호다.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

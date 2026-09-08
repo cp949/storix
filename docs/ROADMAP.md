@@ -175,8 +175,15 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 
 - [x] DEPLOY-01: `README.md`에 설치, 환경변수, `docker-compose` profile
       사용법 추가 (핵심 기능 소개는 DEPLOY-06에서 완료).
-- [ ] DEPLOY-02: 헬스체크 확장 — 현재 MinIO indicator만 있음, Postgres 등
-      추가.
+- [x] DEPLOY-02: **헬스체크 확장** — `/health/ready`는 최초 커밋부터 이미
+      Postgres·스토리지를 함께 검사한다(로드맵 최초 문구 오기, 코드 확인 후
+      정정). 남은 갭 두 개를 실제로 채운다: (1) `app` 컨테이너에
+      Docker/Podman `healthcheck`가 없어 `compose ps`로 상태를 못 봤음 →
+      Node 내장 fetch로 `/health/ready`를 찌르는 healthcheck 추가(curl은
+      이미지 축소로 purge됨, 재설치하지 않음). (2) 응답 키가 `minio`로
+      고정돼 VersityGW-primary 방향(ADR-0003)과 같은 오독 위험 → `storage`로
+      변경(클래스/파일명은 ADR-0016대로 `Minio*` 유지 — minio-js Client 타입
+      결합은 그대로이므로).
 - [ ] DEPLOY-03: 스키마 마이그레이션/업그레이드 경로 문서화.
 - [ ] DEPLOY-04: `CHANGELOG.md` 도입 — Keep-a-changelog 스타일
       (Added/Changed/Fixed).
