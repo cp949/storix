@@ -33,13 +33,13 @@ export class BackupJob {
     private readonly pgTool: PgDumpCliTool,
     config: ConfigService,
   ) {
-    this.backupRootDir = config.getOrThrow<string>('BACKUP_DIR');
+    this.backupRootDir = config.getOrThrow<string>('STORIX_BACKUP_DIR');
     this.connectionOptions = {
-      host: config.getOrThrow<string>('DB_HOST'),
-      port: parsePositiveInt(config.get<string>('DB_PORT'), 5432),
-      username: config.getOrThrow<string>('DB_USERNAME'),
-      password: config.getOrThrow<string>('DB_PASSWORD'),
-      database: config.getOrThrow<string>('DB_NAME'),
+      host: config.getOrThrow<string>('STORIX_DB_HOST'),
+      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+      username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
+      password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
+      database: config.getOrThrow<string>('STORIX_DB_NAME'),
     };
   }
 
@@ -56,7 +56,7 @@ export class BackupJob {
     const encryptedNamespaceCount = await this.backupRepository.countEncryptedNamespaces();
     if (encryptedNamespaceCount > 0) {
       this.logger.warn(
-        `ENCRYPTED namespace ${encryptedNamespaceCount}건 발견 — ENCRYPTION_MASTER_KEY를 이 백업과 별도 채널에 백업했는지 확인하십시오. 마스터 키는 이 백업에 포함되지 않습니다.`,
+        `ENCRYPTED namespace ${encryptedNamespaceCount}건 발견 — STORIX_ENCRYPTION_MASTER_KEY를 이 백업과 별도 채널에 백업했는지 확인하십시오. 마스터 키는 이 백업에 포함되지 않습니다.`,
       );
     }
 

@@ -138,7 +138,7 @@ describe('GcJob 통합', () => {
   it('metadata 없이 grace period가 지난 orphan MinIO object를 회수한다', async () => {
     const orphanKey = `blobs/ab/${randomUUID()}`;
     await storage.put(orphanKey, Readable.from(Buffer.from('orphan')));
-    // ORPHAN_GRACE_PERIOD는 parsePositiveInt로 파싱되어 0을 허용하지 않으므로
+    // STORIX_ORPHAN_GRACE_PERIOD는 parsePositiveInt로 파싱되어 0을 허용하지 않으므로
     // 최소값 1초를 쓰고, object가 확실히 grace period보다 오래되도록 잠깐 대기한다.
     await new Promise((resolve) => setTimeout(resolve, 1100));
     const job = new GcJob(storage, blobRepository, makeConfig(1));

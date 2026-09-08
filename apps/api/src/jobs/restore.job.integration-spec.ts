@@ -51,11 +51,11 @@ describe('RestoreJob 통합', () => {
 
   function baseConfigValues(): Record<string, string> {
     return {
-      DB_HOST: pgContainer.getHost(),
-      DB_PORT: String(pgContainer.getPort()),
-      DB_USERNAME: pgContainer.getUsername(),
-      DB_PASSWORD: pgContainer.getPassword(),
-      DB_NAME: pgContainer.getDatabase(),
+      STORIX_DB_HOST: pgContainer.getHost(),
+      STORIX_DB_PORT: String(pgContainer.getPort()),
+      STORIX_DB_USERNAME: pgContainer.getUsername(),
+      STORIX_DB_PASSWORD: pgContainer.getPassword(),
+      STORIX_DB_NAME: pgContainer.getDatabase(),
     };
   }
 
@@ -112,7 +112,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), BACKUP_DIR: backupRootDir }),
+      makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: backupRootDir }),
     );
     const backupResult = await backupJob.run();
     backupDir = backupResult.backupDir;
@@ -134,7 +134,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: backupDir, RESTORE_FORCE: 'false' }),
+      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
     const result = await job.run();
@@ -159,14 +159,14 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: backupDir, RESTORE_FORCE: 'false' }),
+      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
     await expect(job.run()).rejects.toThrow(RestoreTargetNotEmptyError);
     await expect(namespaceRepo.findOneBy({ name: 'existing-live-ns' })).resolves.not.toBeNull();
   });
 
-  it('RESTORE_FORCE=true면 기존 데이터를 지우고 백업 시점 상태로 덮어쓴다', async () => {
+  it('STORIX_RESTORE_FORCE=true면 기존 데이터를 지우고 백업 시점 상태로 덮어쓴다', async () => {
     // 백업에는 없는 object(stray)를 미리 심어 둔다. clearExistingObjects()가
     // 실제로 실행돼 "기존 object를 전부 지운다"는 보장이 지켜지는지 이 key의
     // 생존 여부로 검증한다 — put()이 같은 key를 덮어쓰는 것만으로는 이 보장을
@@ -178,7 +178,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: backupDir, RESTORE_FORCE: 'true' }),
+      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'true' }),
     );
 
     await job.run();
@@ -209,7 +209,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), BACKUP_DIR: emptyBackupRootDir }),
+      makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: emptyBackupRootDir }),
     );
     const emptyBackupResult = await backupJob.run();
     expect(emptyBackupResult.copiedObjectCount).toBe(0);
@@ -224,7 +224,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, RESTORE_FORCE: 'false' }),
+      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
     await expect(job.run()).resolves.toEqual(expect.objectContaining({ restoredObjectCount: 0 }));
@@ -232,7 +232,7 @@ describe('RestoreJob 통합', () => {
     await fs.rm(emptyBackupRootDir, { recursive: true, force: true });
   });
 
-  it('RESTORE_SOURCE_DIR에 postgres.dump가 없으면 force여도 MinIO object를 지우기 전에 실패한다', async () => {
+  it('STORIX_RESTORE_SOURCE_DIR에 postgres.dump가 없으면 force여도 MinIO object를 지우기 전에 실패한다', async () => {
     // 경로 오타로 force 복구를 돌리는 상황. clearExistingObjects()가 먼저 돌면
     // 버킷만 비워지고 pg_restore는 실패해, 복구 전보다 나쁜 상태로 끝난다.
     await dataSource.query('TRUNCATE namespace CASCADE');
@@ -247,7 +247,7 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(),
-      makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: missingSourceDir, RESTORE_FORCE: 'true' }),
+      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: missingSourceDir, STORIX_RESTORE_FORCE: 'true' }),
     );
 
     await expect(job.run()).rejects.toThrow('ENOENT');
@@ -262,8 +262,8 @@ describe('RestoreJob 통합', () => {
     await wipeBucket();
   });
 
-  it('RESTORE_SOURCE_DIR가 빈 문자열이면 생성 시점에 거부한다', async () => {
-    // docker-compose는 `${RESTORE_SOURCE_DIR:-}`로 넘기므로 미설정 시 빈
+  it('STORIX_RESTORE_SOURCE_DIR가 빈 문자열이면 생성 시점에 거부한다', async () => {
+    // docker-compose는 `${STORIX_RESTORE_SOURCE_DIR:-}`로 넘기므로 미설정 시 빈
     // 문자열이 도착하고, ConfigService.getOrThrow는 빈 문자열을 통과시킨다.
     expect(
       () =>
@@ -271,8 +271,8 @@ describe('RestoreJob 통합', () => {
           storage,
           backupRepository,
           new PgDumpCliTool(),
-          makeConfig({ ...baseConfigValues(), RESTORE_SOURCE_DIR: '', RESTORE_FORCE: 'false' }),
+          makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }),
         ),
-    ).toThrow('RESTORE_SOURCE_DIR가 비어 있음');
+    ).toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');
   });
 });

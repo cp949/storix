@@ -70,10 +70,10 @@ export class ContentService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('MAX_FILE_SIZE_BYTES'), 1);
-    this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('PRESIGNED_URL_EXPIRY_SECONDS'), 300);
+    this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('STORIX_MAX_FILE_SIZE_BYTES'), 1);
+    this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'), 300);
     if (this.presignedUrlExpirySeconds > 604800) {
-      throw new Error(`PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`);
+      throw new Error(`STORIX_PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`);
     }
   }
 
@@ -256,7 +256,7 @@ export class ContentService {
 
   private requireMasterKey(): Buffer {
     if (!this.masterKey) {
-      throw new Error('ENCRYPTED namespace인데 ENCRYPTION_MASTER_KEY가 설정되지 않음 — 데이터 일관성 위반');
+      throw new Error('ENCRYPTED namespace인데 STORIX_ENCRYPTION_MASTER_KEY가 설정되지 않음 — 데이터 일관성 위반');
     }
     return this.masterKey;
   }

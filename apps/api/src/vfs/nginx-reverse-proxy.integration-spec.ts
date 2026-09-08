@@ -124,33 +124,33 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
       .withWaitStrategy(Wait.forLogMessage(/start worker process/))
       .start();
 
-    process.env.DB_HOST = postgresContainer.getHost();
-    process.env.DB_PORT = String(postgresContainer.getPort());
-    process.env.DB_USERNAME = postgresContainer.getUsername();
-    process.env.DB_PASSWORD = postgresContainer.getPassword();
-    process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORAGE_PORT = String(minioContainer.getPort());
-    process.env.STORAGE_USE_SSL = 'false';
-    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
-    process.env.STORAGE_BUCKET = 'storix-nginx-proxy-test';
+    process.env.STORIX_DB_HOST = postgresContainer.getHost();
+    process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
+    process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
+    process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
+    process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
+    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_USE_SSL = 'false';
+    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_BUCKET = 'storix-nginx-proxy-test';
     // 이 값들이 presigned URL 서명에 들어간다 — 이 테스트가 nginx에 접근할 때
     // 쓰는 host/port/scheme과 반드시 일치해야 한다.
-    process.env.STORAGE_PUBLIC_ENDPOINT = nginxContainer.getHost();
-    process.env.STORAGE_PUBLIC_PORT = String(nginxContainer.getMappedPort(443));
-    process.env.STORAGE_PUBLIC_USE_SSL = 'true';
-    // STORAGE_REGION을 비워두면 minio-js가 리전 자동조회(getBucketRegionAsync)를
+    process.env.STORIX_STORAGE_PUBLIC_ENDPOINT = nginxContainer.getHost();
+    process.env.STORIX_STORAGE_PUBLIC_PORT = String(nginxContainer.getMappedPort(443));
+    process.env.STORIX_STORAGE_PUBLIC_USE_SSL = 'true';
+    // STORIX_STORAGE_REGION을 비워두면 minio-js가 리전 자동조회(getBucketRegionAsync)를
     // presignedClient(자체 self-signed 인증서를 쓰는 nginx)로 실제 HTTPS 요청해
     // rejectUnauthorized 기본값(true) 때문에 인증서 검증에서 그대로 실패한다
     // (Task 1이 컨테이너 loopback 시나리오에서 같은 근본 원인의 다른 증상을
     // 실측했다). region을 명시하면 이 요청 자체가 스킵된다.
-    process.env.STORAGE_REGION = 'us-east-1';
-    process.env.MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
-    process.env.MAX_SYNC_DELETE_NODES = '1000';
-    process.env.MAX_SYNC_COPY_NODES = '1000';
-    process.env.PRESIGNED_URL_EXPIRY_SECONDS = '300';
-    process.env.ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
+    process.env.STORIX_STORAGE_REGION = 'us-east-1';
+    process.env.STORIX_MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
+    process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
+    process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
+    process.env.STORIX_PRESIGNED_URL_EXPIRY_SECONDS = '300';
+    process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
     const minioClient = new MinioClient({
       endPoint: minioContainer.getHost(),
@@ -159,7 +159,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
+    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

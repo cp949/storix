@@ -305,7 +305,7 @@ describe('VfsService', () => {
       expect(repo.copyNode).not.toHaveBeenCalled();
     });
 
-    it('repository에 source/destination segments, destinationParents, MAX_SYNC_COPY_NODES를 그대로 전달한다', async () => {
+    it('repository에 source/destination segments, destinationParents, STORIX_MAX_SYNC_COPY_NODES를 그대로 전달한다', async () => {
       config.getOrThrow.mockReturnValue('7');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
@@ -390,7 +390,7 @@ describe('VfsService', () => {
       expect(repo.removeNode).not.toHaveBeenCalled();
     });
 
-    it('recursive 값과 설정된 MAX_SYNC_DELETE_NODES를 repository에 전달한다', async () => {
+    it('recursive 값과 설정된 STORIX_MAX_SYNC_DELETE_NODES를 repository에 전달한다', async () => {
       config.getOrThrow.mockReturnValue('42');
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({

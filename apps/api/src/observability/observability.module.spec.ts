@@ -8,7 +8,7 @@ function createFakeClient(): jest.Mocked<SentryClient> {
 }
 
 describe('resolveErrorReporter', () => {
-  it('SENTRY_DSN이 있으면 SentryErrorReporter를 반환한다', () => {
+  it('STORIX_SENTRY_DSN이 있으면 SentryErrorReporter를 반환한다', () => {
     const client = createFakeClient();
 
     const reporter = resolveErrorReporter('https://public@example.sentry.io/1', client);
@@ -17,7 +17,7 @@ describe('resolveErrorReporter', () => {
     expect(client.init).toHaveBeenCalledWith({ dsn: 'https://public@example.sentry.io/1', sendDefaultPii: false });
   });
 
-  it('SENTRY_DSN이 없으면 NoopErrorReporter를 반환한다', () => {
+  it('STORIX_SENTRY_DSN이 없으면 NoopErrorReporter를 반환한다', () => {
     const client = createFakeClient();
 
     const reporter = resolveErrorReporter(undefined, client);

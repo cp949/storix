@@ -10,7 +10,7 @@ import { parseMasterKey } from './master-key.js';
   providers: [
     {
       provide: MASTER_KEY,
-      useFactory: (config: ConfigService) => parseMasterKey(config.get<string>('ENCRYPTION_MASTER_KEY')),
+      useFactory: (config: ConfigService) => parseMasterKey(config.get<string>('STORIX_ENCRYPTION_MASTER_KEY')),
       inject: [ConfigService],
     },
     EncryptionBootGuard,

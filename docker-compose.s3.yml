@@ -1,7 +1,7 @@
 # AWS S3 백엔드 override — 관리형 서비스라 컨테이너로 띄울 대상이 없다.
 # app/gc/backup/restore의 엔드포인트 관련 값만 S3용으로 고정하고, 리전·
-# 자격증명·버킷은 .env의 STORAGE_REGION/STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY/
-# STORAGE_BUCKET을 그대로 쓴다. base docker-compose.yml과 함께 -f로 겹쳐 쓴다:
+# 자격증명·버킷은 .env의 STORIX_STORAGE_REGION/STORIX_STORAGE_ACCESS_KEY/STORIX_STORAGE_SECRET_KEY/
+# STORIX_STORAGE_BUCKET을 그대로 쓴다. base docker-compose.yml과 함께 -f로 겹쳐 쓴다:
 #   docker compose -f docker-compose.yml -f docker-compose.s3.yml up -d
 #
 # 사전 준비 (compose가 대신 해주지 않는다):
@@ -13,17 +13,17 @@
 #     더해 ListBucketMultipartUploads/AbortMultipartUpload/
 #     ListMultipartUploadParts가 필요하다. 정책 JSON은 README.s3.md 참고.
 #   - .env에 실제 발급값을 넣는다(전부 샘플 — 반드시 실제 값으로 교체):
-#       STORAGE_REGION=SAMPLE-ap-northeast-2
-#       STORAGE_ACCESS_KEY=AKIASAMPLEXXXXXXXXX
-#       STORAGE_SECRET_KEY=SAMPLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-#       STORAGE_BUCKET=SAMPLE-your-bucket-name
-#     .env의 STORAGE_ENDPOINT/STORAGE_PORT/STORAGE_USE_SSL/STORAGE_PATH_STYLE/
-#     STORAGE_PUBLIC_*은 이 파일이 덮어쓰므로 이 조합에서는 무시된다.
+#       STORIX_STORAGE_REGION=SAMPLE-ap-northeast-2
+#       STORIX_STORAGE_ACCESS_KEY=AKIASAMPLEXXXXXXXXX
+#       STORIX_STORAGE_SECRET_KEY=SAMPLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+#       STORIX_STORAGE_BUCKET=SAMPLE-your-bucket-name
+#     .env의 STORIX_STORAGE_ENDPOINT/STORIX_STORAGE_PORT/STORIX_STORAGE_USE_SSL/STORIX_STORAGE_PATH_STYLE/
+#     STORIX_STORAGE_PUBLIC_*은 이 파일이 덮어쓰므로 이 조합에서는 무시된다.
 #
-# STORAGE_ENDPOINT를 s3.amazonaws.com으로 고정했다 — 리전에 따라 리다이렉트가
+# STORIX_STORAGE_ENDPOINT를 s3.amazonaws.com으로 고정했다 — 리전에 따라 리다이렉트가
 # 발생하면 이 파일을 복사해 s3.<region>.amazonaws.com으로 바꾼다.
 #
-# 자격증명을 STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY로 그대로 쓰는 것이 안전한
+# 자격증명을 STORIX_STORAGE_ACCESS_KEY/STORIX_STORAGE_SECRET_KEY로 그대로 쓰는 것이 안전한
 # 이유: 이 조합에는 그 값을 root 자격증명으로 받는 minio/versitygw 컨테이너가
 # 없다(각각 별도 override 파일에만 존재). 진짜 AWS 시크릿이 흘러들어갈 다른
 # 서비스가 없다.
@@ -37,20 +37,20 @@
 # 전체에 대해 평가돼, 무관한 profile 실행까지 막아버린다).
 
 x-s3-env: &s3-env
-  STORAGE_ENDPOINT: s3.amazonaws.com
-  STORAGE_PORT: '443'
-  STORAGE_USE_SSL: 'true'
-  STORAGE_PATH_STYLE: 'false'
+  STORIX_STORAGE_ENDPOINT: s3.amazonaws.com
+  STORIX_STORAGE_PORT: '443'
+  STORIX_STORAGE_USE_SSL: 'true'
+  STORIX_STORAGE_PATH_STYLE: 'false'
 
 services:
   app:
     environment:
       <<: *s3-env
       # presigned URL도 같은 엔드포인트를 그대로 쓴다 — S3는 애초에 외부에서
-      # 접근 가능한 주소라 내부/외부 구분(STORAGE_PUBLIC_*)이 필요 없다.
-      STORAGE_PUBLIC_ENDPOINT: s3.amazonaws.com
-      STORAGE_PUBLIC_PORT: '443'
-      STORAGE_PUBLIC_USE_SSL: 'true'
+      # 접근 가능한 주소라 내부/외부 구분(STORIX_STORAGE_PUBLIC_*)이 필요 없다.
+      STORIX_STORAGE_PUBLIC_ENDPOINT: s3.amazonaws.com
+      STORIX_STORAGE_PUBLIC_PORT: '443'
+      STORIX_STORAGE_PUBLIC_USE_SSL: 'true'
 
   gc:
     environment: *s3-env

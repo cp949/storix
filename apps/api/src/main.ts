@@ -10,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.useGlobalFilters(new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER)));
   configureBodyParsers(app);
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.STORIX_PORT ?? 3000);
 }
 
 // catch()가 없으면 부팅 실패(EncryptionBootGuard의 fail-closed 포함)가 미처리

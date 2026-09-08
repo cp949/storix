@@ -13,11 +13,11 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
-  host: requireEnv('DB_HOST'),
-  port: parsePositiveInt(process.env.DB_PORT, 5432),
-  username: requireEnv('DB_USERNAME'),
-  password: requireEnv('DB_PASSWORD'),
-  database: requireEnv('DB_NAME'),
+  host: requireEnv('STORIX_DB_HOST'),
+  port: parsePositiveInt(process.env.STORIX_DB_PORT, 5432),
+  username: requireEnv('STORIX_DB_USERNAME'),
+  password: requireEnv('STORIX_DB_PASSWORD'),
+  database: requireEnv('STORIX_DB_NAME'),
   synchronize: false,
   entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
   migrations: [dirname + '/migrations/*.{ts,js}'],

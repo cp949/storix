@@ -66,20 +66,20 @@ describe('Fs HTTP contract', () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
 
-    process.env.DB_HOST = postgresContainer.getHost();
-    process.env.DB_PORT = String(postgresContainer.getPort());
-    process.env.DB_USERNAME = postgresContainer.getUsername();
-    process.env.DB_PASSWORD = postgresContainer.getPassword();
-    process.env.DB_NAME = postgresContainer.getDatabase();
-    process.env.STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORAGE_PORT = String(minioContainer.getPort());
-    process.env.STORAGE_USE_SSL = 'false';
-    process.env.STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORAGE_SECRET_KEY = minioContainer.getPassword();
-    process.env.STORAGE_BUCKET = 'storix-fs-test';
-    process.env.MAX_FILE_SIZE_BYTES = String(MAX_FILE_SIZE_BYTES);
-    process.env.MAX_SYNC_DELETE_NODES = '5';
-    process.env.MAX_SYNC_COPY_NODES = '5';
+    process.env.STORIX_DB_HOST = postgresContainer.getHost();
+    process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
+    process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
+    process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
+    process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
+    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
+    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_USE_SSL = 'false';
+    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_BUCKET = 'storix-fs-test';
+    process.env.STORIX_MAX_FILE_SIZE_BYTES = String(MAX_FILE_SIZE_BYTES);
+    process.env.STORIX_MAX_SYNC_DELETE_NODES = '5';
+    process.env.STORIX_MAX_SYNC_COPY_NODES = '5';
 
     const minioClient = new MinioClient({
       endPoint: minioContainer.getHost(),
@@ -88,7 +88,7 @@ describe('Fs HTTP contract', () => {
       accessKey: minioContainer.getUsername(),
       secretKey: minioContainer.getPassword(),
     });
-    await minioClient.makeBucket(process.env.STORAGE_BUCKET);
+    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -636,7 +636,7 @@ describe('Fs HTTP contract', () => {
       expect(response.body.mimeType).toBe('application/octet-stream');
     });
 
-    it('Content-Length가 MAX_FILE_SIZE_BYTES를 넘으면 413 VFS_FILE_TOO_LARGE를 반환한다', async () => {
+    it('Content-Length가 STORIX_MAX_FILE_SIZE_BYTES를 넘으면 413 VFS_FILE_TOO_LARGE를 반환한다', async () => {
       const namespaceId = await createNamespace('put-length-too-large-ns');
       const oversized = Buffer.alloc(MAX_FILE_SIZE_BYTES + 1);
 
@@ -650,7 +650,7 @@ describe('Fs HTTP contract', () => {
       expect(response.body.code).toBe('VFS_FILE_TOO_LARGE');
     });
 
-    it('chunked stream이 MAX_FILE_SIZE_BYTES를 넘으면 413 VFS_FILE_TOO_LARGE로 중단한다', async () => {
+    it('chunked stream이 STORIX_MAX_FILE_SIZE_BYTES를 넘으면 413 VFS_FILE_TOO_LARGE로 중단한다', async () => {
       const namespaceId = await createNamespace('put-chunked-too-large-ns');
       const oversized = Buffer.alloc(MAX_FILE_SIZE_BYTES + 1024, 1);
       const midpoint = Math.floor(oversized.length / 2);
@@ -668,7 +668,7 @@ describe('Fs HTTP contract', () => {
     it('namespace의 max_file_size_bytes가 전역 한도보다 작으면 그 값을 넘는 요청을 413 VFS_FILE_TOO_LARGE로 거부한다', async () => {
       const namespaceId = await createNamespace('put-namespace-limit-ns');
       const namespaceLimit = 100;
-      // 전역 한도(MAX_FILE_SIZE_BYTES=1MiB)보다는 훨씬 작지만 namespace 한도보다는 큰
+      // 전역 한도(STORIX_MAX_FILE_SIZE_BYTES=1MiB)보다는 훨씬 작지만 namespace 한도보다는 큰
       // 크기로 요청해, 실제로 namespace 한도가 적용되는지(전역 한도만 걸리는 게 아닌지)를
       // HTTP 스택 전체(라우팅~DB~에러 필터)를 통해 검증한다.
       await migrationDataSource
@@ -878,7 +878,7 @@ describe('Fs HTTP contract', () => {
 
     it('다운로드 도중 클라이언트가 연결을 끊어도 서버 프로세스는 살아남고 이후 요청을 정상 처리한다', async () => {
       const namespaceId = await createNamespace('download-client-abort-ns');
-      // MAX_FILE_SIZE_BYTES(1MiB) 이하에서 스트리밍 도중 끊을 시간을 벌기 위해 큼직하게 채운다.
+      // STORIX_MAX_FILE_SIZE_BYTES(1MiB) 이하에서 스트리밍 도중 끊을 시간을 벌기 위해 큼직하게 채운다.
       const content = Buffer.alloc(900 * 1024, 7);
 
       await putChunked(
@@ -1223,7 +1223,7 @@ describe('Fs HTTP contract', () => {
         .expect(200);
     });
 
-    it('MAX_SYNC_COPY_NODES를 넘는 recursive 복사는 시작 전에 413을 반환하고 아무것도 만들지 않는다', async () => {
+    it('STORIX_MAX_SYNC_COPY_NODES를 넘는 recursive 복사는 시작 전에 413을 반환하고 아무것도 만들지 않는다', async () => {
       const namespaceId = await createNamespace('cp-limit-ns');
       await request(httpServer)
         .post(`/api/v1/namespaces/${namespaceId}/fs/mkdir`)
@@ -1386,7 +1386,7 @@ describe('Fs HTTP contract', () => {
         .expect(404);
     });
 
-    it('MAX_SYNC_DELETE_NODES를 넘는 recursive 삭제는 시작 전에 413을 반환하고 아무것도 지우지 않는다', async () => {
+    it('STORIX_MAX_SYNC_DELETE_NODES를 넘는 recursive 삭제는 시작 전에 413을 반환하고 아무것도 지우지 않는다', async () => {
       const namespaceId = await createNamespace('rm-limit-ns');
       await request(httpServer)
         .post(`/api/v1/namespaces/${namespaceId}/fs/mkdir`)

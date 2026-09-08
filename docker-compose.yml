@@ -1,6 +1,6 @@
 # Storix base 파일 — API 서버(app)와 운영 잡(migrate/gc/backup/restore)만
 # 정의한다. Postgres와 스토리지(S3 호환) 컨테이너는 포함하지 않는다. 이 파일
-# 단독으로 기동하면 .env의 DB_*/STORAGE_* 접속 정보로 이미 운영 중인 외부
+# 단독으로 기동하면 .env의 STORIX_DB_*/STORIX_STORAGE_* 접속 정보로 이미 운영 중인 외부
 # DB·스토리지에 붙는다.
 #
 # 컨테이너를 추가하려면 같은 디렉터리의 override 파일을 -f로 겹쳐 쓴다:
@@ -9,7 +9,7 @@
 #   docker-compose.s3.yml         AWS S3 (컨테이너 없음, 접속값만 고정)
 #   docker-compose.postgres.yml   개발·검증용 Postgres 컨테이너
 #
-#   # 운영: VersityGW + 외부 Postgres(.env DB_HOST)
+#   # 운영: VersityGW + 외부 Postgres(.env STORIX_DB_HOST)
 #   docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d
 #   # 개발: 위 + 로컬 Postgres
 #   docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml up -d
@@ -28,27 +28,27 @@ x-api-build: &api-build
   context: .
   dockerfile: apps/api/Dockerfile
 
-# DB_HOST/STORAGE_ENDPOINT를 `${VAR:?}` 필수 마커로 강제하지 않는다 — 필수
+# STORIX_DB_HOST/STORIX_STORAGE_ENDPOINT를 `${VAR:?}` 필수 마커로 강제하지 않는다 — 필수
 # 마커는 profile 필터링·override 병합보다 먼저 파일 전체에 대해 평가돼,
 # override가 값을 채우는 조합(postgres/versitygw/minio)까지 막아버린다.
-# 미설정은 app이 부팅 시점에 거부한다(DB_HOST는 requireEnv, STORAGE_ENDPOINT는
+# 미설정은 app이 부팅 시점에 거부한다(STORIX_DB_HOST는 requireEnv, STORIX_STORAGE_ENDPOINT는
 # ConfigService.getOrThrow).
 x-db-env: &db-env
-  DB_HOST: ${DB_HOST:-}
-  DB_PORT: ${DB_PORT:-5432}
-  DB_USERNAME: ${DB_USERNAME:-storix}
-  DB_PASSWORD: ${DB_PASSWORD:-storix}
-  DB_NAME: ${DB_NAME:-storix}
+  STORIX_DB_HOST: ${STORIX_DB_HOST:-}
+  STORIX_DB_PORT: ${STORIX_DB_PORT:-5432}
+  STORIX_DB_USERNAME: ${STORIX_DB_USERNAME:-storix}
+  STORIX_DB_PASSWORD: ${STORIX_DB_PASSWORD:-storix}
+  STORIX_DB_NAME: ${STORIX_DB_NAME:-storix}
 
 x-storage-env: &storage-env
-  STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
-  STORAGE_PORT: ${STORAGE_PORT:-9000}
-  STORAGE_USE_SSL: '${STORAGE_USE_SSL:-false}'
-  STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-storix}
-  STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-storix-secret}
-  STORAGE_BUCKET: ${STORAGE_BUCKET:-storix}
-  STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE:-}
-  STORAGE_REGION: ${STORAGE_REGION:-}
+  STORIX_STORAGE_ENDPOINT: ${STORIX_STORAGE_ENDPOINT:-}
+  STORIX_STORAGE_PORT: ${STORIX_STORAGE_PORT:-9000}
+  STORIX_STORAGE_USE_SSL: '${STORIX_STORAGE_USE_SSL:-false}'
+  STORIX_STORAGE_ACCESS_KEY: ${STORIX_STORAGE_ACCESS_KEY:-storix}
+  STORIX_STORAGE_SECRET_KEY: ${STORIX_STORAGE_SECRET_KEY:-storix-secret}
+  STORIX_STORAGE_BUCKET: ${STORIX_STORAGE_BUCKET:-storix}
+  STORIX_STORAGE_PATH_STYLE: ${STORIX_STORAGE_PATH_STYLE:-}
+  STORIX_STORAGE_REGION: ${STORIX_STORAGE_REGION:-}
 
 services:
   migrate:
@@ -62,7 +62,7 @@ services:
     profiles: ['gc']
     environment:
       <<: [*db-env, *storage-env]
-      ORPHAN_GRACE_PERIOD: ${ORPHAN_GRACE_PERIOD:-86400}
+      STORIX_ORPHAN_GRACE_PERIOD: ${STORIX_ORPHAN_GRACE_PERIOD:-86400}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -73,7 +73,7 @@ services:
     profiles: ['backup']
     environment:
       <<: [*db-env, *storage-env]
-      BACKUP_DIR: ${BACKUP_DIR:-/backups}
+      STORIX_BACKUP_DIR: ${STORIX_BACKUP_DIR:-/backups}
     volumes:
       - ./backups:/backups
     depends_on:
@@ -88,8 +88,8 @@ services:
       <<: [*db-env, *storage-env]
       # `${VAR:?}` 마커를 쓰지 않는 이유는 위 x-db-env 주석과 같다. 미설정(빈
       # 문자열) 검출은 RestoreJob 생성자가 실제 복구 실행 시점에만 담당한다.
-      RESTORE_SOURCE_DIR: ${RESTORE_SOURCE_DIR:-}
-      RESTORE_FORCE: '${RESTORE_FORCE:-false}'
+      STORIX_RESTORE_SOURCE_DIR: ${STORIX_RESTORE_SOURCE_DIR:-}
+      STORIX_RESTORE_FORCE: '${STORIX_RESTORE_FORCE:-false}'
     volumes:
       - ./backups:/backups
     depends_on:
@@ -99,23 +99,25 @@ services:
   app:
     build: *api-build
     ports:
-      - '${PORT:-3000}:3000'
+      - '${STORIX_PUBLISH_PORT:-3000}:3000'
     environment:
       <<: [*db-env, *storage-env]
+      # 컨테이너 안의 listen 포트는 3000 고정이다. 호스트 노출 포트는 위 ports의
+      # STORIX_PUBLISH_PORT가 담당한다(ADR-0005 — 한 이름에 두 의미를 두지 않는다).
       # 숫자 리터럴은 quote한다 — podman-compose는 environment의 unquoted 정수를
-      # 같은 서비스 안의 `${PORT}` 치환에 int 그대로 넣어 파싱에 실패한다.
-      # 아래 override 파일들의 STORAGE_PORT/DB_PORT도 같은 이유로 quote한다.
-      PORT: '3000'
-      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
-      STORAGE_PUBLIC_PORT: ${STORAGE_PUBLIC_PORT:-9000}
-      STORAGE_PUBLIC_USE_SSL: '${STORAGE_PUBLIC_USE_SSL:-false}'
-      MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-5368709120}
-      MAX_SYNC_DELETE_NODES: ${MAX_SYNC_DELETE_NODES:-1000}
-      MAX_SYNC_COPY_NODES: ${MAX_SYNC_COPY_NODES:-1000}
-      PRESIGNED_URL_EXPIRY_SECONDS: ${PRESIGNED_URL_EXPIRY_SECONDS:-300}
-      API_KEY: '${API_KEY:?API_KEY must be set — generate with: openssl rand -hex 32}'
-      API_KEY_PREVIOUS: ${API_KEY_PREVIOUS:-}
-      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:-}
+      # 같은 서비스 안의 `${VAR}` 치환에 int 그대로 넣어 파싱에 실패한다.
+      # 아래 override 파일들의 STORIX_STORAGE_PORT/STORIX_DB_PORT도 같은 이유로 quote한다.
+      STORIX_PORT: '3000'
+      STORIX_STORAGE_PUBLIC_ENDPOINT: ${STORIX_STORAGE_PUBLIC_ENDPOINT:-}
+      STORIX_STORAGE_PUBLIC_PORT: ${STORIX_STORAGE_PUBLIC_PORT:-9000}
+      STORIX_STORAGE_PUBLIC_USE_SSL: '${STORIX_STORAGE_PUBLIC_USE_SSL:-false}'
+      STORIX_MAX_FILE_SIZE_BYTES: ${STORIX_MAX_FILE_SIZE_BYTES:-5368709120}
+      STORIX_MAX_SYNC_DELETE_NODES: ${STORIX_MAX_SYNC_DELETE_NODES:-1000}
+      STORIX_MAX_SYNC_COPY_NODES: ${STORIX_MAX_SYNC_COPY_NODES:-1000}
+      STORIX_PRESIGNED_URL_EXPIRY_SECONDS: ${STORIX_PRESIGNED_URL_EXPIRY_SECONDS:-300}
+      STORIX_API_KEY: '${STORIX_API_KEY:?STORIX_API_KEY must be set — generate with: openssl rand -hex 32}'
+      STORIX_API_KEY_PREVIOUS: ${STORIX_API_KEY_PREVIOUS:-}
+      STORIX_ENCRYPTION_MASTER_KEY: ${STORIX_ENCRYPTION_MASTER_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

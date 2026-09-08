@@ -40,43 +40,43 @@ describe('job 진입점 모듈 부팅 통합', () => {
   // 전부 지운 뒤 대상 서비스 몫만 다시 채운다(개발자 셸의 값이 새어들어와
   // "다른 job의 env var가 있어서 우연히 통과"하는 상황을 막는다).
   const ALL_JOB_ENV_KEYS = [
-    'DB_HOST',
-    'DB_PORT',
-    'DB_USERNAME',
-    'DB_PASSWORD',
-    'DB_NAME',
-    'STORAGE_ENDPOINT',
-    'STORAGE_PORT',
-    'STORAGE_USE_SSL',
-    'STORAGE_ACCESS_KEY',
-    'STORAGE_SECRET_KEY',
-    'STORAGE_BUCKET',
-    'STORAGE_PATH_STYLE',
-    'STORAGE_REGION',
-    'ORPHAN_GRACE_PERIOD',
-    'BACKUP_DIR',
-    'RESTORE_SOURCE_DIR',
-    'RESTORE_FORCE',
+    'STORIX_DB_HOST',
+    'STORIX_DB_PORT',
+    'STORIX_DB_USERNAME',
+    'STORIX_DB_PASSWORD',
+    'STORIX_DB_NAME',
+    'STORIX_STORAGE_ENDPOINT',
+    'STORIX_STORAGE_PORT',
+    'STORIX_STORAGE_USE_SSL',
+    'STORIX_STORAGE_ACCESS_KEY',
+    'STORIX_STORAGE_SECRET_KEY',
+    'STORIX_STORAGE_BUCKET',
+    'STORIX_STORAGE_PATH_STYLE',
+    'STORIX_STORAGE_REGION',
+    'STORIX_ORPHAN_GRACE_PERIOD',
+    'STORIX_BACKUP_DIR',
+    'STORIX_RESTORE_SOURCE_DIR',
+    'STORIX_RESTORE_FORCE',
   ];
 
   // 세 서비스에 공통으로 들어가는 부분(docker-compose.yml의 gc/backup/restore
   // environment 블록 중 job 전용 변수를 뺀 나머지).
   function sharedComposeEnv(): Record<string, string> {
     return {
-      DB_HOST: pgContainer.getHost(),
-      DB_PORT: String(pgContainer.getPort()),
-      DB_USERNAME: pgContainer.getUsername(),
-      DB_PASSWORD: pgContainer.getPassword(),
-      DB_NAME: pgContainer.getDatabase(),
-      STORAGE_ENDPOINT: minioContainer.getHost(),
-      STORAGE_PORT: String(minioContainer.getPort()),
-      STORAGE_USE_SSL: 'false',
-      STORAGE_ACCESS_KEY: minioContainer.getUsername(),
-      STORAGE_SECRET_KEY: minioContainer.getPassword(),
-      STORAGE_BUCKET: 'storix-job-boot-test',
+      STORIX_DB_HOST: pgContainer.getHost(),
+      STORIX_DB_PORT: String(pgContainer.getPort()),
+      STORIX_DB_USERNAME: pgContainer.getUsername(),
+      STORIX_DB_PASSWORD: pgContainer.getPassword(),
+      STORIX_DB_NAME: pgContainer.getDatabase(),
+      STORIX_STORAGE_ENDPOINT: minioContainer.getHost(),
+      STORIX_STORAGE_PORT: String(minioContainer.getPort()),
+      STORIX_STORAGE_USE_SSL: 'false',
+      STORIX_STORAGE_ACCESS_KEY: minioContainer.getUsername(),
+      STORIX_STORAGE_SECRET_KEY: minioContainer.getPassword(),
+      STORIX_STORAGE_BUCKET: 'storix-job-boot-test',
       // compose가 `${VAR:-}`로 넘기는 값은 미설정이 아니라 빈 문자열로 도착한다.
-      STORAGE_PATH_STYLE: '',
-      STORAGE_REGION: '',
+      STORIX_STORAGE_PATH_STYLE: '',
+      STORIX_STORAGE_REGION: '',
     };
   }
 
@@ -111,7 +111,7 @@ describe('job 진입점 모듈 부팅 통합', () => {
 
   it('gc 서비스 env var만으로 GcJobModule이 부팅되고 BackupJob/RestoreJob은 생성되지 않는다', async () => {
     const context = await bootWith(
-      { ...sharedComposeEnv(), ORPHAN_GRACE_PERIOD: '86400' },
+      { ...sharedComposeEnv(), STORIX_ORPHAN_GRACE_PERIOD: '86400' },
       GcAppModuleFixture,
     );
 
@@ -128,7 +128,7 @@ describe('job 진입점 모듈 부팅 통합', () => {
 
   it('backup 서비스 env var만으로 BackupJobModule이 부팅되고 GcJob/RestoreJob은 생성되지 않는다', async () => {
     const context = await bootWith(
-      { ...sharedComposeEnv(), BACKUP_DIR: workDir },
+      { ...sharedComposeEnv(), STORIX_BACKUP_DIR: workDir },
       BackupAppModuleFixture,
     );
 
@@ -143,7 +143,7 @@ describe('job 진입점 모듈 부팅 통합', () => {
 
   it('restore 서비스 env var만으로 RestoreJobModule이 부팅되고 GcJob/BackupJob은 생성되지 않는다', async () => {
     const context = await bootWith(
-      { ...sharedComposeEnv(), RESTORE_SOURCE_DIR: path.join(workDir, '2026-09-08T12-00-00-000Z'), RESTORE_FORCE: 'false' },
+      { ...sharedComposeEnv(), STORIX_RESTORE_SOURCE_DIR: path.join(workDir, '2026-09-08T12-00-00-000Z'), STORIX_RESTORE_FORCE: 'false' },
       RestoreAppModuleFixture,
     );
 
@@ -156,13 +156,13 @@ describe('job 진입점 모듈 부팅 통합', () => {
     }
   }, 60000);
 
-  it('RESTORE_SOURCE_DIR가 빈 문자열이면(compose 기본값) 부팅 단계에서 명확히 실패한다', async () => {
-    // compose는 `${RESTORE_SOURCE_DIR:-}`로 넘기므로 미설정 시 빈 문자열이
+  it('STORIX_RESTORE_SOURCE_DIR가 빈 문자열이면(compose 기본값) 부팅 단계에서 명확히 실패한다', async () => {
+    // compose는 `${STORIX_RESTORE_SOURCE_DIR:-}`로 넘기므로 미설정 시 빈 문자열이
     // 도착하고, ConfigService.getOrThrow는 빈 문자열을 통과시킨다. 이 경우
     // sourceDir가 ''가 되어 상대경로 'postgres.dump'를 보게 되므로 RestoreJob이
     // 직접 막는다.
     await expect(
-      bootWith({ ...sharedComposeEnv(), RESTORE_SOURCE_DIR: '', RESTORE_FORCE: 'false' }, RestoreAppModuleFixture),
-    ).rejects.toThrow('RESTORE_SOURCE_DIR가 비어 있음');
+      bootWith({ ...sharedComposeEnv(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }, RestoreAppModuleFixture),
+    ).rejects.toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');
   }, 60000);
 });
