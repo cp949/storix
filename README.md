@@ -38,9 +38,12 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 | 파일 | 추가·재정의하는 것 |
 |---|---|
 | `docker-compose.versitygw.yml` | VersityGW 컨테이너 + 버킷 초기화. 목표 기본 백엔드(`docs/adr/0003-versitygw-primary-backend-and-topology.md`) |
-| `docker-compose.minio.yml` | MinIO 컨테이너 + 버킷 초기화. nginx reverse-proxy 샘플(`nginx-demo` profile) 포함 |
+| `docker-compose.minio.yml` | MinIO 컨테이너 + 버킷 초기화 |
 | `docker-compose.s3.yml` | AWS S3. 컨테이너 없음, 엔드포인트/TLS/path-style만 고정 |
 | `docker-compose.postgres.yml` | 개발·검증용 Postgres 컨테이너 |
+
+개발·검증용 nginx reverse-proxy 샘플은 Storix 필수 구성이 아니라 루트가 아닌
+`docs/deployment/compose.nginx-demo.yml`에 있다(`docs/deployment/nginx-reverse-proxy.md`).
 
 ```bash
 cp .env.example .env   # API_KEY(openssl rand -hex 32) 등을 채운다

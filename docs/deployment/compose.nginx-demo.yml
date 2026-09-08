@@ -1,0 +1,46 @@
+# 개발·검증용 nginx reverse-proxy 샘플(STORAGE-03) — "공개 도메인(443/TLS) →
+# nginx → 내부 MinIO(9000)" 뒤에서 presigned download URL 서명이 깨지지 않는지
+# 로컬에서 재현하는 용도다. Storix 필수 구성 요소가 아니므로 루트
+# docker-compose* 목록에 두지 않고 마운트하는 conf 파일 옆(여기)에 둔다.
+#
+# base + MinIO + Postgres 조합 뒤에 -f로 겹친다. 이 파일을 넘기는 것 자체가
+# opt-in이라 profile은 쓰지 않는다. 상대 경로는 첫 -f 파일의 디렉터리(루트)
+# 기준으로 해석되므로 conf 마운트 경로도 루트 기준으로 쓴다:
+#   docker compose -f docker-compose.yml -f docker-compose.minio.yml \
+#     -f docker-compose.postgres.yml -f docs/deployment/compose.nginx-demo.yml up -d --wait
+#
+# nginx-reverse-proxy.conf가 minio:9000으로 proxy_pass하므로
+# docker-compose.minio.yml 조합에서만 동작한다. 필요한 환경 변수
+# (STORAGE_PUBLIC_*, STORAGE_REGION, NGINX_PUBLIC_PORT)와 운영 배포로 옮길 때
+# 바꿔야 하는 값은 nginx-reverse-proxy.md 참고.
+
+services:
+  nginx-cert-init:
+    image: alpine:3.21
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        apk add --no-cache openssl &&
+        openssl req -x509 -nodes -newkey rsa:2048 \
+          -keyout /certs/nginx.key -out /certs/nginx.crt \
+          -days 3650 \
+          -subj "/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    volumes:
+      - nginx-certs:/certs
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - '${NGINX_PUBLIC_PORT:-8443}:443'
+    volumes:
+      - nginx-certs:/etc/nginx/certs:ro
+      - ./docs/deployment/nginx-reverse-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      nginx-cert-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+
+volumes:
+  nginx-certs:

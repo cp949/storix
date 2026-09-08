@@ -5,7 +5,7 @@
 #
 # 컨테이너를 추가하려면 같은 디렉터리의 override 파일을 -f로 겹쳐 쓴다:
 #   docker-compose.versitygw.yml  VersityGW 컨테이너 (목표 기본 백엔드, ADR-0003)
-#   docker-compose.minio.yml      MinIO 컨테이너 (+ nginx-demo profile)
+#   docker-compose.minio.yml      MinIO 컨테이너
 #   docker-compose.s3.yml         AWS S3 (컨테이너 없음, 접속값만 고정)
 #   docker-compose.postgres.yml   개발·검증용 Postgres 컨테이너
 #
