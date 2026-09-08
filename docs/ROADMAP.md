@@ -173,14 +173,14 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 
 ## 4. 배포/온보딩 경험
 
-- [ ] DEPLOY-01: `README.md`에 설치, 환경변수, `docker-compose` profile
+- [x] DEPLOY-01: `README.md`에 설치, 환경변수, `docker-compose` profile
       사용법 추가 (핵심 기능 소개는 DEPLOY-06에서 완료).
 - [ ] DEPLOY-02: 헬스체크 확장 — 현재 MinIO indicator만 있음, Postgres 등
       추가.
 - [ ] DEPLOY-03: 스키마 마이그레이션/업그레이드 경로 문서화.
 - [ ] DEPLOY-04: `CHANGELOG.md` 도입 — Keep-a-changelog 스타일
       (Added/Changed/Fixed).
-- [ ] DEPLOY-05: **컨테이너 런타임 문서화** — 로컬 개발/테스트는 Podman을
+- [x] DEPLOY-05: **컨테이너 런타임 문서화** — 로컬 개발/테스트는 Podman을
       기본으로 사용한다(팀 선호). 배포 산출물(`Dockerfile`,
       `docker-compose.yml`)은 Docker/Podman 둘 다에서 동작해야 한다 — 현재
       파일은 이미 compose-spec 표준 문법만 사용해 두 런타임과 호환된다

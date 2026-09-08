@@ -70,7 +70,7 @@ export class ContentService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = parsePositiveInt(config.getOrThrow<string>('STORIX_MAX_FILE_SIZE_BYTES'), 1);
+    this.maxFileSizeBytes = parsePositiveInt(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'), 5368709120);
     this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'), 300);
     if (this.presignedUrlExpirySeconds > 604800) {
       throw new Error(`STORIX_PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`);

@@ -28,7 +28,7 @@ describe('GcJob 통합', () => {
   const bucket = 'storix-gc-test';
 
   function makeConfig(gracePeriodSeconds: number): ConfigService {
-    return { getOrThrow: () => String(gracePeriodSeconds) } as unknown as ConfigService;
+    return { get: () => String(gracePeriodSeconds) } as unknown as ConfigService;
   }
 
   async function createBlob(referenceCount: number, zeroSinceHoursAgo?: number): Promise<BlobEntity> {

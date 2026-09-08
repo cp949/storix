@@ -22,7 +22,7 @@ export class GcJob {
     private readonly blobRepository: BlobRepository,
     config: ConfigService,
   ) {
-    this.gracePeriodSeconds = parsePositiveInt(config.getOrThrow<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
+    this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
   }
 
   async run(): Promise<GcResult> {
