@@ -1,4 +1,3 @@
-import { jest } from '@jest/globals';
 import { randomBytes } from 'node:crypto';
 import { PassThrough, Readable } from 'node:stream';
 import type { BlobRange, BlobStorage } from '../storage/blob-storage.js';
