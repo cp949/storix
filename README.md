@@ -260,3 +260,4 @@ pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 멀티 인스턴스): `docs/deployment/`
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`
+- 변경 이력: `CHANGELOG.md`

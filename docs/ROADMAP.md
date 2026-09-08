@@ -188,8 +188,10 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
       revert는 지원하지 않고 이미지 되돌리기(스키마 불변경)·백업 복구(스키마
       변경)로 롤백 처리(ADR-0017). 범위는 single-instance만이며, 버전 식별은
       태그 릴리즈(`API-02`) 도입 전까지 git 커밋 기준.
-- [ ] DEPLOY-04: `CHANGELOG.md` 도입 — Keep-a-changelog 스타일
-      (Added/Changed/Fixed).
+- [x] DEPLOY-04: **`CHANGELOG.md` 도입** — Keep a Changelog 형식. 소급 없이
+      지금까지의 기능을 `[0.1.0]` baseline으로 요약, 이후는 `[Unreleased]`.
+      버전 번호 동기화 정책은 `API-03`으로 미룸. 작성 컨벤션은 `AGENTS.md`,
+      CI 강제는 하지 않음.
 - [x] DEPLOY-05: **컨테이너 런타임 문서화** — 로컬 개발/테스트는 Podman을
       기본으로 사용한다(팀 선호). 배포 산출물(`Dockerfile`,
       `docker-compose.yml`)은 Docker/Podman 둘 다에서 동작해야 한다 — 현재

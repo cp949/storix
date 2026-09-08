@@ -20,3 +20,7 @@ Long-term goals and requirements for production maturity: `docs/ROADMAP.md`.
 ### Local verification
 
 Podman-first local workflow, compose validation via `podman-compose config`, known WSL/podman defects and their workarounds: `docs/agents/local-verification.md`.
+
+### Changelog
+
+User-facing changes go in `CHANGELOG.md` (Keep a Changelog format) under `## [Unreleased]`, in the fitting category (Added/Changed/Deprecated/Removed/Fixed/Security). Not CI-enforced — add the entry as part of the same change, don't defer it.
