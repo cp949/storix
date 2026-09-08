@@ -11,13 +11,12 @@
 #     버킷 생성 권한까지 요구하지 않기 위해).
 #   - IAM 사용자를 만들고 해당 버킷에 대한 최소 권한(GetObject/PutObject/
 #     DeleteObject/ListBucket)만 부여한 access key를 발급한다.
-#   - 아래 값을 .env에 추가한다(AWS_S3_ACCESS_KEY_ID/SECRET_ACCESS_KEY는
-#     AWS 공식 문서의 예시 자격증명 형식 — 실제 키가 아니다, 반드시
-#     실제 발급받은 값으로 교체한다):
-#       AWS_S3_REGION=ap-northeast-2
-#       AWS_S3_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-#       AWS_S3_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-#       AWS_S3_BUCKET=my-storix-bucket
+#   - 아래 값을 .env에 추가한다(전부 샘플 — SAMPLE/XXX가 들어간 값은
+#     실제 값이 아니다, 반드시 실제 발급받은 값으로 교체한다):
+#       AWS_S3_REGION=SAMPLE-ap-northeast-2
+#       AWS_S3_ACCESS_KEY_ID=AKIASAMPLEXXXXXXXXX
+#       AWS_S3_SECRET_ACCESS_KEY=SAMPLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+#       AWS_S3_BUCKET=SAMPLE-your-bucket-name
 #     STORAGE_ENDPOINT를 s3.amazonaws.com으로 고정했다 — 리전에 따라
 #     리다이렉트가 발생하면 s3.<region>.amazonaws.com으로 바꾼다.
 #
