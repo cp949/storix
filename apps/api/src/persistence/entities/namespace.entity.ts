@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type NamespaceStatus = 'ACTIVE' | 'DELETING' | 'DELETED';
 export type EncryptionPolicy = 'NONE' | 'ENCRYPTED';
@@ -31,9 +32,9 @@ export class NamespaceEntity {
   @Column({ name: 'max_sync_copy_nodes', type: 'integer', nullable: true })
   maxSyncCopyNodes: number | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  @UpdateDateColumn({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE })
   updatedAt: Date;
 }

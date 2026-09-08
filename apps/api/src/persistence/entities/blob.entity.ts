@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { BINARY_COLUMN_TYPE, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 @Entity('blob')
 export class BlobEntity {
@@ -20,15 +21,15 @@ export class BlobEntity {
   @Column({ type: 'char', length: 64 })
   sha256: string;
 
-  @Column({ name: 'encryption_iv', type: 'bytea', nullable: true })
+  @Column({ name: 'encryption_iv', type: BINARY_COLUMN_TYPE, nullable: true })
   encryptionIv: Buffer | null;
 
   @Column({ name: 'reference_count', type: 'integer', default: 0 })
   referenceCount: number;
 
-  @Column({ name: 'zero_since', type: 'timestamptz', nullable: true })
+  @Column({ name: 'zero_since', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
   zeroSince: Date | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 }

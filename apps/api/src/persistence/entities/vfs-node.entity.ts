@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
+import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type VfsNodeType = 'FILE' | 'DIRECTORY';
 
@@ -35,10 +36,10 @@ export class VfsNodeEntity {
   @Column({ name: 'mime_type', type: 'varchar', length: 255, nullable: true })
   mimeType: string | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  @UpdateDateColumn({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE })
   updatedAt: Date;
 
   @VersionColumn()

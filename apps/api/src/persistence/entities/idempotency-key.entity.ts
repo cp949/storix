@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
+import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 @Entity('idempotency_key')
 export class IdempotencyKeyEntity {
@@ -14,6 +15,6 @@ export class IdempotencyKeyEntity {
   @Column({ name: 'response_body', type: 'jsonb' })
   responseBody: Record<string, unknown>;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 }

@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 @Entity('audit_log')
 export class AuditLogEntity {
@@ -26,6 +27,6 @@ export class AuditLogEntity {
   @Column({ type: 'smallint' })
   status: number;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 }
