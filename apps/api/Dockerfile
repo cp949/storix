@@ -13,6 +13,7 @@ COPY --from=pruner /repo/out/full/ .
 RUN pnpm --filter @storix/api build
 
 FROM base AS runtime
+LABEL org.opencontainers.image.source="https://github.com/cp949/storix"
 ENV NODE_ENV=production
 # postgresql-client(Debian bookworm 기본 저장소는 15만 제공 — 대상 Postgres
 # major(16)보다 낮은 client로는 pg_dump/pg_restore가 버전 불일치로 하드

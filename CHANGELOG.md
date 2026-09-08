@@ -2,14 +2,17 @@
 
 이 문서는 Storix(고객당 단일 인스턴스로 배포되는 `apps/api` 제품)의 주목할 만한
 변경사항을 기록한다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를
-따른다. 버전 번호는 아직 태그 릴리즈(`API-02`)·버저닝 정책(`API-03`)이 없어
-잠정이며, 확정되면 이 절을 갱신한다.
+따른다. `[Unreleased]`를 버전 섹션으로 바꾸는 시점의 태그(`vX.Y.Z`)가 그 버전을
+릴리즈한다(`docs/deployment/release.md`). `package.json` 버전과의 동기화 정책은
+아직 없어(`API-03`) 이 문서의 버전 번호가 지금은 유일한 근거다.
 
 ## [Unreleased]
 
 ### Added
 
 - OpenAPI 스펙 초안(`apps/api/openapi.yaml`) — namespace/fs API 계약 문서(`API-01`)
+- 태그 push(`vX.Y.Z`) 트리거 릴리즈 워크플로 — CHANGELOG 섹션 추출 + GHCR
+  이미지 배포(`API-02`)
 
 ## [0.1.0] - 2026-09-08
 

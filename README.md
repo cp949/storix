@@ -45,8 +45,9 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 compose 파일은 compose-spec 표준 문법(`profiles`, `depends_on.condition`, YAML
 앵커)만 사용해 Docker/Podman에서 같은 파일·같은 옵션으로 동작한다.
 배포 단위는 소스 빌드다 — `up --build`가 `apps/api/Dockerfile`로 이미지를
-만든다. 미리 빌드된 이미지 배포는 릴리즈 절차(`docs/ROADMAP.md` API-02)와 함께
-제공 예정이다.
+만든다. 태그 릴리즈마다 `ghcr.io/cp949/storix:vX.Y.Z`로 사전 빌드 이미지도
+나가지만(`docs/deployment/release.md`), 이 compose 구성이 그 이미지를 직접
+pull해 쓰도록 배선하는 작업은 아직이다.
 
 ### 소스 받기
 
@@ -259,7 +260,7 @@ pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 
 - api 도메인 용어: `apps/api/CONTEXT.md`
 - API 계약(OpenAPI, 초안): `apps/api/openapi.yaml`
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
-- 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 멀티 인스턴스): `docs/deployment/`
+- 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 릴리즈, 멀티 인스턴스): `docs/deployment/`
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`
 - 변경 이력: `CHANGELOG.md`

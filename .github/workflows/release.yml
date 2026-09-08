@@ -1,0 +1,109 @@
+name: 릴리즈
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/cp949/storix
+
+jobs:
+  release:
+    name: 릴리즈 노트 생성 + 이미지 배포
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 태그가 main의 조상인지 확인
+        id: guard
+        run: |
+          git fetch origin main
+          TAG_COMMIT=$(git rev-parse "${{ github.ref_name }}^{commit}")
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "::error::태그(${{ github.ref_name }})가 origin/main의 조상이 아닙니다 — 릴리즈 중단"
+            exit 1
+          fi
+          echo "commit=$TAG_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Node 설정
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+
+      - name: 의존성 설치
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: CHANGELOG 추출 스크립트 유닛 테스트
+        run: node --test '.github/scripts/**/*.test.mjs'
+
+      - name: apps/api typecheck
+        run: pnpm --filter @storix/api typecheck
+
+      - name: apps/api lint
+        run: pnpm --filter @storix/api lint
+
+      - name: apps/api 단위 테스트
+        run: pnpm --filter @storix/api test
+
+      - name: 버전 계산
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: CHANGELOG 섹션 추출
+        run: node .github/scripts/extract-changelog-section.mjs "${{ steps.version.outputs.version }}" CHANGELOG.md release-notes.md
+
+      - name: 이미지 참조 안내 추가
+        run: |
+          {
+            echo ""
+            echo "## 이미지"
+            echo ""
+            echo '```'
+            echo "docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}"
+            echo '```'
+          } >> release-notes.md
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 이미지 빌드 및 push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ steps.guard.outputs.commit }}
+            org.opencontainers.image.version=${{ steps.version.outputs.tag }}
+            org.opencontainers.image.created=${{ steps.version.outputs.created }}
+
+      - name: GitHub Release 생성
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ steps.version.outputs.tag }}" --title "${{ steps.version.outputs.tag }}" --notes-file release-notes.md

@@ -206,8 +206,10 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 - [x] API-01: **OpenAPI 스펙 작성** — `apps/api/openapi.yaml`(수기 YAML, 초안).
       apps/demo 검증 전에 착수해 `info.version: 0.1.0-draft`로 표시하고,
       demo 피드백에 따른 breaking change 가능성을 열어둔다(ADR-0019).
-- [ ] API-02: 태그 push(`v1.2.3`) 트리거 릴리즈, CHANGELOG에서 해당 버전
-      섹션을 추출해 릴리즈 노트 자동 생성.
+- [x] API-02: **태그 push(`v1.2.3`) 트리거 릴리즈** — `.github/workflows/release.yml`.
+      CHANGELOG에서 해당 버전 섹션을 추출해 릴리즈 노트 생성 + `ghcr.io/cp949/storix`
+      이미지 push. `package.json` 버전 동기화는 다루지 않음(ADR-0006, `API-03`으로
+      위임). 절차: `docs/deployment/release.md`.
 - [ ] API-03: 버저닝/breaking-change 정책 수립 — 1.0 직전에 고정한다. 1~4번
       기둥 진행 중 나오는 인터페이스 변경을 반영할 여유를 남기기 위함이다.
 
