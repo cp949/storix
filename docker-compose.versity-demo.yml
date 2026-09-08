@@ -9,9 +9,11 @@
 # 켜도 같이 기동한다(미사용 상태) — 백엔드 스왑이 실제로 동작함을 보여주는
 # 목적에 집중하고, 정리는 스코프 밖으로 둔다.
 #
-# VERSITYGW_DATA_PATH를 .env에 설정하면(예: /mnt/nas/was-01) 위 볼륨이
-# named volume 대신 그 경로로 bind mount된다 — WAS별 전용 VersityGW를
-# 같은 NAS 위에 배치할 때 쓴다(ADR-0003). 비워두면 지금과 동일하게
+# VERSITYGW_DATA_PATH를 .env에 설정하면(예: /mnt/nas/storix-data)
+# versitygw 서비스의 볼륨이 named volume 대신 그 경로로 bind mount된다.
+# 이 경로는 모든 WAS 호스트에서 동일한 값이어야 한다 — 공유되는 건
+# NAS 데이터 자체이고, WAS별로 다른 건 그 경로를 바라보는 VersityGW
+# 게이트웨이 컨테이너뿐이다(ADR-0003). 비워두면 지금과 동일하게
 # named volume을 쓴다.
 
 services:
