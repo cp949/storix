@@ -203,7 +203,9 @@ S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 �
 
 ## 5. API 계약 고정
 
-- [ ] API-01: OpenAPI 스펙 작성.
+- [x] API-01: **OpenAPI 스펙 작성** — `apps/api/openapi.yaml`(수기 YAML, 초안).
+      apps/demo 검증 전에 착수해 `info.version: 0.1.0-draft`로 표시하고,
+      demo 피드백에 따른 breaking change 가능성을 열어둔다(ADR-0019).
 - [ ] API-02: 태그 push(`v1.2.3`) 트리거 릴리즈, CHANGELOG에서 해당 버전
       섹션을 추출해 릴리즈 노트 자동 생성.
 - [ ] API-03: 버저닝/breaking-change 정책 수립 — 1.0 직전에 고정한다. 1~4번

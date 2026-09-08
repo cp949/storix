@@ -11,12 +11,13 @@ Storix는 호출 서버가 사용하는 독립 VFS(Virtual File System) 저장 �
 Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 
 - `mkdir`, `touch`, `mv`, `cp`, `rmdir`, `rm` — 디렉터리/파일 조작
-- `PUT`/`GET content`, `GET download` — 콘텐츠 업로드/다운로드(Range 지원)
+- `POST`/`GET content`, `GET download` — 콘텐츠 업로드/다운로드(Range 지원)
 - `ls`, `stat`, `exists`, `find` — 조회, cursor 기반 페이지네이션
 
 전체 엔드포인트는 `api/v1/namespaces/:namespaceId/fs/*` 아래에 있다
 (`src/vfs/fs.controller.ts`). 호출 서버가 로컬 파일시스템을 다루듯 Storix를
-다룰 수 있게 하는 것이 설계 목표다.
+다룰 수 있게 하는 것이 설계 목표다. API 계약 전체는 `apps/api/openapi.yaml`
+참고(초안 — `docs/ROADMAP.md` API-01).
 
 ### Blob-level Copy-on-Write
 
@@ -256,6 +257,7 @@ pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 
 
 - 컨텍스트 목록: `CONTEXT-MAP.md`
 - api 도메인 용어: `apps/api/CONTEXT.md`
+- API 계약(OpenAPI, 초안): `apps/api/openapi.yaml`
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 멀티 인스턴스): `docs/deployment/`
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`

@@ -1,0 +1,914 @@
+openapi: 3.0.3
+info:
+  title: Storix API
+  version: 0.1.0-draft
+  description: |
+    Storix는 호출 서버가 사용하는 독립 VFS(Virtual File System) 저장 서버다. 파일의
+    업무적 의미와 최종 사용자 인증·권한 판단은 호출 서버의 책임이며 Storix 도메인에
+    포함하지 않는다. 용어 정의는 `apps/api/CONTEXT.md` 참고.
+
+    **초안 상태**: apps/demo로 이 API 모양이 실사용 검증되기 전에 작성됐다
+    (`docs/ROADMAP.md`의 "실행 순서" 참고). demo 피드백에 따라 breaking change가
+    발생할 수 있다.
+
+    이 스펙은 `namespace`/`fs` 컨트롤러만 다룬다. `/health/*`(인증 예외 대상)와
+    `/metrics`(운영 관측용)는 외부 API 계약이 아니라서 포함하지 않는다.
+  license:
+    name: UNLICENSED
+paths:
+  /api/v1/namespaces:
+    post:
+      operationId: createNamespace
+      summary: Namespace 생성
+      description: |
+        `Idempotency-Key` 헤더가 필수다. 같은 키로 같은 요청 본문을 재전송하면
+        최초 생성 시의 응답(항상 201)을 그대로 재생한다. 같은 키에 다른 본문을
+        재전송하면 422를 반환한다.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNamespaceRequest'
+      responses:
+        '201':
+          description: 생성됨(또는 같은 Idempotency-Key의 재생 응답)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Namespace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 같은 name의 Namespace가 이미 존재함(`NAMESPACE_ALREADY_EXISTS`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 같은 `Idempotency-Key`가 다른 요청 본문에 재사용됨(`IDEMPOTENCY_KEY_REUSED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listNamespaces
+      summary: Namespace 목록 조회
+      description: status가 `ACTIVE`인 Namespace만 name 오름차순으로 반환한다. 페이지네이션 없음.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Namespace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{id}:
+    get:
+      operationId: getNamespace
+      summary: Namespace 단건 조회
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Namespace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/mkdir:
+    post:
+      operationId: mkdir
+      summary: 디렉터리 생성
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MkdirRequest'
+      responses:
+        '200':
+          description: 이미 존재하는 디렉터리(멱등 성공)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/touch:
+    post:
+      operationId: touch
+      summary: 빈 파일 생성(이미 존재하면 내용은 바꾸지 않음)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TouchRequest'
+      responses:
+        '200':
+          description: 이미 존재하는 파일(멱등 성공)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/mv:
+    post:
+      operationId: move
+      summary: 파일/디렉터리 이동
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/cp:
+    post:
+      operationId: copy
+      summary: 파일/디렉터리 복사(Blob-level Copy-on-Write, `apps/api/docs/adr/0003-file-copy-blob-level-cow.md`)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopyRequest'
+      responses:
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: 복사 대상 Node 수가 namespace/전역 상한을 초과함(`VFS_COPY_LIMIT_EXCEEDED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/rmdir:
+    post:
+      operationId: rmdir
+      summary: 빈 디렉터리 삭제
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 삭제됨
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 디렉터리가 비어있지 않거나(`VFS_DIRECTORY_NOT_EMPTY`) root 대상 연산(`VFS_INVALID_OPERATION`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/rm:
+    post:
+      operationId: rm
+      summary: 파일/디렉터리 삭제
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: recursive
+          in: query
+          required: false
+          description: 디렉터리를 재귀적으로 삭제할지 여부. 기본 `false`(빈 디렉터리만 허용).
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: 삭제됨
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: 삭제 대상 Node 수가 namespace/전역 상한을 초과함(`VFS_DELETE_LIMIT_EXCEEDED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/content:
+    post:
+      operationId: putContent
+      summary: 파일 콘텐츠 업로드(raw stream만 지원, `apps/api/docs/adr/0004-raw-stream-upload-only.md`)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: parents
+          in: query
+          required: false
+          description: 상위 디렉터리가 없으면 함께 생성할지 여부.
+          schema:
+            type: boolean
+            default: false
+        - name: force
+          in: query
+          required: false
+          description: '`If-Match` 없이도 기존 콘텐츠를 덮어쓸지 여부.'
+          schema:
+            type: boolean
+            default: false
+        - name: If-Match
+          in: header
+          required: false
+          description: |
+            낙관적 동시성 제어용 `version`(`VfsNode.version`). 값이 있는데 현재
+            version과 다르면 409(`VFS_VERSION_CONFLICT`).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+        description: |
+          임의의 `Content-Type`을 그대로 저장했다가 다운로드 시 재현한다
+          (`multipart/form-data`는 지원하지 않음).
+      responses:
+        '200':
+          description: 기존 파일 갱신
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리이거나(`VFS_IS_DIRECTORY`) `If-Match` version 불일치(`VFS_VERSION_CONFLICT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: 파일 크기가 상한을 초과함(`VFS_FILE_TOO_LARGE`). 상한은 배포/namespace별 설정값.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: getContent
+      summary: 파일 콘텐츠 조회(Range 지원, 인라인)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/RangeHeader'
+      responses:
+        '200':
+          description: 전체 콘텐츠
+          headers:
+            Content-Type:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+            Accept-Ranges:
+              schema: { type: string, enum: [bytes] }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: 부분 콘텐츠(`Range` 요청)
+          headers:
+            Content-Range:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리임(`VFS_IS_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '416':
+          description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/download:
+    get:
+      operationId: download
+      summary: '파일 콘텐츠 다운로드(Range 지원, `Content-Disposition: attachment`)'
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/RangeHeader'
+      responses:
+        '200':
+          description: 전체 콘텐츠
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: 부분 콘텐츠(`Range` 요청)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리임(`VFS_IS_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '416':
+          description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/presigned-download:
+    get:
+      operationId: getPresignedDownloadUrl
+      summary: Presigned 다운로드 URL 발급(`STORAGE-02`)
+      description: '`ENCRYPTED` namespace는 지원하지 않는다(`VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`).'
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedDownload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리이거나(`VFS_IS_DIRECTORY`) `ENCRYPTED` namespace라 미지원(`VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/ls:
+    get:
+      operationId: ls
+      summary: 디렉터리 자식 목록 조회(1단계, cursor 페이지네이션)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: false
+          description: 생략 시 namespace root.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNodePage'
+        '400':
+          description: 경로가 유효하지 않거나(`VFS_INVALID_PATH`) cursor가 유효하지 않음(`VFS_INVALID_CURSOR`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리가 아님(`VFS_NOT_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/stat:
+    get:
+      operationId: stat
+      summary: 파일/디렉터리 메타데이터 조회
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: false
+          description: 생략 시 namespace root.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/exists:
+    get:
+      operationId: exists
+      summary: 경로 존재 여부 조회
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: false
+          description: 생략 시 namespace root.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exists]
+                properties:
+                  exists:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/find:
+    get:
+      operationId: find
+      summary: 하위 트리 재귀 검색(cursor 페이지네이션)
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: false
+          description: 검색 시작 디렉터리. 생략 시 namespace root.
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: false
+          description: 이름 필터 값. 생략하면 이름으로 필터링하지 않는다.
+          schema:
+            type: string
+        - name: match
+          in: query
+          required: false
+          description: 이름 필터 매칭 방식. 생략하거나 알 수 없는 값이면 `exact`로 취급한다.
+          schema:
+            type: string
+            enum: [exact, contains, prefix, suffix]
+            default: exact
+        - name: type
+          in: query
+          required: false
+          description: 노드 타입 필터. 생략하거나 `FILE`/`DIRECTORY`가 아니면 필터링하지 않는다.
+          schema:
+            type: string
+            enum: [FILE, DIRECTORY]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VfsNodePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리가 아님(`VFS_NOT_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: |
+        정적 API 키 슬라이스 인증(`apps/api/docs/adr/0007-service-auth-static-api-key.md`).
+        배포 전체가 공유하는 단일 키 쌍(`STORIX_API_KEY`, 로테이션 중엔
+        `STORIX_API_KEY_PREVIOUS`) 중 하나와 일치해야 한다. 실패 사유는
+        구분해 알려주지 않고 항상 401만 반환한다.
+  parameters:
+    NamespaceId:
+      name: namespaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+    RangeHeader:
+      name: Range
+      in: header
+      required: false
+      description: 'RFC 7233 형식 (예: `bytes=0-1023`).'
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: 이전 페이지 응답의 `nextCursor`. 불투명 문자열이며 형식을 가정하면 안 된다.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: 페이지당 최대 항목 수. 유효하지 않은 값은 기본값으로 대체된다.
+      schema:
+        type: integer
+        default: 100
+        maximum: 1000
+  headers: {}
+  responses:
+    BadRequest:
+      description: '요청이 유효하지 않음(예: `VFS_INVALID_PATH`, `NAMESPACE_INVALID_NAME`)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: '`Authorization` 헤더가 없거나 유효하지 않음(`UNAUTHORIZED`)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Namespace 또는 경로를 찾을 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: 대상 상태와 충돌하는 요청
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: 서버 내부 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      description: |
+        모든 4xx/5xx 응답의 공통 형태. `code`는 자유 문자열이며 이 스펙에서
+        전체 목록을 열거하지 않는다(에러 정의는 `apps/api/src/**/*.errors.ts`
+        참고). `path`는 500 응답이나 요청 경로와 무관한 오류에서는 생략될 수
+        있다.
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          example: VFS_NODE_NOT_FOUND
+        message:
+          type: string
+        path:
+          type: string
+        requestId:
+          type: string
+          description: '`X-Request-Id` 요청 헤더 값 또는 서버가 생성한 값. 응답 `X-Request-Id` 헤더에도 echo된다.'
+    Namespace:
+      type: object
+      required: [id, name, encryptionPolicy, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 불변 식별자.
+        name:
+          type: string
+          pattern: '^[a-z0-9_-]{1,128}$'
+          description: 사람이 정하는 재사용 가능한 slug. 식별자가 아님.
+        encryptionPolicy:
+          type: string
+          enum: [NONE, ENCRYPTED]
+          description: 생성 시 고정되며 이후 변경할 수 없다(`apps/api/docs/adr/0001-namespace-encryption-immutable.md`).
+        status:
+          type: string
+          enum: [ACTIVE, DELETING, DELETED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateNamespaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9_-]{1,128}$'
+        encryptionPolicy:
+          type: string
+          enum: [NONE, ENCRYPTED]
+          default: NONE
+    VfsNode:
+      type: object
+      description: Namespace 안의 파일 또는 디렉터리 하나(`apps/api/CONTEXT.md`의 VFS Node).
+      required: [path, name, type, size, mimeType, createdAt, updatedAt, version]
+      properties:
+        path:
+          type: string
+          description: 사용자가 보는 경로 문자열. 식별자가 아니다(이동/이름변경으로 바뀔 수 있음).
+        name:
+          type: string
+        type:
+          type: string
+          enum: [FILE, DIRECTORY]
+        size:
+          type: integer
+          nullable: true
+          description: DIRECTORY는 항상 `null`.
+        mimeType:
+          type: string
+          nullable: true
+          description: DIRECTORY는 항상 `null`.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          description: 낙관적 동시성 제어용. `PUT content`의 `If-Match`에 사용한다.
+    VfsNodePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VfsNode'
+        nextCursor:
+          type: string
+          nullable: true
+          description: 다음 페이지 요청의 `cursor`. 더 가져올 항목이 없으면 `null`.
+    MkdirRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        parents:
+          type: boolean
+          default: false
+          description: 상위 디렉터리가 없으면 함께 생성할지 여부.
+    TouchRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        parents:
+          type: boolean
+          default: false
+          description: 상위 디렉터리가 없으면 함께 생성할지 여부.
+    MoveRequest:
+      type: object
+      required: [source, destination]
+      properties:
+        source:
+          type: string
+        destination:
+          type: string
+        destinationParents:
+          type: boolean
+          default: false
+          description: 목적지 상위 디렉터리가 없으면 함께 생성할지 여부.
+    CopyRequest:
+      type: object
+      required: [source, destination]
+      properties:
+        source:
+          type: string
+        destination:
+          type: string
+        destinationParents:
+          type: boolean
+          default: false
+          description: 목적지 상위 디렉터리가 없으면 함께 생성할지 여부.
+    PresignedDownload:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time

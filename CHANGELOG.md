@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- OpenAPI 스펙 초안(`apps/api/openapi.yaml`) — namespace/fs API 계약 문서(`API-01`)
+
 ## [0.1.0] - 2026-09-08
 
 첫 항목이라 과거 커밋 이력 전체 대신, 이 시점까지 쌓인 기능을 baseline으로
