@@ -123,7 +123,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = '0123456789'.repeat(10);
 
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/secret.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)
@@ -141,7 +141,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = 'a'.repeat(5000);
 
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/full.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)
@@ -160,7 +160,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = Array.from({ length: 5000 }, (_, i) => String(i % 10)).join('');
 
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/range.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)

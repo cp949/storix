@@ -120,7 +120,7 @@ describe('presigned-download HTTP 계약', () => {
     const content = 'hello presigned world';
 
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send(content)
@@ -169,7 +169,7 @@ describe('presigned-download HTTP 계약', () => {
   it('ENCRYPTED namespace의 파일은 409로 거부된다', async () => {
     const namespaceId = await createEncryptedNamespace(`presigned-enc-${randomUUID()}`);
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/secret.txt' })
       .set('Content-Type', 'text/plain')
       .send('top secret')

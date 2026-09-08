@@ -2,13 +2,11 @@ import { pipeline } from 'node:stream/promises';
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Headers,
   HttpCode,
   Param,
   Post,
-  Put,
   Query,
   Req,
   Res,
@@ -87,13 +85,13 @@ export class FsController {
     return result.body;
   }
 
-  @Delete('rmdir')
+  @Post('rmdir')
   @HttpCode(204)
   async rmdir(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
     await this.vfsService.rmdir(namespaceId, path ?? '');
   }
 
-  @Delete('rm')
+  @Post('rm')
   @HttpCode(204)
   async rm(
     @Param('namespaceId') namespaceId: string,
@@ -103,7 +101,7 @@ export class FsController {
     await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true');
   }
 
-  @Put('content')
+  @Post('content')
   async putContent(
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,

@@ -24,14 +24,14 @@ import { VfsModule } from './vfs.module.js';
 
 const MAX_FILE_SIZE_BYTES = 1048576;
 
-function putChunked(
+function postChunked(
   port: number,
   path: string,
   chunks: Buffer[],
 ): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'PUT', headers: { 'content-type': 'application/octet-stream' } },
+      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/octet-stream' } },
       (res) => {
         const data: Buffer[] = [];
         res.on('data', (chunk: Buffer) => data.push(chunk));
@@ -497,12 +497,12 @@ describe('Fs HTTP contract', () => {
     });
   });
 
-  describe('PUT/GET content', () => {
+  describe('POST/GET content', () => {
     it('없는 file에 내용을 올리면 201과 함께 size/mimeType이 반영된다', async () => {
       const namespaceId = await createNamespace('put-create-ns');
 
       const putResponse = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .set('Content-Type', 'text/plain')
         .send('hello storix')
@@ -526,7 +526,7 @@ describe('Fs HTTP contract', () => {
       const responses = await Promise.all(
         ['first', 'second'].map((content) =>
           request(httpServer)
-            .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+            .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
             .query({ path })
             .set('Content-Type', 'text/plain')
             .send(content),
@@ -541,7 +541,7 @@ describe('Fs HTTP contract', () => {
       const namespaceId = await createNamespace('put-no-parent-ns');
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a/b.txt' })
         .send('x')
         .expect(404);
@@ -557,7 +557,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/adir' })
         .send('x')
         .expect(409);
@@ -568,13 +568,13 @@ describe('Fs HTTP contract', () => {
     it('If-Match 없이 기존 file을 덮어쓰려 하면 409 VFS_VERSION_CONFLICT를 반환한다', async () => {
       const namespaceId = await createNamespace('put-no-if-match-ns');
       await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .send('v1')
         .expect(201);
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .send('v2')
         .expect(409);
@@ -585,13 +585,13 @@ describe('Fs HTTP contract', () => {
     it('올바른 If-Match version이면 덮어쓴다', async () => {
       const namespaceId = await createNamespace('put-if-match-ns');
       const created = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .send('v1')
         .expect(201);
 
       const overwritten = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .set('If-Match', String(created.body.version))
         .send('version 2 content')
@@ -610,13 +610,13 @@ describe('Fs HTTP contract', () => {
     it('force=true면 If-Match 없이도 덮어쓴다', async () => {
       const namespaceId = await createNamespace('put-force-ns');
       await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .send('v1')
         .expect(201);
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt', force: 'true' })
         .send('forced overwrite')
         .expect(200);
@@ -628,7 +628,7 @@ describe('Fs HTTP contract', () => {
       const namespaceId = await createNamespace('put-default-mime-ns');
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.bin' })
         .send(Buffer.from([1, 2, 3]))
         .expect(201);
@@ -641,7 +641,7 @@ describe('Fs HTTP contract', () => {
       const oversized = Buffer.alloc(MAX_FILE_SIZE_BYTES + 1);
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/big.bin' })
         .set('Content-Type', 'application/octet-stream')
         .send(oversized)
@@ -655,7 +655,7 @@ describe('Fs HTTP contract', () => {
       const oversized = Buffer.alloc(MAX_FILE_SIZE_BYTES + 1024, 1);
       const midpoint = Math.floor(oversized.length / 2);
 
-      const response = await putChunked(
+      const response = await postChunked(
         serverPort,
         `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/big.bin')}`,
         [oversized.subarray(0, midpoint), oversized.subarray(midpoint)],
@@ -676,7 +676,7 @@ describe('Fs HTTP contract', () => {
         .update(namespaceId, { maxFileSizeBytes: String(namespaceLimit) });
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/ns-limited.bin' })
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.alloc(namespaceLimit + 1))
@@ -711,11 +711,11 @@ describe('Fs HTTP contract', () => {
       expect(response.body.code).toBe('VFS_IS_DIRECTORY');
     });
 
-    it('빈 body로 PUT content를 호출하면 0-byte file을 생성한다', async () => {
+    it('빈 body로 POST content를 호출하면 0-byte file을 생성한다', async () => {
       const namespaceId = await createNamespace('put-empty-body-ns');
 
       const response = await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/empty.bin' })
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.alloc(0))
@@ -742,7 +742,7 @@ describe('Fs HTTP contract', () => {
           host: '127.0.0.1',
           port: serverPort,
           path: `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/aborted.bin')}`,
-          method: 'PUT',
+          method: 'POST',
           headers: { 'content-type': 'application/octet-stream' },
         });
         // 클라이언트 쪽에서 강제로 소켓을 끊었을 때 발생하는 오류 이벤트는 이 테스트의
@@ -782,7 +782,7 @@ describe('Fs HTTP contract', () => {
   describe('Range 요청', () => {
     async function putText(namespaceId: string, path: string, text: string) {
       return request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path })
         .set('Content-Type', 'text/plain')
         .send(text)
@@ -860,7 +860,7 @@ describe('Fs HTTP contract', () => {
     it('Content-Disposition에 안전하게 인코딩한 filename을 담는다', async () => {
       const namespaceId = await createNamespace('download-ns');
       await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/보고서.txt' })
         .set('Content-Type', 'text/plain')
         .send('내용')
@@ -881,7 +881,7 @@ describe('Fs HTTP contract', () => {
       // STORIX_MAX_FILE_SIZE_BYTES(1MiB) 이하에서 스트리밍 도중 끊을 시간을 벌기 위해 큼직하게 채운다.
       const content = Buffer.alloc(900 * 1024, 7);
 
-      await putChunked(
+      await postChunked(
         serverPort,
         `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/big-download.bin')}`,
         [content],
@@ -1077,7 +1077,7 @@ describe('Fs HTTP contract', () => {
     it('복사본이 원본과 같은 content를 서빙하고, 복사본에 write해도 원본 content는 그대로다', async () => {
       const namespaceId = await createNamespace('cp-content-ns');
       await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/a.txt' })
         .set('Content-Type', 'text/plain')
         .send('hello storix')
@@ -1100,7 +1100,7 @@ describe('Fs HTTP contract', () => {
         .expect(200);
 
       await request(httpServer)
-        .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
         .query({ path: '/b.txt' })
         .set('If-Match', String(stat.body.version))
         .set('Content-Type', 'text/plain')
@@ -1270,7 +1270,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
         .query({ path: '/a' })
         .expect(204);
 
@@ -1292,7 +1292,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
         .query({ path: '/a' })
         .expect(409);
 
@@ -1307,7 +1307,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
         .query({ path: '/a.txt' })
         .expect(409);
 
@@ -1318,7 +1318,7 @@ describe('Fs HTTP contract', () => {
       const namespaceId = await createNamespace('rmdir-root-ns');
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rmdir`)
         .query({ path: '/' })
         .expect(409);
 
@@ -1335,7 +1335,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rm`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rm`)
         .query({ path: '/a.txt' })
         .expect(204);
 
@@ -1357,7 +1357,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rm`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rm`)
         .query({ path: '/a' })
         .expect(409);
 
@@ -1376,7 +1376,7 @@ describe('Fs HTTP contract', () => {
         .expect(201);
 
       await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rm`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rm`)
         .query({ path: '/a', recursive: 'true' })
         .expect(204);
 
@@ -1401,7 +1401,7 @@ describe('Fs HTTP contract', () => {
       // big 자신 + file 5개 = 6개 Node > 스위트 상한(5)
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rm`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rm`)
         .query({ path: '/big', recursive: 'true' })
         .expect(413);
 
@@ -1416,7 +1416,7 @@ describe('Fs HTTP contract', () => {
       const namespaceId = await createNamespace('rm-root-ns');
 
       const response = await request(httpServer)
-        .delete(`/api/v1/namespaces/${namespaceId}/fs/rm`)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/rm`)
         .query({ path: '/', recursive: 'true' })
         .expect(409);
 

@@ -5,11 +5,11 @@ import type { IncomingMessage } from 'node:http';
 import { RequestContextMiddleware } from './request-context.middleware.js';
 
 /**
- * PUT .../fs/content 라우트는 요청 본문을 raw stream 그대로 읽어야 하므로
+ * POST .../fs/content 라우트는 요청 본문을 raw stream 그대로 읽어야 하므로
  * Express의 기본 json/urlencoded 파서가 스트림을 미리 소비하면 안 된다.
  */
 export function isRawUploadRoute(req: Pick<Request, 'method' | 'path'>): boolean {
-  return req.method === 'PUT' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/content');
+  return req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/content');
 }
 
 // JSON/urlencoded 요청은 제어 데이터만 다루므로 namespace별 조정 대신 고정 상한으로
@@ -23,7 +23,7 @@ function matchesContentType(req: Request, expected: string): boolean {
 
 /**
  * NestFactory.create(AppModule, { bodyParser: false })로 기본 body-parser를 끈 뒤,
- * PUT .../fs/content 라우트만 제외하고 json/urlencoded 파서를 동일하게 재적용한다.
+ * POST .../fs/content 라우트만 제외하고 json/urlencoded 파서를 동일하게 재적용한다.
  *
  * requestId 미들웨어를 파서보다 먼저 등록하는 이유: body-parser가 던지는 예외(잘못된
  * JSON, 크기 초과)는 Nest 모듈 미들웨어(RequestContextMiddleware)보다 앞선 단계에서

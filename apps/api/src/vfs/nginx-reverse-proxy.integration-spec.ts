@@ -209,7 +209,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     const content = 'hello through nginx';
 
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send(content)
@@ -231,7 +231,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
   it('GET 이외 메서드는 nginx가 403으로 차단한다', async () => {
     const namespaceId = await createNamespace(`nginx-proxy-method-${randomUUID()}`);
     await request(httpServer)
-      .put(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send('irrelevant')

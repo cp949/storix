@@ -37,10 +37,10 @@ function* generateChunks(total: number, size: number): Generator<Buffer> {
   }
 }
 
-function putStreaming(port: number, path: string, chunkCount: number, chunkSize: number): Promise<{ status: number }> {
+function postStreaming(port: number, path: string, chunkCount: number, chunkSize: number): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'PUT', headers: { 'content-type': 'application/octet-stream' } },
+      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/octet-stream' } },
       (res) => {
         res.resume();
         res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
@@ -168,7 +168,7 @@ describe('대용량 스트리밍', () => {
       }
     }, 20);
 
-    const result = await putStreaming(
+    const result = await postStreaming(
       serverPort,
       `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/large.bin')}`,
       LARGE_FILE_CHUNKS,
@@ -189,7 +189,7 @@ describe('대용량 스트리밍', () => {
     const chunkCount = 40;
     const encodedPath = encodeURIComponent('/small.bin');
 
-    await putStreaming(
+    await postStreaming(
       serverPort,
       `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodedPath}`,
       chunkCount,
