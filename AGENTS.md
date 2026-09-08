@@ -16,3 +16,7 @@ System-wide decisions: `docs/adr/` at the repo root. api context: `apps/api/CONT
 ### Roadmap
 
 Long-term goals and requirements for production maturity: `docs/ROADMAP.md`.
+
+### Local verification
+
+Podman-first local workflow, compose validation via `podman-compose config`, known WSL/podman defects and their workarounds: `docs/agents/local-verification.md`.
