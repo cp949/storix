@@ -13,8 +13,8 @@
 #   - migrate/app/gc/backup/restore의 STORIX_DB_HOST/STORIX_DB_PORT를 postgres:5432로
 #     재정의한다 — 이 조합에서 컨테이너 쪽은 .env의 STORIX_DB_HOST/STORIX_DB_PORT를 무시한다.
 #   - 호스트의 127.0.0.1:${STORIX_DB_PORT:-5432}로 노출해, 호스트에서 직접 실행하는
-#     API 서버(pnpm dev)나 psql이 .env의 STORIX_DB_HOST=localhost/STORIX_DB_PORT 그대로
-#     접속할 수 있게 한다. 호스트에 이미 같은 포트를 쓰는 Postgres가 있으면
+#     API 서버(pnpm --filter @storix/api start:dev)나 psql이 .env의
+#     STORIX_DB_HOST=localhost/STORIX_DB_PORT 그대로 접속할 수 있게 한다. 호스트에 이미 같은 포트를 쓰는 Postgres가 있으면
 #     .env의 STORIX_DB_PORT를 다른 값으로 바꾼다.
 
 x-postgres-env: &postgres-env
