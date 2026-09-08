@@ -8,6 +8,11 @@
 # minio 서비스는 base 파일에 profile 없이 정의돼 있어 이 override와 함께
 # 켜도 같이 기동한다(미사용 상태) — 백엔드 스왑이 실제로 동작함을 보여주는
 # 목적에 집중하고, 정리는 스코프 밖으로 둔다.
+#
+# VERSITYGW_DATA_PATH를 .env에 설정하면(예: /mnt/nas/was-01) 위 볼륨이
+# named volume 대신 그 경로로 bind mount된다 — WAS별 전용 VersityGW를
+# 같은 NAS 위에 배치할 때 쓴다(ADR-0003). 비워두면 지금과 동일하게
+# named volume을 쓴다.
 
 services:
   app:
@@ -60,7 +65,7 @@ services:
       # --health는 backend 서브커맨드보다 앞에 와야 하는 global flag라 VGW_ARGS로 전달한다.
       VGW_ARGS: '--health /health'
     volumes:
-      - versitygw-data:/data
+      - ${VERSITYGW_DATA_PATH:-versitygw-data}:/data
     healthcheck:
       # alpine 베이스 이미지라 curl이 없다 — busybox wget 사용.
       test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:7070/health']
