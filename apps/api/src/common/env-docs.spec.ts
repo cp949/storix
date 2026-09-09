@@ -3,7 +3,13 @@ import { dirname, join } from 'node:path';
 
 // 코드가 읽지 않고 compose 보간에만 쓰이는 변수. .env.example과 README 표에는
 // 있어야 하지만 apps/api/src에는 등장하지 않는다.
-const COMPOSE_ONLY_VARS = ['STORIX_PUBLISH_PORT', 'STORIX_VERSITYGW_DATA_PATH', 'STORIX_NGINX_PUBLIC_PORT'];
+const COMPOSE_ONLY_VARS = [
+  'STORIX_NGINX_PUBLIC_PORT',
+  'STORIX_PUBLISH_HOST',
+  'STORIX_PUBLISH_PORT',
+  'STORIX_SCENARIO_VERSITYGW_PORT',
+  'STORIX_VERSITYGW_DATA_PATH',
+];
 
 // 따옴표로 감싼 이름 전체('STORIX_X') 또는 process.env.STORIX_X 만 env 읽기로 본다.
 // 에러 메시지 안의 "STORIX_X가 …" 같은 언급은 이름 뒤에 따옴표가 오지 않아 제외된다.

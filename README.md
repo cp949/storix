@@ -183,9 +183,10 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 
 | 변수 | 구분 | 기본값 | 읽는 곳 | 용도 |
 |---|---|---|---|---|
+| `STORIX_PUBLISH_HOST` | 선택 | `0.0.0.0` | compose | `app` 컨테이너의 호스트 bind 주소. host Nginx만 접근시키려면 `127.0.0.1` |
 | `STORIX_PUBLISH_PORT` | 선택 | `3000` | compose | `app` 컨테이너를 호스트에 노출하는 포트 |
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
-| `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제(gc/backup/restore 포함 전체 검증 완료, 단 docker-compose 스택은 미지원 — 호스트 직접 실행 전용) — 상세는 `README.sqlite.md` |
+| `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제이며 compose에서는 `docker-compose.sqlite.yml`을 겹친다 — 상세는 `README.sqlite.md` |
 | `STORIX_DB_SQLITE_PATH` | 조건부 | — | 모두 | `STORIX_DB_DRIVER=sqlite`일 때 필수. sqlite 파일 경로 |
 | `STORIX_DB_HOST` | 필수 | — | 모두 | Postgres 호스트. `docker-compose.postgres.yml`이 컨테이너 쪽을 `postgres`로 재정의 |
 | `STORIX_DB_PORT` | 선택 | `5432` | 모두 | Postgres 포트. postgres override에서는 호스트 노출 포트로도 쓰인다 |
@@ -205,6 +206,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_STORAGE_PUBLIC_USE_SSL` | 선택 | `false` | app·잡 | 외부 접근 TLS 여부 |
 | `STORIX_VERSITYGW_DATA_PATH` | 선택 | — | compose | `docker-compose.versitygw.yml` 전용. `/`로 시작하는 절대 경로면 bind mount, 비우면 named volume |
 | `STORIX_NGINX_PUBLIC_PORT` | 선택 | `8443` | compose | `docs/deployment/compose.nginx-demo.yml` 전용 호스트 포트 |
+| `STORIX_SCENARIO_VERSITYGW_PORT` | 선택 | `7070` | compose | `co-located-nginx-mtls` 시나리오에서 host Nginx가 접근할 loopback 포트 |
 | `STORIX_MAX_FILE_SIZE_BYTES` | 선택 | `5368709120` | app | 업로드 상한(5 GiB) |
 | `STORIX_MAX_SYNC_DELETE_NODES` | 선택 | `1000` | app | recursive rm이 동기 처리하는 노드 수 상한 |
 | `STORIX_MAX_SYNC_COPY_NODES` | 선택 | `1000` | app | recursive cp 노드 수 상한 |
@@ -264,6 +266,7 @@ pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 
 - API 계약(OpenAPI, 초안): `apps/api/openapi.yaml`
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 릴리즈, 멀티 인스턴스): `docs/deployment/`
+- 선택형 배포 시나리오와 실제 설정: `docs/deployment/scenarios/`
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`
 - 변경 이력: `CHANGELOG.md`

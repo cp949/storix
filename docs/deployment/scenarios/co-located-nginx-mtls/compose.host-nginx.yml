@@ -1,0 +1,8 @@
+# 기존 host Nginx가 VersityGW에 접근할 수 있도록 loopback에만 포트를 연다.
+# app 포트의 bind 주소는 env 예시의 STORIX_PUBLISH_HOST=127.0.0.1이 정한다.
+# 별도 Nginx 컨테이너나 서비스는 추가하지 않는다.
+
+services:
+  versitygw:
+    ports:
+      - '127.0.0.1:${STORIX_SCENARIO_VERSITYGW_PORT:-7070}:7070'

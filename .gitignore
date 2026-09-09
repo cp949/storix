@@ -23,3 +23,6 @@ docker-compose.override.yml
 
 # 백업 산출물 — docker-compose의 backup/restore 서비스가 ./backups를 바인드 마운트한다
 /backups/
+
+# 배포 시나리오의 개발용 mTLS 인증서와 개인키
+docs/deployment/scenarios/**/pki/generated/

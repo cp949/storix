@@ -35,6 +35,8 @@ x-api-build: &api-build
 # 미설정은 app이 부팅 시점에 거부한다(STORIX_DB_HOST는 requireEnv, STORIX_STORAGE_ENDPOINT는
 # ConfigService.getOrThrow).
 x-db-env: &db-env
+  STORIX_DB_DRIVER: ${STORIX_DB_DRIVER:-postgres}
+  STORIX_DB_SQLITE_PATH: ${STORIX_DB_SQLITE_PATH:-}
   STORIX_DB_HOST: ${STORIX_DB_HOST:-}
   STORIX_DB_PORT: ${STORIX_DB_PORT:-5432}
   STORIX_DB_USERNAME: ${STORIX_DB_USERNAME:-storix}
@@ -101,7 +103,7 @@ services:
   app:
     build: *api-build
     ports:
-      - '${STORIX_PUBLISH_PORT:-3000}:3000'
+      - '${STORIX_PUBLISH_HOST:-0.0.0.0}:${STORIX_PUBLISH_PORT:-3000}:3000'
     environment:
       <<: [*db-env, *storage-env]
       # 컨테이너 안의 listen 포트는 3000 고정이다. 호스트 노출 포트는 위 ports의
