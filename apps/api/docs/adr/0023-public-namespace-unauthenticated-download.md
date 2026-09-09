@@ -46,3 +46,13 @@ attachment`)로 한정하고, 목록 조회(`ls`/`find`)나 쓰기 라우트는 
 - namespace를 `PUBLIC`으로 만들면 그 콘텐츠는 URL과 경로를 아는 누구나 영구적으로
   접근 가능하다는 뜻이다. `accessPolicy`는 생성 후 변경할 수 없으므로, 되돌리려면
   새 `PRIVATE` namespace를 만들고 데이터를 옮겨야 한다(ADR-0001과 같은 제약 형태).
+- `PUBLIC` namespace에는 신뢰할 수 없는 제3자가 올린 바이트를 두면 안 된다 —
+  운영자가 "이 바이트를 공개 origin에서 그대로 서빙해도 된다"고 받아들인 경우가
+  아니라면. `content-response.ts`의 `nosniff` + CSP 헤더는 그런 콘텐츠가
+  top-level document로 열렸을 때 스크립트가 실행되는 것은 막아 주지만, 콘텐츠
+  자체는 여전히 누구나 읽을 수 있고 영구적으로 링크 가능한 상태로 남는다.
+- namespace 삭제 기능을 구현할 때는 `status` 필터링을 `getRootWithLimits()`의
+  두 호출자 모두에 추가해야 한다 — 인증 경로(`FsController`가 쓰는 경로)와
+  무인증 경로(`PublicFsController`가 쓰는 경로) 둘 다. 한쪽만 고치면 삭제된
+  namespace가 공개 경로로는 계속 서빙되는 회귀가 생기는데, 이 표면은 감사
+  로그도 남지 않아(위 항목) 발견이 더 늦어진다.

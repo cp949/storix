@@ -113,6 +113,8 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.text).toBe(FILE_BODY);
     expect(response.headers['content-disposition']).toContain('attachment');
     expect(response.headers['accept-ranges']).toBe('bytes');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
   });
 
   it('content는 Content-Disposition을 설정하지 않는다', async () => {
@@ -122,6 +124,8 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
     expect(response.text).toBe(FILE_BODY);
     expect(response.headers['content-disposition']).toBeUndefined();
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
   });
 
   it('Range 요청에 206과 Content-Range를 반환한다', async () => {
@@ -146,6 +150,37 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     await request(app.getHttpServer())
       .get(`/api/v1/public/${randomUUID()}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
+  });
+
+  it('PRIVATE namespace와 존재하지 않는 namespace는 응답으로 서로 구별할 수 없다', async () => {
+    const missingNamespaceId = randomUUID();
+
+    const privateResponse = await request(app.getHttpServer())
+      .get(`/api/v1/public/${privateNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .expect(404);
+
+    const missingResponse = await request(app.getHttpServer())
+      .get(`/api/v1/public/${missingNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .expect(404);
+
+    // DomainErrorFilter가 채우는 필드는 code/message/path/requestId. requestId는
+    // 요청마다 무작위로 발급되니 비교에서 제외한다. message는 "존재하지 않는
+    // namespace: {요청한 id}" 템플릿이라 요청 URL의 id를 그대로 되돌려줄 뿐이므로,
+    // 실제로 PRIVATE라서 막혔는지 진짜 없는 id라서 막혔는지와는 무관하다 — 두
+    // 응답 각각의 id를 동일한 placeholder로 치환하면 완전히 같아져야 한다.
+    const normalizeBody = (body: Record<string, unknown>, requestedNamespaceId: string) => ({
+      ...body,
+      message:
+        typeof body.message === 'string'
+          ? body.message.replaceAll(requestedNamespaceId, '<namespaceId>')
+          : body.message,
+      requestId: undefined,
+    });
+
+    expect(privateResponse.status).toBe(missingResponse.status);
+    expect(normalizeBody(privateResponse.body, privateNamespaceId)).toEqual(
+      normalizeBody(missingResponse.body, missingNamespaceId),
+    );
   });
 
   it('PUBLIC namespace라도 기존 인증 경로는 API key가 없으면 401을 반환한다', async () => {

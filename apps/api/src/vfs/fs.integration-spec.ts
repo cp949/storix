@@ -509,6 +509,27 @@ describe('Fs HTTP contract', () => {
       expect(getResponse.headers['content-type']).toBe('text/plain');
     });
 
+    it('GET content 응답에 nosniff와 CSP 헤더가 포함된다', async () => {
+      // 공개 경로뿐 아니라 인증 경로도 sendContent()를 공유하므로 같은 하드닝
+      // 헤더가 적용되는지 이 표면에서도 고정해 둔다.
+      const namespaceId = await createNamespace('content-header-ns');
+
+      await request(httpServer)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .set('Content-Type', 'text/plain')
+        .send('hello storix')
+        .expect(201);
+
+      const getResponse = await request(httpServer)
+        .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .expect(200);
+
+      expect(getResponse.headers['x-content-type-options']).toBe('nosniff');
+      expect(getResponse.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    });
+
     it('같은 새 경로에 동시 업로드하면 하나만 생성하고 나머지는 version conflict를 반환한다', async () => {
       const namespaceId = await createNamespace('put-concurrent-create-ns');
       const path = '/same-path.txt';
