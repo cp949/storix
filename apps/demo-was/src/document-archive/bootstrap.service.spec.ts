@@ -24,8 +24,8 @@ describe('BootstrapService', () => {
 
   it('namespace 확보가 실패하면 그대로 예외를 전파한다', async () => {
     const storixClient = {
-      ensureDemoNamespace: jest.fn().mockRejectedValue(new Error('부팅 실패')),
-      ensurePublicNamespace: jest.fn(),
+      ensureDemoNamespace: jest.fn<StorixClient['ensureDemoNamespace']>().mockRejectedValue(new Error('부팅 실패')),
+      ensurePublicNamespace: jest.fn<StorixClient['ensurePublicNamespace']>(),
     } as unknown as StorixClient;
 
     const service = new BootstrapService(storixClient);
