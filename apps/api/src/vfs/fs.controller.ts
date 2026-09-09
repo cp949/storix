@@ -1,4 +1,3 @@
-import { pipeline } from 'node:stream/promises';
 import {
   Body,
   Controller,
@@ -16,8 +15,8 @@ import {
 import type { Request, Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { buildContentDisposition } from './content-disposition.js';
-import { ContentPayload, ContentService } from './content.service.js';
+import { sendContent } from './content-response.js';
+import { ContentService } from './content.service.js';
 import { parseCopyRequest } from './dto/copy-request.dto.js';
 import { parseMkdirRequest } from './dto/mkdir-request.dto.js';
 import { parseMoveRequest } from './dto/move-request.dto.js';
@@ -133,7 +132,7 @@ export class FsController {
     @Res() res: Response,
   ) {
     const payload = await this.contentService.getContent(namespaceId, path ?? '', range);
-    await this.sendContent(res, payload, false);
+    await sendContent(res, payload, false);
   }
 
   @Get('download')
@@ -144,7 +143,7 @@ export class FsController {
     @Res() res: Response,
   ) {
     const payload = await this.contentService.getContent(namespaceId, path ?? '', range);
-    await this.sendContent(res, payload, true);
+    await sendContent(res, payload, true);
   }
 
   @Get('presigned-download')
@@ -183,23 +182,5 @@ export class FsController {
     @Query('limit') limit: string | undefined,
   ) {
     return this.vfsService.find(namespaceId, path ?? '', { name, match, type, cursor, limit });
-  }
-
-  private async sendContent(res: Response, payload: ContentPayload, download: boolean): Promise<void> {
-    res.status(payload.status);
-    res.setHeader('Content-Type', payload.mimeType);
-    res.setHeader('Content-Length', String(payload.contentLength));
-    res.setHeader('Accept-Ranges', 'bytes');
-    if (payload.contentRange) {
-      res.setHeader('Content-Range', payload.contentRange);
-    }
-    if (download) {
-      res.setHeader('Content-Disposition', buildContentDisposition(payload.name));
-    }
-    // 단순 pipe()는 source 오류를 destination으로 전파하지 않고(Node .pipe()의 알려진
-    // 한계), 클라이언트가 다운로드 도중 연결을 끊어도 source를 정리하지 않는다.
-    // pipeline()은 양방향 오류 전파와 리소스 정리를 모두 보장한다. 응답을 이미
-    // 보내기 시작한 뒤 발생하는 실패이므로 별도 처리 없이 무시한다(unhandled rejection 방지).
-    await pipeline(payload.stream, res).catch(() => undefined);
   }
 }

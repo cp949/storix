@@ -6,15 +6,16 @@ import { StorageModule } from '../storage/storage.module.js';
 import { ContentService } from './content.service.js';
 import { FsController } from './fs.controller.js';
 import { PathResolver } from './path-resolver.js';
+import { PublicFsController } from './public-fs.controller.js';
 import { VfsService } from './vfs.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule],
-  controllers: [FsController],
+  controllers: [FsController, PublicFsController],
   providers: [VfsService, ContentService, PathResolver],
 })
 export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware).forRoutes(FsController);
+    consumer.apply(RequestContextMiddleware).forRoutes(FsController, PublicFsController);
   }
 }

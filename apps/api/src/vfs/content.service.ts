@@ -12,14 +12,19 @@ import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { uploadStream } from '../storage/stream-upload.js';
-import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { requireRootWithLimits } from './require-root.js';
-import { VfsIsDirectoryError, VfsNodeNotFoundError, VfsPresignedEncryptedUnsupportedError } from './vfs.errors.js';
+import {
+  VfsIsDirectoryError,
+  VfsNamespaceNotFoundError,
+  VfsNodeNotFoundError,
+  VfsPresignedEncryptedUnsupportedError,
+} from './vfs.errors.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
 
@@ -170,6 +175,38 @@ export class ContentService {
     rangeHeader: string | undefined,
   ): Promise<ContentPayload> {
     const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader);
+  }
+
+  async getPublicContent(
+    namespaceId: string,
+    rawPath: string,
+    rangeHeader: string | undefined,
+  ): Promise<ContentPayload> {
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
+
+    // 공개 표면에는 제시할 자격증명 개념이 없다. 401/403은 "존재하지만 비공개"를
+    // 알려주는 오라클이 되므로 미존재와 동일한 404로 응답한다.
+    if (limits.accessPolicy !== 'PUBLIC') {
+      throw new VfsNamespaceNotFoundError(namespaceId);
+    }
+
+    // 생성 시 조합이 차단되어 정상 경로에서는 도달하지 않는다. 데이터가 어떤
+    // 경로로든 이 상태가 되어도 복호화 결과가 무인증으로 나가지 않게 막는다.
+    if (limits.encryptionPolicy === 'ENCRYPTED') {
+      throw new VfsNamespaceNotFoundError(namespaceId);
+    }
+
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader);
+  }
+
+  private async readContent(
+    namespaceId: string,
+    root: VfsNodeRecord,
+    limits: NamespaceResourceLimits,
+    rawPath: string,
+    rangeHeader: string | undefined,
+  ): Promise<ContentPayload> {
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
     const target = segments.length === 0 ? root : await this.repo.resolvePath(namespaceId, root.id, segments);
 

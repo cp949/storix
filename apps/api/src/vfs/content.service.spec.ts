@@ -9,6 +9,7 @@ import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../pe
 import { ContentService } from './content.service.js';
 import { PathResolver } from './path-resolver.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
+import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 const NAMESPACE_ID = '11111111-1111-1111-1111-111111111111';
 const NONE_LIMITS = {
@@ -399,6 +400,43 @@ describe('ContentService', () => {
       }
 
       expect(Buffer.concat(chunks).toString()).toBe('hello');
+    });
+  });
+
+  describe('getPublicContent', () => {
+    it('PUBLIC namespace의 파일 콘텐츠를 반환한다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { ...NONE_LIMITS, accessPolicy: 'PUBLIC' },
+      });
+      repo.resolvePath.mockResolvedValue(makeNode());
+      repo.getBlobStorageInfo.mockResolvedValue({ storageKey: 'key-1', encryptionIv: null });
+      blobStorage.get.mockResolvedValue(Readable.from(Buffer.from('hello')));
+
+      const payload = await service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined);
+
+      expect(payload).toMatchObject({ name: 'a.txt', status: 200, contentLength: 5 });
+    });
+
+    it('PRIVATE namespace면 VfsNamespaceNotFoundError를 던진다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+
+      await expect(service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined)).rejects.toThrow(
+        VfsNamespaceNotFoundError,
+      );
+      expect(repo.resolvePath).not.toHaveBeenCalled();
+    });
+
+    it('ENCRYPTED namespace면 PUBLIC이어도 VfsNamespaceNotFoundError를 던진다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { ...NONE_LIMITS, encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PUBLIC' },
+      });
+
+      await expect(service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined)).rejects.toThrow(
+        VfsNamespaceNotFoundError,
+      );
+      expect(repo.resolvePath).not.toHaveBeenCalled();
     });
   });
 });
