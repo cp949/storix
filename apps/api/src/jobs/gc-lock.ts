@@ -10,7 +10,18 @@ export class GcLock {
 
   constructor(private readonly dataSource: DataSource) {}
 
+  private get isSqlite(): boolean {
+    return this.dataSource.options.type === 'better-sqlite3';
+  }
+
   async tryAcquire(minIntervalSeconds: number): Promise<boolean> {
+    // SQLite는 단일 프로세스 all-in-one 배포 전제라 GcLock이 막으려는
+    // "여러 WAS 호스트가 하나의 DB를 공유하며 GC를 중복 실행"하는 상황 자체가
+    // 발생하지 않는다 — 실제 잠금 없이 항상 실행을 허가한다.
+    if (this.isSqlite) {
+      return true;
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
 
@@ -38,7 +49,7 @@ export class GcLock {
   }
 
   async markCompleted(): Promise<void> {
-    if (!this.queryRunner) {
+    if (this.isSqlite || !this.queryRunner) {
       return;
     }
     await this.queryRunner.query(
@@ -48,7 +59,7 @@ export class GcLock {
   }
 
   async release(): Promise<void> {
-    if (!this.queryRunner) {
+    if (this.isSqlite || !this.queryRunner) {
       return;
     }
     await this.queryRunner.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]);

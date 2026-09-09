@@ -12,7 +12,10 @@ describe('GcLock', () => {
   }
 
   function makeDataSource(queryRunner: ReturnType<typeof makeQueryRunner>): DataSource {
-    return { createQueryRunner: () => queryRunner as unknown as QueryRunner } as unknown as DataSource;
+    return {
+      options: { type: 'postgres' },
+      createQueryRunner: () => queryRunner as unknown as QueryRunner
+    } as unknown as DataSource;
   }
 
   it('advisory lock을 얻지 못하면 false를 반환하고 커넥션을 반납한다', async () => {
@@ -94,5 +97,31 @@ describe('GcLock', () => {
 
     expect(queryRunner.query).toHaveBeenCalledWith('SELECT pg_advisory_unlock($1)', [84_217_001]);
     expect(queryRunner.release).toHaveBeenCalled();
+  });
+
+  describe('SQLite 드라이버', () => {
+    function makeSqliteDataSource(): DataSource {
+      return { options: { type: 'better-sqlite3' }, createQueryRunner: jest.fn() } as unknown as DataSource;
+    }
+
+    it('tryAcquire는 항상 true를 반환하고 커넥션을 만들지 않는다', async () => {
+      const dataSource = makeSqliteDataSource();
+      const gcLock = new GcLock(dataSource);
+
+      const acquired = await gcLock.tryAcquire(3600);
+
+      expect(acquired).toBe(true);
+      expect(dataSource.createQueryRunner).not.toHaveBeenCalled();
+    });
+
+    it('markCompleted와 release는 아무 것도 하지 않는다', async () => {
+      const dataSource = makeSqliteDataSource();
+      const gcLock = new GcLock(dataSource);
+      await gcLock.tryAcquire(3600);
+
+      await expect(gcLock.markCompleted()).resolves.toBeUndefined();
+      await expect(gcLock.release()).resolves.toBeUndefined();
+      expect(dataSource.createQueryRunner).not.toHaveBeenCalled();
+    });
   });
 });
