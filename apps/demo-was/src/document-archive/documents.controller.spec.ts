@@ -60,3 +60,45 @@ describe('DocumentsController — PUT content', () => {
     expect(upload).not.toHaveBeenCalled();
   });
 });
+
+describe('DocumentsController — POST download', () => {
+  let app: INestApplication;
+  const createDownload = jest.fn<StorixClient['createDownload']>();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [DocumentsController],
+      providers: [{ provide: StorixClient, useValue: { createDownload } }],
+    }).compile();
+
+    app = moduleRef.createNestApplication({ bodyParser: false });
+    configureBodyParsers(app);
+    app.useGlobalFilters(new DomainErrorFilter());
+    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
+      req.requestId = 'req-1';
+      next();
+    });
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    createDownload.mockReset();
+  });
+
+  it('bob이 자신의 문서를 요청하면 presigned URL을 그대로 반환한다', async () => {
+    createDownload.mockResolvedValue({ url: 'http://storage.test/signed', expiresAt: '2026-01-01T00:00:00.000Z' });
+
+    const response = await request(app.getHttpServer())
+      .post('/demo-api/documents/download')
+      .set('X-Demo-User', 'bob')
+      .send({ path: '/notes/a.txt' })
+      .expect(201);
+
+    expect(response.body).toEqual({ url: 'http://storage.test/signed', expiresAt: '2026-01-01T00:00:00.000Z' });
+    expect(createDownload).toHaveBeenCalledWith('/documents/bob/notes/a.txt');
+  });
+});

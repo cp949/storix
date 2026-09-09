@@ -1,4 +1,4 @@
-import { Controller, Headers, Put, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Headers, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { StorixClient } from '../storix-client/storix-client.service.js';
@@ -28,5 +28,15 @@ export class DocumentsController {
 
     res.status(201);
     return entry;
+  }
+
+  @Post('download')
+  async createDownload(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Body() body: { path?: string },
+  ) {
+    const user = parseDemoUser(demoUserHeader);
+    const internalPath = resolveInternalPath(user, body.path ?? '');
+    return this.storixClient.createDownload(internalPath);
   }
 }
