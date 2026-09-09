@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { KeysetCursor } from '../common/keyset-cursor.js';
 import {
   VfsAlreadyExistsError,
@@ -331,11 +331,9 @@ export class VfsNodeRepository {
           throw new VfsNotDirectoryError(joinSegments(segments.slice(0, i)));
         }
 
-        await manager
-          .createQueryBuilder(VfsNodeEntity, 'n')
-          .setLock('pessimistic_write')
-          .where('n.id = :id', { id: parentId })
-          .getOne();
+        await this.applyRowLockIfSupported(
+          manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
+        ).getOne();
 
         let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
 
@@ -662,12 +660,9 @@ export class VfsNodeRepository {
       }
 
       const ids = subtreeRows.map((row) => row.id);
-      await manager
-        .createQueryBuilder(VfsNodeEntity, 'n')
-        .setLock('pessimistic_write')
-        .where('n.id IN (:...ids)', { ids })
-        .orderBy('n.id', 'ASC')
-        .getMany();
+      await this.applyRowLockIfSupported(
+        manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id IN (:...ids)', { ids }).orderBy('n.id', 'ASC'),
+      ).getMany();
 
       const blobDecrements = new Map<string, number>();
       for (const row of subtreeRows) {
@@ -859,11 +854,9 @@ export class VfsNodeRepository {
         throw new VfsNotDirectoryError(joinSegments(segments.slice(0, i)));
       }
 
-      await manager
-        .createQueryBuilder(VfsNodeEntity, 'n')
-        .setLock('pessimistic_write')
-        .where('n.id = :id', { id: parentId })
-        .getOne();
+      await this.applyRowLockIfSupported(
+        manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
+      ).getOne();
 
       let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
       if (!child) {
@@ -881,13 +874,24 @@ export class VfsNodeRepository {
       throw new VfsNotDirectoryError(joinSegments(segments.slice(0, -1)));
     }
 
-    await manager
-      .createQueryBuilder(VfsNodeEntity, 'n')
-      .setLock('pessimistic_write')
-      .where('n.id = :id', { id: parentId })
-      .getOne();
+    await this.applyRowLockIfSupported(
+      manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
+    ).getOne();
 
     return parentId;
+  }
+
+  // SQLite(better-sqlite3)는 명시적 row lock을 지원하지 않고 .setLock()
+  // 호출 자체가 LockNotSupportedOnGivenDriverError로 던져진다. 단일 프로세스
+  // 배포 전제에서 Node 이벤트 루프의 단일 스레드성 + better-sqlite3의 동기
+  // 실행이 이미 같은 프로세스 내 쿼리 순서를 보장하므로, 프로세스 내부
+  // 경쟁을 막기 위한 명시적 lock이 불필요하다(프로세스 간 경쟁은 배포
+  // 모델상 발생하지 않는다고 전제).
+  private applyRowLockIfSupported<T extends ObjectLiteral>(qb: SelectQueryBuilder<T>): SelectQueryBuilder<T> {
+    if (this.dataSource.options.type === 'better-sqlite3') {
+      return qb;
+    }
+    return qb.setLock('pessimistic_write');
   }
 
   private async lockTargetNode(
@@ -896,12 +900,12 @@ export class VfsNodeRepository {
     parentId: string,
     name: string,
   ): Promise<VfsNodeEntity | null> {
-    return manager
-      .createQueryBuilder(VfsNodeEntity, 'n')
-      .setLock('pessimistic_write')
-      .where('n.namespace_id = :namespaceId', { namespaceId })
-      .andWhere('n.parent_id = :parentId', { parentId })
-      .andWhere('n.name = :name', { name })
-      .getOne();
+    return this.applyRowLockIfSupported(
+      manager
+        .createQueryBuilder(VfsNodeEntity, 'n')
+        .where('n.namespace_id = :namespaceId', { namespaceId })
+        .andWhere('n.parent_id = :parentId', { parentId })
+        .andWhere('n.name = :name', { name }),
+    ).getOne();
   }
 }
