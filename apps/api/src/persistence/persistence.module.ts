@@ -1,9 +1,8 @@
 import { Injectable, Module, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { getDbDriver, isSqliteDataSource } from '../common/db-driver.js';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { isSqliteDataSource } from '../common/db-driver.js';
+import { loadDbConfig } from './db-config.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
@@ -34,31 +33,32 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
-      useFactory: (config: ConfigService) => {
-        // dialect-column-types.ts/data-source.ts와 동일하게 getDbDriver()(process.env 직접 읽음)를 쓴다.
-        // entities의 컬럼 타입은 이 모듈이 import되는 시점(ConfigModule.forRoot 실행 전)에
-        // process.env.STORIX_DB_DRIVER로 이미 확정되므로, 여기서 ConfigService(.env 로드 후 값)를
-        // 쓰면 두 값이 어긋나 better-sqlite3 연결에 Postgres 타입 엔티티가 붙는 사고가 난다.
-        if (getDbDriver() === 'sqlite') {
+      // data-source.ts와 동일하게 loadDbConfig()(process.env 직접 읽음)를 쓴다.
+      // entities의 컬럼 타입은 이 모듈이 import되는 시점(ConfigModule.forRoot 실행 전)에
+      // getDbDriver()로 이미 확정되므로, 여기서 ConfigService(.env 로드 후 값)를 쓰면
+      // 두 값이 어긋나 better-sqlite3 연결에 Postgres 타입 엔티티가 붙는 사고가 난다.
+      useFactory: () => {
+        const dbConfig = loadDbConfig();
+
+        if (dbConfig.driver === 'sqlite') {
           return {
             type: 'better-sqlite3' as const,
-            database: config.getOrThrow<string>('STORIX_DB_SQLITE_PATH'),
+            database: dbConfig.sqlitePath,
             synchronize: false,
             entities: ENTITIES,
           };
         }
         return {
           type: 'postgres' as const,
-          host: config.getOrThrow<string>('STORIX_DB_HOST'),
-          port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
-          username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
-          password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
-          database: config.getOrThrow<string>('STORIX_DB_NAME'),
+          host: dbConfig.host,
+          port: dbConfig.port,
+          username: dbConfig.username,
+          password: dbConfig.password,
+          database: dbConfig.database,
           synchronize: false,
           entities: ENTITIES,
         };
       },
-      inject: [ConfigService],
     }),
     TypeOrmModule.forFeature(ENTITIES),
   ],

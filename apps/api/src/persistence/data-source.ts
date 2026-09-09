@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import { getDbDriver } from '../common/db-driver.js';
-import { parsePositiveInt, requireEnv } from '../common/env-parsing.js';
+import { loadDbConfig } from './db-config.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
@@ -13,10 +12,12 @@ const entities = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEnti
 const migrations = ALL_MIGRATIONS;
 
 function buildOptions(): DataSourceOptions {
-  if (getDbDriver() === 'sqlite') {
+  const dbConfig = loadDbConfig();
+
+  if (dbConfig.driver === 'sqlite') {
     return {
       type: 'better-sqlite3',
-      database: requireEnv('STORIX_DB_SQLITE_PATH'),
+      database: dbConfig.sqlitePath,
       synchronize: false,
       entities,
       migrations,
@@ -25,11 +26,11 @@ function buildOptions(): DataSourceOptions {
   }
   return {
     type: 'postgres',
-    host: requireEnv('STORIX_DB_HOST'),
-    port: parsePositiveInt(process.env.STORIX_DB_PORT, 5432),
-    username: requireEnv('STORIX_DB_USERNAME'),
-    password: requireEnv('STORIX_DB_PASSWORD'),
-    database: requireEnv('STORIX_DB_NAME'),
+    host: dbConfig.host,
+    port: dbConfig.port,
+    username: dbConfig.username,
+    password: dbConfig.password,
+    database: dbConfig.database,
     synchronize: false,
     entities,
     migrations,
