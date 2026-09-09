@@ -1,4 +1,6 @@
-export class NamespaceAlreadyExistsError extends Error {
+import { DomainError } from '../common/domain-error.js';
+
+export class NamespaceAlreadyExistsError extends DomainError {
   readonly code = 'NAMESPACE_ALREADY_EXISTS';
   readonly status = 409;
 
@@ -7,7 +9,7 @@ export class NamespaceAlreadyExistsError extends Error {
   }
 }
 
-export class IdempotencyKeyReusedError extends Error {
+export class IdempotencyKeyReusedError extends DomainError {
   readonly code = 'IDEMPOTENCY_KEY_REUSED';
   readonly status = 422;
 
@@ -16,7 +18,7 @@ export class IdempotencyKeyReusedError extends Error {
   }
 }
 
-export class IdempotencyKeyRequiredError extends Error {
+export class IdempotencyKeyRequiredError extends DomainError {
   readonly code = 'IDEMPOTENCY_KEY_REQUIRED';
   readonly status = 400;
 
@@ -25,7 +27,7 @@ export class IdempotencyKeyRequiredError extends Error {
   }
 }
 
-export class NamespaceInvalidNameError extends Error {
+export class NamespaceInvalidNameError extends DomainError {
   readonly code = 'NAMESPACE_INVALID_NAME';
   readonly status = 400;
 
@@ -34,7 +36,7 @@ export class NamespaceInvalidNameError extends Error {
   }
 }
 
-export class NamespaceNotFoundError extends Error {
+export class NamespaceNotFoundError extends DomainError {
   readonly code = 'NAMESPACE_NOT_FOUND';
   readonly status = 404;
 
@@ -43,7 +45,7 @@ export class NamespaceNotFoundError extends Error {
   }
 }
 
-export class NamespaceInvalidEncryptionPolicyError extends Error {
+export class NamespaceInvalidEncryptionPolicyError extends DomainError {
   readonly code = 'NAMESPACE_INVALID_ENCRYPTION_POLICY';
   readonly status = 400;
 

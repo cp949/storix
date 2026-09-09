@@ -1,4 +1,6 @@
-export class InvalidApiKeyError extends Error {
+import { DomainError } from '../common/domain-error.js';
+
+export class InvalidApiKeyError extends DomainError {
   readonly code = 'UNAUTHORIZED';
   readonly status = 401;
 

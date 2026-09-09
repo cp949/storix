@@ -1,4 +1,6 @@
-export class VfsInvalidPathError extends Error {
+import { DomainError } from '../common/domain-error.js';
+
+export class VfsInvalidPathError extends DomainError {
   readonly code = 'VFS_INVALID_PATH';
   readonly status = 400;
 
@@ -7,7 +9,7 @@ export class VfsInvalidPathError extends Error {
   }
 }
 
-export class VfsInvalidCursorError extends Error {
+export class VfsInvalidCursorError extends DomainError {
   readonly code = 'VFS_INVALID_CURSOR';
   readonly status = 400;
 
@@ -16,7 +18,7 @@ export class VfsInvalidCursorError extends Error {
   }
 }
 
-export class VfsNamespaceNotFoundError extends Error {
+export class VfsNamespaceNotFoundError extends DomainError {
   readonly code = 'NAMESPACE_NOT_FOUND';
   readonly status = 404;
 
@@ -25,7 +27,7 @@ export class VfsNamespaceNotFoundError extends Error {
   }
 }
 
-export class VfsNodeNotFoundError extends Error {
+export class VfsNodeNotFoundError extends DomainError {
   readonly code = 'VFS_NODE_NOT_FOUND';
   readonly status = 404;
 
@@ -34,7 +36,7 @@ export class VfsNodeNotFoundError extends Error {
   }
 }
 
-export class VfsNotDirectoryError extends Error {
+export class VfsNotDirectoryError extends DomainError {
   readonly code = 'VFS_NOT_DIRECTORY';
   readonly status = 409;
 
@@ -43,7 +45,7 @@ export class VfsNotDirectoryError extends Error {
   }
 }
 
-export class VfsAlreadyExistsError extends Error {
+export class VfsAlreadyExistsError extends DomainError {
   readonly code = 'VFS_ALREADY_EXISTS';
   readonly status = 409;
 
@@ -52,7 +54,7 @@ export class VfsAlreadyExistsError extends Error {
   }
 }
 
-export class VfsRangeNotSatisfiableError extends Error {
+export class VfsRangeNotSatisfiableError extends DomainError {
   readonly code = 'VFS_RANGE_NOT_SATISFIABLE';
   readonly status = 416;
 
@@ -61,7 +63,7 @@ export class VfsRangeNotSatisfiableError extends Error {
   }
 }
 
-export class VfsIsDirectoryError extends Error {
+export class VfsIsDirectoryError extends DomainError {
   readonly code = 'VFS_IS_DIRECTORY';
   readonly status = 409;
 
@@ -70,7 +72,7 @@ export class VfsIsDirectoryError extends Error {
   }
 }
 
-export class VfsVersionConflictError extends Error {
+export class VfsVersionConflictError extends DomainError {
   readonly code = 'VFS_VERSION_CONFLICT';
   readonly status = 409;
 
@@ -79,7 +81,7 @@ export class VfsVersionConflictError extends Error {
   }
 }
 
-export class VfsInvalidOperationError extends Error {
+export class VfsInvalidOperationError extends DomainError {
   readonly code = 'VFS_INVALID_OPERATION';
   readonly status = 409;
 
@@ -88,7 +90,7 @@ export class VfsInvalidOperationError extends Error {
   }
 }
 
-export class VfsDirectoryNotEmptyError extends Error {
+export class VfsDirectoryNotEmptyError extends DomainError {
   readonly code = 'VFS_DIRECTORY_NOT_EMPTY';
   readonly status = 409;
 
@@ -97,7 +99,7 @@ export class VfsDirectoryNotEmptyError extends Error {
   }
 }
 
-export class VfsDeleteLimitExceededError extends Error {
+export class VfsDeleteLimitExceededError extends DomainError {
   readonly code = 'VFS_DELETE_LIMIT_EXCEEDED';
   readonly status = 413;
 
@@ -106,7 +108,7 @@ export class VfsDeleteLimitExceededError extends Error {
   }
 }
 
-export class VfsCopyLimitExceededError extends Error {
+export class VfsCopyLimitExceededError extends DomainError {
   readonly code = 'VFS_COPY_LIMIT_EXCEEDED';
   readonly status = 413;
 
@@ -115,7 +117,7 @@ export class VfsCopyLimitExceededError extends Error {
   }
 }
 
-export class VfsPresignedEncryptedUnsupportedError extends Error {
+export class VfsPresignedEncryptedUnsupportedError extends DomainError {
   readonly code = 'VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED';
   readonly status = 409;
 

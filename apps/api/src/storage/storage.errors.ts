@@ -1,12 +1,15 @@
-export class VfsInvalidRangeError extends Error {
+import { DomainError } from '../common/domain-error.js';
+
+export class VfsInvalidRangeError extends DomainError {
   readonly code = 'VFS_INVALID_RANGE';
+  readonly status = 416;
 
   constructor(start: number, end: number) {
     super(`유효하지 않은 range: start=${start}, end=${end}`);
   }
 }
 
-export class VfsFileTooLargeError extends Error {
+export class VfsFileTooLargeError extends DomainError {
   readonly code = 'VFS_FILE_TOO_LARGE';
   readonly status = 413;
 

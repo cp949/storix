@@ -1,4 +1,6 @@
-export class NamespaceEncryptionNotConfiguredError extends Error {
+import { DomainError } from '../common/domain-error.js';
+
+export class NamespaceEncryptionNotConfiguredError extends DomainError {
   readonly code = 'NAMESPACE_ENCRYPTION_NOT_CONFIGURED';
   readonly status = 400;
 
