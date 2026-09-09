@@ -20,6 +20,11 @@
   (SQLite가 지원하지 않고, 단일 프로세스에서는 Node 이벤트 루프의
   단일 스레드성 + better-sqlite3의 동기 실행이 이미 쿼리 순서를
   보장하므로 불필요).
+- `docker-compose.yml` 스택 자체는 `STORIX_DB_DRIVER=sqlite`를 지원하지
+  않는다 — `x-db-env`가 Postgres 접속 정보만 컨테이너에 넘기고
+  SQLite 파일용 볼륨 마운트도 없다. 이 스택은 Postgres 전용이며,
+  SQLite는 호스트 직접 실행 또는 별도로 구성한 커스텀 컨테이너
+  배포에서만 쓴다.
 
 ## 설정
 
@@ -33,15 +38,19 @@ STORIX_DB_SQLITE_PATH=/data/storix.sqlite
 
 ## 백업/복구
 
-Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다:
+Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다. `backup`/
+`restore` docker-compose profile은 Postgres 전용이므로(위 배포 모델 참고)
+SQLite는 호스트에서 `.env`를 로드한 상태로 직접 실행한다:
 
-- **백업**(`backup` profile): `VACUUM INTO`로 실행 중에도 일관된 스냅샷을
-  원자적으로 `<백업 디렉터리>/storix.sqlite`에 만든다(Postgres 백업의
-  `postgres.dump` 자리를 대신함). MinIO object 미러링 절차는 드라이버
-  무관 — `docs/deployment/backup-restore.md` 참고.
-- **복구**(`restore` profile): 백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사한다.
-  API 프로세스가 그 파일을 열고 있지 않은 상태(별도 프로세스로 도는
-  `restore` job이 전제)에서만 안전하다.
+- **백업**: `pnpm --filter @storix/api run backup:run:prod`(빌드 산출물 실행)
+  또는 개발 중에는 `backup:run`(빌드+실행). `VACUUM INTO`로 실행 중에도
+  일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에 만든다
+  (Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object 미러링
+  절차는 드라이버 무관 — `docs/deployment/backup-restore.md` 참고.
+- **복구**: `pnpm --filter @storix/api run restore:run:prod`(또는
+  `restore:run`). 백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사한다. API
+  프로세스가 그 파일을 열고 있지 않은 상태(별도 프로세스로 도는 restore
+  job이 전제)에서만 안전하다.
 
 백업 파일 형식은 Postgres와 다르다(`storix.sqlite` vs `postgres.dump`) —
 드라이버를 바꾸는 마이그레이션 도구는 없다.

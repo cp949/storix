@@ -179,6 +179,10 @@ export class VfsNodeRepository {
     private readonly blobRepository: BlobRepository,
   ) {}
 
+  private get isSqlite(): boolean {
+    return this.dataSource.options.type === 'better-sqlite3';
+  }
+
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
     const namespace = await this.namespaceRepo.findOneBy({ id: namespaceId });
     if (!namespace) {
@@ -267,7 +271,7 @@ export class VfsNodeRepository {
     cursor: KeysetCursor | null,
     limit: number,
   ): Promise<VfsNodeMatch[]> {
-    const isSqlite = this.dataSource.options.type === 'better-sqlite3';
+    const isSqlite = this.isSqlite;
     const params: unknown[] = [];
     // Postgres '$N'은 위치 무관 이름 기반 파라미터(재사용 가능)라 params.length
     // 기준으로 번호를 매기면 되지만, SQLite '?'는 텍스트 등장 순서로 바인딩되고
@@ -651,7 +655,11 @@ export class VfsNodeRepository {
       // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
       // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
       // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
-      const isSqlite = this.dataSource.options.type === 'better-sqlite3';
+      // SQLite '?'는 Postgres '$N'과 달리 이름 기반이 아니라 텍스트 등장 순서로
+      // 바인딩된다. 아래 SQLite 분기의 WHERE 순서(id → namespace_id)가 Postgres
+      // 분기와 다른 것은 params 배열 [target.id, namespaceId] 순서에 맞춘 것 —
+      // Postgres에 맞춰 순서만 바꾸면 바인딩이 어긋난다.
+      const isSqlite = this.isSqlite;
       const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
         isSqlite
           ? `WITH RECURSIVE subtree AS (
@@ -747,7 +755,11 @@ export class VfsNodeRepository {
       // DIRECTORY: resolveDestinationPlacement 안에서 source 자신의 row lock을 이미
       // 획득했으므로(removeNode와 동일 원리), 아래 조회~생성 사이에 source subtree
       // 구성이 바뀔 수 없다.
-      const isSqlite = this.dataSource.options.type === 'better-sqlite3';
+      // SQLite '?'는 Postgres '$N'과 달리 이름 기반 재사용이 안 되고 텍스트 등장
+      // 순서로만 바인딩된다. namespace_id 조건이 재귀 UNION 안에 두 번 나오므로
+      // Postgres처럼 $2를 재사용 못 해 params에 namespaceId를 두 번 넣는다 —
+      // "중복이니 하나로 줄이자"고 손대면 바인딩이 깨진다.
+      const isSqlite = this.isSqlite;
       const subtreeRows: CopySourceRow[] = await manager.query(
         isSqlite
           ? `WITH RECURSIVE subtree AS (
@@ -917,7 +929,7 @@ export class VfsNodeRepository {
   // 경쟁을 막기 위한 명시적 lock이 불필요하다(프로세스 간 경쟁은 배포
   // 모델상 발생하지 않는다고 전제).
   private applyRowLockIfSupported<T extends ObjectLiteral>(qb: SelectQueryBuilder<T>): SelectQueryBuilder<T> {
-    if (this.dataSource.options.type === 'better-sqlite3') {
+    if (this.isSqlite) {
       return qb;
     }
     return qb.setLock('pessimistic_write');

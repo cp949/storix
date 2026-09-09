@@ -185,7 +185,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 |---|---|---|---|---|
 | `STORIX_PUBLISH_PORT` | 선택 | `3000` | compose | `app` 컨테이너를 호스트에 노출하는 포트 |
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
-| `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제(gc/backup/restore 포함 전체 검증 완료) — 상세는 `README.sqlite.md` |
+| `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제(gc/backup/restore 포함 전체 검증 완료, 단 docker-compose 스택은 미지원 — 호스트 직접 실행 전용) — 상세는 `README.sqlite.md` |
 | `STORIX_DB_SQLITE_PATH` | 조건부 | — | 모두 | `STORIX_DB_DRIVER=sqlite`일 때 필수. sqlite 파일 경로 |
 | `STORIX_DB_HOST` | 필수 | — | 모두 | Postgres 호스트. `docker-compose.postgres.yml`이 컨테이너 쪽을 `postgres`로 재정의 |
 | `STORIX_DB_PORT` | 선택 | `5432` | 모두 | Postgres 포트. postgres override에서는 호스트 노출 포트로도 쓰인다 |

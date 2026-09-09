@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { BlobRepository, BLOB_DELETE_CHUNK_SIZE } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 
@@ -105,9 +105,11 @@ export function runBlobRepositorySharedTests(getContext: () => BlobRepositoryTes
 
       await repository.deleteBlobRows(blobIds);
 
-      // 모든 blob이 삭제되었는지 확인
-      const remaining = await blobRepo.find({ where: { id: blobs[0].id } });
-      expect(remaining).toHaveLength(0);
+      // 첫 청크만 지우고 나머지 청크를 누락하는 회귀(예: 루프 off-by-one, 첫
+      // 반복 후 조기 return)를 잡기 위해 id 하나가 아니라 전체 id 집합에 대해
+      // 남은 row 수를 센다.
+      const remainingCount = await blobRepo.count({ where: { id: In(blobIds) } });
+      expect(remainingCount).toBe(0);
     });
   });
 
