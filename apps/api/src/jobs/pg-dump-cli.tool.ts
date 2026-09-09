@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { parsePositiveInt } from '../common/env-parsing.js';
+import { DbDumpTool } from './db-dump.tool.js';
 
 export interface PgConnectionOptions {
   readonly host: string;
@@ -36,12 +39,25 @@ function runProcess(command: string, args: string[], password: string): Promise<
 }
 
 @Injectable()
-export class PgDumpCliTool {
-  async dump(conn: PgConnectionOptions, outFile: string): Promise<void> {
+export class PgDumpCliTool implements DbDumpTool {
+  readonly dumpFileName = 'postgres.dump';
+  private readonly conn: PgConnectionOptions;
+
+  constructor(config: ConfigService) {
+    this.conn = {
+      host: config.getOrThrow<string>('STORIX_DB_HOST'),
+      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+      username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
+      password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
+      database: config.getOrThrow<string>('STORIX_DB_NAME'),
+    };
+  }
+
+  async dump(outFile: string): Promise<void> {
     await runProcess(
       'pg_dump',
-      ['-h', conn.host, '-p', String(conn.port), '-U', conn.username, '-Fc', '-f', outFile, conn.database],
-      conn.password,
+      ['-h', this.conn.host, '-p', String(this.conn.port), '-U', this.conn.username, '-Fc', '-f', outFile, this.conn.database],
+      this.conn.password,
     );
   }
 
@@ -49,11 +65,11 @@ export class PgDumpCliTool {
   // 빈 테이블이 존재) 실패하지 않고 지운 뒤 다시 만든다. 스키마가 아예 없는
   // 완전히 빈 Postgres에도 동일하게 동작한다(--if-exists가 DROP 대상 부재를
   // 무시함).
-  async restore(conn: PgConnectionOptions, inFile: string): Promise<void> {
+  async restore(inFile: string): Promise<void> {
     await runProcess(
       'pg_restore',
-      ['-h', conn.host, '-p', String(conn.port), '-U', conn.username, '-d', conn.database, '--clean', '--if-exists', inFile],
-      conn.password,
+      ['-h', this.conn.host, '-p', String(this.conn.port), '-U', this.conn.username, '-d', this.conn.database, '--clean', '--if-exists', inFile],
+      this.conn.password,
     );
   }
 }

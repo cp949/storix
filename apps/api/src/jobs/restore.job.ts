@@ -2,11 +2,11 @@ import { createReadStream, promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { parseBoolean, parsePositiveInt } from '../common/env-parsing.js';
+import { parseBoolean } from '../common/env-parsing.js';
 import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
-import { PgConnectionOptions, PgDumpCliTool } from './pg-dump-cli.tool.js';
+import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
 import { RestoreTargetNotEmptyError } from './restore.errors.js';
 
 export interface RestoreResult {
@@ -19,18 +19,17 @@ export class RestoreJob {
   private readonly logger = new Logger(RestoreJob.name);
   private readonly sourceDir: string;
   private readonly force: boolean;
-  private readonly connectionOptions: PgConnectionOptions;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     private readonly backupRepository: BackupRepository,
-    private readonly pgTool: PgDumpCliTool,
+    @Inject(DB_DUMP_TOOL) private readonly dumpTool: DbDumpTool,
     config: ConfigService,
   ) {
     // docker-compose는 STORIX_RESTORE_SOURCE_DIR를 `${STORIX_RESTORE_SOURCE_DIR:-}`로 넘기므로
     // 미설정 시 빈 문자열이 들어온다. ConfigService.getOrThrow는 undefined일 때만
     // 던지고 빈 문자열은 그대로 통과시키므로(빈 값이면 sourceDir이 ''가 되어
-    // 상대경로 'postgres.dump'를 보게 된다), 빈 값도 여기서 함께 막는다.
+    // 상대경로를 보게 된다), 빈 값도 여기서 함께 막는다.
     this.sourceDir = config.getOrThrow<string>('STORIX_RESTORE_SOURCE_DIR');
     if (this.sourceDir.trim() === '') {
       throw new Error(
@@ -38,21 +37,15 @@ export class RestoreJob {
       );
     }
     this.force = parseBoolean(config.get<string>('STORIX_RESTORE_FORCE'), false);
-    this.connectionOptions = {
-      host: config.getOrThrow<string>('STORIX_DB_HOST'),
-      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
-      username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
-      password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
-      database: config.getOrThrow<string>('STORIX_DB_NAME'),
-    };
   }
 
   async run(): Promise<RestoreResult> {
-    // 파괴적 작업(clearExistingObjects/pg_restore --clean)에 들어가기 전에 백업
-    // 실체부터 확인한다. 경로 오타로 force 복구를 돌리면 대상 버킷만 비워 두고
-    // pg_restore가 실패해, 복구 전보다 나쁜 상태로 끝난다. ENOENT를 그대로
-    // 올려보내 어떤 파일이 없는지 스택에 남긴다.
-    await fs.access(path.join(this.sourceDir, 'postgres.dump'));
+    // 파괴적 작업(clearExistingObjects/dump 복구)에 들어가기 전에 백업 실체부터
+    // 확인한다. 경로 오타로 force 복구를 돌리면 대상 버킷만 비워 두고 복구가
+    // 실패해, 복구 전보다 나쁜 상태로 끝난다. ENOENT를 그대로 올려보내 어떤
+    // 파일이 없는지 스택에 남긴다.
+    const dumpFilePath = path.join(this.sourceDir, this.dumpTool.dumpFileName);
+    await fs.access(dumpFilePath);
 
     const hasExistingData = await this.backupRepository.hasExistingNamespaces();
     if (hasExistingData && !this.force) {
@@ -60,14 +53,14 @@ export class RestoreJob {
     }
 
     if (this.force) {
-      // pg_restore --clean --if-exists와 대칭 — force 복구는 "대상이 백업과
-      // 정확히 같아진다"는 보장을 즉시 주기 위해 기존 object를 먼저 지운다.
+      // 복구 전 대상을 지우는 것과 대칭 — force 복구는 "대상이 백업과 정확히
+      // 같아진다"는 보장을 즉시 주기 위해 기존 object를 먼저 지운다.
       // (지우지 않아도 언젠가 GC job의 orphan-object 경로가 정리하지만,
       // force 복구의 의도는 즉시·확정적인 교체다.)
       await this.clearExistingObjects();
     }
 
-    await this.pgTool.restore(this.connectionOptions, path.join(this.sourceDir, 'postgres.dump'));
+    await this.dumpTool.restore(dumpFilePath);
 
     const restoredObjectCount = await this.restoreObjectsFromLocalDir(this.sourceDir);
 

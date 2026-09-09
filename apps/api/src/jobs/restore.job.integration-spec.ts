@@ -111,7 +111,7 @@ describe('RestoreJob 통합', () => {
     const backupJob = new BackupJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: backupRootDir })),
       makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: backupRootDir }),
     );
     const backupResult = await backupJob.run();
@@ -133,7 +133,7 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' })),
       makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
@@ -158,7 +158,7 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' })),
       makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
@@ -177,7 +177,7 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'true' })),
       makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'true' }),
     );
 
@@ -208,7 +208,7 @@ describe('RestoreJob 통합', () => {
     const backupJob = new BackupJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: emptyBackupRootDir })),
       makeConfig({ ...baseConfigValues(), STORIX_BACKUP_DIR: emptyBackupRootDir }),
     );
     const emptyBackupResult = await backupJob.run();
@@ -223,7 +223,9 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(
+        makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, STORIX_RESTORE_FORCE: 'false' }),
+      ),
       makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, STORIX_RESTORE_FORCE: 'false' }),
     );
 
@@ -246,7 +248,7 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(),
+      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: missingSourceDir, STORIX_RESTORE_FORCE: 'true' })),
       makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: missingSourceDir, STORIX_RESTORE_FORCE: 'true' }),
     );
 
@@ -270,7 +272,7 @@ describe('RestoreJob 통합', () => {
         new RestoreJob(
           storage,
           backupRepository,
-          new PgDumpCliTool(),
+          new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' })),
           makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }),
         ),
     ).toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');

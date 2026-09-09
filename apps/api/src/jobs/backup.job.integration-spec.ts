@@ -106,7 +106,12 @@ describe('BackupJob 통합', () => {
     const content = Buffer.from('backup-job-test-content');
     await storage.put(storageKey, Readable.from(content));
 
-    const job = new BackupJob(storage, backupRepository, new PgDumpCliTool(), makeConfig(baseConfigValues()));
+    const job = new BackupJob(
+      storage,
+      backupRepository,
+      new PgDumpCliTool(makeConfig(baseConfigValues())),
+      makeConfig(baseConfigValues()),
+    );
     const result = await job.run();
 
     expect(result.encryptedNamespaceCount).toBe(1);

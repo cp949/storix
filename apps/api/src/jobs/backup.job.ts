@@ -3,11 +3,10 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { parsePositiveInt } from '../common/env-parsing.js';
 import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
-import { PgConnectionOptions, PgDumpCliTool } from './pg-dump-cli.tool.js';
+import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
 
 export interface BackupResult {
   readonly backupDir: string;
@@ -25,27 +24,19 @@ function formatBackupTimestamp(date: Date): string {
 export class BackupJob {
   private readonly logger = new Logger(BackupJob.name);
   private readonly backupRootDir: string;
-  private readonly connectionOptions: PgConnectionOptions;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     private readonly backupRepository: BackupRepository,
-    private readonly pgTool: PgDumpCliTool,
+    @Inject(DB_DUMP_TOOL) private readonly dumpTool: DbDumpTool,
     config: ConfigService,
   ) {
     this.backupRootDir = config.getOrThrow<string>('STORIX_BACKUP_DIR');
-    this.connectionOptions = {
-      host: config.getOrThrow<string>('STORIX_DB_HOST'),
-      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
-      username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
-      password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
-      database: config.getOrThrow<string>('STORIX_DB_NAME'),
-    };
   }
 
   async run(): Promise<BackupResult> {
     // 작업 중에는 `<timestamp>.partial/`에 쓰고, 전부 성공한 뒤에만 최종 이름으로
-    // rename한다. 중간에 실패하면(예: MinIO 연결 끊김) 완전한 postgres.dump 옆에
+    // rename한다. 중간에 실패하면(예: MinIO 연결 끊김) 완전한 dump 파일 옆에
     // 잘린 minio/가 남아 정상 백업과 구분되지 않는데, 운영자의 보존/회전
     // 스크립트는 디렉터리 목록만 보고 이를 정상 백업으로 취급한다. 같은
     // 파일시스템 안의 rename은 POSIX에서 원자적이다.
@@ -60,10 +51,10 @@ export class BackupJob {
       );
     }
 
-    // Postgres 스냅샷을 MinIO보다 먼저 뜬다 — 업로드가 object-먼저-metadata-나중
-    // 순서이므로(content.service.ts), 이 순서에서만 Postgres 스냅샷이 참조하는
+    // DB 스냅샷을 MinIO보다 먼저 뜬다 — 업로드가 object-먼저-metadata-나중
+    // 순서이므로(content.service.ts), 이 순서에서만 DB 스냅샷이 참조하는
     // 모든 blob이 이미 MinIO에 존재함이 보장된다(ADR-0015).
-    await this.pgTool.dump(this.connectionOptions, path.join(workingDir, 'postgres.dump'));
+    await this.dumpTool.dump(path.join(workingDir, this.dumpTool.dumpFileName));
 
     const copiedObjectCount = await this.mirrorObjectsToLocalDir(workingDir);
 
