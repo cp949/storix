@@ -11,7 +11,7 @@
     "lib": ["ES2022"],
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
