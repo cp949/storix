@@ -17,6 +17,7 @@ function makeNamespaceEntity(overrides: Partial<NamespaceEntity> = {}): Namespac
     id: 'ns-1',
     name: 'acme',
     encryptionPolicy: 'NONE',
+    accessPolicy: 'PRIVATE',
     status: 'ACTIVE',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -31,7 +32,7 @@ describe('NamespaceService', () => {
   };
   let idempotencyRepo: {
     findOneBy: jest.Mock<() => Promise<IdempotencyKeyEntity | null>>;
-    insert: jest.Mock<() => Promise<unknown>>;
+    insert: jest.Mock<(entity: Partial<IdempotencyKeyEntity>) => Promise<unknown>>;
   };
   let provisioningRepo: { createWithRoot: jest.Mock<() => Promise<NamespaceEntity>> };
   let service: NamespaceService;
@@ -58,7 +59,7 @@ describe('NamespaceService', () => {
 
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE', 'PRIVATE');
       expect(idempotencyRepo.insert).toHaveBeenCalledWith(
         expect.objectContaining({ key: 'key-1', responseStatus: 201 }),
       );
@@ -68,7 +69,7 @@ describe('NamespaceService', () => {
       const storedBody = { id: 'ns-1', name: 'acme' };
       idempotencyRepo.findOneBy.mockResolvedValue({
         key: 'key-1',
-        requestHash: canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE' }),
+        requestHash: canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' }),
         responseStatus: 201,
         responseBody: storedBody,
       } as unknown as IdempotencyKeyEntity);
@@ -135,7 +136,39 @@ describe('NamespaceService', () => {
       const result = await service.create('key-1', 'acme', 'ENCRYPTED');
 
       expect(result.status).toBe(201);
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE');
+    });
+
+    it('accessPolicy를 provisioningRepo에 그대로 전달한다', async () => {
+      provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity({ accessPolicy: 'PUBLIC' }));
+
+      await service.create('key-public', 'public-ns', 'NONE', 'PUBLIC');
+
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC');
+    });
+
+    it('accessPolicy만 다른 재요청은 같은 Idempotency-Key로 재사용할 수 없다', async () => {
+      // 테스트가 canonicalJsonHash를 직접 재계산하면, 구현이 accessPolicy를
+      // 해시에서 빠뜨리는 회귀가 생겨도 테스트가 같은 실수를 반복해 통과해버린다.
+      // 그래서 첫 create() 호출로 서비스가 실제로 저장한 requestHash를 캡처하고,
+      // 그 값을 그대로 두 번째 호출의 "기존 레코드"로 재사용해 비교한다.
+      idempotencyRepo.findOneBy.mockResolvedValueOnce(null);
+      provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity());
+
+      await service.create('key-reuse', 'acme', 'NONE', 'PRIVATE');
+
+      const persistedHash = idempotencyRepo.insert.mock.calls[0][0].requestHash;
+
+      idempotencyRepo.findOneBy.mockResolvedValueOnce({
+        key: 'key-reuse',
+        requestHash: persistedHash,
+        responseStatus: 201,
+        responseBody: {},
+      } as unknown as IdempotencyKeyEntity);
+
+      await expect(service.create('key-reuse', 'acme', 'NONE', 'PUBLIC')).rejects.toThrow(
+        IdempotencyKeyReusedError,
+      );
     });
   });
 

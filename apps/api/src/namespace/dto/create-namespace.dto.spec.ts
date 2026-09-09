@@ -1,11 +1,16 @@
-import { NamespaceInvalidEncryptionPolicyError, NamespaceInvalidNameError } from '../namespace.errors.js';
+import {
+  NamespaceInvalidAccessPolicyError,
+  NamespaceInvalidEncryptionPolicyError,
+  NamespaceInvalidNameError,
+  NamespacePublicEncryptionConflictError,
+} from '../namespace.errors.js';
 import { parseCreateNamespaceRequest } from './create-namespace.dto.js';
 
 describe('parseCreateNamespaceRequest', () => {
   it('유효한 name을 그대로 반환하고 encryptionPolicy는 NONE으로 기본 설정한다', () => {
     const result = parseCreateNamespaceRequest({ name: 'acme-01' });
 
-    expect(result).toEqual({ name: 'acme-01', encryptionPolicy: 'NONE' });
+    expect(result).toEqual({ name: 'acme-01', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' });
   });
 
   it('name이 없으면 NamespaceInvalidNameError를 던진다', () => {
@@ -36,12 +41,30 @@ describe('parseCreateNamespaceRequest', () => {
   it('encryptionPolicy로 ENCRYPTED를 지정할 수 있다', () => {
     const result = parseCreateNamespaceRequest({ name: 'acme', encryptionPolicy: 'ENCRYPTED' });
 
-    expect(result).toEqual({ name: 'acme', encryptionPolicy: 'ENCRYPTED' });
+    expect(result).toEqual({ name: 'acme', encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PRIVATE' });
   });
 
   it('encryptionPolicy가 유효하지 않은 값이면 거부한다', () => {
     expect(() => parseCreateNamespaceRequest({ name: 'acme', encryptionPolicy: 'AES' })).toThrow(
       NamespaceInvalidEncryptionPolicyError,
     );
+  });
+
+  it('accessPolicy로 PUBLIC을 지정할 수 있다', () => {
+    const result = parseCreateNamespaceRequest({ name: 'acme', accessPolicy: 'PUBLIC' });
+
+    expect(result).toEqual({ name: 'acme', encryptionPolicy: 'NONE', accessPolicy: 'PUBLIC' });
+  });
+
+  it('accessPolicy가 유효하지 않은 값이면 거부한다', () => {
+    expect(() => parseCreateNamespaceRequest({ name: 'acme', accessPolicy: 'OPEN' })).toThrow(
+      NamespaceInvalidAccessPolicyError,
+    );
+  });
+
+  it('ENCRYPTED와 PUBLIC을 함께 지정하면 거부한다', () => {
+    expect(() =>
+      parseCreateNamespaceRequest({ name: 'acme', encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PUBLIC' }),
+    ).toThrow(NamespacePublicEncryptionConflictError);
   });
 });

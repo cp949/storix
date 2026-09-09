@@ -64,7 +64,12 @@ describe('Namespace HTTP contract', () => {
       .send({ name: 'acme' })
       .expect(201);
 
-    expect(response.body).toMatchObject({ name: 'acme', encryptionPolicy: 'NONE', status: 'ACTIVE' });
+    expect(response.body).toMatchObject({
+      name: 'acme',
+      encryptionPolicy: 'NONE',
+      accessPolicy: 'PRIVATE',
+      status: 'ACTIVE',
+    });
     expect(response.body.id).toEqual(expect.any(String));
   });
 
@@ -190,5 +195,35 @@ describe('Namespace HTTP contract', () => {
       .expect(201);
 
     expect(response.body).toMatchObject({ name: 'encrypted-ns', encryptionPolicy: 'ENCRYPTED' });
+  });
+
+  it('accessPolicy를 PUBLIC으로 생성할 수 있다', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'create-public')
+      .send({ name: 'public-ns', accessPolicy: 'PUBLIC' })
+      .expect(201);
+
+    expect(response.body).toMatchObject({ name: 'public-ns', accessPolicy: 'PUBLIC' });
+  });
+
+  it('ENCRYPTED와 PUBLIC을 함께 지정하면 400을 반환한다', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'create-conflict')
+      .send({ name: 'conflict-ns', encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PUBLIC' })
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT' });
+  });
+
+  it('accessPolicy가 유효하지 않으면 400을 반환한다', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'create-invalid-access')
+      .send({ name: 'invalid-access-ns', accessPolicy: 'OPEN' })
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'NAMESPACE_INVALID_ACCESS_POLICY' });
   });
 });

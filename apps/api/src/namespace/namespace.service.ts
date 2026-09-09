@@ -5,7 +5,7 @@ import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
-import { EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
 import { IdempotencyKeyReusedError, NamespaceAlreadyExistsError, NamespaceNotFoundError } from './namespace.errors.js';
@@ -35,12 +35,15 @@ export class NamespaceService {
     idempotencyKey: string,
     name: string,
     encryptionPolicy: EncryptionPolicy = 'NONE',
+    accessPolicy: AccessPolicy = 'PRIVATE',
   ): Promise<CreateNamespaceResult> {
     if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
       throw new NamespaceEncryptionNotConfiguredError();
     }
 
-    const requestHash = canonicalJsonHash({ name, encryptionPolicy });
+    // accessPolicy를 해시에 포함하지 않으면 같은 Idempotency-Key로 정책만 바꾼
+    // 재요청이 IdempotencyKeyReusedError 없이 캐시 응답을 돌려준다.
+    const requestHash = canonicalJsonHash({ name, encryptionPolicy, accessPolicy });
 
     const existing = await this.idempotencyRepo.findOneBy({ key: idempotencyKey });
     if (existing) {
@@ -56,7 +59,7 @@ export class NamespaceService {
     }
 
     try {
-      const namespace = await this.provisioningRepo.createWithRoot(name, encryptionPolicy);
+      const namespace = await this.provisioningRepo.createWithRoot(name, encryptionPolicy, accessPolicy);
       const body = toNamespaceResponse(namespace);
       await this.recordIdempotency(idempotencyKey, requestHash, 201, body);
       return { status: 201, body };

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
+import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { NamespaceAlreadyExistsError } from '../namespace/namespace.errors.js';
 
@@ -14,10 +14,16 @@ function isUniqueViolation(error: unknown): boolean {
 export class NamespaceProvisioningRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  async createWithRoot(name: string, encryptionPolicy: EncryptionPolicy = 'NONE'): Promise<NamespaceEntity> {
+  async createWithRoot(
+    name: string,
+    encryptionPolicy: EncryptionPolicy = 'NONE',
+    accessPolicy: AccessPolicy = 'PRIVATE',
+  ): Promise<NamespaceEntity> {
     try {
       return await this.dataSource.transaction(async (manager) => {
-        const namespace = await manager.save(manager.create(NamespaceEntity, { name, encryptionPolicy }));
+        const namespace = await manager.save(
+          manager.create(NamespaceEntity, { name, encryptionPolicy, accessPolicy }),
+        );
         await manager.save(
           manager.create(VfsNodeEntity, {
             namespaceId: namespace.id,

@@ -53,3 +53,21 @@ export class NamespaceInvalidEncryptionPolicyError extends DomainError {
     super(`유효하지 않은 encryptionPolicy: ${JSON.stringify(value)}`);
   }
 }
+
+export class NamespaceInvalidAccessPolicyError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_ACCESS_POLICY';
+  readonly status = 400;
+
+  constructor(readonly value: unknown) {
+    super(`유효하지 않은 accessPolicy: ${JSON.stringify(value)}`);
+  }
+}
+
+export class NamespacePublicEncryptionConflictError extends DomainError {
+  readonly code = 'NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT';
+  readonly status = 400;
+
+  constructor() {
+    super('ENCRYPTED namespace는 PUBLIC으로 생성할 수 없음');
+  }
+}

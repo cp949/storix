@@ -22,8 +22,8 @@ export class NamespaceController {
       throw new IdempotencyKeyRequiredError();
     }
 
-    const { name, encryptionPolicy } = parseCreateNamespaceRequest(body);
-    const result = await this.namespaceService.create(idempotencyKey, name, encryptionPolicy);
+    const { name, encryptionPolicy, accessPolicy } = parseCreateNamespaceRequest(body);
+    const result = await this.namespaceService.create(idempotencyKey, name, encryptionPolicy, accessPolicy);
 
     res.status(result.status);
     return result.body;
