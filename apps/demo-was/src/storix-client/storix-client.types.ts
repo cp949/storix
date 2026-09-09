@@ -18,3 +18,13 @@ export interface UploadMetadata {
   readonly mimeType?: string;
   readonly contentLength?: number;
 }
+
+export interface PresignedDownload {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+export interface PublicLink {
+  readonly url: string;
+  readonly publicPath: string;
+}

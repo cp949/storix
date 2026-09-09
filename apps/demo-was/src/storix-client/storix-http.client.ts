@@ -15,7 +15,7 @@ export interface StorixRequestOptions {
   readonly query?: Record<string, string | undefined>;
   readonly headers?: Record<string, string>;
   readonly json?: unknown;
-  readonly body?: string | Uint8Array | null;
+  readonly body?: string | Uint8Array | ReadableStream | null;
   readonly duplex?: 'half';
 }
 
@@ -34,7 +34,7 @@ export class StorixHttpClient {
     const headers = new Headers(options.headers);
     headers.set('authorization', `Bearer ${this.config.storixApiKey}`);
 
-    let body: string | Uint8Array | null | undefined = options.body;
+    let body: string | Uint8Array | ReadableStream | null | undefined = options.body;
     if (options.json !== undefined) {
       headers.set('content-type', 'application/json');
       body = JSON.stringify(options.json);

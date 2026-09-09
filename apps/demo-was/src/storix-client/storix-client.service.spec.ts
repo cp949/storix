@@ -181,3 +181,87 @@ describe('StorixClient — VFS 조작', () => {
     expect(init.duplex).toBe('half');
   });
 });
+
+describe('StorixClient — 다운로드/공개 발행', () => {
+  let client: StorixClient;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StorixClient,
+        StorixHttpClient,
+        {
+          provide: DEMO_WAS_CONFIG,
+          useValue: {
+            storixBaseUrl: 'http://storix.test',
+            storixApiKey: 'key',
+            namespaceName: 'demo',
+            publicNamespaceName: 'demo-public',
+            publicUrlBase: 'http://public.test',
+          },
+        },
+      ],
+    }).compile();
+    client = moduleRef.get(StorixClient);
+
+    mockFetchOnce(201, { id: 'ns-private-id' });
+    await client.ensureDemoNamespace();
+    mockFetchOnce(201, { id: 'ns-public-id' });
+    await client.ensurePublicNamespace();
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('createDownload는 presigned-download를 호출하고 {url, expiresAt}을 반환한다', async () => {
+    const payload = { url: 'http://storage.test/signed', expiresAt: '2026-01-01T00:00:00.000Z' };
+    const spy = mockFetchOnce(200, payload);
+    await expect(client.createDownload('/a.txt')).resolves.toEqual(payload);
+
+    const [url] = spy.mock.calls[0] as [URL];
+    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/presigned-download');
+    expect(url.searchParams.get('path')).toBe('/a.txt');
+  });
+
+  it('publish는 원본을 읽어 같은 경로로 PUBLIC namespace에 재업로드하고 고정 공개 URL을 반환한다', async () => {
+    const bodyStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('hello'));
+        controller.close();
+      },
+    });
+    const getSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(bodyStream, { status: 200, headers: { 'content-type': 'text/plain' } }),
+    );
+    const putSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }));
+
+    const link = await client.publish('/documents/alice/a.txt');
+
+    expect(link).toEqual({
+      url: 'http://public.test/api/v1/public/ns-public-id/fs/download?path=%2Fdocuments%2Falice%2Fa.txt',
+      publicPath: '/documents/alice/a.txt',
+    });
+
+    const [getUrl] = getSpy.mock.calls[0] as [URL];
+    expect(getUrl.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/content');
+
+    const [putUrl, putInit] = putSpy.mock.calls[1] as [URL, RequestInit];
+    expect(putUrl.pathname).toBe('/api/v1/namespaces/ns-public-id/fs/content');
+    expect(putUrl.searchParams.get('path')).toBe('/documents/alice/a.txt');
+    expect(putUrl.searchParams.get('force')).toBe('true');
+    expect((putInit.headers as Headers).get('content-type')).toBe('text/plain');
+  });
+
+  it('unpublish는 PUBLIC namespace에서 같은 경로를 삭제한다', async () => {
+    const spy = mockFetchOnce(204, undefined);
+    await client.unpublish('/documents/alice/a.txt');
+
+    const [url] = spy.mock.calls[0] as [URL];
+    expect(url.pathname).toBe('/api/v1/namespaces/ns-public-id/fs/rm');
+    expect(url.searchParams.get('path')).toBe('/documents/alice/a.txt');
+  });
+});

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
-import type { EntryPage, FileEntry, UploadMetadata } from './storix-client.types.js';
+import type { EntryPage, FileEntry, PresignedDownload, PublicLink, UploadMetadata } from './storix-client.types.js';
 import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
 
@@ -10,7 +10,7 @@ interface NamespaceCreateResponse {
 }
 
 @Injectable()
-export class StorixClient {
+export class StorixClient implements StorixClientPort {
   private demoNamespaceId: string | undefined;
   private publicNamespaceId: string | undefined;
 
@@ -114,6 +114,46 @@ export class StorixClient {
     });
   }
 
+  async createDownload(path: string): Promise<PresignedDownload> {
+    return this.http.requestJson<PresignedDownload>({
+      method: 'GET',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/presigned-download`,
+      query: { path },
+    });
+  }
+
+  async publish(path: string): Promise<PublicLink> {
+    const source = await this.http.request({
+      method: 'GET',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
+      query: { path },
+    });
+
+    const mimeType = source.headers.get('content-type') ?? undefined;
+
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/content`,
+      query: { path, parents: 'true', force: 'true' },
+      headers: mimeType ? { 'content-type': mimeType } : {},
+      body: source.body as ReadableStream,
+      duplex: 'half',
+    });
+
+    const url = new URL(`/api/v1/public/${this.requirePublicNamespaceId()}/fs/download`, this.config.publicUrlBase);
+    url.searchParams.set('path', path);
+
+    return { url: url.toString(), publicPath: path };
+  }
+
+  async unpublish(publicPath: string): Promise<void> {
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/rm`,
+      query: { path: publicPath },
+    });
+  }
+
   private async createNamespace(
     name: string,
     accessPolicy: 'PRIVATE' | 'PUBLIC',
@@ -127,4 +167,19 @@ export class StorixClient {
     });
     return response.id;
   }
+}
+
+export interface StorixClientPort {
+  ensureDemoNamespace(): Promise<string>;
+  ensurePublicNamespace(): Promise<string>;
+  list(path: string, cursor?: string): Promise<EntryPage>;
+  createDirectory(path: string): Promise<void>;
+  upload(path: string, body: ReadableStream, metadata: UploadMetadata): Promise<FileEntry>;
+  move(source: string, destination: string): Promise<void>;
+  copy(source: string, destination: string): Promise<void>;
+  remove(path: string, recursive: boolean): Promise<void>;
+  find(path: string, name: string, cursor?: string): Promise<EntryPage>;
+  createDownload(path: string): Promise<PresignedDownload>;
+  publish(path: string): Promise<PublicLink>;
+  unpublish(publicPath: string): Promise<void>;
 }
