@@ -1,5 +1,4 @@
 import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
-import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client } from 'minio';
 import { DataSource } from 'typeorm';
 import { runGcJobSharedTests } from './gc.job.shared-tests.js';
@@ -15,25 +14,30 @@ import { AddEncryptionSupport1789100000000 } from '../persistence/migrations/178
 import { InitSchema1788637362016 } from '../persistence/migrations/1788637362016-InitSchema.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
 
-describe('GcJob 통합', () => {
-  let pgContainer: StartedPostgreSqlContainer;
+// STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(blob.repository.sqlite.integration-spec.ts와
+// 동일 관례) — 그 외 실행에서는 jest.integration.config.cjs의 testPathIgnorePatterns가 제외한다.
+// MinIO는 Postgres 버전과 동일하게 testcontainers로 띄운다 — object storage는 드라이버와 무관.
+describe('GcJob 통합 (SQLite)', () => {
   let minioContainer: StartedMinioContainer;
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
   let storage: MinioBlobStorage;
   let namespaceId: string;
-  const bucket = 'storix-gc-test';
+  const bucket = 'storix-gc-sqlite-test';
 
   beforeAll(async () => {
-    [pgContainer, minioContainer] = await Promise.all([
-      new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
-      new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start(),
-    ]);
+    if (process.env.STORIX_DB_DRIVER !== 'sqlite') {
+      throw new Error(
+        'STORIX_DB_DRIVER=sqlite 환경변수 없이 이 파일을 실행하면 엔티티의 bytea/timestamptz 대체 상수가 postgres 값으로 고정돼 의미가 없다',
+      );
+    }
+    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
 
     dataSource = new DataSource({
-      type: 'postgres',
-      url: pgContainer.getConnectionUri(),
+      type: 'better-sqlite3',
+      database: ':memory:',
       synchronize: false,
+      migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
       migrations: [
         InitSchema1788637362016,
@@ -64,7 +68,7 @@ describe('GcJob 통합', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
-    await Promise.all([pgContainer.stop(), minioContainer.stop()]);
+    await minioContainer.stop();
   });
 
   runGcJobSharedTests(() => ({
@@ -73,8 +77,8 @@ describe('GcJob 통합', () => {
     blobRepository,
     namespaceId,
     setZeroSinceSecondsAgo: (blobId, secondsAgo) =>
-      dataSource.query(`UPDATE blob SET zero_since = now() - ($1 || ' seconds')::interval WHERE id = $2`, [
-        secondsAgo,
+      dataSource.query(`UPDATE blob SET zero_since = datetime('now', ? || ' seconds') WHERE id = ?`, [
+        `-${secondsAgo}`,
         blobId,
       ]),
   }));
