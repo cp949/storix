@@ -160,5 +160,8 @@ describe('Backup/Restore SQLite 통합', () => {
       chunks.push(chunk as Buffer);
     }
     expect(Buffer.concat(chunks).equals(content)).toBe(true);
+
+    const restoredNamespaceRepo = dataSource.getRepository(NamespaceEntity);
+    await expect(restoredNamespaceRepo.findOneBy({ name: 'sqlite-backup-fixture-ns' })).resolves.not.toBeNull();
   });
 });
