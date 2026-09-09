@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
+import type { EntryPage } from './storix-client.types.js';
 import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
 
@@ -44,6 +45,54 @@ export class StorixClient {
       throw new StorixClientNotBootstrappedError();
     }
     return this.publicNamespaceId;
+  }
+
+  async list(path: string, cursor?: string): Promise<EntryPage> {
+    return this.http.requestJson<EntryPage>({
+      method: 'GET',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/ls`,
+      query: { path, cursor },
+    });
+  }
+
+  async createDirectory(path: string): Promise<void> {
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/mkdir`,
+      json: { path, parents: true },
+    });
+  }
+
+  async move(source: string, destination: string): Promise<void> {
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/mv`,
+      json: { source, destination, destinationParents: true },
+    });
+  }
+
+  async copy(source: string, destination: string): Promise<void> {
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/cp`,
+      json: { source, destination, destinationParents: true },
+    });
+  }
+
+  async remove(path: string, recursive: boolean): Promise<void> {
+    await this.http.request({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/rm`,
+      query: { path, recursive: String(recursive) },
+    });
+  }
+
+  async find(path: string, name: string, cursor?: string): Promise<EntryPage> {
+    return this.http.requestJson<EntryPage>({
+      method: 'GET',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/find`,
+      query: { path, name, cursor },
+    });
   }
 
   private async createNamespace(
