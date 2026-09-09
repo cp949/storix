@@ -18,7 +18,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --watch",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.integration.config.cjs --runInBand",
-    "test:integration:sqlite": "STORIX_DB_DRIVER=sqlite NODE_OPTIONS=--experimental-vm-modules jest --config jest.integration.config.cjs --runInBand src/persistence/migrations.sqlite.integration-spec.ts",
+    "test:integration:sqlite": "STORIX_DB_DRIVER=sqlite NODE_OPTIONS=--experimental-vm-modules jest --config jest.integration.config.cjs --runInBand '\\.sqlite\\.integration-spec\\.ts$'",
     "migration:run": "typeorm-ts-node-esm migration:run -d src/persistence/data-source.ts",
     "migration:generate": "typeorm-ts-node-esm migration:generate -d src/persistence/data-source.ts",
     "migration:run:prod": "typeorm migration:run -d dist/persistence/data-source.js",
