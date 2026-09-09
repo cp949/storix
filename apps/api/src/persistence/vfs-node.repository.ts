@@ -18,7 +18,7 @@ import {
 } from '../vfs/vfs.errors.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
-import { EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
+import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 
 export interface VfsNodeRecord {
@@ -38,6 +38,7 @@ export interface NamespaceResourceLimits {
   readonly maxSyncDeleteNodes: number | null;
   readonly maxSyncCopyNodes: number | null;
   readonly encryptionPolicy: EncryptionPolicy;
+  readonly accessPolicy: AccessPolicy;
 }
 
 export interface VfsNodeMatch extends VfsNodeRecord {
@@ -219,6 +220,7 @@ export class VfsNodeRepository {
         maxSyncDeleteNodes: namespace.maxSyncDeleteNodes,
         maxSyncCopyNodes: namespace.maxSyncCopyNodes,
         encryptionPolicy: namespace.encryptionPolicy,
+        accessPolicy: namespace.accessPolicy,
       },
     };
   }

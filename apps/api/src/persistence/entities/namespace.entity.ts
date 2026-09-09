@@ -3,6 +3,7 @@ import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type NamespaceStatus = 'ACTIVE' | 'DELETING' | 'DELETED';
 export type EncryptionPolicy = 'NONE' | 'ENCRYPTED';
+export type AccessPolicy = 'PRIVATE' | 'PUBLIC';
 
 @Entity('namespace')
 export class NamespaceEntity {
@@ -19,6 +20,16 @@ export class NamespaceEntity {
     default: 'NONE',
   })
   encryptionPolicy: EncryptionPolicy;
+
+  // 생성 시점에 결정되고 이후 변경하지 않는다. NamespaceController에 수정
+  // 엔드포인트가 없어 정책 변경 경로 자체가 존재하지 않는다.
+  @Column({
+    name: 'access_policy',
+    type: 'varchar',
+    length: 16,
+    default: 'PRIVATE',
+  })
+  accessPolicy: AccessPolicy;
 
   @Column({ type: 'varchar', length: 16, default: 'ACTIVE' })
   status: NamespaceStatus;

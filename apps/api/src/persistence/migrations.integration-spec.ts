@@ -335,6 +335,42 @@ describe('Migration: InitSchema', () => {
     });
   });
 
+  describe('접근 정책 컬럼', () => {
+    it('access_policy 기본값은 PRIVATE이다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+      const saved = await repo.save(repo.create({ name: 'access-default-ns' }));
+
+      const found = await repo.findOneByOrFail({ id: saved.id });
+
+      expect(found.accessPolicy).toBe('PRIVATE');
+    });
+
+    it('access_policy에 PUBLIC을 허용한다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+      const saved = await repo.save(repo.create({ name: 'public-ns-owner', accessPolicy: 'PUBLIC' }));
+
+      expect(saved.accessPolicy).toBe('PUBLIC');
+    });
+
+    it('access_policy에 정의되지 않은 값은 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'invalid-access-owner', accessPolicy: 'OPEN' as never })),
+      ).rejects.toThrow();
+    });
+
+    it('ENCRYPTED namespace를 PUBLIC으로 저장하면 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(
+          repo.create({ name: 'encrypted-public-ns', encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PUBLIC' }),
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
   describe('암호화 정책 및 blob.encryption_iv 컬럼', () => {
     it('encryption_policy에 ENCRYPTED를 허용한다', async () => {
       const repo = dataSource.getRepository(NamespaceEntity);

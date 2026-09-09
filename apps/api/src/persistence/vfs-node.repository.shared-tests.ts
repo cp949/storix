@@ -94,6 +94,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         maxSyncDeleteNodes: null,
         maxSyncCopyNodes: null,
         encryptionPolicy: 'NONE',
+        accessPolicy: 'PRIVATE',
       });
       expect(result?.root).toMatchObject({ name: '', type: 'DIRECTORY' });
     });
@@ -113,6 +114,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         maxSyncDeleteNodes: 3,
         maxSyncCopyNodes: 4,
         encryptionPolicy: 'NONE',
+        accessPolicy: 'PRIVATE',
       });
     });
 

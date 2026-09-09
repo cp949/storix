@@ -16,6 +16,7 @@ const NONE_LIMITS = {
   maxSyncDeleteNodes: null,
   maxSyncCopyNodes: null,
   encryptionPolicy: 'NONE',
+  accessPolicy: 'PRIVATE',
 } as const;
 
 function makeNode(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {
