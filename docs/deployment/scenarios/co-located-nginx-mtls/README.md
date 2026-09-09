@@ -60,6 +60,7 @@ WAS 인증서를 소유하지 않는다.
 | Nginx → Storix `127.0.0.1:3000` | loopback + Storix API key | Nginx는 API key를 주입하지 않음 |
 | Storix → VersityGW | 호스트 내부 연결 + S3 SigV4 | 운영 데이터는 공통 NAS에 저장 |
 | Storix A/B → PostgreSQL | DB TLS·계정 정책 | WAS 업무 DB와 별도 DB/user 권장 |
+| 외부 → 기존 Nginx `/api/v1/public/` | 없음(무인증) | `accessPolicy=PUBLIC` namespace의 다운로드 전용. Storix가 정책을 검증하고 그 외에는 404 |
 
 Storix의 기존 `Authorization: Bearer <STORIX_API_KEY>` 검증은 mTLS 뒤에서도
 유지한다. mTLS는 호출 머신을 인증하고 API key는 Storix 애플리케이션 경계를 한
@@ -73,6 +74,9 @@ Storix의 기존 `Authorization: Bearer <STORIX_API_KEY>` 검증은 mTLS 뒤에�
   Nginx `http` context에서 로드할 query-free 로그 형식
 - [`nginx/storage-public.location.conf`](nginx/storage-public.location.conf):
   기존 공개 `sample.com` server block에서 include할 `/storage/` location
+- [`nginx/storix-public-api.location.conf`](nginx/storix-public-api.location.conf):
+  기존 공개 `sample.com` server block에서 include할 `/api/v1/public/` location.
+  `accessPolicy=PUBLIC` namespace의 무인증 다운로드만 외부에 노출한다.
 - [`compose.host-nginx.yml`](compose.host-nginx.yml): 호스트 Nginx가 로컬
   VersityGW에 접근하도록 loopback port를 추가하는 공통 override
 - [`env/development.env.example`](env/development.env.example): 개발 설정 예시
@@ -100,6 +104,7 @@ server {
 
     # 기존 /was/ 설정과 함께 추가한다.
     include /etc/nginx/storix/storage-public.location.conf;
+    include /etc/nginx/storix/storix-public-api.location.conf;
 }
 ```
 

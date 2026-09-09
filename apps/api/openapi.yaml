@@ -522,6 +522,105 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/public/{namespaceId}/fs/content:
+    get:
+      operationId: getPublicContent
+      summary: PUBLIC namespace 파일 콘텐츠 조회(무인증, Range 지원, 인라인)
+      description: '`accessPolicy=PUBLIC`인 namespace만 응답한다. 그 외에는 존재 여부를 구분하지 않고 404를 반환한다. 인증이 필요 없다.'
+      tags: [public]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/RangeHeader'
+      responses:
+        '200':
+          description: 전체 콘텐츠
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: 부분 콘텐츠(`Range` 요청)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리임(`VFS_IS_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '416':
+          description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/public/{namespaceId}/fs/download:
+    get:
+      operationId: publicDownload
+      summary: 'PUBLIC namespace 파일 다운로드(무인증, Range 지원, `Content-Disposition: attachment`)'
+      description: '`accessPolicy=PUBLIC`인 namespace만 응답한다. 그 외에는 존재 여부를 구분하지 않고 404를 반환한다. 인증이 필요 없다.'
+      tags: [public]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/RangeHeader'
+      responses:
+        '200':
+          description: 전체 콘텐츠
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: 부분 콘텐츠(`Range` 요청)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 대상이 디렉터리임(`VFS_IS_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '416':
+          description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/namespaces/{namespaceId}/fs/ls:
     get:
       operationId: ls
@@ -782,7 +881,7 @@ components:
           description: '`X-Request-Id` 요청 헤더 값 또는 서버가 생성한 값. 응답 `X-Request-Id` 헤더에도 echo된다.'
     Namespace:
       type: object
-      required: [id, name, encryptionPolicy, status, createdAt, updatedAt]
+      required: [id, name, encryptionPolicy, accessPolicy, status, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -796,6 +895,10 @@ components:
           type: string
           enum: [NONE, ENCRYPTED]
           description: 생성 시 고정되며 이후 변경할 수 없다(`apps/api/docs/adr/0001-namespace-encryption-immutable.md`).
+        accessPolicy:
+          type: string
+          enum: [PRIVATE, PUBLIC]
+          description: 생성 시 고정되며 이후 변경할 수 없다(`apps/api/docs/adr/0023-public-namespace-unauthenticated-download.md`).
         status:
           type: string
           enum: [ACTIVE, DELETING, DELETED]
@@ -816,6 +919,11 @@ components:
           type: string
           enum: [NONE, ENCRYPTED]
           default: NONE
+        accessPolicy:
+          type: string
+          enum: [PRIVATE, PUBLIC]
+          default: PRIVATE
+          description: '생성 후 변경할 수 없다. `ENCRYPTED`와 함께 지정하면 `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`로 거부된다.'
     VfsNode:
       type: object
       description: Namespace 안의 파일 또는 디렉터리 하나(`apps/api/CONTEXT.md`의 VFS Node).

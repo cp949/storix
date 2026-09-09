@@ -18,6 +18,10 @@
 - 버저닝/breaking-change 정책 — 릴리즈 태그는 SemVer, breaking change는
   `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로 표현(`API-03`,
   `docs/adr/0007`, `apps/api/docs/adr/0020`)
+- namespace `accessPolicy`(`PRIVATE`/`PUBLIC`) 도입. 생성 시 결정되며 변경할 수 없다.
+- `GET /api/v1/public/{ns}/fs/download`, `GET /api/v1/public/{ns}/fs/content` 무인증
+  다운로드 엔드포인트 추가. `PUBLIC`이 아닌 namespace는 404로 응답한다.
+- `ENCRYPTED` namespace를 `PUBLIC`으로 생성하는 요청을 400으로 거부한다.
 
 ## [0.1.0] - 2026-09-08
 

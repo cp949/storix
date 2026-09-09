@@ -13,6 +13,10 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 - `mkdir`, `touch`, `mv`, `cp`, `rmdir`, `rm` — 디렉터리/파일 조작
 - `POST`/`GET content`, `GET download` — 콘텐츠 업로드/다운로드(Range 지원)
 - `ls`, `stat`, `exists`, `find` — 조회, cursor 기반 페이지네이션
+- `GET /api/v1/public/{ns}/fs/download|content` — `accessPolicy=PUBLIC` namespace의
+  무인증 다운로드(Range 지원). 다운로드 2개 라우트만 존재하며 목록 조회·쓰기는 없다.
+  `accessPolicy`는 namespace 생성 시 결정되고 변경할 수 없다. `ENCRYPTED` namespace는
+  `PUBLIC`으로 만들 수 없다.
 
 전체 엔드포인트는 `api/v1/namespaces/:namespaceId/fs/*` 아래에 있다
 (`src/vfs/fs.controller.ts`). 호출 서버가 로컬 파일시스템을 다루듯 Storix를

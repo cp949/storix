@@ -6,6 +6,7 @@ import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { parse } from 'yaml';
 import { FsController } from '../vfs/fs.controller.js';
+import { PublicFsController } from '../vfs/public-fs.controller.js';
 import { NamespaceController } from '../namespace/namespace.controller.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -60,8 +61,12 @@ function specRoutes(): string[] {
 }
 
 describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
-  it('스펙의 엔드포인트 집합이 namespace/fs 컨트롤러 라우트 집합과 정확히 일치한다', () => {
-    const codeRoutes = [...controllerRoutes(NamespaceController), ...controllerRoutes(FsController)].sort();
+  it('스펙의 엔드포인트 집합이 namespace/fs/public-fs 컨트롤러 라우트 집합과 정확히 일치한다', () => {
+    const codeRoutes = [
+      ...controllerRoutes(NamespaceController),
+      ...controllerRoutes(FsController),
+      ...controllerRoutes(PublicFsController),
+    ].sort();
 
     expect(specRoutes().sort()).toEqual(codeRoutes);
   });
