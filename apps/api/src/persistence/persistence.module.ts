@@ -19,7 +19,11 @@ const ENTITIES = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEnti
   imports: [
     TypeOrmModule.forRootAsync({
       useFactory: (config: ConfigService) => {
-        if (config.get<string>('STORIX_DB_DRIVER') === 'sqlite') {
+        // dialect-column-types.ts/data-source.ts와 동일하게 process.env를 직접 읽는다.
+        // entities의 컬럼 타입은 이 모듈이 import되는 시점(ConfigModule.forRoot 실행 전)에
+        // process.env.STORIX_DB_DRIVER로 이미 확정되므로, 여기서 ConfigService(.env 로드 후 값)를
+        // 쓰면 두 값이 어긋나 better-sqlite3 연결에 Postgres 타입 엔티티가 붙는 사고가 난다.
+        if (process.env.STORIX_DB_DRIVER === 'sqlite') {
           return {
             type: 'better-sqlite3' as const,
             database: config.getOrThrow<string>('STORIX_DB_SQLITE_PATH'),

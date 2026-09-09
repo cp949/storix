@@ -49,8 +49,8 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
 
   private async upSqlite(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('PRAGMA foreign_keys=OFF');
-    await queryRunner.query('BEGIN TRANSACTION');
     try {
+      await queryRunner.query('BEGIN TRANSACTION');
       await queryRunner.query(`
         CREATE TABLE "namespace_new" (
           "id" varchar(36) PRIMARY KEY,
@@ -79,7 +79,11 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
       await queryRunner.query(`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`);
       await queryRunner.query('COMMIT');
     } catch (error) {
-      await queryRunner.query('ROLLBACK');
+      try {
+        await queryRunner.query('ROLLBACK');
+      } catch {
+        // 원본 에러를 가리지 않기 위해 ROLLBACK 실패는 무시한다.
+      }
       throw error;
     } finally {
       await queryRunner.query('PRAGMA foreign_keys=ON');
@@ -111,8 +115,8 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
 
   private async downSqlite(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('PRAGMA foreign_keys=OFF');
-    await queryRunner.query('BEGIN TRANSACTION');
     try {
+      await queryRunner.query('BEGIN TRANSACTION');
       await queryRunner.query(`
         CREATE TABLE "namespace_old" (
           "id" varchar(36) PRIMARY KEY,
@@ -135,7 +139,11 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
       await queryRunner.query(`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`);
       await queryRunner.query('COMMIT');
     } catch (error) {
-      await queryRunner.query('ROLLBACK');
+      try {
+        await queryRunner.query('ROLLBACK');
+      } catch {
+        // 원본 에러를 가리지 않기 위해 ROLLBACK 실패는 무시한다.
+      }
       throw error;
     } finally {
       await queryRunner.query('PRAGMA foreign_keys=ON');
