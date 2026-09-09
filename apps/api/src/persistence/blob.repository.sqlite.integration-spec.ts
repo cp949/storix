@@ -5,11 +5,7 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
-import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
-import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
-import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
-import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
-import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
+import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(migrations.sqlite.integration-spec.ts와
 // 동일 관례) — 그 외 실행에서는 jest.integration.config.cjs의 testPathIgnorePatterns가 제외한다.
@@ -30,13 +26,7 @@ describe('BlobRepository (SQLite)', () => {
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-        AddEncryptionSupport1789100000000,
-      ],
+      migrations: ALL_MIGRATIONS.slice(0, 5),
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

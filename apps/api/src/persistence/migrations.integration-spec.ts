@@ -7,12 +7,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
-import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
-import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
-import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
-import { AddAuditLog1789200000000 } from './migrations/1789200000000-AddAuditLog.js';
-import { AddGcState1789300000000 } from './migrations/1789300000000-AddGcState.js';
-import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
+import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -25,15 +20,7 @@ describe('Migration: InitSchema', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-        AddEncryptionSupport1789100000000,
-        AddAuditLog1789200000000,
-        AddGcState1789300000000,
-      ],
+      migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -505,7 +492,7 @@ describe('Migration: AddBlobZeroSince backfill', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000],
+      migrations: ALL_MIGRATIONS.slice(0, 2),
     });
     await preBackfillDataSource.initialize();
     await preBackfillDataSource.runMigrations();

@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import 'reflect-metadata';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { getDbDriver } from '../common/db-driver.js';
@@ -9,10 +7,10 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
-const dirname = path.dirname(fileURLToPath(import.meta.url));
 const entities = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity];
-const migrations = [dirname + '/migrations/*.{ts,js}'];
+const migrations = ALL_MIGRATIONS;
 
 function buildOptions(): DataSourceOptions {
   if (getDbDriver() === 'sqlite') {

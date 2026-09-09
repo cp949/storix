@@ -8,13 +8,7 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
-import { AddAuditLog1789200000000 } from './migrations/1789200000000-AddAuditLog.js';
-import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
-import { AddEncryptionSupport1789100000000 } from './migrations/1789100000000-AddEncryptionSupport.js';
-import { AddGcState1789300000000 } from './migrations/1789300000000-AddGcState.js';
-import { AddIdempotencyKey1788700000000 } from './migrations/1788700000000-AddIdempotencyKey.js';
-import { AddNamespaceResourceLimits1789000000000 } from './migrations/1789000000000-AddNamespaceResourceLimits.js';
-import { InitSchema1788637362016 } from './migrations/1788637362016-InitSchema.js';
+import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -34,15 +28,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-        AddEncryptionSupport1789100000000,
-        AddAuditLog1789200000000,
-        AddGcState1789300000000,
-      ],
+      migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -205,7 +191,7 @@ describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => 
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000, AddBlobZeroSince1788800000000],
+      migrations: ALL_MIGRATIONS.slice(0, 3),
     });
     await dsBefore.initialize();
     await dsBefore.runMigrations();
@@ -224,12 +210,7 @@ describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => 
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-      ],
+      migrations: ALL_MIGRATIONS.slice(0, 4),
     });
     await dsAfter.initialize();
     await dsAfter.runMigrations();
@@ -248,12 +229,7 @@ describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => 
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-      ],
+      migrations: ALL_MIGRATIONS.slice(0, 4),
     });
     await dsBefore.initialize();
     await dsBefore.runMigrations();
@@ -278,13 +254,7 @@ describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => 
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: [
-        InitSchema1788637362016,
-        AddIdempotencyKey1788700000000,
-        AddBlobZeroSince1788800000000,
-        AddNamespaceResourceLimits1789000000000,
-        AddEncryptionSupport1789100000000,
-      ],
+      migrations: ALL_MIGRATIONS.slice(0, 5),
     });
     await dsAfter.initialize();
     await dsAfter.runMigrations();
@@ -304,16 +274,6 @@ describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => 
 });
 
 describe('down() 마이그레이션 체인 (실제 파일)', () => {
-  const ALL_MIGRATIONS = [
-    InitSchema1788637362016,
-    AddIdempotencyKey1788700000000,
-    AddBlobZeroSince1788800000000,
-    AddNamespaceResourceLimits1789000000000,
-    AddEncryptionSupport1789100000000,
-    AddAuditLog1789200000000,
-    AddGcState1789300000000,
-  ];
-
   let tmpDir: string;
   let dbPath: string;
   let dataSource: DataSource;
