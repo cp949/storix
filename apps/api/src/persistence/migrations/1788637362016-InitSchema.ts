@@ -18,11 +18,17 @@ export class InitSchema1788637362016 implements MigrationInterface {
         "name" varchar(128) NOT NULL,
         "encryption_policy" varchar(16) NOT NULL DEFAULT 'NONE',
         "status" varchar(16) NOT NULL DEFAULT 'ACTIVE',
+        "max_file_size_bytes" bigint,
+        "max_sync_delete_nodes" integer,
+        "max_sync_copy_nodes" integer,
         "created_at" timestamptz NOT NULL DEFAULT now(),
         "updated_at" timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT "CHK_namespace_name_format" CHECK ("name" ~ '^[a-z0-9_-]{1,128}$'),
-        CONSTRAINT "CHK_namespace_encryption_policy" CHECK ("encryption_policy" = 'NONE'),
-        CONSTRAINT "CHK_namespace_status" CHECK ("status" IN ('ACTIVE', 'DELETING', 'DELETED'))
+        CONSTRAINT "CHK_namespace_encryption_policy" CHECK ("encryption_policy" IN ('NONE', 'ENCRYPTED')),
+        CONSTRAINT "CHK_namespace_status" CHECK ("status" IN ('ACTIVE', 'DELETING', 'DELETED')),
+        CONSTRAINT "CHK_namespace_max_file_size_bytes_positive" CHECK ("max_file_size_bytes" IS NULL OR "max_file_size_bytes" > 0),
+        CONSTRAINT "CHK_namespace_max_sync_delete_nodes_positive" CHECK ("max_sync_delete_nodes" IS NULL OR "max_sync_delete_nodes" > 0),
+        CONSTRAINT "CHK_namespace_max_sync_copy_nodes_positive" CHECK ("max_sync_copy_nodes" IS NULL OR "max_sync_copy_nodes" > 0)
       );
     `);
 
@@ -40,8 +46,10 @@ export class InitSchema1788637362016 implements MigrationInterface {
         "sha256" char(64) NOT NULL,
         "reference_count" integer NOT NULL DEFAULT 0,
         "created_at" timestamptz NOT NULL DEFAULT now(),
+        "encryption_iv" bytea,
         CONSTRAINT "CHK_blob_size_non_negative" CHECK ("size" >= 0),
         CONSTRAINT "CHK_blob_reference_count_non_negative" CHECK ("reference_count" >= 0),
+        CONSTRAINT "CHK_blob_encryption_iv_length" CHECK ("encryption_iv" IS NULL OR octet_length("encryption_iv") = 16),
         CONSTRAINT "UQ_blob_id_namespace_id" UNIQUE ("id", "namespace_id"),
         CONSTRAINT "UQ_blob_storage_key" UNIQUE ("storage_key")
       );
@@ -100,11 +108,17 @@ export class InitSchema1788637362016 implements MigrationInterface {
         "name" varchar(128) NOT NULL,
         "encryption_policy" varchar(16) NOT NULL DEFAULT 'NONE',
         "status" varchar(16) NOT NULL DEFAULT 'ACTIVE',
+        "max_file_size_bytes" bigint,
+        "max_sync_delete_nodes" integer,
+        "max_sync_copy_nodes" integer,
         "created_at" datetime NOT NULL DEFAULT (datetime('now')),
         "updated_at" datetime NOT NULL DEFAULT (datetime('now')),
         CONSTRAINT "CHK_namespace_name_format" CHECK ("name" NOT GLOB '*[^a-z0-9_-]*' AND length("name") BETWEEN 1 AND 128),
-        CONSTRAINT "CHK_namespace_encryption_policy" CHECK ("encryption_policy" = 'NONE'),
-        CONSTRAINT "CHK_namespace_status" CHECK ("status" IN ('ACTIVE', 'DELETING', 'DELETED'))
+        CONSTRAINT "CHK_namespace_encryption_policy" CHECK ("encryption_policy" IN ('NONE', 'ENCRYPTED')),
+        CONSTRAINT "CHK_namespace_status" CHECK ("status" IN ('ACTIVE', 'DELETING', 'DELETED')),
+        CONSTRAINT "CHK_namespace_max_file_size_bytes_positive" CHECK ("max_file_size_bytes" IS NULL OR "max_file_size_bytes" > 0),
+        CONSTRAINT "CHK_namespace_max_sync_delete_nodes_positive" CHECK ("max_sync_delete_nodes" IS NULL OR "max_sync_delete_nodes" > 0),
+        CONSTRAINT "CHK_namespace_max_sync_copy_nodes_positive" CHECK ("max_sync_copy_nodes" IS NULL OR "max_sync_copy_nodes" > 0)
       )
     `);
     await queryRunner.query(`
@@ -120,8 +134,10 @@ export class InitSchema1788637362016 implements MigrationInterface {
         "sha256" char(64) NOT NULL,
         "reference_count" integer NOT NULL DEFAULT 0,
         "created_at" datetime NOT NULL DEFAULT (datetime('now')),
+        "encryption_iv" blob,
         CONSTRAINT "CHK_blob_size_non_negative" CHECK ("size" >= 0),
         CONSTRAINT "CHK_blob_reference_count_non_negative" CHECK ("reference_count" >= 0),
+        CONSTRAINT "CHK_blob_encryption_iv_length" CHECK ("encryption_iv" IS NULL OR length("encryption_iv") = 16),
         CONSTRAINT "UQ_blob_id_namespace_id" UNIQUE ("id", "namespace_id"),
         CONSTRAINT "UQ_blob_storage_key" UNIQUE ("storage_key")
       )

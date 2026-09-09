@@ -504,24 +504,19 @@ describe('Migration: AddBlobZeroSince backfill', () => {
   });
 
   it('reference_count=0인 기존 blob에 zero_since를 백필한다', async () => {
-    // AddNamespaceResourceLimits 이전 스키마에는 리소스 상한 컬럼이 없으므로,
-    // 이미 그 컬럼을 알고 있는 NamespaceEntity를 통한 insert 대신 raw SQL을 사용한다
-    // (아래 blob insert가 zero_since 컬럼을 피해가는 것과 동일한 이유)
-    const namespaceId = randomUUID();
-    await preBackfillDataSource.query(
-      `INSERT INTO namespace (id, name, encryption_policy, status, created_at, updated_at)
-       VALUES ($1, $2, 'NONE', 'ACTIVE', now(), now())`,
-      [namespaceId, 'backfill-test-ns'],
-    );
+    const namespaceRepo = preBackfillDataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'backfill-test-ns' }));
 
-    // 마이그레이션 전에 reference_count=0인 blob을 삽입
+    // 마이그레이션 전에 reference_count=0인 blob을 삽입 — BlobEntity는 이 시점에
+    // 아직 없는 zero_since 컬럼도 매핑하고 있어 repo.save()를 쓰면 그 컬럼까지
+    // insert에 실려 실패하므로, zero_since를 뺀 raw SQL을 쓴다.
     const blobId = randomUUID();
     await preBackfillDataSource.query(
       `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
       [
         blobId,
-        namespaceId,
+        namespace.id,
         'blobs/ab/backfill-test',
         '100',
         'application/octet-stream',

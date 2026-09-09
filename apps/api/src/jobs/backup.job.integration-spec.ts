@@ -62,7 +62,7 @@ describe('BackupJob 통합', () => {
       url: pgContainer.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 5),
+      migrations: ALL_MIGRATIONS.slice(0, 3),
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

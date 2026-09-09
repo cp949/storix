@@ -21,7 +21,7 @@ describe('AuditLogRepository', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 6),
+      migrations: ALL_MIGRATIONS.slice(0, 4),
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

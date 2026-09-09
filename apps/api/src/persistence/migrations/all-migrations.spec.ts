@@ -8,8 +8,6 @@ describe('ALL_MIGRATIONS', () => {
       'InitSchema1788637362016',
       'AddIdempotencyKey1788700000000',
       'AddBlobZeroSince1788800000000',
-      'AddNamespaceResourceLimits1789000000000',
-      'AddEncryptionSupport1789100000000',
       'AddAuditLog1789200000000',
       'AddGcState1789300000000',
     ]);

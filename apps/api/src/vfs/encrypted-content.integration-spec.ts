@@ -60,7 +60,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       url: postgresContainer.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 5),
+      migrations: ALL_MIGRATIONS.slice(0, 3),
     });
     await migrationDataSource.initialize();
     await migrationDataSource.runMigrations();
