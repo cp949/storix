@@ -211,7 +211,11 @@ export class VfsNodeRepository {
     return {
       root: toRecord(root),
       limits: {
-        maxFileSizeBytes: namespace.maxFileSizeBytes,
+        // bigint 컬럼은 NamespaceEntity 타입상 항상 string이지만, SQLite에서
+        // Repository.update()로 쓴 값을 다시 읽으면(save() 경로와 달리)
+        // better-sqlite3가 raw number를 그대로 돌려준다 — String()으로
+        // 명시적으로 맞춘다(parseSqlTimestamp와 동일한 이유의 방어적 보정).
+        maxFileSizeBytes: namespace.maxFileSizeBytes === null ? null : String(namespace.maxFileSizeBytes),
         maxSyncDeleteNodes: namespace.maxSyncDeleteNodes,
         maxSyncCopyNodes: namespace.maxSyncCopyNodes,
         encryptionPolicy: namespace.encryptionPolicy,
