@@ -13,3 +13,8 @@ export interface EntryPage {
   readonly items: FileEntry[];
   readonly nextCursor: string | null;
 }
+
+export interface UploadMetadata {
+  readonly mimeType?: string;
+  readonly contentLength?: number;
+}

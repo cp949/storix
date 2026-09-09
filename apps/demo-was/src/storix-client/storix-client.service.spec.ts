@@ -161,4 +161,23 @@ describe('StorixClient — VFS 조작', () => {
     expect(url.searchParams.get('name')).toBe('report');
     expect(url.searchParams.get('cursor')).toBe('cursor-2');
   });
+
+  it('upload는 mimeType/contentLength를 헤더로 싣고 스트리밍 본문을 그대로 전달한다', async () => {
+    const entry = { path: '/a.txt', name: 'a.txt', type: 'FILE', size: 3, mimeType: 'text/plain', createdAt: '', updatedAt: '', version: 1 };
+    const spy = mockFetchOnce(201, entry);
+    const body = new ReadableStream();
+
+    await expect(
+      client.upload('/a.txt', body, { mimeType: 'text/plain', contentLength: 3 }),
+    ).resolves.toEqual(entry);
+
+    const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/content');
+    expect(url.searchParams.get('parents')).toBe('true');
+    const headers = init.headers as Headers;
+    expect(headers.get('content-type')).toBe('text/plain');
+    expect(headers.get('content-length')).toBe('3');
+    expect(init.body).toBe(body);
+    expect(init.duplex).toBe('half');
+  });
 });

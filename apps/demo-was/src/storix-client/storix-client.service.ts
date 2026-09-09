@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
-import type { EntryPage } from './storix-client.types.js';
+import type { EntryPage, FileEntry, UploadMetadata } from './storix-client.types.js';
 import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
 
@@ -92,6 +92,25 @@ export class StorixClient {
       method: 'GET',
       path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/find`,
       query: { path, name, cursor },
+    });
+  }
+
+  async upload(path: string, body: ReadableStream, metadata: UploadMetadata): Promise<FileEntry> {
+    const headers: Record<string, string> = {};
+    if (metadata.mimeType) {
+      headers['content-type'] = metadata.mimeType;
+    }
+    if (metadata.contentLength !== undefined) {
+      headers['content-length'] = String(metadata.contentLength);
+    }
+
+    return this.http.requestJson<FileEntry>({
+      method: 'POST',
+      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
+      query: { path, parents: 'true' },
+      headers,
+      body,
+      duplex: 'half',
     });
   }
 
