@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Post, Put, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Headers, HttpCode, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { StorixClient } from '../storix-client/storix-client.service.js';
@@ -38,5 +38,26 @@ export class DocumentsController {
     const user = parseDemoUser(demoUserHeader);
     const internalPath = resolveInternalPath(user, body.path ?? '');
     return this.storixClient.createDownload(internalPath);
+  }
+
+  @Post('publish')
+  async publish(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Query('path') path: string | undefined,
+  ) {
+    const user = parseDemoUser(demoUserHeader);
+    const internalPath = resolveInternalPath(user, path ?? '');
+    return this.storixClient.publish(internalPath);
+  }
+
+  @Delete('publish')
+  @HttpCode(204)
+  async unpublish(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Query('path') path: string | undefined,
+  ): Promise<void> {
+    const user = parseDemoUser(demoUserHeader);
+    const internalPath = resolveInternalPath(user, path ?? '');
+    await this.storixClient.unpublish(internalPath);
   }
 }

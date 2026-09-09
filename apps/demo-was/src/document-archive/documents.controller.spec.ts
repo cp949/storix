@@ -102,3 +102,57 @@ describe('DocumentsController — POST download', () => {
     expect(createDownload).toHaveBeenCalledWith('/documents/bob/notes/a.txt');
   });
 });
+
+describe('DocumentsController — publish/unpublish', () => {
+  let app: INestApplication;
+  const publish = jest.fn<StorixClient['publish']>();
+  const unpublish = jest.fn<StorixClient['unpublish']>();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [DocumentsController],
+      providers: [{ provide: StorixClient, useValue: { publish, unpublish } }],
+    }).compile();
+
+    app = moduleRef.createNestApplication({ bodyParser: false });
+    configureBodyParsers(app);
+    app.useGlobalFilters(new DomainErrorFilter());
+    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
+      req.requestId = 'req-1';
+      next();
+    });
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    publish.mockReset();
+    unpublish.mockReset();
+  });
+
+  it('alice가 자신의 문서를 발행하면 PublicLink를 반환한다', async () => {
+    publish.mockResolvedValue({ url: 'http://public.test/x', publicPath: '/documents/alice/a.txt' });
+
+    const response = await request(app.getHttpServer())
+      .post('/demo-api/documents/publish?path=/a.txt')
+      .set('X-Demo-User', 'alice')
+      .expect(201);
+
+    expect(response.body).toEqual({ url: 'http://public.test/x', publicPath: '/documents/alice/a.txt' });
+    expect(publish).toHaveBeenCalledWith('/documents/alice/a.txt');
+  });
+
+  it('발행 취소는 204를 반환하고 원본 경로 그대로 unpublish를 호출한다', async () => {
+    unpublish.mockResolvedValue(undefined);
+
+    await request(app.getHttpServer())
+      .delete('/demo-api/documents/publish?path=/a.txt')
+      .set('X-Demo-User', 'alice')
+      .expect(204);
+
+    expect(unpublish).toHaveBeenCalledWith('/documents/alice/a.txt');
+  });
+});
