@@ -1,5 +1,6 @@
 import { ArgumentsHost, Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
+import { DomainError } from './domain-error.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 
@@ -31,6 +32,24 @@ class PathedError extends Error {
 
   constructor(readonly path: string) {
     super('경로를 찾을 수 없음');
+  }
+}
+
+class SilencedServerError extends DomainError {
+  readonly code = 'SILENCED';
+  readonly status = 500;
+
+  override get shouldReport(): boolean {
+    return false;
+  }
+}
+
+class ForcedReportClientError extends DomainError {
+  readonly code = 'FORCED_REPORT';
+  readonly status = 400;
+
+  override get shouldReport(): boolean {
+    return true;
   }
 }
 
@@ -191,6 +210,36 @@ describe('DomainErrorFilter', () => {
     filterWithReporter.catch(new FooError('foo happened'), host);
 
     expect(errorReporter.report).not.toHaveBeenCalled();
+  });
+
+  it('DomainError가 shouldReport를 false로 override하면 500이어도 ErrorReporter.report를 호출하지 않는다', () => {
+    const errorReporter = createFakeErrorReporter();
+    const filterWithReporter = new DomainErrorFilter(errorReporter);
+    const { host, json, status } = createHost();
+
+    filterWithReporter.catch(new SilencedServerError('내부 문제'), host);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error',
+      requestId: 'req-1',
+    });
+    expect(errorReporter.report).not.toHaveBeenCalled();
+  });
+
+  it('DomainError가 shouldReport를 true로 override하면 4xx여도 ErrorReporter.report를 호출한다', () => {
+    const errorReporter = createFakeErrorReporter();
+    const filterWithReporter = new DomainErrorFilter(errorReporter);
+    const { host } = createHost();
+    const error = new ForcedReportClientError('강제 리포트 대상');
+
+    filterWithReporter.catch(error, host);
+
+    expect(errorReporter.report).toHaveBeenCalledWith(error, {
+      requestId: 'req-1',
+      path: 'POST /namespaces/ns-1/files',
+    });
   });
 
   it('ErrorReporter가 주입되지 않아도 500 처리에 영향을 주지 않는다', () => {

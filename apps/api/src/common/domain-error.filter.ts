@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { DomainError } from './domain-error.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 import { ERROR_REPORTER } from '../observability/observability.constants.js';
 
@@ -36,6 +37,15 @@ export function resolveErrorMessage(exception: unknown, status: number): string 
   return exception instanceof Error ? exception.message : INTERNAL_ERROR_MESSAGE;
 }
 
+// DomainError가 아닌 예외(third-party, body-parser 등)는 shouldReport 개념이 없으므로
+// 기존 전역 규칙(500만 report)으로 fallback한다.
+export function resolveShouldReport(exception: unknown, status: number): boolean {
+  if (exception instanceof DomainError) {
+    return exception.shouldReport;
+  }
+  return status === 500;
+}
+
 @Catch()
 @Injectable()
 export class DomainErrorFilter implements ExceptionFilter {
@@ -53,10 +63,16 @@ export class DomainErrorFilter implements ExceptionFilter {
         exception instanceof Error ? exception.message : String(exception),
         exception instanceof Error ? exception.stack : undefined,
       );
+    }
+
+    if (resolveShouldReport(exception, status)) {
       this.errorReporter?.report(exception instanceof Error ? exception : new Error(String(exception)), {
         requestId: request.requestId,
         path: `${request.method} ${request.path}`,
       });
+    }
+
+    if (status === 500) {
       response.status(500).json({
         code: 'INTERNAL_ERROR',
         message: INTERNAL_ERROR_MESSAGE,
