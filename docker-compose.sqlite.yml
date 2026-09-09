@@ -1,0 +1,49 @@
+# SQLite override — base docker-compose.yml에 -f로 겹쳐 쓴다:
+#   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml --profile backup run --rm backup
+#
+# 다른 백엔드/DB override(versitygw.yml, minio.yml, s3.yml, postgres.yml)와
+# 달리 컨테이너를 추가하지 않는다 — SQLite는 별도 서버 프로세스가 없는
+# 파일 기반 DB다. 대신 migrate/app/gc/backup/restore 5개 서비스 모두 같은
+# named volume(sqlite-data)의 storix.sqlite 파일을 보게 한다.
+#
+# 5개 서비스가 하나의 SQLite 파일을 나눠 쓰지만, README.sqlite.md의 배포
+# 모델(단일 프로세스 all-in-one 전제 — 동시에 겹쳐 돌지 않는다는 가정)과
+# 어긋나지 않는다: migrate/app은 항상, gc/backup/restore는 별도
+# compose profile이라 --profile로 명시해야만 실행되므로 기본 `up`에서는
+# 서로 겹치지 않는다. 여러 WAS 호스트가 이 볼륨을 공유하는 멀티호스트
+# 배포는 여전히 미지원(같은 문서 참고) — docker-compose는 원래 단일
+# 호스트 토폴로지다.
+#
+# 배치 결정 배경: docs/adr/0022-sqlite-compose-override.md
+
+x-sqlite-env: &sqlite-env
+  STORIX_DB_DRIVER: sqlite
+  STORIX_DB_SQLITE_PATH: /data/storix.sqlite
+
+x-sqlite-volume: &sqlite-volume
+  - sqlite-data:/data
+
+services:
+  migrate:
+    environment: *sqlite-env
+    volumes: *sqlite-volume
+
+  app:
+    environment: *sqlite-env
+    volumes: *sqlite-volume
+
+  gc:
+    environment: *sqlite-env
+    volumes: *sqlite-volume
+
+  backup:
+    environment: *sqlite-env
+    volumes: *sqlite-volume
+
+  restore:
+    environment: *sqlite-env
+    volumes: *sqlite-volume
+
+volumes:
+  sqlite-data:

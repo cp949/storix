@@ -8,6 +8,7 @@
 #   docker-compose.minio.yml      MinIO 컨테이너
 #   docker-compose.s3.yml         AWS S3 (컨테이너 없음, 접속값만 고정)
 #   docker-compose.postgres.yml   개발·검증용 Postgres 컨테이너
+#   docker-compose.sqlite.yml     Postgres 대신 SQLite 파일 DB (컨테이너 없음, ADR-0022)
 #
 #   # 운영: VersityGW + 외부 Postgres(.env STORIX_DB_HOST)
 #   docker compose -f docker-compose.yml -f docker-compose.versitygw.yml up -d

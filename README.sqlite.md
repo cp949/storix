@@ -20,11 +20,15 @@
   (SQLite가 지원하지 않고, 단일 프로세스에서는 Node 이벤트 루프의
   단일 스레드성 + better-sqlite3의 동기 실행이 이미 쿼리 순서를
   보장하므로 불필요).
-- `docker-compose.yml` 스택 자체는 `STORIX_DB_DRIVER=sqlite`를 지원하지
-  않는다 — `x-db-env`가 Postgres 접속 정보만 컨테이너에 넘기고
-  SQLite 파일용 볼륨 마운트도 없다. 이 스택은 Postgres 전용이며,
-  SQLite는 호스트 직접 실행 또는 별도로 구성한 커스텀 컨테이너
-  배포에서만 쓴다.
+- `docker-compose.yml` 스택으로 SQLite를 쓰려면 `docker-compose.sqlite.yml`
+  override를 겹쳐 쓴다(컨테이너 없음, migrate/app/gc/backup/restore 5개
+  서비스가 named volume `sqlite-data`의 `storix.sqlite` 파일을 공유):
+
+  ```sh
+  docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d
+  ```
+
+  배치 결정 배경: `docs/adr/0022-sqlite-compose-override.md`.
 
 ## 설정
 
@@ -38,19 +42,22 @@ STORIX_DB_SQLITE_PATH=/data/storix.sqlite
 
 ## 백업/복구
 
-Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다. `backup`/
-`restore` docker-compose profile은 Postgres 전용이므로(위 배포 모델 참고)
-SQLite는 호스트에서 `.env`를 로드한 상태로 직접 실행한다:
+Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
 
-- **백업**: `pnpm --filter @storix/api run backup:run:prod`(빌드 산출물 실행)
-  또는 개발 중에는 `backup:run`(빌드+실행). `VACUUM INTO`로 실행 중에도
-  일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에 만든다
-  (Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object 미러링
-  절차는 드라이버 무관 — `docs/deployment/backup-restore.md` 참고.
-- **복구**: `pnpm --filter @storix/api run restore:run:prod`(또는
-  `restore:run`). 백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사한다. API
-  프로세스가 그 파일을 열고 있지 않은 상태(별도 프로세스로 도는 restore
-  job이 전제)에서만 안전하다.
+- **백업**: `docker-compose.sqlite.yml`을 겹쳐 쓴 상태에서
+  `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml
+  --profile backup run --rm backup`, 또는 호스트에서 `.env`를 로드한
+  상태로 `pnpm --filter @storix/api run backup:run:prod`(빌드 산출물
+  실행, 개발 중에는 `backup:run`)를 직접 실행해도 된다. `VACUUM INTO`로
+  실행 중에도 일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에
+  만든다(Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object
+  미러링 절차는 드라이버 무관 — `docs/deployment/backup-restore.md` 참고.
+- **복구**: 마찬가지로 `docker compose -f docker-compose.yml
+  -f docker-compose.sqlite.yml --profile restore run --rm restore` 또는
+  호스트에서 `restore:run:prod`(개발 중 `restore:run`)를 직접 실행한다.
+  백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사한다. API 프로세스가 그
+  파일을 열고 있지 않은 상태(별도 프로세스로 도는 restore job이
+  전제)에서만 안전하다.
 
 백업 파일 형식은 Postgres와 다르다(`storix.sqlite` vs `postgres.dump`) —
 드라이버를 바꾸는 마이그레이션 도구는 없다.
@@ -66,7 +73,11 @@ SQLite는 호스트에서 `.env`를 로드한 상태로 직접 실행한다:
 
 - `pnpm --filter @storix/api run test:integration:sqlite` — SQLite 전용
   통합테스트(마이그레이션 체인, `BlobRepository`, `VfsNodeRepository`
-  스모크, 백업/복구 왕복) 전부를 한 번에 실행한다. 마이그레이션·리포지토리
-  테스트는 컨테이너 없이 빠르게 돌고, 백업/복구 왕복 테스트만 object
-  storage 검증을 위해 MinIO 컨테이너를 띄운다(드라이버와 무관 — Postgres
-  통합테스트와 동일한 방식).
+  스모크, `GcJob` 전체 왕복, 백업/복구 왕복) 전부를 한 번에 실행한다.
+  마이그레이션·리포지토리 테스트는 컨테이너 없이 빠르게 돌고, `GcJob`과
+  백업/복구 왕복 테스트만 object storage 검증을 위해 MinIO 컨테이너를
+  띄운다(드라이버와 무관 — Postgres 통합테스트와 동일한 방식).
+- `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml config`
+  로 override 병합 결과를 확인할 수 있다. 로컬 podman-compose는 기본
+  네트워크 DNS 결함으로 실제 기동 검증은 하지 못한다(ADR-0004 Consequences
+  참고) — 실 기동 검증은 Docker Compose가 있는 환경에서 한다.
