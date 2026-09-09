@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { isSqliteDataSource } from '../common/db-driver.js';
 
 export interface OrphanBlobRow {
   readonly id: string;
@@ -25,7 +26,7 @@ export class BlobRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   private get isSqlite(): boolean {
-    return this.dataSource.options.type === 'better-sqlite3';
+    return isSqliteDataSource(this.dataSource.options);
   }
 
   // reference_count를 원자적으로 감소시키고, 그 결과가 0이 되는 경우에만 같은

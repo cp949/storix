@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import 'reflect-metadata';
 import { DataSource, DataSourceOptions } from 'typeorm';
+import { getDbDriver } from '../common/db-driver.js';
 import { parsePositiveInt, requireEnv } from '../common/env-parsing.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
@@ -14,7 +15,7 @@ const entities = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEnti
 const migrations = [dirname + '/migrations/*.{ts,js}'];
 
 function buildOptions(): DataSourceOptions {
-  if (process.env.STORIX_DB_DRIVER === 'sqlite') {
+  if (getDbDriver() === 'sqlite') {
     return {
       type: 'better-sqlite3',
       database: requireEnv('STORIX_DB_SQLITE_PATH'),

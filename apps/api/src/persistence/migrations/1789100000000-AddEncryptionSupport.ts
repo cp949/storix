@@ -1,11 +1,12 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { getDbDriver } from '../../common/db-driver.js';
 
 export class AddEncryptionSupport1789100000000 implements MigrationInterface {
   name = 'AddEncryptionSupport1789100000000';
   transaction?: boolean;
 
   constructor() {
-    if (process.env.STORIX_DB_DRIVER === 'sqlite') {
+    if (getDbDriver() === 'sqlite') {
       this.transaction = false;
     }
   }

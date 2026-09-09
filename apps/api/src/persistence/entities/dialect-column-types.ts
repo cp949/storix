@@ -1,10 +1,10 @@
-export function resolveBinaryColumnType(driver: string | undefined = process.env.STORIX_DB_DRIVER): 'blob' | 'bytea' {
+import { getDbDriver } from '../../common/db-driver.js';
+
+export function resolveBinaryColumnType(driver: string | undefined = getDbDriver()): 'blob' | 'bytea' {
   return driver === 'sqlite' ? 'blob' : 'bytea';
 }
 
-export function resolveTimestampColumnType(
-  driver: string | undefined = process.env.STORIX_DB_DRIVER,
-): 'datetime' | 'timestamptz' {
+export function resolveTimestampColumnType(driver: string | undefined = getDbDriver()): 'datetime' | 'timestamptz' {
   return driver === 'sqlite' ? 'datetime' : 'timestamptz';
 }
 
@@ -13,9 +13,7 @@ export function resolveTimestampColumnType(
 // SQLite의 동적 타이핑 덕분에 char(64)로 그대로 둬도 문제없지만, 엔티티
 // 컬럼의 type은 드라이버별로 갈라야 DataSource.initialize()가
 // DataTypeNotSupportedError 없이 뜬다.
-export function resolveFixedCharColumnType(
-  driver: string | undefined = process.env.STORIX_DB_DRIVER,
-): 'varchar' | 'char' {
+export function resolveFixedCharColumnType(driver: string | undefined = getDbDriver()): 'varchar' | 'char' {
   return driver === 'sqlite' ? 'varchar' : 'char';
 }
 

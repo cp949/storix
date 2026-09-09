@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getDbDriver } from '../common/db-driver.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { DB_DUMP_TOOL } from './db-dump.tool.js';
@@ -15,7 +16,7 @@ import { SqliteDumpTool } from './sqlite-dump.tool.js';
     {
       provide: DB_DUMP_TOOL,
       useFactory: (config: ConfigService) =>
-        process.env.STORIX_DB_DRIVER === 'sqlite' ? new SqliteDumpTool(config) : new PgDumpCliTool(config),
+        getDbDriver() === 'sqlite' ? new SqliteDumpTool(config) : new PgDumpCliTool(config),
       inject: [ConfigService],
     },
   ],

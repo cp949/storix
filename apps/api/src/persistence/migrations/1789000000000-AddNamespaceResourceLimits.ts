@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { getDbDriver } from '../../common/db-driver.js';
 
 export class AddNamespaceResourceLimits1789000000000 implements MigrationInterface {
   name = 'AddNamespaceResourceLimits1789000000000';
@@ -10,7 +11,7 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
     // TypeORM이 자동으로 열어주는 트랜잭션을 꺼야 한다. 클래스 필드로
     // 무조건 대입하면(값이 true여도) Postgres 쪽 기본 트랜잭션 모드("all")에서
     // ForbiddenTransactionModeOverrideError가 나므로, sqlite일 때만 설정한다.
-    if (process.env.STORIX_DB_DRIVER === 'sqlite') {
+    if (getDbDriver() === 'sqlite') {
       this.transaction = false;
     }
   }

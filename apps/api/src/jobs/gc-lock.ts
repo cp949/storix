@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
+import { isSqliteDataSource } from '../common/db-driver.js';
 
 // gc job 전용으로 고정된 임의의 advisory lock 키. 다른 용도로 재사용하지 않는다.
 const ADVISORY_LOCK_KEY = 84_217_001;
@@ -11,7 +12,7 @@ export class GcLock {
   constructor(private readonly dataSource: DataSource) {}
 
   private get isSqlite(): boolean {
-    return this.dataSource.options.type === 'better-sqlite3';
+    return isSqliteDataSource(this.dataSource.options);
   }
 
   async tryAcquire(minIntervalSeconds: number): Promise<boolean> {

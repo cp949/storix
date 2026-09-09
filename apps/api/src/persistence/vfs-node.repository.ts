@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
+import { isSqliteDataSource } from '../common/db-driver.js';
 import { KeysetCursor } from '../common/keyset-cursor.js';
 import {
   VfsAlreadyExistsError,
@@ -180,7 +181,7 @@ export class VfsNodeRepository {
   ) {}
 
   private get isSqlite(): boolean {
-    return this.dataSource.options.type === 'better-sqlite3';
+    return isSqliteDataSource(this.dataSource.options);
   }
 
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
