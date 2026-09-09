@@ -267,13 +267,23 @@ export class VfsNodeRepository {
     cursor: KeysetCursor | null,
     limit: number,
   ): Promise<VfsNodeMatch[]> {
-    const params: unknown[] = [namespaceId, startId];
+    const isSqlite = this.dataSource.options.type === 'better-sqlite3';
+    const params: unknown[] = [];
+    // Postgres '$N'은 위치 무관 이름 기반 파라미터(재사용 가능)라 params.length
+    // 기준으로 번호를 매기면 되지만, SQLite '?'는 텍스트 등장 순서로 바인딩되고
+    // 재사용이 안 된다. push와 동시에 알맞은 플레이스홀더 문자열을 만들어 두
+    // 드라이버 모두에서 파라미터 순서가 어긋나지 않게 한다.
+    const ph = (value: unknown): string => {
+      params.push(value);
+      return isSqlite ? '?' : `$${params.length}`;
+    };
+
     let sql = `
       WITH RECURSIVE subtree AS (
         SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, created_at, updated_at, version,
                CAST(name AS TEXT) AS path_segments
         FROM vfs_node
-        WHERE namespace_id = $1 AND parent_id = $2
+        WHERE namespace_id = ${ph(namespaceId)} AND parent_id = ${ph(startId)}
         UNION ALL
         SELECT vn.id, vn.namespace_id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type,
                vn.created_at, vn.updated_at, vn.version, s.path_segments || '/' || vn.name
@@ -284,27 +294,24 @@ export class VfsNodeRepository {
     `;
 
     if (filter.type) {
-      params.push(filter.type);
-      sql += ` AND type = $${params.length}`;
+      sql += ` AND type = ${ph(filter.type)}`;
     }
 
     if (filter.name) {
       if (filter.name.mode === 'exact') {
-        params.push(filter.name.value);
-        sql += ` AND name = $${params.length}`;
+        sql += ` AND name = ${ph(filter.name.value)}`;
       } else {
-        params.push(buildLikePattern(filter.name.mode, filter.name.value));
-        sql += ` AND name LIKE $${params.length} ESCAPE '\\'`;
+        sql += ` AND name LIKE ${ph(buildLikePattern(filter.name.mode, filter.name.value))} ESCAPE '\\'`;
       }
     }
 
     if (cursor) {
-      params.push(cursor.name, cursor.id);
-      sql += ` AND (name, id) > ($${params.length - 1}, $${params.length})`;
+      const namePlaceholder = ph(cursor.name);
+      const idPlaceholder = ph(cursor.id);
+      sql += ` AND (name, id) > (${namePlaceholder}, ${idPlaceholder})`;
     }
 
-    params.push(limit + 1);
-    sql += ` ORDER BY name ASC, id ASC LIMIT $${params.length}`;
+    sql += ` ORDER BY name ASC, id ASC LIMIT ${ph(limit + 1)}`;
 
     const rows: FindRecursiveRow[] = await this.dataSource.query(sql, params);
     return rows.map(toMatch);

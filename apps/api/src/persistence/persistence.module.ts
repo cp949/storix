@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
@@ -14,6 +15,20 @@ import { VfsNodeRepository } from './vfs-node.repository.js';
 import { BackupRepository } from './backup.repository.js';
 
 const ENTITIES = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity];
+
+// SQLite는 기본적으로 ASCII 대소문자 무시로 LIKE를 평가한다(Postgres는 대소문자
+// 구분) — findRecursive의 name 필터(contains/prefix/suffix)가 두 드라이버에서
+// 같은 결과를 내도록 연결 직후 한 번 이 PRAGMA를 켠다.
+@Injectable()
+class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
+  constructor(private readonly dataSource: DataSource) {}
+
+  async onModuleInit(): Promise<void> {
+    if (this.dataSource.options.type === 'better-sqlite3') {
+      await this.dataSource.query('PRAGMA case_sensitive_like = ON');
+    }
+  }
+}
 
 @Module({
   imports: [
@@ -46,7 +61,14 @@ const ENTITIES = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEnti
     }),
     TypeOrmModule.forFeature(ENTITIES),
   ],
-  providers: [NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
+  providers: [
+    NamespaceProvisioningRepository,
+    VfsNodeRepository,
+    BlobRepository,
+    AuditLogRepository,
+    BackupRepository,
+    SqliteCaseSensitiveLikeInitializer,
+  ],
   exports: [TypeOrmModule, NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
 })
 export class PersistenceModule {}
