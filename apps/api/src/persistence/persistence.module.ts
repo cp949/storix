@@ -13,22 +13,34 @@ import { NamespaceProvisioningRepository } from './namespace-provisioning.reposi
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { BackupRepository } from './backup.repository.js';
 
+const ENTITIES = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity];
+
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.getOrThrow<string>('STORIX_DB_HOST'),
-        port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
-        username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
-        password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
-        database: config.getOrThrow<string>('STORIX_DB_NAME'),
-        synchronize: false,
-        entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      }),
+      useFactory: (config: ConfigService) => {
+        if (config.get<string>('STORIX_DB_DRIVER') === 'sqlite') {
+          return {
+            type: 'better-sqlite3' as const,
+            database: config.getOrThrow<string>('STORIX_DB_SQLITE_PATH'),
+            synchronize: false,
+            entities: ENTITIES,
+          };
+        }
+        return {
+          type: 'postgres' as const,
+          host: config.getOrThrow<string>('STORIX_DB_HOST'),
+          port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+          username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
+          password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
+          database: config.getOrThrow<string>('STORIX_DB_NAME'),
+          synchronize: false,
+          entities: ENTITIES,
+        };
+      },
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity]),
+    TypeOrmModule.forFeature(ENTITIES),
   ],
   providers: [NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
   exports: [TypeOrmModule, NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],

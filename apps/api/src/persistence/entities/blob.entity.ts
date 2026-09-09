@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { BINARY_COLUMN_TYPE, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { BINARY_COLUMN_TYPE, FIXED_CHAR_COLUMN_TYPE, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 @Entity('blob')
 export class BlobEntity {
@@ -18,7 +18,7 @@ export class BlobEntity {
   @Column({ name: 'mime_type', type: 'varchar', length: 255 })
   mimeType: string;
 
-  @Column({ type: 'char', length: 64 })
+  @Column({ type: FIXED_CHAR_COLUMN_TYPE, length: 64 })
   sha256: string;
 
   @Column({ name: 'encryption_iv', type: BINARY_COLUMN_TYPE, nullable: true })
