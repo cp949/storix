@@ -1,3 +1,5 @@
+_works/
+.claude/scheduled_tasks.lock
 .scratch/
 docs/superpowers/
 
