@@ -1,21 +1,18 @@
-import { INestApplicationContext, Logger, Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { INestApplicationContext, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { BackupJobModule } from './jobs/backup-job.module.js';
-import { BackupJob } from './jobs/backup.job.js';
+import { bootstrapWithEnv } from './common/bootstrap-with-env.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
-import { ObservabilityModule } from './observability/observability.module.js';
 
-@Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), ObservabilityModule, BackupJobModule],
-})
-class BackupAppModule {}
-
+// BackupAppModule/BackupJob은 정적 import하면 안 된다 — PersistenceModule을 거쳐
+// entities를 끌어오고, entities의 드라이버 중립 컬럼 타입 상수(dialect-column-types.ts)는
+// 모듈 로드 시점에 process.env.STORIX_DB_DRIVER를 읽어 얼어붙는다(main.ts와 동일한
+// 이유). bootstrapWithEnv()로 .env 로드 이후에만 평가되도록 강제한다.
 async function bootstrap(): Promise<void> {
   const logger = new Logger('BackupMain');
   let app: INestApplicationContext | undefined;
   try {
+    const { BackupAppModule, BackupJob } = await bootstrapWithEnv(() => import('./backup-app.module.js'));
     app = await NestFactory.createApplicationContext(BackupAppModule, { abortOnError: false });
     const result = await app.get(BackupJob).run();
     logger.log(`Backup job 종료: ${JSON.stringify(result)}`);
