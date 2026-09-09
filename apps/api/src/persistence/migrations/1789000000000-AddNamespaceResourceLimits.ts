@@ -1,5 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import { getDbDriver } from '../../common/db-driver.js';
+import { rebuildSqliteTable, withSqliteTableRebuild } from './sqlite-table-rebuild.js';
 
 export class AddNamespaceResourceLimits1789000000000 implements MigrationInterface {
   name = 'AddNamespaceResourceLimits1789000000000';
@@ -49,11 +50,11 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
   }
 
   private async upSqlite(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query('PRAGMA foreign_keys=OFF');
-    try {
-      await queryRunner.query('BEGIN TRANSACTION');
-      await queryRunner.query(`
-        CREATE TABLE "namespace_new" (
+    await withSqliteTableRebuild(queryRunner, (qr) =>
+      rebuildSqliteTable(qr, {
+        table: 'namespace',
+        tempSuffix: 'new',
+        createTableBody: `
           "id" varchar(36) PRIMARY KEY,
           "name" varchar(128) NOT NULL,
           "encryption_policy" varchar(16) NOT NULL DEFAULT 'NONE',
@@ -69,26 +70,11 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
           CONSTRAINT "CHK_namespace_max_file_size_bytes_positive" CHECK ("max_file_size_bytes" IS NULL OR "max_file_size_bytes" > 0),
           CONSTRAINT "CHK_namespace_max_sync_delete_nodes_positive" CHECK ("max_sync_delete_nodes" IS NULL OR "max_sync_delete_nodes" > 0),
           CONSTRAINT "CHK_namespace_max_sync_copy_nodes_positive" CHECK ("max_sync_copy_nodes" IS NULL OR "max_sync_copy_nodes" > 0)
-        )
-      `);
-      await queryRunner.query(`
-        INSERT INTO "namespace_new" ("id","name","encryption_policy","status","created_at","updated_at")
-          SELECT "id","name","encryption_policy","status","created_at","updated_at" FROM "namespace"
-      `);
-      await queryRunner.query(`DROP TABLE "namespace"`);
-      await queryRunner.query(`ALTER TABLE "namespace_new" RENAME TO "namespace"`);
-      await queryRunner.query(`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`);
-      await queryRunner.query('COMMIT');
-    } catch (error) {
-      try {
-        await queryRunner.query('ROLLBACK');
-      } catch {
-        // 원본 에러를 가리지 않기 위해 ROLLBACK 실패는 무시한다.
-      }
-      throw error;
-    } finally {
-      await queryRunner.query('PRAGMA foreign_keys=ON');
-    }
+        `,
+        copyColumns: ['id', 'name', 'encryption_policy', 'status', 'created_at', 'updated_at'],
+        indexSql: [`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`],
+      }),
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -115,11 +101,11 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
   }
 
   private async downSqlite(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query('PRAGMA foreign_keys=OFF');
-    try {
-      await queryRunner.query('BEGIN TRANSACTION');
-      await queryRunner.query(`
-        CREATE TABLE "namespace_old" (
+    await withSqliteTableRebuild(queryRunner, (qr) =>
+      rebuildSqliteTable(qr, {
+        table: 'namespace',
+        tempSuffix: 'old',
+        createTableBody: `
           "id" varchar(36) PRIMARY KEY,
           "name" varchar(128) NOT NULL,
           "encryption_policy" varchar(16) NOT NULL DEFAULT 'NONE',
@@ -129,25 +115,10 @@ export class AddNamespaceResourceLimits1789000000000 implements MigrationInterfa
           CONSTRAINT "CHK_namespace_name_format" CHECK ("name" NOT GLOB '*[^a-z0-9_-]*' AND length("name") BETWEEN 1 AND 128),
           CONSTRAINT "CHK_namespace_encryption_policy" CHECK ("encryption_policy" = 'NONE'),
           CONSTRAINT "CHK_namespace_status" CHECK ("status" IN ('ACTIVE', 'DELETING', 'DELETED'))
-        )
-      `);
-      await queryRunner.query(`
-        INSERT INTO "namespace_old" ("id","name","encryption_policy","status","created_at","updated_at")
-          SELECT "id","name","encryption_policy","status","created_at","updated_at" FROM "namespace"
-      `);
-      await queryRunner.query(`DROP TABLE "namespace"`);
-      await queryRunner.query(`ALTER TABLE "namespace_old" RENAME TO "namespace"`);
-      await queryRunner.query(`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`);
-      await queryRunner.query('COMMIT');
-    } catch (error) {
-      try {
-        await queryRunner.query('ROLLBACK');
-      } catch {
-        // 원본 에러를 가리지 않기 위해 ROLLBACK 실패는 무시한다.
-      }
-      throw error;
-    } finally {
-      await queryRunner.query('PRAGMA foreign_keys=ON');
-    }
+        `,
+        copyColumns: ['id', 'name', 'encryption_policy', 'status', 'created_at', 'updated_at'],
+        indexSql: [`CREATE UNIQUE INDEX "UQ_namespace_active_name" ON "namespace" ("name") WHERE "status" = 'ACTIVE'`],
+      }),
+    );
   }
 }
