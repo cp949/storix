@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { DataSource } from 'typeorm';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
@@ -176,5 +179,126 @@ describe('마이그레이션 체인 (SQLite)', () => {
 
     const found = await blobRepo.findOneByOrFail({ id: blob.id });
     expect(found.zeroSince).toBeInstanceOf(Date);
+  });
+});
+
+describe('재구성 마이그레이션 row 커버리지 (실제 파일)', () => {
+  let tmpDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    if (process.env.STORIX_DB_DRIVER !== 'sqlite') {
+      throw new Error('STORIX_DB_DRIVER=sqlite 환경변수 없이 이 파일을 실행하면 의미가 없다');
+    }
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-sqlite-migration-coverage-'));
+    dbPath = path.join(tmpDir, 'test.sqlite');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('AddNamespaceResourceLimits 실행 전 namespace row가 있어도 재구성 후 데이터가 보존된다', async () => {
+    const dsBefore = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      migrationsTransactionMode: 'each',
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
+      migrations: [InitSchema1788637362016, AddIdempotencyKey1788700000000, AddBlobZeroSince1788800000000],
+    });
+    await dsBefore.initialize();
+    await dsBefore.runMigrations();
+
+    const seededId = randomUUID();
+    await dsBefore.query(
+      `INSERT INTO namespace (id, name, encryption_policy, status, created_at, updated_at)
+       VALUES (?, ?, 'NONE', 'ACTIVE', datetime('now'), datetime('now'))`,
+      [seededId, 'pre-migration-ns'],
+    );
+    await dsBefore.destroy();
+
+    const dsAfter = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      migrationsTransactionMode: 'each',
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+      ],
+    });
+    await dsAfter.initialize();
+    await dsAfter.runMigrations();
+
+    const found = await dsAfter.getRepository(NamespaceEntity).findOneByOrFail({ id: seededId });
+    expect(found.name).toBe('pre-migration-ns');
+    expect(found.maxFileSizeBytes).toBeNull();
+
+    await dsAfter.destroy();
+  });
+
+  it('AddEncryptionSupport 실행 전 namespace/blob row가 있어도 재구성 후 데이터가 보존된다', async () => {
+    const dsBefore = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      migrationsTransactionMode: 'each',
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+      ],
+    });
+    await dsBefore.initialize();
+    await dsBefore.runMigrations();
+
+    const seededNamespaceId = randomUUID();
+    await dsBefore.query(
+      `INSERT INTO namespace (id, name, encryption_policy, status, max_sync_delete_nodes, created_at, updated_at)
+       VALUES (?, ?, 'NONE', 'ACTIVE', ?, datetime('now'), datetime('now'))`,
+      [seededNamespaceId, 'pre-encryption-ns', 5],
+    );
+    const seededBlobId = randomUUID();
+    await dsBefore.query(
+      `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
+      [seededBlobId, seededNamespaceId, 'blobs/ab/pre-encryption-blob', '1', 'application/octet-stream', 'a'.repeat(64)],
+    );
+    await dsBefore.destroy();
+
+    const dsAfter = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      migrationsTransactionMode: 'each',
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
+      migrations: [
+        InitSchema1788637362016,
+        AddIdempotencyKey1788700000000,
+        AddBlobZeroSince1788800000000,
+        AddNamespaceResourceLimits1789000000000,
+        AddEncryptionSupport1789100000000,
+      ],
+    });
+    await dsAfter.initialize();
+    await dsAfter.runMigrations();
+
+    const foundNamespace = await dsAfter
+      .getRepository(NamespaceEntity)
+      .findOneByOrFail({ id: seededNamespaceId });
+    expect(foundNamespace.name).toBe('pre-encryption-ns');
+    expect(foundNamespace.maxSyncDeleteNodes).toBe(5);
+
+    const foundBlob = await dsAfter.getRepository(BlobEntity).findOneByOrFail({ id: seededBlobId });
+    expect(foundBlob.storageKey).toBe('blobs/ab/pre-encryption-blob');
+    expect(foundBlob.encryptionIv).toBeNull();
+
+    await dsAfter.destroy();
   });
 });
