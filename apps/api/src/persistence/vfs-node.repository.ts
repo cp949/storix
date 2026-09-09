@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { KeysetCursor } from '../common/keyset-cursor.js';
+import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsAlreadyExistsError,
   VfsCopyLimitExceededError,
@@ -272,23 +273,14 @@ export class VfsNodeRepository {
     cursor: KeysetCursor | null,
     limit: number,
   ): Promise<VfsNodeMatch[]> {
-    const isSqlite = this.isSqlite;
-    const params: unknown[] = [];
-    // Postgres '$N'은 위치 무관 이름 기반 파라미터(재사용 가능)라 params.length
-    // 기준으로 번호를 매기면 되지만, SQLite '?'는 텍스트 등장 순서로 바인딩되고
-    // 재사용이 안 된다. push와 동시에 알맞은 플레이스홀더 문자열을 만들어 두
-    // 드라이버 모두에서 파라미터 순서가 어긋나지 않게 한다.
-    const ph = (value: unknown): string => {
-      params.push(value);
-      return isSqlite ? '?' : `$${params.length}`;
-    };
+    const ph = new DialectPlaceholders(this.isSqlite);
 
     let sql = `
       WITH RECURSIVE subtree AS (
         SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, created_at, updated_at, version,
                CAST(name AS TEXT) AS path_segments
         FROM vfs_node
-        WHERE namespace_id = ${ph(namespaceId)} AND parent_id = ${ph(startId)}
+        WHERE namespace_id = ${ph.bind(namespaceId)} AND parent_id = ${ph.bind(startId)}
         UNION ALL
         SELECT vn.id, vn.namespace_id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type,
                vn.created_at, vn.updated_at, vn.version, s.path_segments || '/' || vn.name
@@ -299,26 +291,26 @@ export class VfsNodeRepository {
     `;
 
     if (filter.type) {
-      sql += ` AND type = ${ph(filter.type)}`;
+      sql += ` AND type = ${ph.bind(filter.type)}`;
     }
 
     if (filter.name) {
       if (filter.name.mode === 'exact') {
-        sql += ` AND name = ${ph(filter.name.value)}`;
+        sql += ` AND name = ${ph.bind(filter.name.value)}`;
       } else {
-        sql += ` AND name LIKE ${ph(buildLikePattern(filter.name.mode, filter.name.value))} ESCAPE '\\'`;
+        sql += ` AND name LIKE ${ph.bind(buildLikePattern(filter.name.mode, filter.name.value))} ESCAPE '\\'`;
       }
     }
 
     if (cursor) {
-      const namePlaceholder = ph(cursor.name);
-      const idPlaceholder = ph(cursor.id);
+      const namePlaceholder = ph.bind(cursor.name);
+      const idPlaceholder = ph.bind(cursor.id);
       sql += ` AND (name, id) > (${namePlaceholder}, ${idPlaceholder})`;
     }
 
-    sql += ` ORDER BY name ASC, id ASC LIMIT ${ph(limit + 1)}`;
+    sql += ` ORDER BY name ASC, id ASC LIMIT ${ph.bind(limit + 1)}`;
 
-    const rows: FindRecursiveRow[] = await this.dataSource.query(sql, params);
+    const rows: FindRecursiveRow[] = await this.dataSource.query(sql, ph.params);
     return rows.map(toMatch);
   }
 
@@ -656,28 +648,16 @@ export class VfsNodeRepository {
       // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
       // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
       // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
-      // SQLite '?'는 Postgres '$N'과 달리 이름 기반이 아니라 텍스트 등장 순서로
-      // 바인딩된다. 아래 SQLite 분기의 WHERE 순서(id → namespace_id)가 Postgres
-      // 분기와 다른 것은 params 배열 [target.id, namespaceId] 순서에 맞춘 것 —
-      // Postgres에 맞춰 순서만 바꾸면 바인딩이 어긋난다.
-      const isSqlite = this.isSqlite;
+      const ph = new DialectPlaceholders(this.isSqlite);
       const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
-        isSqlite
-          ? `WITH RECURSIVE subtree AS (
-               SELECT id, namespace_id, blob_id FROM vfs_node WHERE id = ? AND namespace_id = ?
-               UNION ALL
-               SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
-               INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
-             )
-             SELECT id, blob_id FROM subtree`
-          : `WITH RECURSIVE subtree AS (
-               SELECT id, namespace_id, blob_id FROM vfs_node WHERE namespace_id = $2 AND id = $1
-               UNION ALL
-               SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
-               INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
-             )
-             SELECT id, blob_id FROM subtree`,
-        [target.id, namespaceId],
+        `WITH RECURSIVE subtree AS (
+           SELECT id, namespace_id, blob_id FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
+           UNION ALL
+           SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
+           INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
+         )
+         SELECT id, blob_id FROM subtree`,
+        ph.params,
       );
 
       if (subtreeRows.length > maxSyncDeleteNodes) {
@@ -756,34 +736,18 @@ export class VfsNodeRepository {
       // DIRECTORY: resolveDestinationPlacement 안에서 source 자신의 row lock을 이미
       // 획득했으므로(removeNode와 동일 원리), 아래 조회~생성 사이에 source subtree
       // 구성이 바뀔 수 없다.
-      // SQLite '?'는 Postgres '$N'과 달리 이름 기반 재사용이 안 되고 텍스트 등장
-      // 순서로만 바인딩된다. namespace_id 조건이 재귀 UNION 안에 두 번 나오므로
-      // Postgres처럼 $2를 재사용 못 해 params에 namespaceId를 두 번 넣는다 —
-      // "중복이니 하나로 줄이자"고 손대면 바인딩이 깨진다.
-      const isSqlite = this.isSqlite;
+      const ph = new DialectPlaceholders(this.isSqlite);
       const subtreeRows: CopySourceRow[] = await manager.query(
-        isSqlite
-          ? `WITH RECURSIVE subtree AS (
-               SELECT id, parent_id, type, name, blob_id, size, mime_type
-               FROM vfs_node WHERE id = ? AND namespace_id = ?
-               UNION ALL
-               SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
-               FROM vfs_node vn
-               INNER JOIN subtree s ON vn.namespace_id = ? AND vn.parent_id = s.id
-             )
-             SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT ?`
-          : `WITH RECURSIVE subtree AS (
-               SELECT id, parent_id, type, name, blob_id, size, mime_type
-               FROM vfs_node WHERE namespace_id = $2 AND id = $1
-               UNION ALL
-               SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
-               FROM vfs_node vn
-               INNER JOIN subtree s ON vn.namespace_id = $2 AND vn.parent_id = s.id
-             )
-             SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT $3`,
-        isSqlite
-          ? [sourceNode.id, namespaceId, namespaceId, maxSyncCopyNodes + 1]
-          : [sourceNode.id, namespaceId, maxSyncCopyNodes + 1],
+        `WITH RECURSIVE subtree AS (
+           SELECT id, parent_id, type, name, blob_id, size, mime_type
+           FROM vfs_node WHERE id = ${ph.bind(sourceNode.id)} AND namespace_id = ${ph.bind(namespaceId)}
+           UNION ALL
+           SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
+           FROM vfs_node vn
+           INNER JOIN subtree s ON vn.namespace_id = ${ph.bind(namespaceId)} AND vn.parent_id = s.id
+         )
+         SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT ${ph.bind(maxSyncCopyNodes + 1)}`,
+        ph.params,
       );
 
       if (subtreeRows.length > maxSyncCopyNodes) {
