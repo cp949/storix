@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import { BlobRepository } from './blob.repository.js';
+import { BlobRepository, BLOB_DELETE_CHUNK_SIZE } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 
 export interface BlobRepositoryTestContext {
@@ -93,6 +93,21 @@ export function runBlobRepositorySharedTests(getContext: () => BlobRepositoryTes
       await repository.deleteBlobRows([]);
 
       expect(await dataSource.getRepository(BlobEntity).findOneBy({ id: untouched.id })).not.toBeNull();
+    });
+
+    it('청크 경계를 넘는 개수의 id도 전부 삭제한다', async () => {
+      const { dataSource, repository } = getContext();
+      const blobRepo = dataSource.getRepository(BlobEntity);
+      // BLOB_DELETE_CHUNK_SIZE를 넘는 개수 생성 (청크 배칭이 제대로 동작하는지 확인)
+      const count = BLOB_DELETE_CHUNK_SIZE + 100;
+      const blobs = await Promise.all(Array.from({ length: count }, () => createBlob(0)));
+      const blobIds = blobs.map((b) => b.id);
+
+      await repository.deleteBlobRows(blobIds);
+
+      // 모든 blob이 삭제되었는지 확인
+      const remaining = await blobRepo.find({ where: { id: blobs[0].id } });
+      expect(remaining).toHaveLength(0);
     });
   });
 

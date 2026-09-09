@@ -15,6 +15,11 @@ function formatSqliteTimestamp(date: Date): string {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+// SQLite의 SQLITE_MAX_VARIABLE_NUMBER 제약(최근 버전 32766, 구버전 999)을 피하기
+// 위해 대량 삭제 시 청크 단위로 처리한다. Postgres는 배열 파라미터 하나로 처리되므로
+// 이 제약이 없다.
+export const BLOB_DELETE_CHUNK_SIZE = 500;
+
 @Injectable()
 export class BlobRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -72,9 +77,13 @@ export class BlobRepository {
     }
     if (this.isSqlite) {
       // better-sqlite3는 배열 파라미터 바인딩(Postgres의 ANY($1::uuid[]))을
-      // 지원하지 않는다 — ids.length만큼 '?'를 동적 생성해 개별 바인딩한다.
-      const placeholders = ids.map(() => '?').join(',');
-      await this.dataSource.query(`DELETE FROM blob WHERE id IN (${placeholders})`, ids);
+      // 지원하지 않고, SQLITE_MAX_VARIABLE_NUMBER 제약(최근 버전 32766, 구버전 999)이
+      // 있다. ids를 청크 단위로 나눠 여러 번 DELETE를 실행해 이 제약을 우회한다.
+      for (let i = 0; i < ids.length; i += BLOB_DELETE_CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + BLOB_DELETE_CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+        await this.dataSource.query(`DELETE FROM blob WHERE id IN (${placeholders})`, chunk);
+      }
       return;
     }
     await this.dataSource.query('DELETE FROM blob WHERE id = ANY($1::uuid[])', [ids]);
