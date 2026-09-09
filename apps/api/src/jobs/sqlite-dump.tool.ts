@@ -33,5 +33,10 @@ export class SqliteDumpTool implements DbDumpTool {
   async restore(inFile: string): Promise<void> {
     await fs.mkdir(path.dirname(this.dbPath), { recursive: true });
     await fs.copyFile(inFile, this.dbPath);
+    // 복사 대상에 이전 WAL/공유메모리/롤백 저널이 남아있으면 새로 복사된
+    // 메인 파일과 어긋나 손상으로 이어질 수 있어 명시적으로 제거한다.
+    await Promise.all(
+      ['-wal', '-shm', '-journal'].map((suffix) => fs.rm(`${this.dbPath}${suffix}`, { force: true })),
+    );
   }
 }
