@@ -170,4 +170,47 @@ describe('VfsNodeRepository SQLite 스모크', () => {
       }
     });
   });
+
+  describe('removeNode', () => {
+    const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
+    it('recursive=true면 하위 트리를 모두 삭제하고 각 file의 Blob 참조를 줄인다', async () => {
+      const namespace = await createNamespace('rm-recursive-ns');
+      const root = await repository.getRoot(namespace.id);
+      const a = await repository.ensureDirectory(namespace.id, root!.id, ['a'], false);
+      const c = await repository.ensureDirectory(namespace.id, root!.id, ['a', 'c'], false);
+      const fileB = await createFile(namespace.id, a.node.id, 'b.txt');
+      const fileD = await createFile(namespace.id, c.node.id, 'd.txt');
+
+      await repository.removeNode(namespace.id, root!.id, ['a'], true, UNLIMITED);
+
+      expect(await repository.resolvePath(namespace.id, root!.id, ['a'])).toBeNull();
+      const blobRepo = dataSource.getRepository(BlobEntity);
+      const blobB = await blobRepo.findOneByOrFail({ id: fileB.blobId as string });
+      const blobD = await blobRepo.findOneByOrFail({ id: fileD.blobId as string });
+      expect(blobB.referenceCount).toBe(0);
+      expect(blobD.referenceCount).toBe(0);
+    });
+  });
+
+  describe('copyNode', () => {
+    const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
+    it('DIRECTORY를 재귀 복사하면 subtree 전체가 새 id로 생성되고 Blob 참조가 늘어난다', async () => {
+      const namespace = await createNamespace('copy-recursive-ns');
+      const root = await repository.getRoot(namespace.id);
+      const a = await repository.ensureDirectory(namespace.id, root!.id, ['a'], false);
+      const file = await createFile(namespace.id, a.node.id, 'x.txt');
+
+      const result = await repository.copyNode(namespace.id, root!.id, ['a'], ['a-copy'], false, UNLIMITED);
+
+      const copiedFile = await repository.resolvePath(namespace.id, root!.id, ['a-copy', 'x.txt']);
+      expect(copiedFile).not.toBeNull();
+      expect(copiedFile!.id).not.toBe(file.id);
+      const blobRepo = dataSource.getRepository(BlobEntity);
+      const blob = await blobRepo.findOneByOrFail({ id: file.blobId as string });
+      expect(blob.referenceCount).toBe(2);
+      expect(result.finalPath).toBe('/a-copy');
+    });
+  });
 });

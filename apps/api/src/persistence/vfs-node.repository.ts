@@ -651,14 +651,23 @@ export class VfsNodeRepository {
       // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
       // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
       // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
+      const isSqlite = this.dataSource.options.type === 'better-sqlite3';
       const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
-        `WITH RECURSIVE subtree AS (
-           SELECT id, namespace_id, blob_id FROM vfs_node WHERE namespace_id = $2 AND id = $1
-           UNION ALL
-           SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
-           INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
-         )
-         SELECT id, blob_id FROM subtree`,
+        isSqlite
+          ? `WITH RECURSIVE subtree AS (
+               SELECT id, namespace_id, blob_id FROM vfs_node WHERE id = ? AND namespace_id = ?
+               UNION ALL
+               SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
+               INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
+             )
+             SELECT id, blob_id FROM subtree`
+          : `WITH RECURSIVE subtree AS (
+               SELECT id, namespace_id, blob_id FROM vfs_node WHERE namespace_id = $2 AND id = $1
+               UNION ALL
+               SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
+               INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
+             )
+             SELECT id, blob_id FROM subtree`,
         [target.id, namespaceId],
       );
 
@@ -738,17 +747,30 @@ export class VfsNodeRepository {
       // DIRECTORY: resolveDestinationPlacement 안에서 source 자신의 row lock을 이미
       // 획득했으므로(removeNode와 동일 원리), 아래 조회~생성 사이에 source subtree
       // 구성이 바뀔 수 없다.
+      const isSqlite = this.dataSource.options.type === 'better-sqlite3';
       const subtreeRows: CopySourceRow[] = await manager.query(
-        `WITH RECURSIVE subtree AS (
-           SELECT id, parent_id, type, name, blob_id, size, mime_type
-           FROM vfs_node WHERE namespace_id = $2 AND id = $1
-           UNION ALL
-           SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
-           FROM vfs_node vn
-           INNER JOIN subtree s ON vn.namespace_id = $2 AND vn.parent_id = s.id
-         )
-         SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT $3`,
-        [sourceNode.id, namespaceId, maxSyncCopyNodes + 1],
+        isSqlite
+          ? `WITH RECURSIVE subtree AS (
+               SELECT id, parent_id, type, name, blob_id, size, mime_type
+               FROM vfs_node WHERE id = ? AND namespace_id = ?
+               UNION ALL
+               SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
+               FROM vfs_node vn
+               INNER JOIN subtree s ON vn.namespace_id = ? AND vn.parent_id = s.id
+             )
+             SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT ?`
+          : `WITH RECURSIVE subtree AS (
+               SELECT id, parent_id, type, name, blob_id, size, mime_type
+               FROM vfs_node WHERE namespace_id = $2 AND id = $1
+               UNION ALL
+               SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
+               FROM vfs_node vn
+               INNER JOIN subtree s ON vn.namespace_id = $2 AND vn.parent_id = s.id
+             )
+             SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT $3`,
+        isSqlite
+          ? [sourceNode.id, namespaceId, namespaceId, maxSyncCopyNodes + 1]
+          : [sourceNode.id, namespaceId, maxSyncCopyNodes + 1],
       );
 
       if (subtreeRows.length > maxSyncCopyNodes) {
