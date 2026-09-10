@@ -91,4 +91,65 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .send({ path: '/report.txt' })
       .expect(400);
   });
+
+  it('디렉터리 생성 → 업로드 → 목록 → 검색 → 복사 → 이동 → bob의 경로 이탈 요청은 403 → 재귀 삭제', async () => {
+    const dirPath = `/reports-${Date.now()}`;
+    const filePath = `${dirPath}/big.bin`;
+    const copyPath = `${dirPath}/big-copy.bin`;
+    const movedPath = `${dirPath}/renamed.bin`;
+    const content = Buffer.from('storix demo entries vertical slice fixture');
+
+    await request(app.getHttpServer())
+      .post('/demo-api/directories')
+      .set('X-Demo-User', 'alice')
+      .send({ path: dirPath })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .put(`/demo-api/documents/content?path=${filePath}`)
+      .set('X-Demo-User', 'alice')
+      .set('Content-Type', 'application/octet-stream')
+      .send(content)
+      .expect(201);
+
+    const listResponse = await request(app.getHttpServer())
+      .get(`/demo-api/documents?path=${dirPath}`)
+      .set('X-Demo-User', 'alice')
+      .expect(200);
+    expect(listResponse.body.items.map((item: { path: string }) => item.path)).toContain(filePath);
+
+    const searchResponse = await request(app.getHttpServer())
+      .get('/demo-api/documents/search?path=/&name=big.bin')
+      .set('X-Demo-User', 'alice')
+      .expect(200);
+    expect(searchResponse.body.items.map((item: { path: string }) => item.path)).toContain(filePath);
+
+    await request(app.getHttpServer())
+      .post('/demo-api/entries/copy')
+      .set('X-Demo-User', 'alice')
+      .send({ source: filePath, destination: copyPath })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/demo-api/entries/move')
+      .set('X-Demo-User', 'alice')
+      .send({ source: copyPath, destination: movedPath })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/demo-api/documents/download')
+      .set('X-Demo-User', 'bob')
+      .send({ path: `../alice${filePath}` })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/demo-api/entries?path=${dirPath}&recursive=true`)
+      .set('X-Demo-User', 'alice')
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .get(`/demo-api/documents?path=${dirPath}`)
+      .set('X-Demo-User', 'alice')
+      .expect(404);
+  }, 60000);
 });
