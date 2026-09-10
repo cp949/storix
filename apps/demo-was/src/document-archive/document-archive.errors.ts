@@ -17,3 +17,12 @@ export class DocumentPathEscapesRootError extends DomainError {
     super(`요청 경로가 사용자 root를 벗어남: ${requestedPath}`);
   }
 }
+
+export class ExternalPathResolutionError extends DomainError {
+  readonly code = 'EXTERNAL_PATH_RESOLUTION_FAILED';
+  readonly status = 500;
+
+  constructor(internalPath: string) {
+    super(`internalPath가 사용자 root 밖에 있어 외부 경로로 변환할 수 없음: ${internalPath}`);
+  }
+}

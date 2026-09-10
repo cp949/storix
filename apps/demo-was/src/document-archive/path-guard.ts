@@ -1,5 +1,5 @@
 import { DemoUser } from './demo-user.js';
-import { DocumentPathEscapesRootError } from './document-archive.errors.js';
+import { DocumentPathEscapesRootError, ExternalPathResolutionError } from './document-archive.errors.js';
 
 const ROOT_BY_USER: Record<DemoUser, string> = {
   alice: '/documents/alice',
@@ -24,5 +24,8 @@ export function resolveExternalPath(user: DemoUser, internalPath: string): strin
   if (internalPath === root) {
     return '/';
   }
-  return internalPath.startsWith(`${root}/`) ? internalPath.slice(root.length) : internalPath;
+  if (!internalPath.startsWith(`${root}/`)) {
+    throw new ExternalPathResolutionError(internalPath);
+  }
+  return internalPath.slice(root.length);
 }

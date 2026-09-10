@@ -1,4 +1,4 @@
-import { DocumentPathEscapesRootError } from './document-archive.errors.js';
+import { DocumentPathEscapesRootError, ExternalPathResolutionError } from './document-archive.errors.js';
 import { resolveExternalPath, resolveInternalPath } from './path-guard.js';
 
 describe('resolveInternalPath', () => {
@@ -36,5 +36,9 @@ describe('resolveExternalPath', () => {
 
   it('bob root 아래 경로도 동일하게 동작한다', () => {
     expect(resolveExternalPath('bob', '/documents/bob/notes/a.txt')).toBe('/notes/a.txt');
+  });
+
+  it('root 밖 internal path가 들어오면 예외를 던진다(방어적 하드닝 — 현재 호출부에서는 도달 불가능해야 정상)', () => {
+    expect(() => resolveExternalPath('alice', '/documents/bob/secret.txt')).toThrow(ExternalPathResolutionError);
   });
 });
