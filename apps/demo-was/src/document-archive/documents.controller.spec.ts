@@ -179,6 +179,15 @@ describe('DocumentsController — publish/unpublish', () => {
 
     expect(unpublish).toHaveBeenCalledWith('/documents/alice/a.txt');
   });
+
+  it('publish 경로가 root를 벗어나면 403이고 StorixClient.publish를 호출하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .post('/demo-api/documents/publish?path=../bob/secret.txt')
+      .set('X-Demo-User', 'alice')
+      .expect(403);
+
+    expect(publish).not.toHaveBeenCalled();
+  });
 });
 
 describe('DocumentsController — GET list', () => {

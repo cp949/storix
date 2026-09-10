@@ -147,6 +147,10 @@ publish_response=$(curl -sf -X POST "$BASE_URL/demo-api/documents/publish?path=$
 public_url=$(echo "$publish_response" | jq -r '.url')
 [ -n "$public_url" ] && [ "$public_url" != "null" ] || fail "공개 URL을 파싱하지 못함: $publish_response"
 
+if [[ "$public_url" == *"documents"* ]] || [[ "$public_url" == *"alice"* ]] || [[ "$public_url" == *"${MOVED_PATH}"* ]]; then
+  fail "공개 URL이 내부 경로/사용자 정보를 노출함: $public_url"
+fi
+
 log "14) 인증 헤더 없이 공개 URL 접근"
 curl -sf "$public_url" -o "$WORKDIR/public.bin"
 public_sha256=$(sha256sum "$WORKDIR/public.bin" | awk '{print $1}')

@@ -4,6 +4,7 @@ import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import type { EntryPage, FileEntry, PresignedDownload, PublicLink, UploadMetadata } from './storix-client.types.js';
 import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
+import { derivePublicPath } from './public-path.js';
 
 interface NamespaceCreateResponse {
   readonly id: string;
@@ -130,27 +131,28 @@ export class StorixClient implements StorixClientPort {
     });
 
     const mimeType = source.headers.get('content-type') ?? undefined;
+    const publicPath = derivePublicPath(path);
 
     await this.http.request({
       method: 'POST',
       path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/content`,
-      query: { path, parents: 'true', force: 'true' },
+      query: { path: publicPath, parents: 'true', force: 'true' },
       headers: mimeType ? { 'content-type': mimeType } : {},
       body: source.body as ReadableStream,
       duplex: 'half',
     });
 
     const url = new URL(`/api/v1/public/${this.requirePublicNamespaceId()}/fs/download`, this.config.publicUrlBase);
-    url.searchParams.set('path', path);
+    url.searchParams.set('path', publicPath);
 
-    return { url: url.toString(), publicPath: path };
+    return { url: url.toString(), publicPath };
   }
 
-  async unpublish(publicPath: string): Promise<void> {
+  async unpublish(path: string): Promise<void> {
     await this.http.request({
       method: 'POST',
       path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/rm`,
-      query: { path: publicPath },
+      query: { path: derivePublicPath(path) },
     });
   }
 
@@ -181,5 +183,5 @@ export interface StorixClientPort {
   find(path: string, name: string, cursor?: string): Promise<EntryPage>;
   createDownload(path: string): Promise<PresignedDownload>;
   publish(path: string): Promise<PublicLink>;
-  unpublish(publicPath: string): Promise<void>;
+  unpublish(path: string): Promise<void>;
 }
