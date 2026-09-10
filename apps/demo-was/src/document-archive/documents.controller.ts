@@ -1,14 +1,45 @@
-import { Body, Controller, Delete, Headers, HttpCode, Post, Put, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
+import type { DemoUser } from './demo-user.js';
+import type { FileEntry } from '../storix-client/storix-client.types.js';
 import { StorixClient } from '../storix-client/storix-client.service.js';
 import { parseDemoUser } from './demo-user.js';
 import { firstQueryValue } from './http-query.js';
-import { resolveInternalPath } from './path-guard.js';
+import { resolveExternalPath, resolveInternalPath } from './path-guard.js';
+
+function toExternalEntry(user: DemoUser, entry: FileEntry): FileEntry {
+  return { ...entry, path: resolveExternalPath(user, entry.path) };
+}
 
 @Controller('demo-api/documents')
 export class DocumentsController {
   constructor(private readonly storixClient: StorixClient) {}
+
+  @Get()
+  async list(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Query('path') path: string | string[] | undefined,
+    @Query('cursor') cursor: string | string[] | undefined,
+  ) {
+    const user = parseDemoUser(demoUserHeader);
+    const internalPath = resolveInternalPath(user, firstQueryValue(path) ?? '');
+    const page = await this.storixClient.list(internalPath, firstQueryValue(cursor));
+    return { items: page.items.map((entry) => toExternalEntry(user, entry)), nextCursor: page.nextCursor };
+  }
+
+  @Get('search')
+  async search(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Query('path') path: string | string[] | undefined,
+    @Query('name') name: string | string[] | undefined,
+    @Query('cursor') cursor: string | string[] | undefined,
+  ) {
+    const user = parseDemoUser(demoUserHeader);
+    const internalPath = resolveInternalPath(user, firstQueryValue(path) ?? '');
+    const page = await this.storixClient.find(internalPath, firstQueryValue(name) ?? '', firstQueryValue(cursor));
+    return { items: page.items.map((entry) => toExternalEntry(user, entry)), nextCursor: page.nextCursor };
+  }
 
   @Put('content')
   async putContent(

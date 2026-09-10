@@ -180,3 +180,127 @@ describe('DocumentsController — publish/unpublish', () => {
     expect(unpublish).toHaveBeenCalledWith('/documents/alice/a.txt');
   });
 });
+
+describe('DocumentsController — GET list', () => {
+  let app: INestApplication;
+  const list = jest.fn<StorixClient['list']>();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [DocumentsController],
+      providers: [{ provide: StorixClient, useValue: { list } }],
+    }).compile();
+
+    app = moduleRef.createNestApplication({ bodyParser: false });
+    configureBodyParsers(app);
+    app.useGlobalFilters(new DomainErrorFilter());
+    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
+      req.requestId = 'req-1';
+      next();
+    });
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    list.mockReset();
+  });
+
+  it('alice의 목록 응답에서 root prefix가 제거된다', async () => {
+    list.mockResolvedValue({
+      items: [
+        {
+          path: '/documents/alice/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 1,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ],
+      nextCursor: 'cursor-1',
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/demo-api/documents?path=/')
+      .set('X-Demo-User', 'alice')
+      .expect(200);
+
+    expect(list).toHaveBeenCalledWith('/documents/alice', undefined);
+    expect(response.body).toEqual({
+      items: [
+        {
+          path: '/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 1,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ],
+      nextCursor: 'cursor-1',
+    });
+  });
+});
+
+describe('DocumentsController — GET search', () => {
+  let app: INestApplication;
+  const find = jest.fn<StorixClient['find']>();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [DocumentsController],
+      providers: [{ provide: StorixClient, useValue: { find } }],
+    }).compile();
+
+    app = moduleRef.createNestApplication({ bodyParser: false });
+    configureBodyParsers(app);
+    app.useGlobalFilters(new DomainErrorFilter());
+    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
+      req.requestId = 'req-1';
+      next();
+    });
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    find.mockReset();
+  });
+
+  it('bob의 검색 결과에서도 root prefix가 제거된다', async () => {
+    find.mockResolvedValue({
+      items: [
+        {
+          path: '/documents/bob/notes/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 2,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/demo-api/documents/search?path=/&name=a.txt')
+      .set('X-Demo-User', 'bob')
+      .expect(200);
+
+    expect(find).toHaveBeenCalledWith('/documents/bob', 'a.txt', undefined);
+    expect(response.body.items[0].path).toBe('/notes/a.txt');
+  });
+});

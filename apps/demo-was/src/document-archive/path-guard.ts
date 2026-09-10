@@ -18,3 +18,11 @@ export function resolveInternalPath(user: DemoUser, requestedPath: string): stri
   const suffix = segments.length === 0 ? '' : `/${segments.join('/')}`;
   return `${ROOT_BY_USER[user]}${suffix}`;
 }
+
+export function resolveExternalPath(user: DemoUser, internalPath: string): string {
+  const root = ROOT_BY_USER[user];
+  if (internalPath === root) {
+    return '/';
+  }
+  return internalPath.startsWith(`${root}/`) ? internalPath.slice(root.length) : internalPath;
+}
