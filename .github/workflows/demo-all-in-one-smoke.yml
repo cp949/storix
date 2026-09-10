@@ -36,8 +36,33 @@ env:
     -f docs/deployment/scenarios/demo-all-in-one/compose.demo.yml
 
 jobs:
+  demo-build:
+    name: apps/demo 빌드·타입체크·단위테스트
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+
+      - name: Node 설정
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+
+      - name: 의존성 설치
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: 빌드(typecheck 포함)
+        run: pnpm --filter @storix/demo build
+
+      - name: 단위 테스트
+        run: pnpm --filter @storix/demo test
+
   smoke:
     name: 문서 아카이브 전체 흐름 + 메모리 바운드 확인
+    needs: demo-build
     runs-on: ubuntu-24.04
     steps:
       - name: 소스 체크아웃
