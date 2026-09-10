@@ -3,13 +3,8 @@ import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { StorixClient } from '../storix-client/storix-client.service.js';
 import { parseDemoUser } from './demo-user.js';
+import { firstQueryValue } from './http-query.js';
 import { resolveInternalPath } from './path-guard.js';
-
-// Express는 같은 쿼리 파라미터가 중복되면(?path=a&path=b) string[]을 준다 —
-// 타입 애너테이션(string | undefined)만으로는 이 런타임 형태를 못 막는다.
-function firstQueryValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 @Controller('demo-api/documents')
 export class DocumentsController {
