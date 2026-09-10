@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, listDocuments, searchDocuments, uploadDocument } from '../api/client';
+import { ApiError, listDocuments, searchDocuments, uploadDocument, createDirectory, moveEntry, removeEntry } from '../api/client';
 import type { EntryPage } from '../api/types';
 import { ErrorPanel } from '../error/ErrorPanel';
 import { ErrorProvider } from '../error/ErrorContext';
@@ -13,6 +13,10 @@ vi.mock('../api/client', async (importOriginal) => {
     listDocuments: vi.fn(),
     searchDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    createDirectory: vi.fn(),
+    moveEntry: vi.fn(),
+    copyEntry: vi.fn(),
+    removeEntry: vi.fn(),
   };
 });
 
@@ -204,5 +208,106 @@ describe('DocumentArchive', () => {
     fireEvent.drop(screen.getByText('파일 업로드'), { dataTransfer: { files: [file] } });
 
     await waitFor(() => expect(uploadDocument).toHaveBeenCalledWith('alice', '/b.txt', file));
+  });
+
+  it('새 폴더 이름을 입력하고 제출하면 현재 경로 아래에 디렉터리를 만든다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([]));
+    vi.mocked(createDirectory).mockResolvedValue(undefined);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText('새 폴더 이름'), { target: { value: 'reports' } });
+    fireEvent.click(screen.getByText('폴더 만들기'));
+
+    await waitFor(() => expect(createDirectory).toHaveBeenCalledWith('alice', '/reports'));
+  });
+
+  it('이동 버튼을 누르면 prompt로 받은 대상 경로로 이동을 요청한다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(
+      page([
+        {
+          path: '/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 1,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ]),
+    );
+    vi.mocked(moveEntry).mockResolvedValue(undefined);
+    vi.spyOn(window, 'prompt').mockReturnValue('/archive/a.txt');
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('이동'));
+
+    await waitFor(() => expect(moveEntry).toHaveBeenCalledWith('alice', '/a.txt', '/archive/a.txt'));
+  });
+
+  it('삭제는 confirm에서 취소하면 removeEntry를 호출하지 않는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(
+      page([
+        {
+          path: '/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 1,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ]),
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('삭제'));
+
+    expect(removeEntry).not.toHaveBeenCalled();
+  });
+
+  it('root 밖으로 이동을 시도해 403이 나면 오류 패널에 그대로 표시된다(경로 이탈 데모)', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(
+      page([
+        {
+          path: '/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 1,
+          mimeType: 'text/plain',
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+        },
+      ]),
+    );
+    vi.mocked(moveEntry).mockRejectedValue(new ApiError(403, 'DOCUMENT_PATH_ESCAPES_ROOT', 'req-9', '경로 이탈'));
+    vi.spyOn(window, 'prompt').mockReturnValue('../bob/secret.txt');
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+        <ErrorPanel />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('이동'));
+
+    expect(await screen.findByText(/DOCUMENT_PATH_ESCAPES_ROOT/)).toBeTruthy();
   });
 });

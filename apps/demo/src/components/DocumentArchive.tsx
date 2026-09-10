@@ -1,5 +1,6 @@
+import type { FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { listDocuments, searchDocuments, uploadDocument } from '../api/client';
+import { copyEntry, createDirectory, listDocuments, moveEntry, removeEntry, searchDocuments, uploadDocument } from '../api/client';
 import type { DemoUser, FileEntry } from '../api/types';
 import { useErrorReporter } from '../error/ErrorContext';
 import { joinPath } from '../utils/path';
@@ -18,6 +19,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   const [searchName, setSearchName] = useState('');
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [newFolderName, setNewFolderName] = useState('');
   const { reportError, clearError } = useErrorReporter();
 
   const loadList = useCallback(
@@ -61,6 +63,63 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       await loadList(currentPath);
     } catch (cause) {
       setUploadStatus('error');
+      reportError(cause);
+    }
+  }
+
+  async function handleCreateDirectory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) {
+      return;
+    }
+    try {
+      await createDirectory(user, joinPath(currentPath, name));
+      setNewFolderName('');
+      clearError();
+      await loadList(currentPath);
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handleMove(item: FileEntry) {
+    const destination = window.prompt('이동할 대상 경로', item.path);
+    if (!destination) {
+      return;
+    }
+    try {
+      await moveEntry(user, item.path, destination);
+      clearError();
+      await loadList(currentPath);
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handleCopy(item: FileEntry) {
+    const destination = window.prompt('복사할 대상 경로', item.path);
+    if (!destination) {
+      return;
+    }
+    try {
+      await copyEntry(user, item.path, destination);
+      clearError();
+      await loadList(currentPath);
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handleRemove(item: FileEntry) {
+    if (!window.confirm(`${item.name}을(를) 삭제할까요?`)) {
+      return;
+    }
+    try {
+      await removeEntry(user, item.path, item.type === 'DIRECTORY');
+      clearError();
+      await loadList(currentPath);
+    } catch (cause) {
       reportError(cause);
     }
   }
@@ -135,6 +194,14 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
         </p>
       </div>
 
+      <form onSubmit={handleCreateDirectory}>
+        <label>
+          새 폴더 이름
+          <input value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} />
+        </label>
+        <button type="submit">폴더 만들기</button>
+      </form>
+
       <ul aria-label="문서 목록">
         {visibleItems.map((item) => (
           <li key={item.path}>
@@ -145,6 +212,15 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
             ) : (
               <span>📄 {item.name}</span>
             )}
+            <button type="button" onClick={() => handleMove(item)}>
+              이동
+            </button>
+            <button type="button" onClick={() => handleCopy(item)}>
+              복사
+            </button>
+            <button type="button" onClick={() => handleRemove(item)}>
+              삭제
+            </button>
           </li>
         ))}
       </ul>
