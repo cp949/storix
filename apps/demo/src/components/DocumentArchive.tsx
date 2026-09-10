@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { copyEntry, createDirectory, listDocuments, moveEntry, removeEntry, searchDocuments, uploadDocument } from '../api/client';
-import type { DemoUser, FileEntry } from '../api/types';
+import { copyEntry, createDirectory, listDocuments, moveEntry, removeEntry, searchDocuments, uploadDocument, createDownload, publishDocument, unpublishDocument } from '../api/client';
+import type { DemoUser, FileEntry, PublicLink } from '../api/types';
 import { useErrorReporter } from '../error/ErrorContext';
 import { joinPath } from '../utils/path';
 
@@ -20,6 +20,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [newFolderName, setNewFolderName] = useState('');
+  const [publishedLinks, setPublishedLinks] = useState<Record<string, PublicLink>>({});
   const { reportError, clearError } = useErrorReporter();
 
   const loadList = useCallback(
@@ -124,6 +125,51 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
     }
   }
 
+  async function handleDownload(item: FileEntry) {
+    try {
+      const download = await createDownload(user, item.path);
+      window.open(download.url, '_blank');
+      clearError();
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handlePublish(item: FileEntry) {
+    if (
+      !window.confirm(
+        '공개 발행은 되돌릴 수 없습니다(발행 취소해도 이미 공유된 링크는 회수되지 않습니다). 계속할까요?',
+      )
+    ) {
+      return;
+    }
+    try {
+      const link = await publishDocument(user, item.path);
+      setPublishedLinks((prev) => ({ ...prev, [item.path]: link }));
+      clearError();
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handleUnpublish(item: FileEntry) {
+    try {
+      await unpublishDocument(user, item.path);
+      setPublishedLinks((prev) => {
+        const next = { ...prev };
+        delete next[item.path];
+        return next;
+      });
+      clearError();
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  function copyToClipboard(url: string) {
+    void navigator.clipboard?.writeText(url);
+  }
+
   const breadcrumbSegments = splitBreadcrumb(currentPath);
   const visibleItems = searchResults ?? items;
 
@@ -221,6 +267,27 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
             <button type="button" onClick={() => handleRemove(item)}>
               삭제
             </button>
+            <button type="button" onClick={() => handleDownload(item)}>
+              다운로드
+            </button>
+            {item.type === 'FILE' &&
+              (publishedLinks[item.path] ? (
+                <>
+                  <a href={publishedLinks[item.path].url} target="_blank" rel="noreferrer">
+                    공개 링크
+                  </a>
+                  <button type="button" onClick={() => copyToClipboard(publishedLinks[item.path].url)}>
+                    링크 복사
+                  </button>
+                  <button type="button" onClick={() => handleUnpublish(item)}>
+                    발행 취소
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => handlePublish(item)}>
+                  발행
+                </button>
+              ))}
           </li>
         ))}
       </ul>

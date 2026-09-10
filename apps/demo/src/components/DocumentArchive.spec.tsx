@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, listDocuments, searchDocuments, uploadDocument, createDirectory, moveEntry, removeEntry } from '../api/client';
+import { ApiError, listDocuments, searchDocuments, uploadDocument, createDirectory, moveEntry, removeEntry, createDownload, publishDocument, unpublishDocument } from '../api/client';
 import type { EntryPage } from '../api/types';
 import { ErrorPanel } from '../error/ErrorPanel';
 import { ErrorProvider } from '../error/ErrorContext';
@@ -17,12 +17,26 @@ vi.mock('../api/client', async (importOriginal) => {
     moveEntry: vi.fn(),
     copyEntry: vi.fn(),
     removeEntry: vi.fn(),
+    createDownload: vi.fn(),
+    publishDocument: vi.fn(),
+    unpublishDocument: vi.fn(),
   };
 });
 
 function page(items: EntryPage['items']): EntryPage {
   return { items, nextCursor: null };
 }
+
+const entryA = {
+  path: '/a.txt',
+  name: 'a.txt',
+  type: 'FILE' as const,
+  size: 1,
+  mimeType: 'text/plain',
+  createdAt: '',
+  updatedAt: '',
+  version: 1,
+};
 
 describe('DocumentArchive', () => {
   beforeEach(() => {
@@ -309,5 +323,68 @@ describe('DocumentArchive', () => {
     fireEvent.click(await screen.findByText('이동'));
 
     expect(await screen.findByText(/DOCUMENT_PATH_ESCAPES_ROOT/)).toBeTruthy();
+  });
+
+  it('다운로드 버튼을 누르면 presigned URL을 새 창으로 연다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+    vi.mocked(createDownload).mockResolvedValue({ url: 'http://signed.test/x', expiresAt: '2026-01-01T00:00:00.000Z' });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('다운로드'));
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('http://signed.test/x', '_blank'));
+  });
+
+  it('발행을 확인하면 공개 링크와 복사/발행취소 버튼이 나타난다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+    vi.mocked(publishDocument).mockResolvedValue({ url: 'http://public.test/x', publicPath: 'abcd1234/a.txt' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('발행'));
+
+    expect(await screen.findByText('공개 링크')).toBeTruthy();
+    expect(screen.getByText('발행 취소')).toBeTruthy();
+  });
+
+  it('발행 확인을 취소하면 publishDocument를 호출하지 않는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('발행'));
+
+    expect(publishDocument).not.toHaveBeenCalled();
+  });
+
+  it('발행 취소를 누르면 공개 링크가 사라지고 다시 발행 버튼이 보인다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+    vi.mocked(publishDocument).mockResolvedValue({ url: 'http://public.test/x', publicPath: 'abcd1234/a.txt' });
+    vi.mocked(unpublishDocument).mockResolvedValue(undefined);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    fireEvent.click(await screen.findByText('발행'));
+    fireEvent.click(await screen.findByText('발행 취소'));
+
+    await waitFor(() => expect(screen.queryByText('공개 링크')).toBeNull());
+    expect(screen.getByText('발행')).toBeTruthy();
   });
 });
