@@ -1,0 +1,76 @@
+name: 데모 all-in-one 스모크 테스트
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.versitygw.yml'
+      - 'docker-compose.postgres.yml'
+      - 'apps/api/**'
+      - 'apps/demo-was/**'
+      - 'apps/demo/**'
+      - 'docs/deployment/scenarios/demo-all-in-one/**'
+      - '.github/workflows/demo-all-in-one-smoke.yml'
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.versitygw.yml'
+      - 'docker-compose.postgres.yml'
+      - 'apps/api/**'
+      - 'apps/demo-was/**'
+      - 'apps/demo/**'
+      - 'docs/deployment/scenarios/demo-all-in-one/**'
+      - '.github/workflows/demo-all-in-one-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ENV_FILE: docs/deployment/scenarios/demo-all-in-one/env/development.env.example
+  COMPOSE_FILES: >-
+    -f docker-compose.yml
+    -f docker-compose.versitygw.yml
+    -f docker-compose.postgres.yml
+    -f docs/deployment/scenarios/demo-all-in-one/compose.demo.yml
+
+jobs:
+  smoke:
+    name: 문서 아카이브 전체 흐름 + 메모리 바운드 확인
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+
+      - name: .env 생성
+        run: |
+          cp "$ENV_FILE" .env
+          STORIX_API_KEY=$(openssl rand -hex 32)
+          sed -i "s|^STORIX_API_KEY=.*|STORIX_API_KEY=${STORIX_API_KEY}|" .env
+
+      - name: all-in-one 스택 기동
+        run: docker compose ${{ env.COMPOSE_FILES }} up -d --build
+
+      - name: Nginx 헬스체크 대기 (/health)
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "nginx ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::nginx가 /health에 응답하지 않음(60초 타임아웃)" >&2
+          exit 1
+
+      - name: smoke test 실행
+        run: docs/deployment/scenarios/demo-all-in-one/smoke-test.sh
+
+      - name: 컨테이너 로그 출력 (실패 시 진단용)
+        if: always()
+        run: docker compose ${{ env.COMPOSE_FILES }} logs
+
+      - name: 컨테이너 정리
+        if: always()
+        run: docker compose ${{ env.COMPOSE_FILES }} down -v
