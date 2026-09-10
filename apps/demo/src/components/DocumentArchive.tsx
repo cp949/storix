@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { listDocuments, searchDocuments } from '../api/client';
+import { listDocuments, searchDocuments, uploadDocument } from '../api/client';
 import type { DemoUser, FileEntry } from '../api/types';
 import { useErrorReporter } from '../error/ErrorContext';
+import { joinPath } from '../utils/path';
 
 export interface DocumentArchiveProps {
   readonly user: DemoUser;
@@ -16,6 +17,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   const [items, setItems] = useState<FileEntry[]>([]);
   const [searchName, setSearchName] = useState('');
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const { reportError, clearError } = useErrorReporter();
 
   const loadList = useCallback(
@@ -46,6 +48,19 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       setSearchResults(pageResult.items);
       clearError();
     } catch (cause) {
+      reportError(cause);
+    }
+  }
+
+  async function handleUpload(file: File) {
+    setUploadStatus('uploading');
+    try {
+      await uploadDocument(user, joinPath(currentPath, file.name), file);
+      setUploadStatus('success');
+      clearError();
+      await loadList(currentPath);
+    } catch (cause) {
+      setUploadStatus('error');
       reportError(cause);
     }
   }
@@ -89,6 +104,36 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
           </button>
         )}
       </form>
+
+      <div
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const file = event.dataTransfer.files[0];
+          if (file) {
+            void handleUpload(file);
+          }
+        }}
+      >
+        <label>
+          파일 업로드
+          <input
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleUpload(file);
+              }
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <p role="status">
+          {uploadStatus === 'uploading' && '업로드중...'}
+          {uploadStatus === 'success' && '업로드 완료'}
+          {uploadStatus === 'error' && '업로드 실패'}
+        </p>
+      </div>
 
       <ul aria-label="문서 목록">
         {visibleItems.map((item) => (
