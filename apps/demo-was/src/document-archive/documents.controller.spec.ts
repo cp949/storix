@@ -45,7 +45,7 @@ describe('DocumentsController — PUT content', () => {
       .send('hello')
       .expect(201);
 
-    expect(response.body.path).toBe('/documents/alice/a.txt');
+    expect(response.body.path).toBe('/a.txt');
     expect(upload).toHaveBeenCalledTimes(1);
     const [internalPath, , metadata] = upload.mock.calls[0];
     expect(internalPath).toBe('/documents/alice/a.txt');
@@ -62,7 +62,7 @@ describe('DocumentsController — PUT content', () => {
       .send('hello')
       .expect(201);
 
-    expect(response.body.path).toBe('/documents/alice/a.txt');
+    expect(response.body.path).toBe('/a.txt');
     const [internalPath] = upload.mock.calls[0];
     expect(internalPath).toBe('/documents/alice/a.txt');
   });

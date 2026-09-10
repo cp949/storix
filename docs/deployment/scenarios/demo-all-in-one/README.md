@@ -32,8 +32,8 @@ Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> St
 
 - [`nginx/Dockerfile`](nginx/Dockerfile): React(`@storix/demo`) production
   build + nginx:1.29-alpine 런타임
-- [`nginx/default.conf`](nginx/default.conf): `/`, `/demo-api/`,
-  `/storix-demo/`, `/api/v1/public/` 4개 location
+- [`nginx/default.conf`](nginx/default.conf): `= /health`, `/`, `/demo-api/`,
+  `/storix-demo/`, `/api/v1/public/` 5개 location
 - [`nginx/00-log-formats.conf`](nginx/00-log-formats.conf): presigned query
   string을 기록하지 않는 로그 형식
 - [`compose.demo.yml`](compose.demo.yml): base + versitygw + postgres 위에
@@ -105,3 +105,6 @@ docker compose \
   로그가 없고, rate limit은 nginx 책임이라는 ADR-0023 결정을 그대로 따른다).
 - `STORIX_MAX_FILE_SIZE_BYTES`를 40MiB로 낮춰 검증 편의를 높였다 — 운영값
   (기본 5GiB)과 다르다.
+- `app:3000`(Storix API 컨테이너)도 base `docker-compose.yml`에 의해 호스트에
+  노출된다 — 이 시나리오의 override가 이를 막지 않는다. API key로 보호되지만,
+  Nginx만이 유일한 호스트 노출 포트가 아니라는 점을 알아둔다.

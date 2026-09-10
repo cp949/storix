@@ -60,7 +60,7 @@ require_status 409 "$conflict_status" "디렉터리 경로에 업로드(경로 �
 
 FIXTURE_MIB=16
 FIXTURE_BYTES=$((FIXTURE_MIB * 1024 * 1024))
-RSS_CEILING_KB=8192  # fixture(16 MiB)의 절반 미만이면 통버퍼링이 아니라는 신호
+RSS_CEILING_KB=$((FIXTURE_BYTES / 2 / 1024))  # fixture의 절반 미만이면 통버퍼링이 아니라는 신호
 log "4) ${FIXTURE_MIB} MiB fixture 업로드(메모리 바운드 확인 포함)"
 dd if=/dev/urandom of="$WORKDIR/big.bin" bs=1M count="$FIXTURE_MIB" status=none
 expected_sha256=$(sha256sum "$WORKDIR/big.bin" | awk '{print $1}')
@@ -72,7 +72,7 @@ fi
 
 rss_before=""
 if [ -n "$demo_was_container" ]; then
-  rss_before=$($CONTAINER_RUNTIME exec "$demo_was_container" sh -c "grep VmRSS /proc/1/status | awk '{print \$2}'")
+  rss_before=$($CONTAINER_RUNTIME exec "$demo_was_container" sh -c "grep VmRSS /proc/1/status | awk '{print \$2}'" || echo "")
 fi
 
 upload_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
@@ -82,11 +82,15 @@ upload_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
 require_status 201 "$upload_status" "PUT /demo-api/documents/content"
 
 if [ -n "$demo_was_container" ]; then
-  rss_after=$($CONTAINER_RUNTIME exec "$demo_was_container" sh -c "grep VmRSS /proc/1/status | awk '{print \$2}'")
-  rss_delta_kb=$((rss_after - rss_before))
-  log "   demo-was RSS 증가량: ${rss_delta_kb} KiB(기준 ${RSS_CEILING_KB} KiB 미만)"
-  if [ "$rss_delta_kb" -ge "$RSS_CEILING_KB" ]; then
-    fail "업로드 스트리밍 메모리 바운드 위반: RSS가 ${rss_delta_kb} KiB 증가(기준 ${RSS_CEILING_KB} KiB)"
+  rss_after=$($CONTAINER_RUNTIME exec "$demo_was_container" sh -c "grep VmRSS /proc/1/status | awk '{print \$2}'" || echo "")
+  if [ -z "$rss_before" ] || [ -z "$rss_after" ]; then
+    log "   경고: RSS 값을 읽지 못해 메모리 바운드 확인을 건너뜀"
+  else
+    rss_delta_kb=$((rss_after - rss_before))
+    log "   demo-was RSS 증가량: ${rss_delta_kb} KiB(기준 ${RSS_CEILING_KB} KiB 미만)"
+    if [ "$rss_delta_kb" -ge "$RSS_CEILING_KB" ]; then
+      fail "업로드 스트리밍 메모리 바운드 위반: RSS가 ${rss_delta_kb} KiB 증가(기준 ${RSS_CEILING_KB} KiB)"
+    fi
   fi
 else
   log "   경고: 컨테이너 런타임/컨테이너를 찾지 못해 메모리 바운드 확인을 건너뜀"
@@ -177,7 +181,7 @@ dd if=/dev/urandom of="$WORKDIR/oversized.bin" bs=1M count=48 status=none
 oversized_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
   "$BASE_URL/demo-api/documents/content?path=/oversized-${RUN_ID}.bin" \
   -H 'X-Demo-User: alice' -H 'Content-Type: application/octet-stream' \
-  --data-binary "@$WORKDIR/oversized.bin")
+  --data-binary "@$WORKDIR/oversized.bin" || echo "000")
 require_status 413 "$oversized_status" "업로드 상한 초과"
 
 log "전체 smoke test 통과"

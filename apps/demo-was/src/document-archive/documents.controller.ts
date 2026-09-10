@@ -59,7 +59,7 @@ export class DocumentsController {
     });
 
     res.status(201);
-    return entry;
+    return toExternalEntry(user, entry);
   }
 
   @Post('download')

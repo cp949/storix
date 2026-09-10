@@ -147,9 +147,10 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .set('X-Demo-User', 'alice')
       .expect(204);
 
-    await request(app.getHttpServer())
+    const afterDelete = await request(app.getHttpServer())
       .get(`/demo-api/documents?path=${dirPath}`)
       .set('X-Demo-User', 'alice')
       .expect(404);
+    expect(afterDelete.body.code).toBe('VFS_NODE_NOT_FOUND');
   }, 60000);
 });

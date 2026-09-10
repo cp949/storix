@@ -91,4 +91,34 @@ describe('EntriesController', () => {
 
     expect(remove).toHaveBeenCalledWith('/documents/alice/a.txt', false);
   });
+
+  it('move의 source가 root를 벗어나면 403이고 move를 호출하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .post('/demo-api/entries/move')
+      .set('X-Demo-User', 'alice')
+      .send({ source: '../bob/a.txt', destination: '/archive/a.txt' })
+      .expect(403);
+
+    expect(move).not.toHaveBeenCalled();
+  });
+
+  it('copy의 source가 root를 벗어나면 403이고 copy를 호출하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .post('/demo-api/entries/copy')
+      .set('X-Demo-User', 'bob')
+      .send({ source: '../alice/a.txt', destination: '/notes/a-copy.txt' })
+      .expect(403);
+
+    expect(copy).not.toHaveBeenCalled();
+  });
+
+  it('copy의 destination이 root를 벗어나면 403이고 copy를 호출하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .post('/demo-api/entries/copy')
+      .set('X-Demo-User', 'bob')
+      .send({ source: '/notes/a.txt', destination: '../alice/a-copy.txt' })
+      .expect(403);
+
+    expect(copy).not.toHaveBeenCalled();
+  });
 });
