@@ -52,6 +52,21 @@ describe('DocumentsController — PUT content', () => {
     expect(metadata).toEqual({ mimeType: 'text/plain', contentLength: 5 });
   });
 
+  it('같은 path 쿼리가 중복되어 배열로 들어와도 500이 아니라 첫 번째 값을 사용한다', async () => {
+    upload.mockResolvedValue({ path: '/documents/alice/a.txt', name: 'a.txt', type: 'FILE', size: 5, mimeType: 'text/plain', createdAt: '', updatedAt: '', version: 1 });
+
+    const response = await request(app.getHttpServer())
+      .put('/demo-api/documents/content?path=/a.txt&path=/b.txt')
+      .set('X-Demo-User', 'alice')
+      .set('Content-Type', 'text/plain')
+      .send('hello')
+      .expect(201);
+
+    expect(response.body.path).toBe('/documents/alice/a.txt');
+    const [internalPath] = upload.mock.calls[0];
+    expect(internalPath).toBe('/documents/alice/a.txt');
+  });
+
   it('X-Demo-User 헤더가 없으면 400을 반환한다', async () => {
     await request(app.getHttpServer())
       .put('/demo-api/documents/content?path=/a.txt')
@@ -100,6 +115,15 @@ describe('DocumentsController — POST download', () => {
 
     expect(response.body).toEqual({ url: 'http://storage.test/signed', expiresAt: '2026-01-01T00:00:00.000Z' });
     expect(createDownload).toHaveBeenCalledWith('/documents/bob/notes/a.txt');
+  });
+
+  it('body를 아예 보내지 않아도 500이 아니라 정상 처리된다', async () => {
+    createDownload.mockResolvedValue({ url: 'http://storage.test/signed', expiresAt: '2026-01-01T00:00:00.000Z' });
+
+    const response = await request(app.getHttpServer()).post('/demo-api/documents/download').set('X-Demo-User', 'bob').send();
+
+    expect(response.status).not.toBe(500);
+    expect(createDownload).toHaveBeenCalledWith('/documents/bob');
   });
 });
 
