@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Injectable, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ExternalPathResolutionError } from '../document-archive/document-archive.errors.js';
 import { DomainError } from './domain-error.js';
 
 @Catch()
@@ -13,7 +14,9 @@ export class DomainErrorFilter implements ExceptionFilter {
 
     if (exception instanceof DomainError) {
       if (exception.shouldReport) {
-        this.logger.error(exception.message, exception.stack);
+        const internalPathSuffix =
+          exception instanceof ExternalPathResolutionError ? ` (internalPath: ${exception.internalPath})` : '';
+        this.logger.error(`${exception.message}${internalPathSuffix}`, exception.stack);
       }
       response.status(exception.status).json({
         code: exception.code,

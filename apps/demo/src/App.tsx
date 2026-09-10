@@ -27,7 +27,7 @@ function App() {
       </header>
       <ErrorPanel />
       <main>
-        <DocumentArchive user={user} />
+        <DocumentArchive key={user} user={user} />
       </main>
     </ErrorProvider>
   );

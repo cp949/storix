@@ -21,8 +21,10 @@ export class DocumentPathEscapesRootError extends DomainError {
 export class ExternalPathResolutionError extends DomainError {
   readonly code = 'EXTERNAL_PATH_RESOLUTION_FAILED';
   readonly status = 500;
+  readonly internalPath: string;
 
   constructor(internalPath: string) {
-    super(`internalPath가 사용자 root 밖에 있어 외부 경로로 변환할 수 없음: ${internalPath}`);
+    super('내부 경로를 외부 경로로 변환할 수 없음');
+    this.internalPath = internalPath;
   }
 }

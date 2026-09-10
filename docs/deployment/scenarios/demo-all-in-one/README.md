@@ -120,3 +120,8 @@ docker compose \
 - `app:3000`(Storix API 컨테이너)도 base `docker-compose.yml`에 의해 호스트에
   노출된다 — 이 시나리오의 override가 이를 막지 않는다. API key로 보호되지만,
   Nginx만이 유일한 호스트 노출 포트가 아니라는 점을 알아둔다.
+- 공개 발행 URL의 경로 세그먼트는 내부 경로를 키 없는 sha256으로 해시해
+  만든다 — namespace/사용자 식별자를 URL에서 제거할 뿐, 추측 불가능한
+  secret token은 아니다. 데모 사용자명(alice/bob)과 파일명을 아는 제3자는
+  같은 해시를 오프라인으로 계산해 공개 URL을 추측할 수 있다. 실제 서비스에서
+  공개 발행 기능을 쓴다면 이 한계를 감안해야 한다.
