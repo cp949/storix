@@ -84,7 +84,10 @@ storix/
 ├── apps/
 │   ├── api/          @storix/api   — 기존 NestJS 서버. CONTEXT.md, docs/adr/ 포함
 │   ├── admin/        @storix/admin — 보안/로그 관제 UI. Vite 8 + React 19
-│   └── demo/         @storix/demo — api 연동 레퍼런스 예제. Vite 8 + React 19
+│   ├── demo1/        보안 최소화 데모 시나리오
+│   │   ├── web/      @storix/demo1-web — api 연동 레퍼런스 예제. Vite 8 + React 19
+│   │   └── was/      @storix/demo1-was — 공개 HTTP API만 쓰는 외부 소비자 WAS
+│   └── demo2/        (예정) mTLS 등 풀보안 데모 시나리오 — web/was 동일 구조
 ├── packages/                        (CLI/SDK 이름 미정 — 결정 시 추가)
 ├── CONTEXT-MAP.md                   (신규 — 컨텍스트별 CONTEXT.md를 가리킴)
 ├── docs/adr/                        (시스템 전역 결정만: 모노레포 전환 자체 등)

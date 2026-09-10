@@ -14,7 +14,7 @@ services:
   demo-was:
     build:
       context: .
-      dockerfile: apps/demo-was/Dockerfile
+      dockerfile: apps/demo1/was/Dockerfile
     environment:
       DEMO_WAS_PORT: '4000'
       DEMO_WAS_STORIX_BASE_URL: http://app:3000

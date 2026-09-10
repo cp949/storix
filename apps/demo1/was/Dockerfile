@@ -4,19 +4,19 @@ WORKDIR /repo
 
 FROM base AS pruner
 COPY . .
-RUN pnpm dlx turbo prune @storix/demo-was --docker
+RUN pnpm dlx turbo prune @storix/demo1-was --docker
 
 FROM base AS build
 COPY --from=pruner /repo/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /repo/out/full/ .
-RUN pnpm --filter @storix/demo-was build
+RUN pnpm --filter @storix/demo1-was build
 
 FROM base AS runtime
 LABEL org.opencontainers.image.source="https://github.com/cp949/storix"
 ENV NODE_ENV=production
 COPY --from=pruner /repo/out/json/ .
 RUN pnpm install --frozen-lockfile --prod
-COPY --from=build /repo/apps/demo-was/dist ./apps/demo-was/dist
+COPY --from=build /repo/apps/demo1/was/dist ./apps/demo1/was/dist
 EXPOSE 4000
-CMD ["node", "apps/demo-was/dist/main.js"]
+CMD ["node", "apps/demo1/was/dist/main.js"]

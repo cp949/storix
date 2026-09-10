@@ -8,8 +8,8 @@ on:
       - 'docker-compose.versitygw.yml'
       - 'docker-compose.postgres.yml'
       - 'apps/api/**'
-      - 'apps/demo-was/**'
-      - 'apps/demo/**'
+      - 'apps/demo1/was/**'
+      - 'apps/demo1/web/**'
       - 'docs/deployment/scenarios/demo-all-in-one/**'
       - '.github/workflows/demo-all-in-one-smoke.yml'
   pull_request:
@@ -18,8 +18,8 @@ on:
       - 'docker-compose.versitygw.yml'
       - 'docker-compose.postgres.yml'
       - 'apps/api/**'
-      - 'apps/demo-was/**'
-      - 'apps/demo/**'
+      - 'apps/demo1/was/**'
+      - 'apps/demo1/web/**'
       - 'docs/deployment/scenarios/demo-all-in-one/**'
       - '.github/workflows/demo-all-in-one-smoke.yml'
   workflow_dispatch:
@@ -37,7 +37,7 @@ env:
 
 jobs:
   demo-build:
-    name: apps/demo 빌드·타입체크·단위테스트
+    name: apps/demo1/web 빌드·타입체크·단위테스트
     runs-on: ubuntu-24.04
     steps:
       - name: 소스 체크아웃
@@ -55,10 +55,10 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 빌드(typecheck 포함)
-        run: pnpm --filter @storix/demo build
+        run: pnpm --filter @storix/demo1-web build
 
       - name: 단위 테스트
-        run: pnpm --filter @storix/demo test
+        run: pnpm --filter @storix/demo1-web test
 
   smoke:
     name: 문서 아카이브 전체 흐름 + 메모리 바운드 확인

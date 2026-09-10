@@ -30,7 +30,7 @@ Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> St
 
 ## 포함 파일
 
-- [`nginx/Dockerfile`](nginx/Dockerfile): React(`@storix/demo`) production
+- [`nginx/Dockerfile`](nginx/Dockerfile): React(`@storix/demo1-web`) production
   build + nginx:1.29-alpine 런타임
 - [`nginx/default.conf`](nginx/default.conf): `= /health`, `/`, `/demo-api/`,
   `/storix-demo/`, `/api/v1/public/` 5개 location
@@ -44,7 +44,7 @@ Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> St
   이동→인가된 다운로드→영구 공개 발행/취소→삭제→상한 초과/경로 충돌 자동 검증
   + 업로드 스트리밍 메모리 바운드 확인
 
-`apps/demo-was/Dockerfile`은 이 시나리오 전용이 아니라 `apps/demo-was` 자체
+`apps/demo1/was/Dockerfile`은 이 시나리오 전용이 아니라 `apps/demo1/was` 자체
 소유다(다른 배포 조합에서도 재사용 가능하도록).
 
 ## 기동
@@ -81,7 +81,7 @@ query 변조 실패·영구 공개 발행·무인증 공개 다운로드·미발
 
 `smoke-test.sh`는 HTTP 계약만 검증한다. 다음 항목은 `http://localhost:8080/`을
 직접 열어 확인한다(자동화된 브라우저 테스트는 도입하지 않기로 결정함 —
-컴포넌트 단위 테스트는 `pnpm --filter @storix/demo test`로 CI에서 검증됨):
+컴포넌트 단위 테스트는 `pnpm --filter @storix/demo1-web test`로 CI에서 검증됨):
 
 - 파일 선택과 drag-and-drop 업로드, 업로드 진행/완료/실패 표시
 - 디렉터리 이동과 breadcrumb

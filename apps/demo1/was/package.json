@@ -1,5 +1,5 @@
 {
-  "name": "@storix/demo-was",
+  "name": "@storix/demo1-was",
   "version": "0.1.0",
   "description": "Storix 공개 HTTP API만 사용하는 데모용 외부 소비자 WAS",
   "private": true,
