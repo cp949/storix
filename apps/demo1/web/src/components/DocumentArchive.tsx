@@ -4,6 +4,8 @@ import { copyEntry, createDirectory, listDocuments, moveEntry, removeEntry, sear
 import type { DemoUser, FileEntry, PublicLink } from '../api/types';
 import { useErrorReporter } from '../error/ErrorContext';
 import { joinPath } from '../utils/path';
+import { EntryList } from './EntryList';
+import { FolderTree } from './FolderTree';
 
 export interface DocumentArchiveProps {
   readonly user: DemoUser;
@@ -16,21 +18,27 @@ function splitBreadcrumb(path: string): string[] {
 export function DocumentArchive({ user }: DocumentArchiveProps) {
   const [currentPath, setCurrentPath] = useState('/');
   const [items, setItems] = useState<FileEntry[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [newFolderName, setNewFolderName] = useState('');
   const [publishedLinks, setPublishedLinks] = useState<Record<string, PublicLink>>({});
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const { reportError, clearError } = useErrorReporter();
 
   const loadList = useCallback(
     async (path: string) => {
+      setLoading(true);
       try {
         const pageResult = await listDocuments(user, path);
         setItems(pageResult.items);
         clearError();
       } catch (cause) {
         reportError(cause);
+      } finally {
+        setLoading(false);
       }
     },
     [user, reportError, clearError],
@@ -42,16 +50,21 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
 
   useEffect(() => {
     setSearchResults(null);
+    setSelectedPath(null);
     void loadList(currentPath);
   }, [currentPath, loadList]);
 
   async function handleSearch() {
+    setLoading(true);
     try {
       const pageResult = await searchDocuments(user, '/', searchName);
       setSearchResults(pageResult.items);
+      setSelectedPath(null);
       clearError();
     } catch (cause) {
       reportError(cause);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -78,6 +91,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       await createDirectory(user, joinPath(currentPath, name));
       setNewFolderName('');
       clearError();
+      setTreeRefreshKey((key) => key + 1);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -92,6 +106,8 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
     try {
       await moveEntry(user, item.path, destination);
       clearError();
+      setSelectedPath(null);
+      setTreeRefreshKey((key) => key + 1);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -106,6 +122,8 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
     try {
       await copyEntry(user, item.path, destination);
       clearError();
+      setSelectedPath(null);
+      setTreeRefreshKey((key) => key + 1);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -119,6 +137,8 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
     try {
       await removeEntry(user, item.path, item.type === 'DIRECTORY');
       clearError();
+      setSelectedPath(null);
+      setTreeRefreshKey((key) => key + 1);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -174,123 +194,105 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   const visibleItems = searchResults ?? items;
 
   return (
-    <section aria-label="문서 아카이브">
-      <nav aria-label="현재 위치">
-        <button type="button" onClick={() => setCurrentPath('/')}>
-          root
-        </button>
-        {breadcrumbSegments.map((segment, index) => {
-          const path = `/${breadcrumbSegments.slice(0, index + 1).join('/')}`;
-          return (
-            <span key={path}>
-              {' / '}
-              <button type="button" onClick={() => setCurrentPath(path)}>
-                {segment}
-              </button>
-            </span>
-          );
-        })}
-      </nav>
+    <section aria-label="문서 아카이브" className="archive-layout">
+      <aside className="archive-sidebar">
+        <FolderTree user={user} selectedPath={currentPath} onNavigate={setCurrentPath} refreshKey={treeRefreshKey} />
+      </aside>
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleSearch();
-        }}
-      >
-        <label>
-          검색어
-          <input value={searchName} onChange={(event) => setSearchName(event.target.value)} />
-        </label>
-        <button type="submit">검색</button>
-        {searchResults !== null && (
-          <button type="button" onClick={() => setSearchResults(null)}>
-            목록으로 돌아가기
+      <div className="archive-main">
+        <nav aria-label="현재 위치">
+          <button type="button" onClick={() => setCurrentPath('/')}>
+            root
           </button>
-        )}
-      </form>
+          {breadcrumbSegments.map((segment, index) => {
+            const path = `/${breadcrumbSegments.slice(0, index + 1).join('/')}`;
+            return (
+              <span key={path}>
+                {' / '}
+                <button type="button" onClick={() => setCurrentPath(path)}>
+                  {segment}
+                </button>
+              </span>
+            );
+          })}
+        </nav>
 
-      <div
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault();
-          const file = event.dataTransfer.files[0];
-          if (file) {
-            void handleUpload(file);
-          }
-        }}
-      >
-        <label>
-          파일 업로드
-          <input
-            type="file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+        <div className="archive-toolbar">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSearch();
+            }}
+          >
+            <label>
+              검색어
+              <input value={searchName} onChange={(event) => setSearchName(event.target.value)} />
+            </label>
+            <button type="submit">검색</button>
+            {searchResults !== null && (
+              <button type="button" onClick={() => setSearchResults(null)}>
+                목록으로 돌아가기
+              </button>
+            )}
+            <p className="archive-hint">검색은 항상 전체 폴더를 대상으로 합니다.</p>
+          </form>
+
+          <div
+            className="archive-upload"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const file = event.dataTransfer.files[0];
               if (file) {
                 void handleUpload(file);
               }
-              event.target.value = '';
             }}
-          />
-        </label>
-        <p role="status">
-          {uploadStatus === 'uploading' && '업로드중...'}
-          {uploadStatus === 'success' && '업로드 완료'}
-          {uploadStatus === 'error' && '업로드 실패'}
-        </p>
+          >
+            <label>
+              파일 업로드
+              <input
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void handleUpload(file);
+                  }
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            <p role="status">
+              {uploadStatus === 'uploading' && '업로드중...'}
+              {uploadStatus === 'success' && '업로드 완료'}
+              {uploadStatus === 'error' && '업로드 실패'}
+            </p>
+          </div>
+
+          <form onSubmit={handleCreateDirectory}>
+            <label>
+              새 폴더 이름
+              <input value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} />
+            </label>
+            <button type="submit">폴더 만들기</button>
+          </form>
+        </div>
+
+        <EntryList
+          items={visibleItems}
+          selectedPath={selectedPath}
+          loading={loading}
+          publishedLinks={publishedLinks}
+          onSelect={(item) => setSelectedPath(item.path)}
+          onOpenDirectory={(item) => setCurrentPath(item.path)}
+          onMove={handleMove}
+          onCopy={handleCopy}
+          onRemove={handleRemove}
+          onDownload={handleDownload}
+          onPublish={handlePublish}
+          onUnpublish={handleUnpublish}
+          onCopyLink={copyToClipboard}
+        />
       </div>
-
-      <form onSubmit={handleCreateDirectory}>
-        <label>
-          새 폴더 이름
-          <input value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} />
-        </label>
-        <button type="submit">폴더 만들기</button>
-      </form>
-
-      <ul aria-label="문서 목록">
-        {visibleItems.map((item) => (
-          <li key={item.path}>
-            {item.type === 'DIRECTORY' ? (
-              <button type="button" onClick={() => setCurrentPath(item.path)}>
-                📁 {item.name}
-              </button>
-            ) : (
-              <span>📄 {item.name}</span>
-            )}
-            <button type="button" onClick={() => handleMove(item)}>
-              이동
-            </button>
-            <button type="button" onClick={() => handleCopy(item)}>
-              복사
-            </button>
-            <button type="button" onClick={() => handleRemove(item)}>
-              삭제
-            </button>
-            <button type="button" onClick={() => handleDownload(item)}>
-              다운로드
-            </button>
-            {item.type === 'FILE' &&
-              (publishedLinks[item.path] ? (
-                <>
-                  <a href={publishedLinks[item.path].url} target="_blank" rel="noreferrer">
-                    공개 링크
-                  </a>
-                  <button type="button" onClick={() => copyToClipboard(publishedLinks[item.path].url)}>
-                    링크 복사
-                  </button>
-                  <button type="button" onClick={() => handleUnpublish(item)}>
-                    발행 취소
-                  </button>
-                </>
-              ) : (
-                <button type="button" onClick={() => handlePublish(item)}>
-                  발행
-                </button>
-              ))}
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }

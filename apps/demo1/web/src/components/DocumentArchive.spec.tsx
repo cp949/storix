@@ -5,6 +5,7 @@ import type { EntryPage } from '../api/types';
 import { ErrorPanel } from '../error/ErrorPanel';
 import { ErrorProvider } from '../error/ErrorContext';
 import { DocumentArchive } from './DocumentArchive';
+import { FolderTree } from './FolderTree';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -23,6 +24,12 @@ vi.mock('../api/client', async (importOriginal) => {
   };
 });
 
+// FolderTree는 자체 테스트(FolderTree.spec.tsx)에서 검증한다. 여기서는
+// listDocuments 호출 횟수를 DocumentArchive 자체 로직에만 묶어두기 위해
+// 기본은 아무것도 렌더링하지 않는 스텁으로 대체하고, 연동 확인이 필요한
+// 테스트에서만 onNavigate를 노출하는 버튼으로 바꿔 끼운다.
+vi.mock('./FolderTree', () => ({ FolderTree: vi.fn(() => null) }));
+
 function page(items: EntryPage['items']): EntryPage {
   return { items, nextCursor: null };
 }
@@ -38,27 +45,31 @@ const entryA = {
   version: 1,
 };
 
+const dirReports = {
+  path: '/reports',
+  name: 'reports',
+  type: 'DIRECTORY' as const,
+  size: null,
+  mimeType: null,
+  createdAt: '',
+  updatedAt: '',
+  version: 1,
+};
+
+async function selectRow(text: string) {
+  fireEvent.click(await screen.findByText(text, { exact: false }));
+}
+
 describe('DocumentArchive', () => {
   beforeEach(() => {
     vi.mocked(listDocuments).mockReset();
     vi.mocked(searchDocuments).mockReset();
+    vi.mocked(FolderTree).mockClear();
+    vi.mocked(FolderTree).mockImplementation((() => null) as unknown as typeof FolderTree);
   });
 
   it('마운트되면 root 목록을 불러와 표시한다', async () => {
-    vi.mocked(listDocuments).mockResolvedValue(
-      page([
-        {
-          path: '/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
-    );
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
 
     render(
       <ErrorProvider>
@@ -70,21 +81,29 @@ describe('DocumentArchive', () => {
     expect(listDocuments).toHaveBeenCalledWith('alice', '/');
   });
 
-  it('디렉터리를 클릭하면 그 경로로 다시 목록을 불러온다', async () => {
-    vi.mocked(listDocuments).mockResolvedValueOnce(
-      page([
-        {
-          path: '/reports',
-          name: 'reports',
-          type: 'DIRECTORY',
-          size: null,
-          mimeType: null,
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
+  it('사이드바 트리에서 폴더로 이동하면 그 경로로 목록을 다시 불러온다', async () => {
+    vi.mocked(listDocuments).mockResolvedValueOnce(page([dirReports]));
+    vi.mocked(listDocuments).mockResolvedValueOnce(page([]));
+    vi.mocked(FolderTree).mockImplementation(({ onNavigate }) => (
+      <button type="button" onClick={() => onNavigate('/reports')}>
+        tree-nav-reports
+      </button>
+    ));
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
     );
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledWith('alice', '/'));
+
+    fireEvent.click(screen.getByText('tree-nav-reports'));
+
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledWith('alice', '/reports'));
+  });
+
+  it('디렉터리를 선택하고 열기를 누르면 그 경로로 목록을 다시 불러온다', async () => {
+    vi.mocked(listDocuments).mockResolvedValueOnce(page([dirReports]));
     vi.mocked(listDocuments).mockResolvedValueOnce(page([]));
 
     render(
@@ -93,27 +112,15 @@ describe('DocumentArchive', () => {
       </ErrorProvider>,
     );
 
-    fireEvent.click(await screen.findByText('reports', { exact: false }));
+    await selectRow('reports');
+    fireEvent.click(screen.getByText('열기'));
 
     await waitFor(() => expect(listDocuments).toHaveBeenCalledWith('alice', '/reports'));
   });
 
   it('검색을 실행하면 결과로 목록이 대체되고, 돌아가기를 누르면 원래 목록으로 복귀한다', async () => {
     vi.mocked(listDocuments).mockResolvedValue(page([]));
-    vi.mocked(searchDocuments).mockResolvedValue(
-      page([
-        {
-          path: '/found.txt',
-          name: 'found.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
-    );
+    vi.mocked(searchDocuments).mockResolvedValue(page([{ ...entryA, path: '/found.txt', name: 'found.txt' }]));
 
     render(
       <ErrorProvider>
@@ -128,7 +135,7 @@ describe('DocumentArchive', () => {
 
     fireEvent.click(screen.getByText('목록으로 돌아가기'));
 
-    await waitFor(() => expect(screen.queryByText('found.txt')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('found.txt', { exact: false })).toBeNull());
   });
 
   it('사용자를 전환하면 경로가 root로 리셋되고 새 사용자로 목록을 다시 불러온다', async () => {
@@ -152,16 +159,7 @@ describe('DocumentArchive', () => {
 
   it('파일을 선택하면 현재 경로에 업로드하고 성공 후 목록을 새로고침한다', async () => {
     vi.mocked(listDocuments).mockResolvedValue(page([]));
-    vi.mocked(uploadDocument).mockResolvedValue({
-      path: '/a.txt',
-      name: 'a.txt',
-      type: 'FILE',
-      size: 5,
-      mimeType: 'text/plain',
-      createdAt: '',
-      updatedAt: '',
-      version: 1,
-    });
+    vi.mocked(uploadDocument).mockResolvedValue({ ...entryA, size: 5 });
 
     render(
       <ErrorProvider>
@@ -200,16 +198,7 @@ describe('DocumentArchive', () => {
 
   it('drag-and-drop으로도 같은 경로에 업로드된다', async () => {
     vi.mocked(listDocuments).mockResolvedValue(page([]));
-    vi.mocked(uploadDocument).mockResolvedValue({
-      path: '/b.txt',
-      name: 'b.txt',
-      type: 'FILE',
-      size: 1,
-      mimeType: 'text/plain',
-      createdAt: '',
-      updatedAt: '',
-      version: 1,
-    });
+    vi.mocked(uploadDocument).mockResolvedValue({ ...entryA, path: '/b.txt', name: 'b.txt' });
 
     render(
       <ErrorProvider>
@@ -241,21 +230,8 @@ describe('DocumentArchive', () => {
     await waitFor(() => expect(createDirectory).toHaveBeenCalledWith('alice', '/reports'));
   });
 
-  it('이동 버튼을 누르면 prompt로 받은 대상 경로로 이동을 요청한다', async () => {
-    vi.mocked(listDocuments).mockResolvedValue(
-      page([
-        {
-          path: '/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
-    );
+  it('항목을 선택하고 이동 버튼을 누르면 prompt로 받은 대상 경로로 이동을 요청한다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
     vi.mocked(moveEntry).mockResolvedValue(undefined);
     vi.spyOn(window, 'prompt').mockReturnValue('/archive/a.txt');
 
@@ -264,26 +240,14 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('이동'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('이동'));
 
     await waitFor(() => expect(moveEntry).toHaveBeenCalledWith('alice', '/a.txt', '/archive/a.txt'));
   });
 
-  it('삭제는 confirm에서 취소하면 removeEntry를 호출하지 않는다', async () => {
-    vi.mocked(listDocuments).mockResolvedValue(
-      page([
-        {
-          path: '/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
-    );
+  it('선택 후 삭제는 confirm에서 취소하면 removeEntry를 호출하지 않는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
     vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(
@@ -291,26 +255,14 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('삭제'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('삭제'));
 
     expect(removeEntry).not.toHaveBeenCalled();
   });
 
   it('root 밖으로 이동을 시도해 403이 나면 오류 패널에 그대로 표시된다(경로 이탈 데모)', async () => {
-    vi.mocked(listDocuments).mockResolvedValue(
-      page([
-        {
-          path: '/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ]),
-    );
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
     vi.mocked(moveEntry).mockRejectedValue(new ApiError(403, 'DOCUMENT_PATH_ESCAPES_ROOT', 'req-9', '경로 이탈'));
     vi.spyOn(window, 'prompt').mockReturnValue('../bob/secret.txt');
 
@@ -320,12 +272,13 @@ describe('DocumentArchive', () => {
         <ErrorPanel />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('이동'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('이동'));
 
     expect(await screen.findByText(/DOCUMENT_PATH_ESCAPES_ROOT/)).toBeTruthy();
   });
 
-  it('다운로드 버튼을 누르면 presigned URL을 새 창으로 연다', async () => {
+  it('선택 후 다운로드 버튼을 누르면 presigned URL을 새 창으로 연다', async () => {
     vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
     vi.mocked(createDownload).mockResolvedValue({ url: 'http://signed.test/x', expiresAt: '2026-01-01T00:00:00.000Z' });
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
@@ -335,12 +288,13 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('다운로드'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('다운로드'));
 
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith('http://signed.test/x', '_blank'));
   });
 
-  it('발행을 확인하면 공개 링크와 복사/발행취소 버튼이 나타난다', async () => {
+  it('선택 후 발행을 확인하면 공개 링크와 복사/발행취소 버튼이 나타난다', async () => {
     vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
     vi.mocked(publishDocument).mockResolvedValue({ url: 'http://public.test/x', publicPath: 'abcd1234/a.txt' });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -350,7 +304,8 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('발행'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('발행'));
 
     expect(await screen.findByText('공개 링크')).toBeTruthy();
     expect(screen.getByText('발행 취소')).toBeTruthy();
@@ -365,7 +320,8 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('발행'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('발행'));
 
     expect(publishDocument).not.toHaveBeenCalled();
   });
@@ -381,7 +337,8 @@ describe('DocumentArchive', () => {
         <DocumentArchive user="alice" />
       </ErrorProvider>,
     );
-    fireEvent.click(await screen.findByText('발행'));
+    await selectRow('a.txt');
+    fireEvent.click(screen.getByText('발행'));
     fireEvent.click(await screen.findByText('발행 취소'));
 
     await waitFor(() => expect(screen.queryByText('공개 링크')).toBeNull());
