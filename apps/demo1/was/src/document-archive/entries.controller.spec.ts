@@ -46,7 +46,7 @@ describe('EntriesController', () => {
       .post('/demo-api/entries/move')
       .set('X-Demo-User', 'alice')
       .send({ source: '/a.txt', destination: '/archive/a.txt' })
-      .expect(201);
+      .expect(204);
 
     expect(move).toHaveBeenCalledWith('/documents/alice/a.txt', '/documents/alice/archive/a.txt');
   });
@@ -68,7 +68,7 @@ describe('EntriesController', () => {
       .post('/demo-api/entries/copy')
       .set('X-Demo-User', 'bob')
       .send({ source: '/notes/a.txt', destination: '/notes/a-copy.txt' })
-      .expect(201);
+      .expect(204);
 
     expect(copy).toHaveBeenCalledWith('/documents/bob/notes/a.txt', '/documents/bob/notes/a-copy.txt');
   });

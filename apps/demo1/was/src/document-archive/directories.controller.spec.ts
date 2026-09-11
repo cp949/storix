@@ -42,7 +42,7 @@ describe('DirectoriesController — POST /demo-api/directories', () => {
       .post('/demo-api/directories')
       .set('X-Demo-User', 'alice')
       .send({ path: '/reports' })
-      .expect(201);
+      .expect(204);
 
     expect(createDirectory).toHaveBeenCalledWith('/documents/alice/reports');
   });

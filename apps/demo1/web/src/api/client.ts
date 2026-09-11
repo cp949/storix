@@ -29,11 +29,11 @@ async function request<T>(user: DemoUser, path: string, init?: RequestInit): Pro
     );
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
+  // 204는 물론, 본문 없는 성공 응답(예: 백엔드가 실수로 204 대신 기본
+  // 상태코드를 반환하는 경우)도 JSON.parse가 빈 문자열에서 SyntaxError를
+  // 던지지 않도록 파싱 전에 본문 존재 여부를 먼저 확인한다.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export function listDocuments(user: DemoUser, path: string, cursor?: string): Promise<EntryPage> {

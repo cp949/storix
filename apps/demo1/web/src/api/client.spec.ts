@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, listDocuments } from './client';
+import { ApiError, createDirectory, listDocuments } from './client';
 
 describe('listDocuments', () => {
   afterEach(() => {
@@ -29,5 +29,23 @@ describe('listDocuments', () => {
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 400, code: 'DEMO_USER_REQUIRED', requestId: 'req-1' });
+  });
+});
+
+describe('createDirectory', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('204 No Content 응답을 파싱 시도 없이 처리한다', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(createDirectory('alice', '/reports')).resolves.toBeUndefined();
+  });
+
+  it('본문 없는 201 응답도(구현이 실수로 되돌아가도) JSON 파싱 에러 없이 처리한다', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 201 }));
+
+    await expect(createDirectory('alice', '/reports')).resolves.toBeUndefined();
   });
 });

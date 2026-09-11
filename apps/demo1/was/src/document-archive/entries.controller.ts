@@ -8,10 +8,11 @@ import { resolveInternalPath } from './path-guard.js';
 export class EntriesController {
   constructor(private readonly storixClient: StorixClient) {}
 
-  // POST의 Nest 기본 성공 상태 코드가 이미 201이므로 move/copy에는 별도
-  // @HttpCode가 필요 없다(documents.controller.ts의 publish()와 동일한 관례).
-  // DELETE는 기본이 200이라 remove()에는 @HttpCode(204)가 필요하다.
+  // move/copy/remove 전부 본문 없는 성공 응답이므로 204로 통일한다. Nest
+  // 기본값(POST 201/DELETE 200)을 그대로 두면 프론트엔드 request()가 빈
+  // 바디를 response.json()으로 파싱하려다 SyntaxError를 던진다.
   @Post('move')
+  @HttpCode(204)
   async move(
     @Headers('x-demo-user') demoUserHeader: string | undefined,
     @Body() body: { source?: string; destination?: string },
@@ -23,6 +24,7 @@ export class EntriesController {
   }
 
   @Post('copy')
+  @HttpCode(204)
   async copy(
     @Headers('x-demo-user') demoUserHeader: string | undefined,
     @Body() body: { source?: string; destination?: string },
