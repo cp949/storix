@@ -92,7 +92,7 @@ repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유�
 | raw SQL의 timestamp 읽기 | SQLite는 `Date`가 아니라 공백 구분 문자열(`2026-09-08 23:02:01`)을 돌려준다. `new Date()`에 그대로 넘기면 V8이 로컬 타임존으로 해석해 컨테이너 타임존이 UTC가 아닐 때 시각이 조용히 틀어진다. raw 경로는 `T`·`Z`를 보정하는 `parseSqlTimestamp`를 거친다. TypeORM 엔티티 경로는 이 보정을 이미 한다 |
 | `LIKE` 대소문자 | SQLite는 기본이 ASCII 대소문자 무시다. 연결 직후 `PRAGMA case_sensitive_like = ON`을 한 번 실행해 Postgres와 맞춘다(`persistence.module.ts`) |
 | 재귀 CTE 상한 | Postgres는 바깥 `SELECT`의 `LIMIT`으로 CTE 평가가 멈춘다. SQLite는 재귀 항 안쪽 `LIMIT`이 있어야 큐 확장이 멈춘다. 상한이 필요한 재귀 쿼리는 위치를 드라이버별로 나눈다 |
-| row lock | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. 단일 프로세스에서는 이벤트 루프와 `better-sqlite3`의 동기 실행이 쿼리 순서를 보장한다 |
+| row lock | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. `better-sqlite3`의 동기 실행은 개별 쿼리의 순서만 보장한다. 연결 하나를 모든 요청이 공유하고 앱에 트랜잭션 직렬화 장치가 없어, 겹친 요청의 트랜잭션은 격리되지 않고 오류로 끝날 수 있다([02](./02-receipt-error-replay.md) 6절) |
 | 트랜잭션 격리 | Postgres는 읽기 스냅샷에 `REPEATABLE READ`를 지정하고, SQLite는 기본 트랜잭션을 쓴다 |
 
 새 raw SQL을 추가할 때는 위 표의 항목에 해당하는지 먼저 확인한다. 해당하지 않는 SQL은 분기 없이 공유한다.

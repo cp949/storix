@@ -12,3 +12,4 @@
 | 문서 | 내용 |
 | --- | --- |
 | [01-db-driver-portability.md](./01-db-driver-portability.md) | PostgreSQL·SQLite 두 드라이버의 공유 코드와 분기 규칙: 스키마·쿼리·GC 락·백업/복구·테스트 구조 |
+| [02-receipt-error-replay.md](./02-receipt-error-replay.md) | 조건부 mutation receipt의 결정적 4xx 저장·재생 경계, 오류 분류표, 412 `current`, snapshot `sourceRevision`, 드라이버별 직렬화와 검증 범위 |

@@ -108,18 +108,39 @@ paths:
       tags: [fs]
       description: |
         mkdir/delete/move/copy를 원자적으로 적용한다. 같은 scope와 UUID key의
-        같은 raw JSON bytes는 최초 status, body, X-Request-Id를 30일간 재생한다.
+        같은 raw JSON bytes는 최초 status, body, X-Request-Id를 완료 시점부터 30일간 재생한다.
         receipt identity는 namespace/scope/key이며 fingerprint에는 method, route,
         정규화 command와 exact raw JSON SHA-256이 포함된다. 다른 요청으로 key를
-        재사용하면 409 MUTATION_KEY_REUSED다. Node/Blob 참조/revision 변경과 완료
-        receipt는 한 transaction으로 커밋한다. 경로 검증 오류, 조건 불일치,
-        일시적 DB 오류와 413은 완료 receipt로 보존하지 않는다.
-        진행 중인 key는 409와 Retry-After를 반환한다.
+        재사용하면 409 MUTATION_KEY_REUSED다. 성공 시 Node/Blob 참조/revision 변경과
+        receipt는 한 transaction으로 커밋한다.
+
+        **오류 재생.** 요청 파싱·작업 단계의 결정적 4xx(400 `VFS_INVALID_PATH`와
+        요청 형식 오류, 404, 409, 412, 428, 상한 초과 413)는 receipt에 저장하고, 저장이 끝난
+        뒤에만 응답한다. 파싱은 claim 전에 실행하고 그 오류는 claim을 소유한 요청만 저장하므로,
+        같은 key의 완료 receipt(재생 또는 409 MUTATION_KEY_REUSED)와 진행 중 claim
+        (409 MUTATION_IN_PROGRESS)이 파싱 오류보다 우선한다. 작업 단계 오류는 변경을 롤백한 뒤
+        별도 transaction으로 저장한다. 같은 key와 같은
+        fingerprint의 재시도는 그 사이 상태가 바뀌었더라도 최초 status, body,
+        X-Request-Id를 완료 시점부터 30일간 재생한다. 따라서 404·412·413 뒤 상태를 고치고
+        같은 key로 재시도하면 최초 오류가 재생되므로 새 key를 사용해야 한다. 경로를 고친
+        요청은 fingerprint가 달라 같은 key에서 409 MUTATION_KEY_REUSED다.
+        재생하지 않는 응답: 5xx, DB/storage 일시 오류, 진행 중 key(409 MUTATION_IN_PROGRESS),
+        409 MUTATION_KEY_REUSED, 401. 이 응답들은 receipt를 남기지 않고 재시도가 다시 평가한다.
+        `Retry-After`는 저장하지 않는다.
+
+        **재생 불가 오류.** fingerprint를 만들기 전에 끝나는 다음 오류는 receipt가 없다.
+        JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/`X-Mutation-Scope` 400,
+        namespace 부재 404(receipt가 namespace를 참조하므로 저장 불가). 같은 요청을 재시도하면
+        같은 상한과 상태에서 같은 결과가 나오지만 최초 응답 bytes와 X-Request-Id의 동일성은
+        보장하지 않는다.
+
+        412 body는 `current`(충돌 시점의 대상 노드 metadata, 없으면 null)를 포함하며
+        재생 시에도 최초 값이다. 진행 중인 key는 409와 Retry-After를 반환한다.
         이 조건부 endpoint의 모든 경로(path, source, destination)는 각 segment가
         NFC 형식이어야 한다. 분해된 Unicode 경로는 정규화하지 않고 400
         VFS_INVALID_PATH로 거부한다. 기존 비조건부 경로 endpoint에는 이 규칙을 적용하지 않는다.
-        400 VFS_INVALID_PATH는 완료 receipt를 저장하지 않으므로 같은 scope와 key로
-        NFC 경로를 고친 요청을 재시도할 수 있다.
+        400 VFS_INVALID_PATH도 receipt로 저장되므로 경로를 고쳐 같은 key로 재시도하면
+        409 MUTATION_KEY_REUSED이며 새 key가 필요하다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - name: Idempotency-Key
@@ -183,7 +204,11 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: key 재사용 또는 진행 중인 claim; 진행 중이면 Retry-After 헤더 반환
+          description: |
+            도메인 충돌(`VFS_NOT_DIRECTORY` 경로 중간이 파일, `VFS_DIRECTORY_NOT_EMPTY` 비재귀 delete,
+            `VFS_INVALID_OPERATION` 디렉터리를 자기 subtree로 move/copy, `VFS_REVISION_EXHAUSTED`)은
+            receipt로 재생된다. key 재사용(`MUTATION_KEY_REUSED`)과 진행 중인 claim
+            (`MUTATION_IN_PROGRESS`, Retry-After 헤더 반환)은 재생 대상이 아니다.
           headers:
             Retry-After:
               description: 진행 중인 claim의 재시도 대기 시간(초). 그 외 409에는 생략.
@@ -192,12 +217,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '412':
-          description: revision 불일치 또는 목적지 존재
+          description: revision 불일치 또는 목적지 존재. body의 `current`는 충돌 시점 metadata이며 receipt로 재생된다.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: 동기 삭제·복사 상한 초과
+          description: 동기 삭제·복사 상한 초과(receipt로 재생) 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -419,18 +444,46 @@ paths:
       description: |
         이미 존재하는 부모 아래에 파일을 생성하거나 수정한다. UUID key와 scope를
         동일하게 재사용하면 저장 없이 raw body를 해시해 최초 status/body와
-        X-Request-Id를 완료 시점부터 최소 30일간 재생한다. receipt identity는
+        X-Request-Id를 완료 시점부터 30일간 재생한다. receipt identity는
         namespace/scope/key이며 fingerprint에는 method, route, path, 조건, 정규화 MIME,
-        raw body SHA-256이 포함된다. 다른 요청의 key 재사용은 409다. Node/Blob
-        참조/revision 변경과 완료 receipt는 한 transaction으로 커밋한다.
-        경로 검증 오류, 조건 불일치, 일시적 DB/storage 오류와 413은 완료 receipt로
-        보존하지 않는다.
+        raw body SHA-256이 포함된다. 경로가 정규화에 실패하거나 루트 경로 `/`라 거부되면 원본 경로
+        문자열이, 조건 헤더가 유효하지 않거나 경로가 거부돼 조건을 검사하지 않으면 원본 헤더 값이
+        fingerprint에 들어간다.
+        이 endpoint는 릴리즈된 버전에 없다. 이 fingerprint 규칙 이전의 미릴리즈 중간 빌드는
+        파싱 단계 오류(428, 조건 헤더·revision 400, 유효한 헤더로 보낸 루트 경로 `/` 400)를
+        조건 자리에 고정 문자열 `invalid`를 넣은 fingerprint로 저장했으므로, 그 receipt와 같은
+        요청의 재시도는 최대 30일 동안 409 MUTATION_KEY_REUSED다.
+        다른 요청의 key 재사용은 409 MUTATION_KEY_REUSED다. 성공 시 Node/Blob
+        참조/revision 변경과 receipt는 한 transaction으로 커밋한다.
+
+        **오류 재생.** 결정적 4xx는 receipt에 저장하고 저장이 끝난 뒤에만 응답한다.
+        파싱 단계 오류(400 `VFS_INVALID_PATH`, 루트 경로 `/`·조건 헤더·revision 형식 400, 428)는
+        claim 전에 판정해 보류하고 claim을 소유한 요청만 저장하므로, 같은 key의 완료 receipt
+        (재생 또는 409 MUTATION_KEY_REUSED)와 진행 중 claim(409 MUTATION_IN_PROGRESS)이 우선한다.
+        파싱 단계 오류는 업로드와 작업 transaction 없이 raw body를 끝까지 해시해 fingerprint를
+        만든 뒤 저장한다. 작업 단계 오류(404 부모 부재 또는 `X-If-Revision` 대상 부재, 409, 412)는
+        변경 롤백 → 업로드한 object 삭제 → 별도 transaction으로 receipt 저장 순서로 처리한다. 같은 key와
+        같은 fingerprint의 재시도는 그 사이 상태가 바뀌었더라도 최초 status, body,
+        X-Request-Id를 30일간 재생한다. 따라서 404·412 뒤 상태를 고치고 같은 key로
+        재시도하면 최초 오류가 재생되므로 새 key를 사용해야 한다. 경로나 헤더를 고친 요청은
+        fingerprint가 달라 같은 key에서 409 MUTATION_KEY_REUSED다.
+        재생하지 않는 응답: 5xx, DB/storage 일시 오류, 진행 중 key(409 MUTATION_IN_PROGRESS),
+        409 MUTATION_KEY_REUSED, 401. `Retry-After`는 저장하지 않는다.
+
+        **재생 불가 오류.** fingerprint(raw body SHA-256)를 만들기 전에 끝나는 다음 오류는
+        receipt가 없다: `Content-Length` 형식 오류 400, 선언 길이가 파일 크기 상한을 넘는 413,
+        스트리밍 중 상한 초과 413, 잘못된 `Idempotency-Key`/`X-Mutation-Scope` 400,
+        namespace 부재 404(receipt가 namespace를 참조하므로 저장 불가). 같은 요청을 재시도하면
+        같은 상한과 상태에서 같은 결과가 나오지만 최초 응답 bytes와 X-Request-Id의 동일성은
+        보장하지 않는다. 파일 크기 상한 413은 재생 대상이 아니다.
+
+        412 body는 `current`(충돌 시점의 대상 노드 metadata)를 포함하며 재생 시에도 최초 값이다.
         `X-If-Absent`와 `X-If-Revision`은 정확히 하나만 지정한다.
         이 조건부 endpoint의 path는 각 segment가 NFC 형식이어야 한다.
         분해된 Unicode 경로는 정규화하지 않고 400 VFS_INVALID_PATH로 거부한다.
         기존 비조건부 content 경로에는 이 규칙을 적용하지 않는다.
-        400 VFS_INVALID_PATH는 완료 receipt를 저장하지 않으므로 같은 scope와 key로
-        NFC 경로를 고친 요청을 재시도할 수 있다.
+        400 VFS_INVALID_PATH도 receipt로 저장되므로 경로를 고쳐 같은 key로 재시도하면
+        409 MUTATION_KEY_REUSED이며 새 key가 필요하다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - name: path
@@ -482,7 +535,11 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: key 재사용 또는 진행 중인 claim; 진행 중이면 Retry-After 반환
+          description: |
+            도메인 충돌(`VFS_NOT_DIRECTORY` 부모 경로 중간이 파일, `VFS_IS_DIRECTORY` `X-If-Revision`이
+            디렉터리 revision과 일치, `VFS_REVISION_EXHAUSTED`)은 receipt로 재생된다. key 재사용
+            (`MUTATION_KEY_REUSED`)과 진행 중인 claim(`MUTATION_IN_PROGRESS`, Retry-After 반환)은
+            재생 대상이 아니다.
           headers:
             Retry-After:
               description: 진행 중인 claim의 재시도 대기 시간(초). 그 외 409에는 생략.
@@ -491,12 +548,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '412':
-          description: revision 불일치 또는 대상 존재
+          description: revision 불일치 또는 대상 존재. body의 `current`는 충돌 시점 metadata이며 receipt로 재생된다.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: 파일 크기 상한 초과
+          description: 파일 크기 상한 초과(선언 길이 또는 스트리밍 중 초과). receipt가 없어 재생하지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -893,11 +950,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '412':
-          description: cursor의 디렉터리 revision이 현재와 다름(`VFS_PRECONDITION_FAILED`)
+          description: cursor의 디렉터리 revision이 현재와 다름(`VFS_PRECONDITION_FAILED`). body의 `current`는 현재 디렉터리 metadata다. 조회 API라 receipt는 없다.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/PreconditionFailedResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v1/namespaces/{namespaceId}/fs/stat:
@@ -1028,10 +1085,34 @@ paths:
         nodeCount는 root를 포함한 모든 파일·디렉터리 수이고 logicalBytes는 파일 크기 합의
         십진 문자열이다. FILE의 nodeCount는 1이다. 원본 이동·수정·삭제 이후에도 유지하며
         자동 TTL 없이 명시적으로 삭제한다. 모든 manifest의 logicalBytes를 보존 예산에 합산한다.
-        identity는 namespace/scope/key이다. 동일 요청은 최소 30일 동안 최초 status/body와
-        X-Request-Id를 재생한다. method, canonical route/path, 정규화 command 및 exact raw JSON
+        identity는 namespace/scope/key이다. method, canonical route/path, 정규화 command 및 exact raw JSON
         SHA-256을 fingerprint에 포함하므로 공백만 변경해도 MUTATION_KEY_REUSED다.
-        일시적 DB/storage 오류와 413은 완료 receipt로 보존하지 않는다.
+
+        **sourceRevision 조건.** FILE 요청은 선택 필드 `sourceRevision`(`r1.` revision)을 받을 수 있다.
+        원본의 현재 revision이 다르면 snapshot을 만들지 않고 412를 반환한다. 비교는 캡처와 같은
+        transaction에서 수행한다. PostgreSQL에서는 namespace root 행 잠금 아래라 비교와 캡처
+        사이에 원본 변경이 끼어들지 않는다. 불일치 시 snapshot, manifest, Blob 참조, 보존 예산 사용량을 만들지 않는다.
+        검사 순서는 원본 부재 404, 디렉터리 409, revision 불일치 412다. 문자열이 아닌
+        `sourceRevision`(null, 숫자, 불리언, 객체, 배열)과 TREE 요청의 `sourceRevision`은
+        400 `VFS_INVALID_MUTATION_REQUEST`, 문자열이지만 형식이 잘못되면 400 `VFS_INVALID_REVISION`이다.
+        키를 생략하면 조건 없이 캡처한다. 같은 key에서
+        `sourceRevision`만 바꾸거나 추가·제거하면 fingerprint가 달라 409 MUTATION_KEY_REUSED다.
+        412 body의 `current`는 충돌 시점의 원본 metadata다.
+        SQLite에서는 같은 프로세스 안에서도 동시 요청의 트랜잭션이 직렬화되지 않아 비교와 캡처의
+        원자성을 동시 요청에 대해 보장하지 않는다(`docs/design/02-receipt-error-replay.md`).
+
+        **오류 재생.** 요청 파싱·작업 단계의 결정적 4xx(400, 404, 409, 412,
+        `VFS_SNAPSHOT_LIMIT_EXCEEDED` 413)는 receipt에 저장하고 저장이 끝난 뒤에만 응답한다.
+        파싱은 claim 전에 실행하고 그 오류는 claim을 소유한 요청만 저장하므로, 같은 key의 완료
+        receipt(재생 또는 409 MUTATION_KEY_REUSED)와 진행 중 claim(409 MUTATION_IN_PROGRESS)이
+        파싱 오류보다 우선한다. 작업 단계 오류는 롤백 뒤 별도 transaction으로 저장한다. 같은 key와 같은 fingerprint의 재시도는 그 사이 상태가
+        바뀌었더라도 최초 status, body, X-Request-Id를 완료 시점부터 30일간 재생한다.
+        따라서 404·412·413 뒤 상태를 고치고 같은 key로 재시도하면 최초 오류가 재생되므로
+        새 key를 사용해야 한다. 재생하지 않는 응답: 5xx, DB/storage 일시 오류, 진행 중 key
+        (409 MUTATION_IN_PROGRESS), 409 MUTATION_KEY_REUSED, 401. `Retry-After`는 저장하지 않는다.
+        재생 불가 오류(receipt 없음): JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/
+        `X-Mutation-Scope` 400, namespace 부재 404. 같은 상한과 상태에서는 같은 결과가 나오지만
+        최초 응답 bytes와 X-Request-Id의 동일성은 보장하지 않는다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - name: Idempotency-Key
@@ -1056,6 +1137,10 @@ paths:
                 path:
                   type: string
                   description: FILE은 절대 파일 경로, TREE는 절대 디렉터리 경로(/ 허용). 중복 slash와 dot 구간은 제거하며 .., backslash, 제어 문자는 거부한다.
+                sourceRevision:
+                  type: string
+                  pattern: '^r1\.'
+                  description: FILE 전용 선택 조건. 원본의 현재 revision과 다르면 412. TREE에 지정하면 400 `VFS_INVALID_MUTATION_REQUEST`.
       responses:
         '201':
           description: 생성 완료 또는 최초 응답 재생
@@ -1071,7 +1156,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: VFS_IS_DIRECTORY, VFS_NOT_DIRECTORY, MUTATION_KEY_REUSED 또는 MUTATION_IN_PROGRESS
+          description: VFS_IS_DIRECTORY·VFS_NOT_DIRECTORY(receipt로 재생), MUTATION_KEY_REUSED 또는 MUTATION_IN_PROGRESS(재생 대상 아님)
           headers:
             Retry-After:
               description: MUTATION_IN_PROGRESS 재시도까지 초
@@ -1079,8 +1164,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '412':
+          description: FILE `sourceRevision`이 원본의 현재 revision과 다름(`VFS_PRECONDITION_FAILED`). body의 `current`는 충돌 시점 원본 metadata이며 receipt로 재생된다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: VFS_SNAPSHOT_LIMIT_EXCEEDED 또는 JSON 본문 16 KiB 초과
+          description: VFS_SNAPSHOT_LIMIT_EXCEEDED(receipt로 재생) 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1216,8 +1306,23 @@ paths:
         Node/Blob 참조/revision/receipt는 한 transaction으로 커밋한다.
         같은 Blob으로 교체하면 참조 변화량은 0이며 현재 파일과 조상 revision은 갱신한다.
         namespace/scope/key, method, canonical route/command, exact raw JSON SHA-256을 식별한다.
-        완료 결과의 status/body/X-Request-Id를 최소 30일 재생한다. 조건 불일치와 transient
-        DB 오류는 완료 receipt로 고정하지 않는다. 다른 bytes/route/조건의 key 재사용은 409다.
+        완료 결과의 status/body/X-Request-Id를 완료 시점부터 30일 재생한다. 다른 bytes/route/조건의
+        key 재사용은 409 MUTATION_KEY_REUSED다.
+
+        **오류 재생.** 요청 파싱·작업 단계의 결정적 4xx(400, 404, 409, 412, 428)는 receipt에
+        저장하고 저장이 끝난 뒤에만 응답한다. 파싱은 claim 전에 실행하고 그 오류는 claim을 소유한
+        요청만 저장하므로, 같은 key의 완료 receipt(재생 또는 409 MUTATION_KEY_REUSED)와 진행 중
+        claim(409 MUTATION_IN_PROGRESS)이 파싱 오류보다 우선한다. 작업 단계 오류는 롤백 뒤 별도
+        transaction으로 저장한다. 같은 key와 같은
+        fingerprint의 재시도는 그 사이 상태가 바뀌었더라도 최초 status, body, X-Request-Id를
+        재생한다. 따라서 404·412 뒤 상태를 고치고 같은 key로 재시도하면 최초 오류가 재생되므로
+        새 key를 사용해야 한다. 재생하지 않는 응답: 5xx, DB/storage 일시 오류, 진행 중 key
+        (409 MUTATION_IN_PROGRESS), 409 MUTATION_KEY_REUSED, 401. `Retry-After`는 저장하지 않는다.
+        재생 불가 오류(receipt 없음): JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/
+        `X-Mutation-Scope` 400, UUID 형식이 아닌 `snapshotId` 404, namespace 부재 404.
+        같은 상한과 상태에서는 같은 결과가 나오지만 최초 응답 bytes와 X-Request-Id의 동일성은
+        보장하지 않는다.
+        412 body의 `current`는 충돌 시점의 target metadata이며 재생 시에도 최초 값이다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - $ref: '#/components/parameters/SnapshotId'
@@ -1263,7 +1368,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '409':
-          description: target이 directory, MUTATION_KEY_REUSED 또는 MUTATION_IN_PROGRESS
+          description: target이 directory 등 도메인 409(receipt로 재생), MUTATION_KEY_REUSED 또는 MUTATION_IN_PROGRESS(재생 대상 아님)
           headers:
             Retry-After:
               description: MUTATION_IN_PROGRESS 재시도까지 초
@@ -1272,12 +1377,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '412':
-          description: ifAbsent target 존재 또는 ifRevision 불일치
+          description: ifAbsent target 존재 또는 ifRevision 불일치. body의 `current`는 충돌 시점 target metadata이며 receipt로 재생된다.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: JSON 본문 16 KiB 초과
+          description: JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1298,8 +1403,11 @@ paths:
         FILE/TREE metadata와 manifest, Blob 참조, 보존 예산을 원자적으로 해제한다.
         namespace/scope/key와 method, canonical route, command, exact raw JSON SHA-256으로
         생성과 같은 receipt 계약을 적용한다. 동일 key 재시도는 snapshot이 삭제된 뒤에도
-        최소 30일 동안 최초 200/body/X-Request-Id를 재생한다. 다른 bytes/route는 409다.
-        receipt 보존 기간 이후 또는 새 key로 삭제된 snapshot에 요청하면 404다.
+        완료 시점부터 30일 동안 최초 200/body/X-Request-Id를 재생한다. 다른 bytes/route는
+        409 MUTATION_KEY_REUSED다. receipt 보존 기간 이후 또는 새 key로 삭제된 snapshot에
+        요청하면 404다. UUID 형식이지만 없는 snapshot의 404는 결정적 4xx라 receipt로 저장되어,
+        같은 key로 재시도하면 최초 404를 재생한다. 재생하지 않는 응답과 재생 불가 오류는
+        snapshot restore와 같다(UUID 형식이 아닌 `snapshotId` 404 포함).
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - $ref: '#/components/parameters/SnapshotId'
@@ -1350,7 +1458,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '413':
-          description: JSON 본문 16 KiB 초과
+          description: JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1533,6 +1641,55 @@ components:
         requestId:
           type: string
           description: '`X-Request-Id` 요청 헤더 값 또는 서버가 생성한 값. 응답 `X-Request-Id` 헤더에도 echo된다.'
+    PreconditionFailedResponse:
+      description: |
+        412 `VFS_PRECONDITION_FAILED` 응답. `current`는 충돌 시점에 트랜잭션 안에서 읽은
+        대상 노드 metadata(`GET /fs/stat` 응답 필드)와 그 시점의 `revision`이며 노드가 없으면
+        null이다. 소비자는 `current.revision`으로 충돌 시점 ETag를 만들 수 있다.
+        receipt로 저장되는 endpoint에서는 재생 응답도 최초 `current`(`revision` 포함)를
+        반환하고 이후 파일 변경을 반영하지 않는다. 다른 오류 코드의 body에는 `current`가 없다.
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          required: [current]
+          properties:
+            current:
+              $ref: '#/components/schemas/PreconditionFailedCurrent'
+    PreconditionFailedCurrent:
+      type: object
+      nullable: true
+      description: |
+        412 `current`의 노드 shape. `VfsNode`의 모든 필드에 충돌 시점의 `revision`을 더한다.
+        `GET /fs/stat` 등 다른 응답의 `VfsNode`에는 `revision`이 없다. 노드가 없으면 `null`이다.
+        OpenAPI 3.0.3에서 `nullable`은 같은 스키마 객체에 `type`이 있을 때만 유효하므로
+        `VfsNode`를 `allOf`로 재사용하지 않고 필드를 직접 나열한다.
+      required: [path, name, type, size, mimeType, createdAt, updatedAt, version, revision]
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [FILE, DIRECTORY]
+        size:
+          type: integer
+          nullable: true
+        mimeType:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        revision:
+          type: string
+          pattern: '^r1\.'
+          description: 충돌 시점 노드의 revision. 이후 노드가 바뀌어도 이 값은 고정된다.
     Namespace:
       type: object
       required: [id, name, encryptionPolicy, accessPolicy, status, createdAt, updatedAt]

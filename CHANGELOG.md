@@ -10,12 +10,45 @@
 
 ### Changed
 
+- 조건부 mutation(`POST /fs/mutations`, `POST /fs/content/conditional`)과 snapshot 생성·복원·삭제는
+  결정적 4xx 응답도 receipt로 저장해 완료 시점부터 30일 재생한다. 대상은 요청 파싱·작업 단계의
+  400(`VFS_INVALID_PATH` 포함)·404·409·412·428과 결정적 413(삭제·복사·snapshot 상한)이며, 같은 key와
+  같은 fingerprint의 재시도는 최초 status, body, `X-Request-Id`를 돌려준다. 파싱은 claim 전에 실행하고
+  오류는 claim을 소유한 요청만 저장하므로, 같은 key의 완료 receipt(재생 또는 `MUTATION_KEY_REUSED`)와
+  진행 중 claim(`MUTATION_IN_PROGRESS`)이 파싱 오류보다 우선한다. 5xx, 일시 오류,
+  `MUTATION_IN_PROGRESS`, `MUTATION_KEY_REUSED`, 401은 재생하지 않고 `Retry-After`는 저장하지 않는다.
+  이전에는 세 endpoint 모두 작업 단계의 404·409·412·413을 저장하지 않아 같은 key 재시도가 상태를 다시
+  평가했고, 파싱 단계 오류 중 `VFS_INVALID_PATH`는 mutation·content에서만 저장하지 않았다(snapshot은 저장).
+- 404·412·413 뒤 상태를 고쳐 같은 key로 재시도하면 최초 오류가 재생된다. 새 key를 사용해야 한다.
+  `VFS_INVALID_PATH`도 저장되므로 경로를 고친 요청은 같은 key에서 `MUTATION_KEY_REUSED`를 받는다.
+- 재생할 수 없는 오류(receipt가 만들어지기 전에 끝나는 경우)는 이전과 같이 재시도해도 최초 응답 bytes의
+  동일성을 보장하지 않는다: JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/`X-Mutation-Scope` 400,
+  namespace 부재 404, snapshot 복원·삭제의 UUID 형식이 아닌 `snapshotId` 404, content의 `Content-Length`
+  형식 오류 400·파일 크기 상한 413.
+- `POST /fs/content/conditional`의 fingerprint가 유효하지 않은 조건 헤더의 원본 값을 포함하도록 바뀌었다.
+  이전 빌드는 파싱 단계 오류 전부(428, 잘못된 조건 헤더 400, `VFS_INVALID_REVISION` 400, 유효한 헤더로 보낸
+  루트 경로 `/` 400)를 조건 자리에 고정 문자열 `invalid`를 넣은 fingerprint로 저장했다. 그 receipt와 같은
+  요청을 재시도하면 최대 30일 동안 재생 대신 409 `MUTATION_KEY_REUSED`를 받는다. 이 endpoint는 릴리즈된
+  버전에 없으므로 이 변경 이전의 미릴리즈 중간 빌드에서 저장된 receipt에만 해당한다. mutation·snapshot의
+  기존 receipt와 조건이 유효한 content receipt는 영향이 없다. 예외로, 변경 전 빌드에서 `sourceRevision` 키를
+  담아 허용되지 않은 키 400으로 저장된 snapshot 생성 receipt는 그 요청이 이제 유효하게 파싱되면 fingerprint가
+  달라 같은 재시도가 `MUTATION_KEY_REUSED`를 받는다(해당 endpoint 미릴리즈).
 - 조건부 VFS 변경과 콘텐츠 업로드는 각 경로 segment에 NFC 형식을 요구한다.
   분해된 Unicode 경로는 정규화 없이 400 `VFS_INVALID_PATH`로 거부하며,
   기존 비조건부 경로 API의 입력 규칙은 유지한다.
 
 ### Added
 
+- FILE snapshot 생성 요청에 선택 필드 `sourceRevision`(`r1.`)을 추가했다. 원본의 현재 revision과 다르면
+  snapshot을 만들지 않고 412를 반환한다. 비교는 캡처와 같은 transaction에서 수행하며 검사 순서는
+  404 → 409 → 412다. 문자열이 아닌 값(`null`·숫자·불리언·객체·배열)이나 TREE 요청에 지정하면 400
+  `VFS_INVALID_MUTATION_REQUEST`, 문자열이지만 형식이 틀리면 400 `VFS_INVALID_REVISION`이다. 생략하면
+  기존 동작과 같다. SQLite에서는 같은 프로세스 안에서도 동시 요청의 트랜잭션이 직렬화되지 않아(기존 SQLite
+  드라이버 공통 한계) 비교와 캡처의 원자성을 동시 요청에 대해 보장하지 않는다(`docs/design/02-receipt-error-replay.md`).
+- 412 응답 body에 `current`(충돌 시점의 대상 노드 metadata와 `revision`, 노드가 없으면 `null`)를 추가했다.
+  metadata 필드는 `GET /fs/stat` 응답과 같고 `revision`(`r1.`)은 충돌 시점 ETag를 만들 수 있게 더한 값이다.
+  `GET /fs/stat` 응답에는 `revision`이 없다. `GET /fs/ls?consistency=revision`의 만료 cursor 412에는 디렉터리
+  metadata가 실린다. receipt로 재생할 때 `current`는 `revision`을 포함해 최초 값이다.
 - 불변 VFS FILE/TREE snapshot을 추가했다. 원본 변경 후 고정된 파일 내용을
   조회하고, FILE을 revision 조건으로 복원하며, 명시적으로 삭제할 수 있다.
   namespace별 snapshot 보존 한도와 Blob GC 참조를 관리한다.

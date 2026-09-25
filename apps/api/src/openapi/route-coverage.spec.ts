@@ -173,3 +173,65 @@ it('TREE entries는 snapshot cursor와 공개 manifest page를 명시한다', ()
     expect.arrayContaining([expect.objectContaining({ name: 'path', in: 'query' })]),
   );
 });
+
+it('412 응답은 current를 포함하는 전용 스키마를 참조한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const base = '/api/v1/namespaces/{namespaceId}/fs';
+  const operations = [
+    spec.paths[`${base}/mutations`].post,
+    spec.paths[`${base}/content/conditional`].post,
+    spec.paths[`${base}/ls`].get,
+    spec.paths[`${base}/snapshots`].post,
+    spec.paths[`${base}/snapshots/{snapshotId}/restore`].post,
+  ];
+  for (const operation of operations) {
+    expect(operation.responses['412'].content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/PreconditionFailedResponse',
+    });
+  }
+  const schema = spec.components.schemas.PreconditionFailedResponse;
+  expect(schema.allOf).toContainEqual({ $ref: '#/components/schemas/ErrorResponse' });
+  expect(schema.allOf).toContainEqual(
+    expect.objectContaining({
+      required: ['current'],
+      properties: { current: { $ref: '#/components/schemas/PreconditionFailedCurrent' } },
+    }),
+  );
+});
+
+it('412 current 스키마는 VfsNode 필드에 revision을 더하고 null을 허용한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const current = spec.components.schemas.PreconditionFailedCurrent;
+  const node = spec.components.schemas.VfsNode;
+  // OAS 3.0.3에서 nullable은 같은 객체에 type이 있어야 유효하다.
+  expect(current.type).toBe('object');
+  expect(current.nullable).toBe(true);
+  expect(current.allOf).toBeUndefined();
+  expect(current.required).toEqual([...node.required, 'revision']);
+  expect(Object.keys(current.properties)).toEqual([...Object.keys(node.properties), 'revision']);
+  const withoutDescription = (property: Record<string, unknown>) => {
+    const copy = { ...property };
+    delete copy.description;
+    return copy;
+  };
+  for (const key of Object.keys(node.properties)) {
+    expect(withoutDescription(current.properties[key])).toEqual(withoutDescription(node.properties[key]));
+  }
+  expect(current.properties.revision).toEqual(expect.objectContaining({ type: 'string', pattern: '^r1\\.' }));
+  // 다른 응답의 VfsNode에는 revision을 넣지 않는다.
+  expect(node.properties.revision).toBeUndefined();
+  expect(node.required).not.toContain('revision');
+});
+
+it('FILE snapshot 생성은 선택 sourceRevision을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const create = spec.paths['/api/v1/namespaces/{namespaceId}/fs/snapshots'].post;
+  const body = create.requestBody.content['application/json'].schema;
+  expect(body.required).toEqual(['kind', 'path']);
+  expect(body.properties.sourceRevision).toEqual(
+    expect.objectContaining({ type: 'string', pattern: '^r1\\.' }),
+  );
+  expect(Object.keys(create.responses)).toEqual(
+    expect.arrayContaining(['201', '400', '404', '409', '412', '413']),
+  );
+});
