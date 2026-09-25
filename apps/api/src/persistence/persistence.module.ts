@@ -1,9 +1,10 @@
 import { VfsSnapshotRepository } from './vfs-snapshot.repository.js';
 import { Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, type DataSourceOptions } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { loadDbConfig } from './db-config.js';
+import { installSqliteGate } from './sqlite-gate.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
@@ -72,6 +73,12 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
           synchronize: false,
           entities: ENTITIES,
         };
+      },
+      // SQLite는 연결 하나를 모든 요청이 공유하므로 초기화 직후 쿼리 직렬화 게이트를 건다(PostgreSQL은 무변경).
+      dataSourceFactory: async (options) => {
+        const dataSource = await new DataSource(options as DataSourceOptions).initialize();
+        if (isSqliteDataSource(dataSource.options)) installSqliteGate(dataSource);
+        return dataSource;
       },
     }),
     TypeOrmModule.forFeature(ENTITIES),

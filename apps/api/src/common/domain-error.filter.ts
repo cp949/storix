@@ -9,6 +9,7 @@ interface DomainErrorShape {
   readonly status?: unknown;
   readonly path?: unknown;
   readonly current?: unknown;
+  readonly retryAfterSeconds?: unknown;
 }
 
 const INTERNAL_ERROR_MESSAGE = 'Internal server error';
@@ -36,6 +37,12 @@ export function resolveErrorPath(exception: unknown): string | undefined {
 export function resolveErrorCurrent(exception: unknown): { current: unknown } | undefined {
   const current = (exception as DomainErrorShape)?.current;
   return current === undefined ? undefined : { current };
+}
+
+// 재시도로 성공할 수 있는 오류(503 등)가 대기 시간을 알리는 필드다. 값이 없으면 헤더를 붙이지 않는다.
+export function resolveRetryAfterSeconds(exception: unknown): number | undefined {
+  const seconds = (exception as DomainErrorShape)?.retryAfterSeconds;
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
 export function resolveErrorMessage(exception: unknown, status: number): string {
@@ -88,6 +95,9 @@ export class DomainErrorFilter implements ExceptionFilter {
       });
       return;
     }
+
+    const retryAfterSeconds = resolveRetryAfterSeconds(exception);
+    if (retryAfterSeconds !== undefined) response.setHeader('Retry-After', String(retryAfterSeconds));
 
     response.status(status).json({
       code: resolveErrorCode(exception, status),

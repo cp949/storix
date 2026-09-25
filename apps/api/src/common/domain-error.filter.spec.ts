@@ -3,20 +3,22 @@ import { jest } from '@jest/globals';
 import { DomainError } from './domain-error.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
+import { SqliteGateTimeoutError } from '../persistence/sqlite-gate.errors.js';
 import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../vfs/vfs.errors.js';
 import type { VfsPreconditionCurrentDto } from '../vfs/dto/node-response.dto.js';
 
 function createHost(requestId = 'req-1') {
   const json = jest.fn();
   const status = jest.fn(() => ({ json }));
+  const setHeader = jest.fn();
   const host = {
     switchToHttp: () => ({
-      getResponse: () => ({ status }),
+      getResponse: () => ({ status, setHeader }),
       getRequest: () => ({ requestId, method: 'POST', path: '/namespaces/ns-1/files' }),
     }),
   } as unknown as ArgumentsHost;
 
-  return { host, json, status };
+  return { host, json, status, setHeader };
 }
 
 function createFakeErrorReporter(): jest.Mocked<ErrorReporter> {
@@ -69,6 +71,26 @@ const CURRENT: VfsPreconditionCurrentDto = {
 
 describe('DomainErrorFilter', () => {
   const filter = new DomainErrorFilter();
+
+  it('retryAfterSeconds를 가진 오류는 Retry-After 헤더를 붙여 응답한다', () => {
+    const { host, json, status, setHeader } = createHost('req-busy');
+
+    filter.catch(new SqliteGateTimeoutError(30_000), host);
+
+    expect(setHeader).toHaveBeenCalledWith('Retry-After', '1');
+    expect(status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'DB_BUSY', requestId: 'req-busy' }),
+    );
+  });
+
+  it('retryAfterSeconds가 없는 오류에는 Retry-After 헤더를 붙이지 않는다', () => {
+    const { host, setHeader } = createHost();
+
+    filter.catch(new VfsNodeNotFoundError('/a'), host);
+
+    expect(setHeader).not.toHaveBeenCalled();
+  });
 
   it('412 오류는 current metadata를 body에 포함한다', () => {
     const { host, json, status } = createHost();
