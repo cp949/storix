@@ -1,0 +1,115 @@
+import { PathResolver } from '../path-resolver.js';
+import { decodeRevision } from '../revision.js';
+import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from '../vfs.errors.js';
+
+export type ConditionalMutation =
+  | { readonly kind: 'mkdir'; readonly path: string; readonly segments: string[]; readonly ifAbsent: true }
+  | {
+      readonly kind: 'delete';
+      readonly path: string;
+      readonly segments: string[];
+      readonly ifRevision: string;
+      readonly recursive: boolean;
+    }
+  | {
+      readonly kind: 'move' | 'copy';
+      readonly source: string;
+      readonly sourceSegments: string[];
+      readonly destination: string;
+      readonly destinationSegments: string[];
+      readonly sourceRevision: string;
+      readonly destinationAbsent: true;
+    };
+
+const resolver = new PathResolver();
+
+function recordOf(body: unknown): Record<string, unknown> {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new VfsInvalidMutationRequestError();
+  }
+  return body as Record<string, unknown>;
+}
+
+function requireKeys(record: Record<string, unknown>, allowed: readonly string[]): void {
+  if (Object.keys(record).some((key) => !allowed.includes(key))) {
+    throw new VfsInvalidMutationRequestError();
+  }
+}
+
+function pathOf(value: unknown, allowRoot: boolean): { canonical: string; segments: string[] } {
+  if (typeof value !== 'string') {
+    throw new VfsInvalidMutationRequestError();
+  }
+  const path = resolver.resolve(value);
+  if (!allowRoot && path.segments.length === 0) {
+    throw new VfsInvalidMutationRequestError();
+  }
+  return path;
+}
+
+function requiredRevision(record: Record<string, unknown>, field: string): string {
+  if (!(field in record)) {
+    throw new VfsPreconditionRequiredError();
+  }
+  const value = record[field];
+  if (typeof value !== 'string') {
+    throw new VfsInvalidMutationRequestError();
+  }
+  decodeRevision(value);
+  return value;
+}
+
+function requireTrue(record: Record<string, unknown>, field: string): void {
+  if (!(field in record)) {
+    throw new VfsPreconditionRequiredError();
+  }
+  if (record[field] !== true) {
+    throw new VfsInvalidMutationRequestError();
+  }
+}
+
+export function parseConditionalMutation(body: unknown): ConditionalMutation {
+  const record = recordOf(body);
+  switch (record.kind) {
+    case 'mkdir': {
+      requireKeys(record, ['kind', 'path', 'ifAbsent']);
+      const path = pathOf(record.path, false);
+      requireTrue(record, 'ifAbsent');
+      return { kind: 'mkdir', path: path.canonical, segments: path.segments, ifAbsent: true };
+    }
+    case 'delete': {
+      requireKeys(record, ['kind', 'path', 'ifRevision', 'recursive']);
+      const path = pathOf(record.path, false);
+      const ifRevision = requiredRevision(record, 'ifRevision');
+      if ('recursive' in record && typeof record.recursive !== 'boolean') {
+        throw new VfsInvalidMutationRequestError();
+      }
+      return {
+        kind: 'delete',
+        path: path.canonical,
+        segments: path.segments,
+        ifRevision,
+        recursive: record.recursive === true,
+      };
+    }
+    case 'move':
+    case 'copy': {
+      requireKeys(record, ['kind', 'source', 'destination', 'sourceRevision', 'destinationAbsent']);
+      const source = pathOf(record.source, false);
+      const destination = pathOf(record.destination, true);
+      const sourceRevision = requiredRevision(record, 'sourceRevision');
+      requireTrue(record, 'destinationAbsent');
+      return {
+        kind: record.kind,
+        source: source.canonical,
+        sourceSegments: source.segments,
+        destination: destination.canonical,
+        destinationSegments: destination.segments,
+        sourceRevision,
+        destinationAbsent: true,
+      };
+    }
+    default:
+      throw new VfsInvalidMutationRequestError();
+  }
+}

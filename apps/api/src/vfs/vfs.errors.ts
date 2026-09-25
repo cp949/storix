@@ -9,6 +9,33 @@ export class VfsInvalidRevisionError extends DomainError {
   }
 }
 
+export class VfsInvalidMutationRequestError extends DomainError {
+  readonly code = 'VFS_INVALID_MUTATION_REQUEST';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 mutation 요청');
+  }
+}
+
+export class VfsPreconditionRequiredError extends DomainError {
+  readonly code = 'VFS_PRECONDITION_REQUIRED';
+  readonly status = 428;
+
+  constructor() {
+    super('mutation 전제조건이 필요함');
+  }
+}
+
+export class VfsPreconditionFailedError extends DomainError {
+  readonly code = 'VFS_PRECONDITION_FAILED';
+  readonly status = 412;
+
+  constructor(readonly path: string) {
+    super(`mutation 전제조건 불일치: ${path}`);
+  }
+}
+
 export class VfsRevisionExhaustedError extends DomainError {
   readonly code = 'VFS_REVISION_EXHAUSTED';
   readonly status = 409;

@@ -6,6 +6,7 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { decodeRevision } from '../vfs/revision.js';
+import { encodeRevision } from '../vfs/revision.js';
 import {
   VfsAlreadyExistsError,
   VfsCopyLimitExceededError,
@@ -16,6 +17,7 @@ import {
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
   VfsRevisionExhaustedError,
+  VfsPreconditionFailedError,
   VfsVersionConflictError,
 } from '../vfs/vfs.errors.js';
 
@@ -241,6 +243,103 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       ).rejects.toThrow('receipt write failed');
       expect(await getRepo().resolvePath(namespace.id, root.id, ['a'])).toBeNull();
       expect((await getRepo().getRoot(namespace.id))!.version).toBe(root.version);
+    });
+  });
+
+  describe('conditional mutations', () => {
+    it('creates only when absent and rejects a second create with 412', async () => {
+      const namespace = await createNamespace('conditional-mkdir-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const command = { kind: 'mkdir' as const, path: '/a', segments: ['a'], ifAbsent: true as const };
+      const first = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().applyConditionalMutation(tx, command),
+      );
+      expect(first.value).toMatchObject({ status: 201, resource: { path: '/a' } });
+      expect(first.affectedRevisions.map((item) => item.path)).toEqual(['/', '/a']);
+      const rootBefore = (await getRepo().getRoot(namespace.id))!;
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, command),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      expect((await getRepo().getRoot(namespace.id))!.version).toBe(rootBefore.version);
+    });
+
+    it('rejects a move into a directory with a child collision before changing the source', async () => {
+      const namespace = await createNamespace('conditional-move-collision-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['source'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['dest'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['dest', 'source'], false);
+      const source = (await getRepo().resolvePath(namespace.id, root.id, ['source']))!;
+      const rootBefore = (await getRepo().getRoot(namespace.id))!;
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind: 'move',
+            source: '/source',
+            sourceSegments: ['source'],
+            destination: '/dest',
+            destinationSegments: ['dest'],
+            sourceRevision: encodeRevision(source),
+            destinationAbsent: true,
+          }),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['source']))!.id).toBe(source.id);
+      expect((await getRepo().getRoot(namespace.id))!.version).toBe(rootBefore.version);
+    });
+
+    it('rejects a stale revision after delete and recreate of the same path', async () => {
+      const namespace = await createNamespace('conditional-recreate-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const old = await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      const oldRevision = encodeRevision(old.node);
+      const deleted = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().applyConditionalMutation(tx, {
+          kind: 'delete',
+          path: '/a',
+          segments: ['a'],
+          ifRevision: oldRevision,
+          recursive: false,
+        }),
+      );
+      expect(deleted.value).toEqual({ status: 200, resource: null });
+      expect(deleted.affectedRevisions.map((item) => item.path)).toEqual(['/']);
+      const recreated = await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      expect(encodeRevision(recreated.node)).not.toBe(oldRevision);
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind: 'delete',
+            path: '/a',
+            segments: ['a'],
+            ifRevision: oldRevision,
+            recursive: false,
+          }),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+    });
+
+    it('does not copy when the source revision is stale', async () => {
+      const namespace = await createNamespace('conditional-copy-stale-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const source = await getRepo().ensureDirectory(namespace.id, root.id, ['source'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['source', 'child'], false);
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind: 'copy',
+            source: '/source',
+            sourceSegments: ['source'],
+            destination: '/copy',
+            destinationSegments: ['copy'],
+            sourceRevision: encodeRevision(source.node),
+            destinationAbsent: true,
+          }),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['copy'])).toBeNull();
     });
   });
 

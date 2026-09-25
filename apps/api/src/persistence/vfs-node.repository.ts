@@ -4,7 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { KeysetCursor } from '../common/keyset-cursor.js';
+import { parsePositiveInt } from '../common/env-parsing.js';
+import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
+import { decodeRevision } from '../vfs/revision.js';
+import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
+import { toNodeResponse, VfsNodeResponseDto } from '../vfs/dto/node-response.dto.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsAlreadyExistsError,
@@ -15,6 +20,7 @@ import {
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
+  VfsPreconditionFailedError,
   VfsRevisionExhaustedError,
   VfsVersionConflictError,
 } from '../vfs/vfs.errors.js';
@@ -279,6 +285,91 @@ export class VfsNodeRepository {
       result.push({ path: joinSegments(names), revision: encodeRevision(node) });
     }
     return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }
+
+  private async resolvePathInTx(tx: MutationTx, segments: string[]): Promise<VfsNodeEntity | null> {
+    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    let node = await nodeRepo.findOneBy({ id: tx.rootId, namespaceId: tx.namespaceId });
+    for (const segment of segments) {
+      if (!node || node.type !== 'DIRECTORY') return null;
+      node = await nodeRepo.findOneBy({ namespaceId: tx.namespaceId, parentId: node.id, name: segment });
+    }
+    return node;
+  }
+
+  private assertRevision(node: VfsNodeEntity, revision: string, path: string): void {
+    const expected = decodeRevision(revision);
+    if (node.id !== expected.id || node.version !== expected.version) {
+      throw new VfsPreconditionFailedError(path);
+    }
+  }
+
+  async applyConditionalMutation(
+    tx: MutationTx,
+    command: ConditionalMutation,
+  ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null }> {
+    const namespaceId = tx.namespaceId;
+    const rootId = tx.rootId;
+    if (command.kind === 'mkdir') {
+      if (await this.resolvePathInTx(tx, command.segments)) {
+        throw new VfsPreconditionFailedError(command.path);
+      }
+      const result = await this.ensureDirectory(namespaceId, rootId, command.segments, false, tx);
+      return { status: 201, resource: toNodeResponse(result.node, command.path) };
+    }
+
+    const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
+    if (command.kind === 'delete') {
+      const target = await this.resolvePathInTx(tx, command.segments);
+      if (!target) throw new VfsNodeNotFoundError(command.path);
+      this.assertRevision(target, command.ifRevision, command.path);
+      const max = resolveEffectiveLimit(
+        namespace.maxSyncDeleteNodes,
+        parsePositiveInt(process.env.STORIX_MAX_SYNC_DELETE_NODES, 1000),
+      );
+      if (target.type === 'DIRECTORY' && !command.recursive) {
+        await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx);
+      } else {
+        await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
+      }
+      return { status: 200, resource: null };
+    }
+
+    const source = await this.resolvePathInTx(tx, command.sourceSegments);
+    if (!source) throw new VfsNodeNotFoundError(command.source);
+    this.assertRevision(source, command.sourceRevision, command.source);
+    try {
+      if (command.kind === 'move') {
+        const result = await this.moveNode(
+          namespaceId,
+          rootId,
+          command.sourceSegments,
+          command.destinationSegments,
+          false,
+          tx,
+        );
+        return { status: 200, resource: toNodeResponse(result.node, result.finalPath) };
+      }
+      const max = resolveEffectiveLimit(
+        namespace.maxSyncCopyNodes,
+        parsePositiveInt(process.env.STORIX_MAX_SYNC_COPY_NODES, 1000),
+      );
+      const result = await this.copyNode(
+        namespaceId,
+        rootId,
+        command.sourceSegments,
+        command.destinationSegments,
+        false,
+        max,
+        tx,
+      );
+      return { status: 201, resource: toNodeResponse(result.node, result.finalPath) };
+    } catch (error) {
+      if (error instanceof VfsAlreadyExistsError) {
+        throw new VfsPreconditionFailedError(error.path);
+      }
+      throw error;
+    }
   }
 
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
