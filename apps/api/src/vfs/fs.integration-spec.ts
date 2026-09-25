@@ -5,7 +5,7 @@ import { VfsSnapshotEntryEntity } from '../persistence/entities/vfs-snapshot-ent
 import { randomBytes, randomUUID } from 'node:crypto';
 import { jest } from '@jest/globals';
 import { once } from 'node:events';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -83,13 +83,18 @@ function startHeldUpload(
   port: number,
   path: string,
   headers: Record<string, string>,
-): { req: ReturnType<typeof httpRequest>; response: Promise<{ status: number; body: unknown }> } {
-  let resolveResponse!: (value: { status: number; body: unknown }) => void;
+): {
+  req: ReturnType<typeof httpRequest>;
+  response: Promise<{ status: number; body: unknown; headers: IncomingHttpHeaders }>;
+} {
+  let resolveResponse!: (value: { status: number; body: unknown; headers: IncomingHttpHeaders }) => void;
   let rejectResponse!: (reason: unknown) => void;
-  const response = new Promise<{ status: number; body: unknown }>((resolve, reject) => {
-    resolveResponse = resolve;
-    rejectResponse = reject;
-  });
+  const response = new Promise<{ status: number; body: unknown; headers: IncomingHttpHeaders }>(
+    (resolve, reject) => {
+      resolveResponse = resolve;
+      rejectResponse = reject;
+    },
+  );
   const req = httpRequest(
     {
       host: '127.0.0.1',
@@ -103,7 +108,11 @@ function startHeldUpload(
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
-        resolveResponse({ status: res.statusCode ?? 0, body: text ? JSON.parse(text) : null });
+        resolveResponse({
+          status: res.statusCode ?? 0,
+          body: text ? JSON.parse(text) : null,
+          headers: res.headers,
+        });
       });
     },
   );
@@ -2136,6 +2145,67 @@ describe('Fs HTTP contract', () => {
       } finally {
         void held.response.catch(() => undefined);
         held.req.destroy();
+        if (previous === undefined) delete process.env.STORIX_MUTATION_LEASE_SECONDS;
+        else process.env.STORIX_MUTATION_LEASE_SECONDS = previous;
+      }
+    });
+
+    it('renews a short lease while hashing a malformed conditional content body', async () => {
+      const previous = process.env.STORIX_MUTATION_LEASE_SECONDS;
+      process.env.STORIX_MUTATION_LEASE_SECONDS = '2';
+      let held: ReturnType<typeof startHeldUpload> | undefined;
+      try {
+        const namespaceId = await createNamespace('conditional-content-invalid-renew-ns');
+        const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+        const key = randomUUID();
+        const headers = {
+          'Idempotency-Key': key,
+          'X-Mutation-Scope': 'caller-a',
+          'X-If-Revision': 'bad',
+        };
+        const body = Buffer.from('firstsecond');
+        held = startHeldUpload(serverPort, `${base}?path=/invalid-held`, headers);
+        held.req.write(Buffer.from('first'));
+
+        let receipt: VfsMutationReceiptEntity | null = null;
+        for (let attempt = 0; attempt < 100 && !receipt; attempt += 1) {
+          receipt = await migrationDataSource
+            .getRepository(VfsMutationReceiptEntity)
+            .findOneBy({ namespaceId, scope: 'caller-a', idempotencyKey: key });
+          if (!receipt) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(receipt).not.toBeNull();
+        expect(receipt!.state).toBe('RESERVED');
+
+        // 해시가 진행되는 동안 원래 lease가 만료됐어야 하는 시간보다 길게 기다린다.
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const whileHashing = await request(httpServer)
+          .post(base)
+          .query({ path: '/invalid-held' })
+          .set(headers)
+          .set('Content-Type', 'application/octet-stream')
+          .send(body)
+          .expect(409);
+        expect(whileHashing.body.code).toBe('MUTATION_IN_PROGRESS');
+
+        held.req.end(Buffer.from('second'));
+        const rejected = await held.response;
+        expect(rejected.status).toBe(400);
+        expect(rejected.body).toMatchObject({ code: 'VFS_INVALID_REVISION' });
+        const replay = await request(httpServer)
+          .post(base)
+          .query({ path: '/invalid-held' })
+          .set(headers)
+          .set('Content-Type', 'application/octet-stream')
+          .send(body)
+          .expect(400);
+        expect(replay.body).toEqual(rejected.body);
+        expect(replay.headers['x-request-id']).toBe(rejected.headers['x-request-id']);
+      } finally {
+        if (held) {
+          void held.response.catch(() => undefined);
+          held.req.destroy();
+        }
         if (previous === undefined) delete process.env.STORIX_MUTATION_LEASE_SECONDS;
         else process.env.STORIX_MUTATION_LEASE_SECONDS = previous;
       }

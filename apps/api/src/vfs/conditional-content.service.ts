@@ -10,6 +10,7 @@ import {
   mutationLeaseSeconds,
   VfsMutationReceiptRepository,
 } from '../persistence/vfs-mutation-receipt.repository.js';
+import type { ReceiptIdentity } from '../persistence/vfs-mutation-receipt.repository.js';
 import { ContentPrecondition, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
@@ -126,23 +127,32 @@ export class ConditionalContentService {
       }
 
       if (claim.kind === 'complete' || parseError) {
-        const replayed = await hashStream(source, replayMaxBytes);
-        const currentFingerprint = fingerprint(path, conditionKey, mimeType, replayed.sha256);
-        if (claim.kind === 'complete') {
-          return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
+        const lease =
+          claim.kind === 'owner' && parseError ? this.startLeaseRenewal(identity, claim.generation) : null;
+        try {
+          const replayed = await hashStream(source, replayMaxBytes);
+          const currentFingerprint = fingerprint(path, conditionKey, mimeType, replayed.sha256);
+          if (claim.kind === 'complete') {
+            return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
+          }
+          if (lease?.lost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
+            throw new Error('VFS mutation claim lost');
+          }
+          return await storeErrorReceipt(
+            this.receipts,
+            {
+              identity,
+              generation: claim.generation,
+              fingerprint: currentFingerprint,
+              method: 'POST',
+              requestBodyBytes: replayed.size,
+            },
+            parseError,
+            requestId,
+          );
+        } finally {
+          await lease?.stop();
         }
-        return await storeErrorReceipt(
-          this.receipts,
-          {
-            identity,
-            generation: claim.generation,
-            fingerprint: currentFingerprint,
-            method: 'POST',
-            requestBodyBytes: replayed.size,
-          },
-          parseError,
-          requestId,
-        );
       }
 
       const validCondition = condition as ContentPrecondition;
@@ -151,26 +161,7 @@ export class ConditionalContentService {
         limits.encryptionPolicy === 'ENCRYPTED'
           ? new EncryptingPutTarget(this.storage, this.requireMasterKey())
           : this.storage;
-      let leaseLost = false;
-      let renewal: Promise<void> | null = null;
-      const renewalTimer = setInterval(
-        () => {
-          if (renewal) return;
-          renewal = this.receipts
-            .renew(identity, claim.generation, new Date())
-            .then((ok) => {
-              if (!ok) leaseLost = true;
-            })
-            .catch(() => {
-              leaseLost = true;
-            })
-            .finally(() => {
-              renewal = null;
-            });
-        },
-        Math.max(250, Math.floor((mutationLeaseSeconds() * 1000) / 3)),
-      );
-      renewalTimer.unref();
+      const lease = this.startLeaseRenewal(identity, claim.generation);
       const durationTimer = setTimeout(
         () => source.destroy(new Error('mutation upload duration exceeded')),
         this.maxUploadDurationMs,
@@ -180,9 +171,8 @@ export class ConditionalContentService {
       try {
         uploaded = await uploadStream(putTarget, storageKey, source, mimeType, maxBytes);
       } finally {
-        clearInterval(renewalTimer);
         clearTimeout(durationTimer);
-        if (renewal) await renewal;
+        await lease.stop();
       }
       const owner: ErrorReceiptOwner = {
         identity,
@@ -192,7 +182,7 @@ export class ConditionalContentService {
         requestBodyBytes: uploaded.size,
       };
       try {
-        if (leaseLost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
+        if (lease.lost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
           throw new Error('VFS mutation claim lost');
         }
         const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
@@ -241,5 +231,38 @@ export class ConditionalContentService {
   private requireMasterKey(): Buffer {
     if (!this.masterKey) throw new Error('ENCRYPTED namespace master key missing');
     return this.masterKey;
+  }
+
+  private startLeaseRenewal(identity: ReceiptIdentity, generation: number) {
+    let lost = false;
+    let renewal: Promise<void> | null = null;
+    const timer = setInterval(
+      () => {
+        if (renewal) return;
+        renewal = this.receipts
+          .renew(identity, generation, new Date())
+          .then((ok) => {
+            if (!ok) lost = true;
+          })
+          .catch(() => {
+            lost = true;
+          })
+          .finally(() => {
+            renewal = null;
+          });
+      },
+      Math.max(250, Math.floor((mutationLeaseSeconds() * 1000) / 3)),
+    );
+    timer.unref();
+
+    return {
+      get lost() {
+        return lost;
+      },
+      async stop() {
+        clearInterval(timer);
+        if (renewal) await renewal;
+      },
+    };
   }
 }
