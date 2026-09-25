@@ -10,7 +10,12 @@ import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { decodeRevision } from '../vfs/revision.js';
 import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
 import { assertConditionalSegments } from '../vfs/path-resolver.js';
-import { toNodeResponse, VfsNodeResponseDto } from '../vfs/dto/node-response.dto.js';
+import {
+  toNodeResponse,
+  toPreconditionCurrent,
+  VfsNodeResponseDto,
+  VfsPreconditionCurrentDto,
+} from '../vfs/dto/node-response.dto.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsAlreadyExistsError,
@@ -379,9 +384,9 @@ export class VfsNodeRepository {
     }
   }
 
-  // 412 body의 current. stat 응답과 같은 mapper를 쓰며, 트랜잭션 안에서 읽은 엔티티로 만든다.
-  private currentOf(node: VfsNodeEntity | null, path: string): VfsNodeResponseDto | null {
-    return node ? toNodeResponse(toRecord(node), path) : null;
+  // 412 body의 current. stat 응답 필드에 revision을 더한 shape이며, 트랜잭션 안에서 읽은 엔티티로 만든다.
+  private currentOf(node: VfsNodeEntity | null, path: string): VfsPreconditionCurrentDto | null {
+    return node ? toPreconditionCurrent(toRecord(node), path) : null;
   }
 
   async applyConditionalMutation(

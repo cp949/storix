@@ -15,6 +15,61 @@ describe('snapshot requests', () => {
     });
   });
 
+  it('FILE 생성 요청의 유효한 sourceRevision을 그대로 포함한다', () => {
+    expect(parseSnapshotCreateRequest({ kind: 'file', path: '/a//b', sourceRevision: revision })).toEqual({
+      kind: 'file',
+      path: '/a/b',
+      sourceRevision: revision,
+    });
+  });
+
+  it('sourceRevision이 없으면 command에 sourceRevision 키를 만들지 않고 직렬화도 기존과 같다', () => {
+    const command = parseSnapshotCreateRequest({ kind: 'file', path: '/a/b' });
+    expect(Object.keys(command)).toEqual(['kind', 'path']);
+    expect(JSON.stringify(command)).toBe('{"kind":"file","path":"/a/b"}');
+    expect(JSON.stringify(parseSnapshotCreateRequest({ kind: 'tree', path: '/a' }))).toBe(
+      '{"kind":"tree","path":"/a"}',
+    );
+  });
+
+  it.each(['r1.invalid', 'R1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', 'abc'])(
+    '형식이 잘못된 sourceRevision %j는 VFS_INVALID_REVISION으로 거부한다',
+    (sourceRevision) => {
+      expect(() => parseSnapshotCreateRequest({ kind: 'file', path: '/a', sourceRevision })).toThrow(
+        expect.objectContaining({ code: 'VFS_INVALID_REVISION', status: 400 }),
+      );
+    },
+  );
+
+  it.each([null, 1, true, {}, [revision]])(
+    '문자열이 아닌 sourceRevision %j는 VFS_INVALID_MUTATION_REQUEST로 거부한다',
+    (sourceRevision) => {
+      expect(() => parseSnapshotCreateRequest({ kind: 'file', path: '/a', sourceRevision })).toThrow(
+        expect.objectContaining({ code: 'VFS_INVALID_MUTATION_REQUEST', status: 400 }),
+      );
+    },
+  );
+
+  it.each([revision, 'r1.invalid'])(
+    'TREE 생성 요청의 sourceRevision %j는 VFS_INVALID_MUTATION_REQUEST로 거부한다',
+    (sourceRevision) => {
+      expect(() => parseSnapshotCreateRequest({ kind: 'tree', path: '/a', sourceRevision })).toThrow(
+        expect.objectContaining({ code: 'VFS_INVALID_MUTATION_REQUEST', status: 400 }),
+      );
+    },
+  );
+
+  it('sourceRevision을 추가해도 미지 키는 계속 거부한다', () => {
+    expect(() =>
+      parseSnapshotCreateRequest({
+        kind: 'file',
+        path: '/a',
+        sourceRevision: revision,
+        ifRevision: revision,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'VFS_INVALID_MUTATION_REQUEST' }));
+  });
+
   it.each([
     null,
     [],

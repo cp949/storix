@@ -1,5 +1,6 @@
 import { VfsNodeRecord } from '../../persistence/vfs-node.repository.js';
-import { toNodeResponse } from './node-response.dto.js';
+import { toNodeResponse, toPreconditionCurrent } from './node-response.dto.js';
+import { encodeRevision } from '../revision.js';
 
 function makeRecord(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {
   return {
@@ -39,5 +40,29 @@ describe('toNodeResponse', () => {
     );
 
     expect(result).toMatchObject({ size: 2048, mimeType: 'application/pdf' });
+  });
+});
+
+describe('toPreconditionCurrent', () => {
+  const id = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
+
+  it('stat 응답 필드에 record의 revision을 더한다', () => {
+    const record = makeRecord({ id, type: 'FILE', size: '7', mimeType: 'text/plain', version: 4 });
+
+    const result = toPreconditionCurrent(record, '/a');
+
+    expect(result).toEqual({ ...toNodeResponse(record, '/a'), revision: encodeRevision(record) });
+    expect(result.revision).toMatch(/^r1\./);
+  });
+
+  it('같은 노드의 version이 바뀌면 revision도 바뀐다', () => {
+    const before = toPreconditionCurrent(makeRecord({ id, version: 4 }), '/a');
+    const after = toPreconditionCurrent(makeRecord({ id, version: 5 }), '/a');
+
+    expect(after.revision).not.toBe(before.revision);
+  });
+
+  it('toNodeResponse 결과에는 revision을 넣지 않는다', () => {
+    expect(Object.keys(toNodeResponse(makeRecord({ id }), '/a'))).not.toContain('revision');
   });
 });

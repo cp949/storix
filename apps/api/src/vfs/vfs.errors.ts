@@ -1,5 +1,5 @@
 import { DomainError } from '../common/domain-error.js';
-import type { VfsNodeResponseDto } from './dto/node-response.dto.js';
+import type { VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
 
 export class VfsInvalidRevisionError extends DomainError {
   readonly code = 'VFS_INVALID_REVISION';
@@ -32,11 +32,11 @@ export class VfsPreconditionFailedError extends DomainError {
   readonly code = 'VFS_PRECONDITION_FAILED';
   readonly status = 412;
 
-  // current: 충돌 시점에 트랜잭션 안에서 읽은 노드 metadata(stat 응답과 같은 형태).
+  // current: 충돌 시점에 트랜잭션 안에서 읽은 노드 metadata(stat 응답 필드 + revision).
   // 노드가 없으면 null이다. 오류 body에 그대로 직렬화되어 receipt로 고정된다.
   constructor(
     readonly path: string,
-    readonly current: VfsNodeResponseDto | null,
+    readonly current: VfsPreconditionCurrentDto | null,
   ) {
     super(`mutation 전제조건 불일치: ${path}`);
   }

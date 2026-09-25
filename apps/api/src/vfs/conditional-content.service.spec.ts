@@ -1,14 +1,16 @@
 import { jest } from '@jest/globals';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ConfigService } from '@nestjs/config';
+import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { ConditionalContentService } from './conditional-content.service.js';
-import type { VfsNodeResponseDto } from './dto/node-response.dto.js';
+import type { VfsNodeResponseDto, VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
 import { errorResponse } from './mutation-receipt.js';
+import { hashParts } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
 import { encodeRevision } from './revision.js';
 import { VfsInvalidPathError, VfsPreconditionFailedError } from './vfs.errors.js';
@@ -18,6 +20,7 @@ describe('ConditionalContentService 오류 receipt', () => {
   const rootId = randomUUID();
   const withMutation = jest.fn<VfsNodeRepository['withMutation']>();
   const putConditionalContent = jest.fn<VfsNodeRepository['putConditionalContent']>();
+  const claim = jest.fn<VfsMutationReceiptRepository['claim']>();
   const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
   const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
   const release = jest.fn<(...args: unknown[]) => Promise<void>>();
@@ -32,7 +35,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     putConditionalContent,
   } as unknown as VfsNodeRepository;
   const receipts = {
-    claim: async () => ({ kind: 'owner', generation: 2 }),
+    claim,
     renew: async () => true,
     complete,
     completeAfterRollback,
@@ -50,6 +53,7 @@ describe('ConditionalContentService 오류 receipt', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    claim.mockResolvedValue({ kind: 'owner', generation: 2 });
     complete.mockResolvedValue(undefined);
     completeAfterRollback.mockResolvedValue(undefined);
     release.mockResolvedValue(undefined);
@@ -135,7 +139,7 @@ describe('ConditionalContentService 오류 receipt', () => {
   });
 
   it('work의 412는 current를 담은 body로 저장되고 업로드 object는 삭제된다', async () => {
-    const current: VfsNodeResponseDto = {
+    const current: VfsPreconditionCurrentDto = {
       path: '/valid',
       name: 'valid',
       type: 'FILE',
@@ -144,6 +148,7 @@ describe('ConditionalContentService 오류 receipt', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       version: 5,
+      revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     };
     putConditionalContent.mockRejectedValueOnce(new VfsPreconditionFailedError('/valid', current));
 
@@ -171,6 +176,76 @@ describe('ConditionalContentService 오류 receipt', () => {
 
     await expect(upload('/valid', 'true', undefined)).rejects.toThrow('VFS mutation claim lost');
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['X-If-Absent', 'true', undefined, '{"ifAbsent":true}'],
+    [
+      'X-If-Revision',
+      undefined,
+      encodeRevision({ id: '00000000-0000-4000-8000-000000000001', version: 3 }),
+      JSON.stringify({
+        ifRevision: encodeRevision({ id: '00000000-0000-4000-8000-000000000001', version: 3 }),
+      }),
+    ],
+  ])(
+    '유효한 %s 요청의 성공 fingerprint는 기존 정규화 조건 형식과 같다',
+    async (_title, ifAbsent, ifRevision, conditionJson) => {
+      putConditionalContent.mockResolvedValueOnce({
+        status: 201,
+        resource: { path: '/x' } as VfsNodeResponseDto,
+      });
+
+      const result = await upload('/x', ifAbsent, ifRevision);
+
+      expect(result.status).toBe(201);
+      // 이전 버전이 저장한 receipt와 같은 fingerprint여야 같은 key 재시도가 재생된다.
+      expect(complete.mock.calls[0][3]).toBe(
+        hashParts([
+          'POST',
+          'content/conditional',
+          '/x',
+          conditionJson,
+          'application/octet-stream',
+          createHash('sha256').update('body').digest('hex'),
+        ]),
+      );
+      expect(completeAfterRollback).not.toHaveBeenCalled();
+    },
+  );
+
+  it('완료 receipt가 있으면 body를 hash만 하고 업로드와 트랜잭션 없이 최초 응답을 재생한다', async () => {
+    const receipt = new VfsMutationReceiptEntity();
+    receipt.method = 'POST';
+    receipt.fingerprint = hashParts([
+      'POST',
+      'content/conditional',
+      '/x',
+      '{"ifAbsent":true}',
+      'application/octet-stream',
+      createHash('sha256').update('body').digest('hex'),
+    ]);
+    receipt.requestBodyBytes = '4';
+    receipt.responseStatus = 201;
+    receipt.responseBody = JSON.stringify({ resource: { path: '/x' }, affectedRevisions: [] });
+    receipt.responseHeaders = JSON.stringify({ 'x-request-id': 'req-first' });
+    claim.mockResolvedValueOnce({ kind: 'complete', receipt });
+    const source = Readable.from([Buffer.from('body')]);
+
+    const result = await upload('/x', 'true', undefined, source, 'req-second');
+
+    expect(result).toEqual({
+      status: 201,
+      body: { resource: { path: '/x' }, affectedRevisions: [] },
+      headers: { 'x-request-id': 'req-first' },
+    });
+    expect(source.readableEnded).toBe(true);
+    expect(put).not.toHaveBeenCalled();
+    expect(deleteObject).not.toHaveBeenCalled();
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
   });
 
   it('잘못된 조건 헤더 조합과 정규화 실패 원본 경로는 서로 다른 fingerprint를 만든다', async () => {

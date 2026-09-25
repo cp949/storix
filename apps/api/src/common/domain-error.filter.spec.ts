@@ -4,7 +4,7 @@ import { DomainError } from './domain-error.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../vfs/vfs.errors.js';
-import type { VfsNodeResponseDto } from '../vfs/dto/node-response.dto.js';
+import type { VfsPreconditionCurrentDto } from '../vfs/dto/node-response.dto.js';
 
 function createHost(requestId = 'req-1') {
   const json = jest.fn();
@@ -55,7 +55,7 @@ class ForcedReportClientError extends DomainError {
   }
 }
 
-const CURRENT: VfsNodeResponseDto = {
+const CURRENT: VfsPreconditionCurrentDto = {
   path: '/a',
   name: 'a',
   type: 'FILE',
@@ -64,6 +64,7 @@ const CURRENT: VfsNodeResponseDto = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-02T00:00:00.000Z',
   version: 2,
+  revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
 };
 
 describe('DomainErrorFilter', () => {

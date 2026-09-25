@@ -616,6 +616,282 @@ describe('Fs HTTP contract', () => {
       },
     );
 
+    describe('sourceRevision 조건', () => {
+      async function seedFile(name: string, path = '/doc') {
+        const ns = await createNamespace(name);
+        const base = `/api/v1/namespaces/${ns}/fs`;
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path })
+          .set('Content-Type', 'application/octet-stream')
+          .send(Buffer.from([1, 2, 3]))
+          .expect(201);
+        const revision = async (target = path) =>
+          (await request(httpServer).get(`${base}/revision`).query({ path: target }).expect(200)).body
+            .revision as string;
+        const stat = async (target = path) =>
+          (await request(httpServer).get(`${base}/stat`).query({ path: target }).expect(200)).body;
+        const overwrite = (bytes: Buffer) =>
+          request(httpServer)
+            .post(`${base}/content`)
+            .query({ path, force: true })
+            .set('Content-Type', 'application/octet-stream')
+            .send(bytes);
+        return { ns, base, revision, stat, overwrite };
+      }
+
+      // snapshot·manifest·Blob ref·retained usage 행을 한 번에 비교하기 위한 요약
+      async function rowCounts(ns: string) {
+        const ds = app.get(DataSource);
+        const blobs = await ds.getRepository(BlobEntity).findBy({ namespaceId: ns });
+        const namespace = await ds.getRepository(NamespaceEntity).findOneByOrFail({ id: ns });
+        return {
+          snapshots: await ds.getRepository(VfsSnapshotEntity).countBy({ namespaceId: ns }),
+          entries: await ds.getRepository(VfsSnapshotEntryEntity).countBy({ namespaceId: ns }),
+          blobRefs: blobs.map((blob) => `${blob.id}:${blob.referenceCount}`).sort(),
+          retainedNodes: namespace.retainedSnapshotNodeCount,
+          retainedBytes: String(namespace.retainedSnapshotByteCount),
+        };
+      }
+
+      const fileBody = (sourceRevision?: string, path = '/doc') =>
+        JSON.stringify({ kind: 'file', path, ...(sourceRevision ? { sourceRevision } : {}) });
+
+      it('현재 revision과 일치하면 snapshot을 만들고 그 revision을 고정한다', async () => {
+        const { ns, base, revision } = await seedFile('snapshot-source-match');
+        const current = await revision();
+        const before = await rowCounts(ns);
+        const created = await snapshotPost(base, '', randomUUID(), fileBody(current)).expect(201);
+        expect(created.body).toMatchObject({ kind: 'file', sourcePath: '/doc', sourceRevision: current });
+        const after = await rowCounts(ns);
+        expect(after.snapshots).toBe(before.snapshots + 1);
+        expect(after.entries).toBe(before.entries + 1);
+        expect(after.retainedNodes).toBe(before.retainedNodes + 1);
+      });
+
+      it('오래된 revision은 current를 담은 412를 반환하고 snapshot·manifest·Blob ref·usage 행을 만들지 않는다', async () => {
+        const { ns, base, revision, stat, overwrite } = await seedFile('snapshot-source-stale');
+        const stale = await revision();
+        await overwrite(Buffer.from([9, 9])).expect(200);
+        const before = await rowCounts(ns);
+        const currentStat = await stat();
+        const currentRevision = await revision();
+        expect(currentRevision).not.toBe(stale);
+        const failed = await snapshotPost(base, '', randomUUID(), fileBody(stale)).expect(412);
+        expect(failed.body).toMatchObject({
+          code: 'VFS_PRECONDITION_FAILED',
+          path: '/doc',
+          current: { ...currentStat, revision: currentRevision },
+        });
+        expect(await rowCounts(ns)).toEqual(before);
+      });
+
+      it.each(['snapshot', 'writer'] as const)(
+        '동시 overwrite와의 순서가 sourceRevision 판정과 일치한다: PostgreSQL %s 선행',
+        async (first) => {
+          const { ns, base, revision, stat, overwrite } = await seedFile(`snapshot-source-race-${first}`);
+          const oldRevision = await revision();
+          const oldStat = await stat();
+          const before = await rowCounts(ns);
+          const holder = migrationDataSource.createQueryRunner();
+          await holder.connect();
+          await holder.startTransaction();
+          const [{ pid: holderPid }] = await holder.query('SELECT pg_backend_pid() AS pid');
+          await holder.query(
+            'SELECT id FROM vfs_node WHERE namespace_id = $1 AND parent_id IS NULL FOR UPDATE',
+            [ns],
+          );
+          const pending: Promise<request.Response>[] = [];
+          let completed = 0;
+          const start = (operation: 'snapshot' | 'writer') => {
+            const req =
+              operation === 'snapshot'
+                ? snapshotPost(base, '', randomUUID(), fileBody(oldRevision))
+                : overwrite(Buffer.from([7, 7, 7, 7]));
+            pending.push(
+              req.then((response) => {
+                completed++;
+                return response;
+              }),
+            );
+          };
+          const blocked = async (count: number) => {
+            const deadline = Date.now() + 5000;
+            while (Date.now() < deadline) {
+              const rows = await migrationDataSource.query(
+                'SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND pid <> $1 AND cardinality(pg_blocking_pids(pid)) > 0',
+                [holderPid],
+              );
+              if (rows.length >= count) {
+                expect(new Set(rows.map((row: { pid: number }) => row.pid)).size).toBe(count);
+                return;
+              }
+              if (completed) throw new Error('operation completed before root lock release');
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            throw new Error(`expected ${count} separate PostgreSQL waiters`);
+          };
+          try {
+            start(first);
+            await blocked(1);
+            start(first === 'snapshot' ? 'writer' : 'snapshot');
+            await blocked(2);
+          } finally {
+            await holder.commitTransaction();
+            await holder.release();
+            await Promise.all(pending);
+          }
+          const results = await Promise.all(pending);
+          const snapshot = results[first === 'snapshot' ? 0 : 1];
+          const writer = results[first === 'writer' ? 0 : 1];
+          expect(writer.status).toBe(200);
+          if (first === 'snapshot') {
+            // capture가 먼저 root 잠금을 얻으면 옛 revision과 옛 bytes를 고정한다.
+            expect(snapshot.status).toBe(201);
+            expect(snapshot.body.sourceRevision).toBe(oldRevision);
+            expect(
+              (
+                await request(httpServer)
+                  .get(`${base}/snapshots/${snapshot.body.snapshotId}/content`)
+                  .expect(200)
+              ).body,
+            ).toEqual(Buffer.from([1, 2, 3]));
+            expect((await rowCounts(ns)).snapshots).toBe(before.snapshots + 1);
+          } else {
+            // writer가 먼저 커밋되면 옛 revision은 412이고 current는 writer 결과다.
+            expect(snapshot.status).toBe(412);
+            const after = await stat();
+            const afterRevision = await revision();
+            expect(after).not.toEqual(oldStat);
+            expect(afterRevision).not.toBe(oldRevision);
+            expect(snapshot.body).toMatchObject({
+              code: 'VFS_PRECONDITION_FAILED',
+              current: { ...after, revision: afterRevision },
+            });
+            // writer가 Blob을 교체하므로 ref는 새 Blob의 노드 참조 1개만 남아야 한다(snapshot ref 없음).
+            const after412 = await rowCounts(ns);
+            expect({ ...after412, blobRefs: undefined }).toEqual({ ...before, blobRefs: undefined });
+            expect(after412.blobRefs.map((ref) => Number(ref.split(':')[1])).sort()).toEqual([0, 1]);
+          }
+        },
+      );
+
+      it('같은 key와 같은 요청 재시도는 원본이 바뀐 뒤에도 최초 snapshot ID를 재생한다', async () => {
+        const { ns, base, revision, overwrite } = await seedFile('snapshot-source-lost-response');
+        const key = randomUUID();
+        const raw = fileBody(await revision());
+        const first = await snapshotPost(base, '', key, raw).expect(201);
+        // 응답이 유실된 클라이언트가 원본 변경 뒤 같은 요청을 다시 보내는 상황이다.
+        await overwrite(Buffer.from([5])).expect(200);
+        const replay = await snapshotPost(base, '', key, raw).expect(201);
+        expect(replay.body).toEqual(first.body);
+        expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+        expect((await rowCounts(ns)).snapshots).toBe(1);
+      });
+
+      it('같은 key에서 sourceRevision만 바뀌거나 추가·제거되면 MUTATION_KEY_REUSED이다', async () => {
+        const { base, revision, overwrite } = await seedFile('snapshot-source-key-reuse');
+        const first = await revision();
+        await overwrite(Buffer.from([4, 4])).expect(200);
+        const second = await revision();
+        const key = randomUUID();
+        await snapshotPost(base, '', key, fileBody(second)).expect(201);
+        for (const changed of [fileBody(first), fileBody()]) {
+          expect((await snapshotPost(base, '', key, changed).expect(409)).body.code).toBe(
+            'MUTATION_KEY_REUSED',
+          );
+        }
+        const noCondition = randomUUID();
+        await snapshotPost(base, '', noCondition, fileBody()).expect(201);
+        expect((await snapshotPost(base, '', noCondition, fileBody(second)).expect(409)).body.code).toBe(
+          'MUTATION_KEY_REUSED',
+        );
+      });
+
+      it('최초 412를 원본이 다시 바뀐 뒤와 앱 재시작 뒤에도 최초 body와 X-Request-Id로 재생한다', async () => {
+        const { ns, base, revision, stat, overwrite } = await seedFile('snapshot-source-412-replay');
+        const stale = await revision();
+        await overwrite(Buffer.from([8, 8])).expect(200);
+        const statAtConflict = await stat();
+        const revisionAtConflict = await revision();
+        const key = randomUUID();
+        const raw = fileBody(stale);
+        const first = await snapshotPost(base, '', key, raw).expect(412);
+        expect(first.body.current).toEqual({ ...statAtConflict, revision: revisionAtConflict });
+        await overwrite(Buffer.from([6, 6, 6])).expect(200);
+        // 원본이 다시 바뀌어 현재 revision은 충돌 시점과 다르다.
+        expect(await revision()).not.toBe(revisionAtConflict);
+        const replay = await snapshotPost(base, '', key, raw).expect(412);
+        expect(replay.body).toEqual(first.body);
+        expect(replay.body.current.revision).toBe(revisionAtConflict);
+        expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+
+        const oldDataSource = app.get(DataSource);
+        await app.close();
+        expect(oldDataSource.isInitialized).toBe(false);
+        await bootstrap();
+        const afterRestart = await snapshotPost(base, '', key, raw).expect(412);
+        expect(afterRestart.body).toEqual(first.body);
+        expect(afterRestart.body.current.revision).toBe(revisionAtConflict);
+        expect(afterRestart.headers['x-request-id']).toBe(first.headers['x-request-id']);
+        expect((await rowCounts(ns)).snapshots).toBe(0);
+        // 같은 revision으로 새 key를 쓰면 여전히 최신 상태를 평가한다.
+        const latestRevision = await revision();
+        const fresh = await snapshotPost(base, '', randomUUID(), raw).expect(412);
+        expect(fresh.body.current.revision).toBe(latestRevision);
+        expect(fresh.body.current.revision).not.toBe(revisionAtConflict);
+        expect(fresh.body.current).toEqual({ ...(await stat()), revision: latestRevision });
+      });
+
+      it('성공한 snapshot 응답도 앱 재시작 뒤 같은 ID로 재생한다', async () => {
+        const { ns, base, revision } = await seedFile('snapshot-source-success-restart');
+        const key = randomUUID();
+        const raw = fileBody(await revision());
+        const first = await snapshotPost(base, '', key, raw).expect(201);
+        const oldDataSource = app.get(DataSource);
+        await app.close();
+        expect(oldDataSource.isInitialized).toBe(false);
+        await bootstrap();
+        const replay = await snapshotPost(base, '', key, raw).expect(201);
+        expect(replay.body).toEqual(first.body);
+        expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+        expect((await rowCounts(ns)).snapshots).toBe(1);
+      });
+
+      it('원본 부재 404와 디렉터리 409가 revision 불일치 412보다 먼저이고 잘못된 요청은 400이다', async () => {
+        const { ns, base, revision } = await seedFile('snapshot-source-precedence');
+        await request(httpServer).post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
+        const stale = encodeRevision({ id: randomUUID(), version: 1 });
+        const before = await rowCounts(ns);
+        const missing = await snapshotPost(base, '', randomUUID(), fileBody(stale, '/missing')).expect(404);
+        expect(missing.body.code).toBe('VFS_NODE_NOT_FOUND');
+        for (const sourceRevision of [stale, await revision('/dir')]) {
+          const directory = await snapshotPost(
+            base,
+            '',
+            randomUUID(),
+            fileBody(sourceRevision, '/dir'),
+          ).expect(409);
+          expect(directory.body.code).toBe('VFS_IS_DIRECTORY');
+        }
+        const malformed = await snapshotPost(base, '', randomUUID(), fileBody('r1.bad')).expect(400);
+        expect(malformed.body.code).toBe('VFS_INVALID_REVISION');
+        const tree = await snapshotPost(
+          base,
+          '',
+          randomUUID(),
+          JSON.stringify({ kind: 'tree', path: '/dir', sourceRevision: await revision('/dir') }),
+        ).expect(400);
+        expect(tree.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
+        expect(await rowCounts(ns)).toEqual(before);
+        // 404·409도 receipt로 재생된다.
+        const key = randomUUID();
+        const first = await snapshotPost(base, '', key, fileBody(stale, '/dir')).expect(409);
+        const replay = await snapshotPost(base, '', key, fileBody(stale, '/dir')).expect(409);
+        expect(replay.body).toEqual(first.body);
+      });
+    });
+
     it('restore 생성/교체는 같은 Blob과 MIME을 유지하며 revision과 receipt를 원자적으로 갱신한다', async () => {
       const { ns, base, bytes, blob, id } = await restoreFixture('snapshot-restore-lifecycle');
       await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
@@ -820,11 +1096,19 @@ describe('Fs HTTP contract', () => {
       const raw = '{"path":"/source","ifAbsent":true}';
       const stat = (await request(httpServer).get(`${base}/stat`).query({ path: '/source' }).expect(200))
         .body;
+      const revisionAtConflict = (
+        await request(httpServer).get(`${base}/revision`).query({ path: '/source' }).expect(200)
+      ).body.revision as string;
       const first = await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
-      expect(first.body).toMatchObject({ code: 'VFS_PRECONDITION_FAILED', path: '/source', current: stat });
+      expect(first.body).toMatchObject({
+        code: 'VFS_PRECONDITION_FAILED',
+        path: '/source',
+        current: { ...stat, revision: revisionAtConflict },
+      });
       await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
       const replay = await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
       expect(replay.body).toEqual(first.body);
+      expect(replay.body.current.revision).toBe(revisionAtConflict);
       expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
       expect(
         (await snapshotPost(base, `/${id}/restore`, key, '{"path":"/source","ifAbsent":true }').expect(409))
@@ -986,6 +1270,24 @@ describe('Fs HTTP contract', () => {
       ).toBe('MUTATION_KEY_REUSED');
     });
 
+    it('삭제된 snapshot과 없는 snapshot의 delete 404를 같은 key에서 최초 body와 X-Request-Id로 재생한다', async () => {
+      const { ns, base, id } = await restoreFixture('snapshot-delete-404-replay');
+      await snapshotPost(base, `/${id}/delete`, randomUUID(), '{}').expect(200);
+      for (const target of [id, randomUUID()]) {
+        const key = randomUUID();
+        const first = await snapshotPost(base, `/${target}/delete`, key, '{}').expect(404);
+        expect(first.body.code).toBe('VFS_NODE_NOT_FOUND');
+        expect(
+          await migrationDataSource
+            .getRepository(VfsMutationReceiptEntity)
+            .findOneBy({ namespaceId: ns, scope, idempotencyKey: key }),
+        ).toMatchObject({ state: 'COMPLETE', responseStatus: 404 });
+        const replay = await snapshotPost(base, `/${target}/delete`, key, '{}').expect(404);
+        expect(replay.body).toEqual(first.body);
+        expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      }
+    });
+
     it('암호화 FILE의 원본 삭제 뒤 전체/Range 읽기도 원본 bytes를 반환한다', async () => {
       const nsResponse = await request(httpServer)
         .post('/api/v1/namespaces')
@@ -1051,6 +1353,31 @@ describe('Fs HTTP contract', () => {
         2,
       );
       await snapshotPost(base, `/${snapshot.body.snapshotId}/delete`, deletionKey, '{}').expect(200);
+    });
+
+    it('work 412의 오류 receipt fencing이 실패하면 500이고 receipt를 남기지 않아 같은 key 재시도가 재평가된다', async () => {
+      const { ns, base, id } = await restoreFixture('snapshot-error-receipt-fence');
+      const key = randomUUID();
+      const raw = '{"path":"/source","ifAbsent":true}';
+      // restore work가 412를 던지고 롤백된 뒤 별도 트랜잭션의 오류 receipt 저장이 claim lost로 실패한다.
+      const fenced = jest
+        .spyOn(app.get(VfsMutationReceiptRepository), 'completeAfterRollback')
+        .mockRejectedValueOnce(new Error('VFS mutation claim lost'));
+      try {
+        await snapshotPost(base, `/${id}/restore`, key, raw).expect(500);
+        expect(fenced).toHaveBeenCalledTimes(1);
+      } finally {
+        fenced.mockRestore();
+      }
+      expect(
+        await migrationDataSource
+          .getRepository(VfsMutationReceiptEntity)
+          .findOneBy({ namespaceId: ns, scope, idempotencyKey: key }),
+      ).toBeNull();
+      // 412가 저장되지 않았으므로 원본을 지운 뒤 같은 key 재시도는 새로 평가되어 복원된다.
+      await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
+      const retried = await snapshotPost(base, `/${id}/restore`, key, raw).expect(201);
+      expect(retried.body.resource.path).toBe('/source');
     });
 
     it('한도 초과 413을 완료 receipt로 재생하며 원본 종류와 ID를 검증한다', async () => {
@@ -1421,14 +1748,27 @@ describe('Fs HTTP contract', () => {
           .send({ kind: 'delete', path: '/a', ifRevision: revision, recursive: true });
       const statAt412 = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
         .body;
+      const revisionAt412 = (
+        await request(httpServer).get(`${base}/revision`).query({ path: '/a' }).expect(200)
+      ).body.revision as string;
       const failed = await send(encodeRevision(old)).expect(412);
-      expect(failed.body).toMatchObject({ code: 'VFS_PRECONDITION_FAILED', path: '/a', current: statAt412 });
+      expect(failed.body).toMatchObject({
+        code: 'VFS_PRECONDITION_FAILED',
+        path: '/a',
+        current: { ...statAt412, revision: revisionAt412 },
+      });
       await request(httpServer).post(`${base}/mkdir`).send({ path: '/a/later' }).expect(201);
       const statLater = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
         .body;
       expect(statLater).not.toEqual(statAt412);
+      // 자식 추가로 현재 revision이 바뀌어도 재생되는 current.revision은 충돌 시점 값이다.
+      const revisionLater = (
+        await request(httpServer).get(`${base}/revision`).query({ path: '/a' }).expect(200)
+      ).body.revision as string;
+      expect(revisionLater).not.toBe(revisionAt412);
       const replay = await send(encodeRevision(old)).expect(412);
       expect(replay.body).toEqual(failed.body);
+      expect(replay.body.current.revision).toBe(revisionAt412);
       expect(replay.headers['x-request-id']).toBe(failed.headers['x-request-id']);
       const current = await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: old.id });
       expect((await send(encodeRevision(current)).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
@@ -1568,7 +1908,7 @@ describe('Fs HTTP contract', () => {
       expect(downloaded.body).toEqual(bytes);
     });
 
-    it('requires an exact revision for replacement and rejects changed replay fingerprints', async () => {
+    it('교체는 정확한 revision을 요구하고 최초 412는 파일 교체 뒤에도 충돌 시점 current로 재생하며 fingerprint가 바뀐 재시도는 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-content-replace-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
       const createKey = randomUUID();
@@ -1601,9 +1941,24 @@ describe('Fs HTTP contract', () => {
         put(staleKey, '/x', 'text/plain', Buffer.from('second'), {
           'X-If-Revision': encodeRevision(root),
         });
-      const stale = await sendStale().expect(412);
+      const blobCount = () => migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } });
+      const storage = app.get<BlobStorage>(BLOB_STORAGE);
+      const blobsBeforeStale = await blobCount();
+      const putSpy = jest.spyOn(storage, 'put');
+      const deleteSpy = jest.spyOn(storage, 'delete');
+      let stale: request.Response;
+      try {
+        stale = await sendStale().expect(412);
+        // 412로 롤백되면 업로드한 object를 지우고 Blob row도 남기지 않는다.
+        expect(putSpy).toHaveBeenCalledTimes(1);
+        expect(deleteSpy).toHaveBeenCalledWith(putSpy.mock.calls[0][0]);
+      } finally {
+        putSpy.mockRestore();
+        deleteSpy.mockRestore();
+      }
+      expect(await blobCount()).toBe(blobsBeforeStale);
       expect(stale.body.code).toBe('VFS_PRECONDITION_FAILED');
-      expect(stale.body.current).toMatchObject({ path: '/x', type: 'FILE', size: 5 });
+      expect(stale.body.current).toMatchObject({ path: '/x', type: 'FILE', size: 5, revision });
       const replaceKey = randomUUID();
       const replaced = await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), {
         'X-If-Revision': revision,
@@ -1617,8 +1972,28 @@ describe('Fs HTTP contract', () => {
             .expect(200)
         ).text,
       ).toBe('second');
-      const staleReplay = await sendStale().expect(412);
+      const blobsBeforeReplay = await blobCount();
+      const replayPutSpy = jest.spyOn(storage, 'put');
+      let staleReplay: request.Response;
+      try {
+        staleReplay = await sendStale().expect(412);
+        // 412 재생은 body를 hash만 하고 업로드하지 않는다.
+        expect(replayPutSpy).not.toHaveBeenCalled();
+      } finally {
+        replayPutSpy.mockRestore();
+      }
+      expect(await blobCount()).toBe(blobsBeforeReplay);
       expect(staleReplay.body).toEqual(stale.body);
+      // 파일이 교체된 뒤에도 재생된 current.revision은 충돌 시점 revision이다.
+      expect(staleReplay.body.current.revision).toBe(revision);
+      expect(
+        (
+          await request(httpServer)
+            .get(`/api/v1/namespaces/${namespaceId}/fs/revision`)
+            .query({ path: '/x' })
+            .expect(200)
+        ).body.revision,
+      ).not.toBe(revision);
       expect(staleReplay.headers['x-request-id']).toBe(stale.headers['x-request-id']);
       expect(
         (
@@ -1707,13 +2082,27 @@ describe('Fs HTTP contract', () => {
         'VFS_FILE_TOO_LARGE',
       );
       expect((await send(Buffer.from('ok')).expect(201)).body.resource.path).toBe('/big');
+      const chunkedKey = randomUUID();
       const chunked = await postChunked(
         serverPort,
         `${base}?path=/chunked`,
         [Buffer.alloc(MAX_FILE_SIZE_BYTES), Buffer.from([1])],
-        { 'Idempotency-Key': randomUUID(), 'X-Mutation-Scope': 'caller-a', 'X-If-Absent': 'true' },
+        { 'Idempotency-Key': chunkedKey, 'X-Mutation-Scope': 'caller-a', 'X-If-Absent': 'true' },
       );
       expect(chunked.status).toBe(413);
+      // Content-Length 없는 스트리밍 413도 저장되지 않으므로 같은 key의 작은 본문은 새로 평가된다.
+      expect(
+        await migrationDataSource
+          .getRepository(VfsMutationReceiptEntity)
+          .findOneBy({ namespaceId, scope: 'caller-a', idempotencyKey: chunkedKey }),
+      ).toBeNull();
+      const retried = await postChunked(serverPort, `${base}?path=/chunked`, [Buffer.from('ok')], {
+        'Idempotency-Key': chunkedKey,
+        'X-Mutation-Scope': 'caller-a',
+        'X-If-Absent': 'true',
+      });
+      expect(retried.status).toBe(201);
+      expect(retried.body).toMatchObject({ resource: { path: '/chunked' } });
     });
 
     it('renews a short lease while an upload waits for more chunks', async () => {
@@ -1875,28 +2264,37 @@ describe('Fs HTTP contract', () => {
     });
 
     it('진행 중 claim은 응답을 저장하지 않고 lease 만료 뒤 같은 key로 처리한다', async () => {
-      const namespaceId = await createNamespace('error-receipt-in-progress');
-      const key = randomUUID();
-      const body = '{"kind":"mkdir","path":"/a","ifAbsent":true}';
-      await app
-        .get(VfsMutationReceiptRepository)
-        .claim({ namespaceId, scope, key }, new Date(Date.now() - 59_000));
-      const busy = await mutate(namespaceId, key, body).expect(409);
-      expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
-      expect(await receiptOf(namespaceId, key)).toMatchObject({
-        state: 'RESERVED',
-        generation: 1,
-        responseStatus: null,
-        responseBody: null,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const accepted = await mutate(namespaceId, key, body).expect(201);
-      expect(await receiptOf(namespaceId, key)).toMatchObject({
-        state: 'COMPLETE',
-        generation: 2,
-        responseStatus: 201,
-      });
-      expect((await mutate(namespaceId, key, body).expect(201)).body).toEqual(accepted.body);
+      // lease를 5초로 두고 claim 직후 요청해 busy 판정까지 5초 여유를 둔다.
+      // 만료 대기는 저장된 lease 만료 시각을 기준으로 계산해 시계 지연에 흔들리지 않는다.
+      const previous = process.env.STORIX_MUTATION_LEASE_SECONDS;
+      process.env.STORIX_MUTATION_LEASE_SECONDS = '5';
+      try {
+        const namespaceId = await createNamespace('error-receipt-in-progress');
+        const key = randomUUID();
+        const body = '{"kind":"mkdir","path":"/a","ifAbsent":true}';
+        await app.get(VfsMutationReceiptRepository).claim({ namespaceId, scope, key }, new Date());
+        const busy = await mutate(namespaceId, key, body).expect(409);
+        expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
+        const reserved = await receiptOf(namespaceId, key);
+        expect(reserved).toMatchObject({
+          state: 'RESERVED',
+          generation: 1,
+          responseStatus: null,
+          responseBody: null,
+        });
+        const waitMs = reserved!.leaseExpiresAt!.getTime() - Date.now() + 300;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(waitMs, 0)));
+        const accepted = await mutate(namespaceId, key, body).expect(201);
+        expect(await receiptOf(namespaceId, key)).toMatchObject({
+          state: 'COMPLETE',
+          generation: 2,
+          responseStatus: 201,
+        });
+        expect((await mutate(namespaceId, key, body).expect(201)).body).toEqual(accepted.body);
+      } finally {
+        if (previous === undefined) delete process.env.STORIX_MUTATION_LEASE_SECONDS;
+        else process.env.STORIX_MUTATION_LEASE_SECONDS = previous;
+      }
     });
 
     it('content의 잘못된 조건 헤더 조합과 원본 경로는 같은 key에서 서로의 오류를 재생하지 않는다', async () => {
@@ -1956,15 +2354,19 @@ describe('Fs HTTP contract', () => {
       const statAtConflict = (
         await request(httpServer).get(`${base}/stat`).query({ path: '/doc' }).expect(200)
       ).body;
+      const revisionAtConflict = (
+        await request(httpServer).get(`${base}/revision`).query({ path: '/doc' }).expect(200)
+      ).body.revision as string;
+      const expectedCurrent = { ...statAtConflict, revision: revisionAtConflict };
       const jsonKey = randomUUID();
       const jsonBody = JSON.stringify({ kind: 'delete', path: '/doc', ifRevision: staleRevision });
       const jsonFailed = await mutate(namespaceId, jsonKey, jsonBody).expect(412);
-      expect(jsonFailed.body.current).toEqual(statAtConflict);
+      expect(jsonFailed.body.current).toEqual(expectedCurrent);
       const uploadKey = randomUUID();
       const uploadFailed = await upload(namespaceId, uploadKey, '/doc', { 'X-If-Absent': 'true' }).expect(
         412,
       );
-      expect(uploadFailed.body.current).toEqual(statAtConflict);
+      expect(uploadFailed.body.current).toEqual(expectedCurrent);
       const snapshotKey = randomUUID();
       const snapshotBody = '{"kind":"file","path":"/missing"}';
       const snapshotRequest = () =>
@@ -2002,9 +2404,13 @@ describe('Fs HTTP contract', () => {
         expect(replay.body).toEqual(original.body);
         expect(replay.headers['x-request-id']).toBe(original.headers['x-request-id']);
       }
+      expect(jsonFailed.body.current.revision).toBe(revisionAtConflict);
       expect(
         (await request(httpServer).get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body,
       ).not.toEqual(statAtConflict);
+      expect(
+        (await request(httpServer).get(`${base}/revision`).query({ path: '/doc' }).expect(200)).body.revision,
+      ).not.toBe(revisionAtConflict);
       expect(
         (
           await mutate(

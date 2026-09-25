@@ -12,6 +12,10 @@ import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceModule } from '../namespace/namespace.module.js';
+import { BlobEntity } from '../persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { VfsSnapshotEntity } from '../persistence/entities/vfs-snapshot.entity.js';
+import { VfsSnapshotEntryEntity } from '../persistence/entities/vfs-snapshot-entry.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
@@ -207,6 +211,9 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
       .send('first')
       .expect(201);
     const statAtConflict = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
+    const revisionAtConflict = (await http().get(`${base}/revision`).query({ path: '/doc' }).expect(200)).body
+      .revision as string;
+    const currentAtConflict = { ...statAtConflict, revision: revisionAtConflict };
     const mutate = (key: string, body: string) =>
       http()
         .post(`${base}/mutations`)
@@ -231,14 +238,14 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
       ifRevision: encodeRevision({ id: randomUUID(), version: 1 }),
     });
     const stale = await mutate(staleKey, staleBody).expect(412);
-    expect(stale.body.current).toEqual(statAtConflict);
+    expect(stale.body.current).toEqual(currentAtConflict);
     const nfdKey = randomUUID();
     const nfdBody = '{"kind":"mkdir","path":"/e\\u0301","ifAbsent":true}';
     const nfd = await mutate(nfdKey, nfdBody).expect(400);
     expect(nfd.body.code).toBe('VFS_INVALID_PATH');
     const existsKey = randomUUID();
     const exists = await upload(existsKey, '/doc', { 'X-If-Absent': 'true' }).expect(412);
-    expect(exists.body.current).toEqual(statAtConflict);
+    expect(exists.body.current).toEqual(currentAtConflict);
     const headerKey = randomUUID();
     const badHeader = await upload(headerKey, '/doc', { 'X-If-Absent': 'yes' }).expect(400);
     const missingParentKey = randomUUID();
@@ -270,8 +277,88 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     expect((await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body).not.toEqual(
       statAtConflict,
     );
+    // 파일 변경 뒤에도 재생된 current.revision은 충돌 시점 revision이다.
+    expect(stale.body.current.revision).toBe(revisionAtConflict);
+    expect((await http().get(`${base}/revision`).query({ path: '/doc' }).expect(200)).body.revision).not.toBe(
+      revisionAtConflict,
+    );
     expect((await upload(headerKey, '/doc', { 'X-If-Absent': 'false' }).expect(409)).body.code).toBe(
       'MUTATION_KEY_REUSED',
     );
+  });
+
+  it('FILE sourceRevision 일치는 snapshot을 만들고 불일치 412는 행을 남기지 않으며 둘 다 재시작 뒤 재생한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const ns = await http()
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'source-revision-restart' })
+      .expect(201);
+    const namespaceId = ns.body.id as string;
+    const base = `/api/v1/namespaces/${namespaceId}/fs`;
+    const write = (bytes: Buffer, force = false) =>
+      http()
+        .post(`${base}/content`)
+        .query({ path: '/doc', ...(force ? { force: true } : {}) })
+        .set('Content-Type', 'application/octet-stream')
+        .send(bytes);
+    const revisionOf = async () =>
+      (await http().get(`${base}/revision`).query({ path: '/doc' }).expect(200)).body.revision as string;
+    const rowCounts = async () => {
+      const ds = app.get(DataSource);
+      const blobs = await ds.getRepository(BlobEntity).findBy({ namespaceId });
+      const namespace = await ds.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
+      return {
+        snapshots: await ds.getRepository(VfsSnapshotEntity).countBy({ namespaceId }),
+        entries: await ds.getRepository(VfsSnapshotEntryEntity).countBy({ namespaceId }),
+        blobRefs: blobs.map((blob) => `${blob.id}:${blob.referenceCount}`).sort(),
+        retainedNodes: namespace.retainedSnapshotNodeCount,
+        retainedBytes: String(namespace.retainedSnapshotByteCount),
+      };
+    };
+    await write(Buffer.from([1, 2, 3])).expect(201);
+    const matching = await revisionOf();
+    const successKey = randomUUID();
+    const successBody = { kind: 'file', path: '/doc', sourceRevision: matching };
+    const success = await snapshotPost(app, base, '', successBody, successKey).expect(201);
+    expect(success.body.sourceRevision).toBe(matching);
+    expect((await rowCounts()).snapshots).toBe(1);
+
+    await write(Buffer.from([9, 9]), true).expect(200);
+    const statAtConflict = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
+    const revisionAtConflict = await revisionOf();
+    expect(revisionAtConflict).not.toBe(matching);
+    const beforeFailure = await rowCounts();
+    const staleKey = randomUUID();
+    const stale = await snapshotPost(app, base, '', successBody, staleKey).expect(412);
+    expect(stale.body).toMatchObject({
+      code: 'VFS_PRECONDITION_FAILED',
+      path: '/doc',
+      current: { ...statAtConflict, revision: revisionAtConflict },
+    });
+    expect(await rowCounts()).toEqual(beforeFailure);
+
+    await write(Buffer.from([7]), true).expect(200);
+    expect(await revisionOf()).not.toBe(revisionAtConflict);
+    const oldDataSource = app.get(DataSource);
+    await app.close();
+    expect(oldDataSource.isInitialized).toBe(false);
+    app = await bootstrap();
+    for (const [key, body, original] of [
+      [successKey, successBody, success],
+      [staleKey, successBody, stale],
+    ] as const) {
+      const replay = await snapshotPost(app, base, '', body, key).expect(original.status);
+      expect(replay.body).toEqual(original.body);
+      expect(replay.headers['x-request-id']).toBe(original.headers['x-request-id']);
+    }
+    // 원본이 다시 바뀌고 앱이 재시작된 뒤에도 current.revision은 충돌 시점 값이다.
+    const staleReplay = await snapshotPost(app, base, '', successBody, staleKey).expect(412);
+    expect(staleReplay.body.current.revision).toBe(revisionAtConflict);
+    expect((await rowCounts()).snapshots).toBe(1);
+    // 같은 key에서 sourceRevision이 바뀌면 재사용 충돌이다.
+    expect(
+      (await snapshotPost(app, base, '', { kind: 'file', path: '/doc' }, successKey).expect(409)).body.code,
+    ).toBe('MUTATION_KEY_REUSED');
   });
 });

@@ -5,6 +5,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
+import { toPreconditionCurrent } from '../vfs/dto/node-response.dto.js';
 import { decodeRevision } from '../vfs/revision.js';
 import { encodeRevision } from '../vfs/revision.js';
 import {
@@ -675,8 +676,20 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       return error as VfsPreconditionFailedError;
     }
 
-    function metadataOf(node: { name: string; type: string; version: number }, path: string) {
-      return expect.objectContaining({ path, name: node.name, type: node.type, version: node.version });
+    // current는 stat 필드에 충돌 시점의 revision(r1.)을 더한 형태다.
+    // 412 트랜잭션은 롤백되므로 거부 뒤 다시 읽은 레코드가 충돌 시점 상태다. 충돌 전에 잡아 둔
+    // 노드와 id·version이 같은지 먼저 확인해 충돌 시점 레코드임을 고정하고, size·mimeType·
+    // createdAt·updatedAt을 포함한 current 전체를 toEqual로 비교할 기댓값을 만든다.
+    async function currentAt(
+      namespaceId: string,
+      rootId: string,
+      segments: string[],
+      path: string,
+      conflicted: { id: string; version: number },
+    ) {
+      const record = await getRepo().resolvePath(namespaceId, rootId, segments);
+      expect(record).toMatchObject({ id: conflicted.id, version: conflicted.version });
+      return toPreconditionCurrent(record!, path);
     }
 
     it('mkdir 대상이 이미 있으면 기존 노드 metadata를 current로 담는다', async () => {
@@ -702,6 +715,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         createdAt: existing.createdAt.toISOString(),
         updatedAt: existing.updatedAt.toISOString(),
         version: existing.version,
+        revision: encodeRevision(existing),
       });
     });
 
@@ -730,7 +744,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           }),
         ),
       );
-      expect(error.current).toEqual(metadataOf(recreated, '/a'));
+      expect(error.current).toEqual(await currentAt(namespace.id, root.id, ['a'], '/a', recreated));
     });
 
     it('move과 copy의 source revision 불일치 시 source metadata를 current로 담는다', async () => {
@@ -752,7 +766,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
             }),
           ),
         );
-        expect(error.current).toEqual(metadataOf(source, '/source'));
+        expect(error.current).toEqual(await currentAt(namespace.id, root.id, ['source'], '/source', source));
       }
     });
 
@@ -779,7 +793,9 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           ),
         );
         expect(nestedError.path).toBe('/dest/source');
-        expect(nestedError.current).toEqual(metadataOf(nested, '/dest/source'));
+        expect(nestedError.current).toEqual(
+          await currentAt(namespace.id, root.id, ['dest', 'source'], '/dest/source', nested),
+        );
         // 파일 목적지와의 충돌
         const fileError = await rejection(
           getRepo().withMutation(namespace.id, root.id, (tx) =>
@@ -794,7 +810,9 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
             }),
           ),
         );
-        expect(fileError.current).toEqual(metadataOf(rootFile, '/file.txt'));
+        expect(fileError.current).toEqual(
+          await currentAt(namespace.id, root.id, ['file.txt'], '/file.txt', rootFile),
+        );
       }
     });
 
@@ -810,7 +828,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           getRepo().putConditionalContent(tx, ['x'], { ifAbsent: true }, makeBlobData()),
         ),
       );
-      expect(absentError.current).toEqual(metadataOf(file, '/x'));
+      expect(absentError.current).toEqual(await currentAt(namespace.id, root.id, ['x'], '/x', file));
       const staleError = await rejection(
         getRepo().withMutation(namespace.id, root.id, (tx) =>
           getRepo().putConditionalContent(
@@ -821,7 +839,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           ),
         ),
       );
-      expect(staleError.current).toEqual(metadataOf(file, '/x'));
+      expect(staleError.current).toEqual(await currentAt(namespace.id, root.id, ['x'], '/x', file));
     });
 
     it('restore 조건 위반 시 현재 파일 metadata를 current로 담는다', async () => {
@@ -834,7 +852,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           getRepo().restoreBlob(tx, ['x'], { ifAbsent: true }, blob),
         ),
       );
-      expect(absentError.current).toEqual(metadataOf(file, '/x'));
+      expect(absentError.current).toEqual(await currentAt(namespace.id, root.id, ['x'], '/x', file));
       const staleError = await rejection(
         getRepo().withMutation(namespace.id, root.id, (tx) =>
           getRepo().restoreBlob(
@@ -845,7 +863,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           ),
         ),
       );
-      expect(staleError.current).toEqual(metadataOf(file, '/x'));
+      expect(staleError.current).toEqual(await currentAt(namespace.id, root.id, ['x'], '/x', file));
     });
 
     it('만료된 목록 cursor의 412는 현재 directory metadata를 current로 담는다', async () => {
@@ -866,7 +884,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       const error = await rejection(
         getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1),
       );
-      expect(error.current).toEqual(metadataOf(directory, '/a'));
+      expect(error.current).toEqual(await currentAt(namespace.id, root.id, ['a'], '/a', directory));
     });
   });
 

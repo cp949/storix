@@ -50,11 +50,16 @@ describe('isReplayableMutationError', () => {
     ['413 VFS_DELETE_LIMIT_EXCEEDED', new VfsDeleteLimitExceededError(5)],
     ['413 VFS_COPY_LIMIT_EXCEEDED', new VfsCopyLimitExceededError(5)],
     ['413 VFS_SNAPSHOT_LIMIT_EXCEEDED', new VfsSnapshotLimitExceededError()],
-    ['413 VFS_FILE_TOO_LARGE', new VfsFileTooLargeError(1)],
     ['428 VFS_PRECONDITION_REQUIRED', new VfsPreconditionRequiredError()],
     ['499 경계', new CodedError('EDGE_499', 499)],
   ])('결정적 4xx DomainError는 저장 대상이다: %s', (_title, error) => {
     expect(isReplayableMutationError(error)).toBe(true);
+  });
+
+  // 전제: 스트리밍 본문 한도 초과와 선언 길이(Content-Length) 초과 413은 호출부가 fingerprint를
+  // 만들기 전에 던지므로 분류기에 도달하지 않는다. 이 케이스는 분류기에 도달한 경우의 판정만 고정한다.
+  it('분류기에 도달한 413 VFS_FILE_TOO_LARGE는 저장 대상이다(스트리밍·선언 길이 초과 413은 호출부가 fingerprint 전에 던져 분류기에 도달하지 않는다)', () => {
+    expect(isReplayableMutationError(new VfsFileTooLargeError(1))).toBe(true);
   });
 
   it.each([

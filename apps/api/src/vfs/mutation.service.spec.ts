@@ -4,7 +4,7 @@ import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receip
 import { VfsNodeRepository, type MutationTx } from '../persistence/vfs-node.repository.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import type { ArgumentsHost } from '@nestjs/common';
-import type { VfsNodeResponseDto } from './dto/node-response.dto.js';
+import type { VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
 import { errorResponse } from './mutation-receipt.js';
 import { MutationService } from './mutation.service.js';
 import { VfsNodeNotFoundError, VfsPreconditionFailedError } from './vfs.errors.js';
@@ -66,7 +66,7 @@ describe('MutationService 오류 receipt', () => {
   });
 
   it('work의 412를 롤백 뒤 current를 담은 body 그대로 저장한다', async () => {
-    const current: VfsNodeResponseDto = {
+    const current: VfsPreconditionCurrentDto = {
       path: '/a',
       name: 'a',
       type: 'DIRECTORY',
@@ -75,6 +75,7 @@ describe('MutationService 오류 receipt', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
       version: 3,
+      revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     };
     applyConditionalMutation.mockRejectedValueOnce(new VfsPreconditionFailedError('/a', current));
 
@@ -118,7 +119,7 @@ describe('MutationService 오류 receipt', () => {
 });
 
 describe('errorResponse', () => {
-  const current: VfsNodeResponseDto = {
+  const current: VfsPreconditionCurrentDto = {
     path: '/a',
     name: 'a',
     type: 'FILE',
@@ -127,6 +128,7 @@ describe('errorResponse', () => {
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-02T00:00:00.000Z',
     version: 2,
+    revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   };
 
   function filterBody(error: Error): unknown {

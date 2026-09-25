@@ -21,7 +21,7 @@ import {
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import type { ContentPayload } from './content.service.js';
-import { toNodeResponse } from './dto/node-response.dto.js';
+import { toNodeResponse, toPreconditionCurrent } from './dto/node-response.dto.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { parseSnapshotCreateRequest, parseSnapshotRestoreRequest } from './dto/snapshot-request.dto.js';
 import {
@@ -47,6 +47,7 @@ import {
   VfsNamespaceNotFoundError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
+  VfsPreconditionFailedError,
 } from './vfs.errors.js';
 
 export interface SnapshotMetadata {
@@ -131,6 +132,15 @@ export class VfsSnapshotService {
           throw new VfsIsDirectoryError(command.path);
         if (command.kind === 'tree' && rows[0]?.type !== 'DIRECTORY')
           throw new VfsNotDirectoryError(command.path);
+        // 예산 UPDATE·Blob ref 증가(capture) 전에 root 잠금 아래에서 비교한다.
+        // 불일치면 어떤 snapshot/manifest/ref/usage 행도 만들지 않는다.
+        if (command.sourceRevision !== undefined && rows[0].revision !== command.sourceRevision) {
+          const source = await tx.manager.findOneBy(VfsNodeEntity, { id: rows[0].id, namespaceId });
+          throw new VfsPreconditionFailedError(
+            command.path,
+            source ? toPreconditionCurrent(source, command.path) : null,
+          );
+        }
         const snapshot = await this.snapshots.capture(tx, {
           kind: command.kind === 'file' ? 'FILE' : 'TREE',
           sourcePath: command.path,

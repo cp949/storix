@@ -7,7 +7,11 @@ import { VfsSnapshotRepository } from '../persistence/vfs-snapshot.repository.js
 import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
+import type { SnapshotSourceRow } from '../persistence/vfs-node.repository.js';
 import { errorResponse } from './mutation-receipt.js';
+import { encodeRevision } from './revision.js';
 import { VfsPreconditionFailedError } from './vfs.errors.js';
 
 describe('VfsSnapshotService receipts', () => {
@@ -22,6 +26,7 @@ describe('VfsSnapshotService receipts', () => {
   const restoreBlob = jest.fn<VfsNodeRepository['restoreBlob']>();
   const findForUpdate = jest.fn<VfsSnapshotRepository['findForUpdate']>();
   const getFileEntry = jest.fn<VfsSnapshotRepository['getFileEntry']>();
+  const remove = jest.fn<VfsSnapshotRepository['remove']>();
   const nodes = {
     getRoot: async () => ({ id: rootId }),
     withMutation,
@@ -33,7 +38,7 @@ describe('VfsSnapshotService receipts', () => {
     completeAfterRollback,
     release,
   } as unknown as VfsMutationReceiptRepository;
-  const snapshots = { findForUpdate, getFileEntry } as unknown as VfsSnapshotRepository;
+  const snapshots = { findForUpdate, getFileEntry, remove } as unknown as VfsSnapshotRepository;
   const storage = { get: async () => Readable.from([]) } as unknown as BlobStorage;
   let service: VfsSnapshotService;
 
@@ -43,6 +48,7 @@ describe('VfsSnapshotService receipts', () => {
     complete.mockResolvedValue(undefined);
     completeAfterRollback.mockResolvedValue(undefined);
     release.mockResolvedValue(undefined);
+    remove.mockResolvedValue(undefined);
     withMutation.mockImplementation(async (_ns, _root, work, afterBump) => {
       const value = await work(tx);
       const result = { value, affectedRevisions: [] };
@@ -173,15 +179,249 @@ describe('VfsSnapshotService receipts', () => {
 
   it('성공 receipt 완료 실패(claim lost)는 오류 receipt로 저장하지 않는다', async () => {
     findForUpdate.mockResolvedValueOnce({} as Awaited<ReturnType<VfsSnapshotRepository['findForUpdate']>>);
-    const remove = jest.fn(async () => undefined);
-    (snapshots as unknown as { remove: typeof remove }).remove = remove;
     complete.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
 
     await expect(
       service.delete(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{}'), 'r'),
     ).rejects.toThrow('VFS mutation claim lost');
+    expect(remove).toHaveBeenCalledTimes(1);
     expect(completeAfterRollback).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      'restore의 snapshot 부재 404',
+      () =>
+        service.restore(
+          namespaceId,
+          randomUUID(),
+          'scope',
+          randomUUID(),
+          Buffer.from('{"path":"/target","ifAbsent":true}'),
+          'r',
+        ),
+    ],
+    [
+      'delete의 snapshot 부재 404',
+      () => service.delete(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{}'), 'r'),
+    ],
+  ])(
+    'work의 %s를 롤백 뒤 저장하다 fencing이 실패하면 claim을 한 번 해제하고 오류를 전파한다',
+    async (_title, run) => {
+      // work 안의 4xx는 트랜잭션 롤백 뒤 별도 트랜잭션(completeAfterRollback)에서 저장한다.
+      findForUpdate.mockResolvedValueOnce(null);
+      completeAfterRollback.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
+
+      await expect(run()).rejects.toThrow('VFS mutation claim lost');
+      expect(withMutation).toHaveBeenCalledTimes(1);
+      expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+      expect((completeAfterRollback.mock.calls[0][4] as { status: number }).status).toBe(404);
+      expect(complete).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
+describe('VfsSnapshotService FILE sourceRevision', () => {
+  const namespaceId = randomUUID();
+  const rootId = randomUUID();
+  const nodeId = randomUUID();
+  const currentRevision = encodeRevision({ id: nodeId, version: 3 });
+  const staleRevision = encodeRevision({ id: nodeId, version: 2 });
+  const otherNodeRevision = encodeRevision({ id: randomUUID(), version: 3 });
+  const sourceRow = (type: 'FILE' | 'DIRECTORY'): SnapshotSourceRow => ({
+    id: nodeId,
+    parentId: rootId,
+    name: 'a.txt',
+    type,
+    revision: currentRevision,
+    relativePath: '.',
+    blobId: type === 'FILE' ? randomUUID() : null,
+    size: type === 'FILE' ? '3' : null,
+    mimeType: type === 'FILE' ? 'text/plain' : null,
+  });
+  const sourceNode = Object.assign(new VfsNodeEntity(), {
+    id: nodeId,
+    namespaceId,
+    parentId: rootId,
+    type: 'FILE',
+    name: 'a.txt',
+    blobId: randomUUID(),
+    size: '3',
+    mimeType: 'text/plain',
+    createdAt: new Date('2026-09-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-09-02T00:00:00.000Z'),
+    version: 3,
+  });
+  const captureSnapshotRows = jest.fn<VfsNodeRepository['captureSnapshotRows']>();
+  const capture = jest.fn<VfsSnapshotRepository['capture']>();
+  const findOneBy = jest.fn(async (entity: unknown) =>
+    entity === NamespaceEntity
+      ? ({
+          id: namespaceId,
+          maxSyncSnapshotNodes: null,
+          maxSnapshotBytes: null,
+          maxRetainedSnapshotNodes: null,
+          maxRetainedSnapshotBytes: null,
+        } as NamespaceEntity)
+      : sourceNode,
+  );
+  const tx = { manager: { findOneBy } } as unknown as MutationTx;
+  const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const nodes = {
+    getRoot: async () => ({ id: rootId }),
+    captureSnapshotRows,
+    withMutation: async (
+      _ns: string,
+      _root: string,
+      work: (t: MutationTx) => Promise<unknown>,
+      afterBump?: (t: MutationTx, r: unknown) => Promise<void>,
+    ) => {
+      const value = await work(tx);
+      if (afterBump) await afterBump(tx, { value, affectedRevisions: [] });
+      return { value, affectedRevisions: [] };
+    },
+  } as unknown as VfsNodeRepository;
+  const receipts = {
+    claim: async () => ({ kind: 'owner', generation: 1 }),
+    complete: async () => undefined,
+    completeAfterRollback,
+    release: async () => undefined,
+  } as unknown as VfsMutationReceiptRepository;
+  const service = new VfsSnapshotService(
+    nodes,
+    { capture } as unknown as VfsSnapshotRepository,
+    receipts,
+    {} as BlobStorage,
+    null,
+  );
+  const create = (body: Record<string, unknown>) =>
+    service.create(namespaceId, 'scope', randomUUID(), Buffer.from(JSON.stringify(body)), 'req');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    completeAfterRollback.mockResolvedValue(undefined);
+    captureSnapshotRows.mockResolvedValue([sourceRow('FILE')]);
+    capture.mockResolvedValue({
+      id: randomUUID(),
+      kind: 'FILE',
+      sourcePath: '/a.txt',
+      sourceRevision: currentRevision,
+      rootNodeId: nodeId,
+      rootType: 'FILE',
+      nodeCount: 1,
+      logicalBytes: 3n,
+      createdAt: new Date('2026-09-03T00:00:00.000Z'),
+    } as unknown as Awaited<ReturnType<VfsSnapshotRepository['capture']>>);
+  });
+
+  it('sourceRevision이 원본 현재 revision과 일치하면 capture를 호출하고 201을 반환한다', async () => {
+    const result = await create({ kind: 'file', path: '/a.txt', sourceRevision: currentRevision });
+    expect(result.status).toBe(201);
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('sourceRevision이 없으면 비교 없이 capture를 호출한다', async () => {
+    const result = await create({ kind: 'file', path: '/a.txt' });
+    expect(result.status).toBe(201);
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['version이 다른 revision', staleRevision],
+    ['다른 노드의 revision', otherNodeRevision],
+  ])('sourceRevision이 %s이면 capture 없이 current를 담은 412를 반환한다', async (_name, sourceRevision) => {
+    const result = await create({ kind: 'file', path: '/a.txt', sourceRevision });
+    expect(capture).not.toHaveBeenCalled();
+    // current는 capture 행의 노드 ID로 같은 namespace 안에서 다시 읽은 원본이다.
+    expect(findOneBy).toHaveBeenCalledWith(VfsNodeEntity, { id: sourceRow('FILE').id, namespaceId });
+    expect(result).toEqual(
+      errorResponse(
+        new VfsPreconditionFailedError('/a.txt', {
+          path: '/a.txt',
+          name: 'a.txt',
+          type: 'FILE',
+          size: 3,
+          mimeType: 'text/plain',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-02T00:00:00.000Z',
+          version: 3,
+          revision: currentRevision,
+        }),
+        'req',
+      ),
+    );
+    expect(result.status).toBe(412);
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('원본이 디렉터리면 revision 불일치보다 409가 먼저이고 capture를 호출하지 않는다', async () => {
+    captureSnapshotRows.mockResolvedValue([sourceRow('DIRECTORY')]);
+    const result = await create({ kind: 'file', path: '/a.txt', sourceRevision: staleRevision });
+    expect(result.status).toBe(409);
+    expect(result.body).toMatchObject({ code: 'VFS_IS_DIRECTORY' });
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('원본이 없으면 revision 불일치보다 404가 먼저이고 capture를 호출하지 않는다', async () => {
+    const { VfsNodeNotFoundError } = await import('./vfs.errors.js');
+    captureSnapshotRows.mockRejectedValue(new VfsNodeNotFoundError('/a.txt'));
+    const result = await create({ kind: 'file', path: '/a.txt', sourceRevision: staleRevision });
+    expect(result.status).toBe(404);
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('TREE에 sourceRevision을 주면 트랜잭션 없이 400을 저장한다', async () => {
+    const result = await create({ kind: 'tree', path: '/a', sourceRevision: currentRevision });
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ code: 'VFS_INVALID_MUTATION_REQUEST' });
+    expect(captureSnapshotRows).not.toHaveBeenCalled();
+  });
+
+  it('형식이 잘못된 sourceRevision은 400 VFS_INVALID_REVISION을 저장한다', async () => {
+    const result = await create({ kind: 'file', path: '/a.txt', sourceRevision: 'r1.bad' });
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ code: 'VFS_INVALID_REVISION' });
+    expect(captureSnapshotRows).not.toHaveBeenCalled();
+  });
+
+  it('조건 없는 요청과 있는 요청은 fingerprint가 다르고 조건 없는 fingerprint는 기존 command JSON으로 만든다', async () => {
+    const { hashParts } = await import('./mutation.service.js');
+    const { createHash } = await import('node:crypto');
+    const fingerprints: string[] = [];
+    const spy = new VfsSnapshotService(
+      nodes,
+      { capture } as unknown as VfsSnapshotRepository,
+      {
+        ...receipts,
+        complete: async (...args: unknown[]) => {
+          fingerprints.push(args[3] as string);
+        },
+      } as unknown as VfsMutationReceiptRepository,
+      {} as BlobStorage,
+      null,
+    );
+    const plain = Buffer.from('{"kind":"file","path":"/a.txt"}');
+    await spy.create(namespaceId, 'scope', randomUUID(), plain, 'req');
+    await spy.create(
+      namespaceId,
+      'scope',
+      randomUUID(),
+      Buffer.from(JSON.stringify({ kind: 'file', path: '/a.txt', sourceRevision: currentRevision })),
+      'req',
+    );
+    // 이전 버전이 저장한 receipt와 같은 fingerprint여야 재시도가 호환된다.
+    expect(fingerprints[0]).toBe(
+      hashParts([
+        'POST',
+        'snapshots',
+        '{"kind":"file","path":"/a.txt"}',
+        createHash('sha256').update(plain).digest('hex'),
+      ]),
+    );
+    expect(fingerprints[1]).not.toBe(fingerprints[0]);
   });
 });
 

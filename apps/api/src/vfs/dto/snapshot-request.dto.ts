@@ -6,6 +6,9 @@ import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from '..
 export interface SnapshotCreateRequest {
   readonly kind: 'file' | 'tree';
   readonly path: string;
+  // FILE 원본이 이 revision일 때만 capture한다. 없으면 키 자체를 만들지 않아
+  // 기존 command JSON(fingerprint)과 같은 직렬화를 유지한다.
+  readonly sourceRevision?: string;
 }
 
 export interface SnapshotRestoreRequest {
@@ -26,11 +29,20 @@ function requireKeys(record: Record<string, unknown>, allowed: readonly string[]
 
 export function parseSnapshotCreateRequest(value: unknown): SnapshotCreateRequest {
   const record = recordOf(value);
-  requireKeys(record, ['kind', 'path']);
+  requireKeys(record, ['kind', 'path', 'sourceRevision']);
   if ((record.kind !== 'file' && record.kind !== 'tree') || typeof record.path !== 'string') {
     throw new VfsInvalidMutationRequestError();
   }
-  return { kind: record.kind, path: resolveSnapshotSourcePath(record.path, record.kind).canonical };
+  const hasSourceRevision = Object.hasOwn(record, 'sourceRevision');
+  // 조건 비교는 FILE 원본 하나에만 정의된다. TREE는 형식 검사 전에 거부한다.
+  if (hasSourceRevision && (record.kind === 'tree' || typeof record.sourceRevision !== 'string')) {
+    throw new VfsInvalidMutationRequestError();
+  }
+  const path = resolveSnapshotSourcePath(record.path, record.kind).canonical;
+  if (!hasSourceRevision) return { kind: record.kind, path };
+  const sourceRevision = record.sourceRevision as string;
+  decodeRevision(sourceRevision);
+  return { kind: record.kind, path, sourceRevision };
 }
 
 export function parseSnapshotRestoreRequest(value: unknown): SnapshotRestoreRequest {
