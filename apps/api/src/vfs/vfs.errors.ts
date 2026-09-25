@@ -1,5 +1,23 @@
 import { DomainError } from '../common/domain-error.js';
 
+export class VfsInvalidRevisionError extends DomainError {
+  readonly code = 'VFS_INVALID_REVISION';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 revision');
+  }
+}
+
+export class VfsRevisionExhaustedError extends DomainError {
+  readonly code = 'VFS_REVISION_EXHAUSTED';
+  readonly status = 409;
+
+  constructor() {
+    super('revision 상한 초과');
+  }
+}
+
 export class VfsInvalidPathError extends DomainError {
   readonly code = 'VFS_INVALID_PATH';
   readonly status = 400;
