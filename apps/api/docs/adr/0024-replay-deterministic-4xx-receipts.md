@@ -52,11 +52,9 @@
   (`VFS_INVALID_MUTATION_REQUEST`)으로 저장된 snapshot 생성 receipt는, 그 요청이 이제 유효하게 파싱되면 fingerprint가 달라
   같은 재시도가 `MUTATION_KEY_REUSED`를 받는다(해당 endpoint 미릴리즈).
 - 재생 불가 오류는 receipt가 없다. 소비자는 그 오류를 받았을 때 입력을 고쳐 재시도하고, 응답 bytes의 동일성에 의존하지 않는다.
-- SQLite 드라이버는 연결 하나를 모든 요청이 공유하고 앱에 트랜잭션을 직렬화하는 장치가 없어, 같은 프로세스 안에서도
-  동시 요청의 트랜잭션이 직렬화·격리되지 않는다. 겹친 요청은 오류(`cannot start a transaction within a transaction`)로
-  끝날 수 있고, 트랜잭션 밖 쿼리는 다른 요청의 열린 트랜잭션에 섞여 그 롤백과 함께 사라질 수 있다. `sourceRevision`
-  비교와 캡처의 원자성은 동시 요청에 대해 보장하지 않는다. 이번 변경 이전부터의 SQLite 드라이버 공통 한계이며 이 ADR
-  범위에서 해결하지 않는다. 동시성은 PostgreSQL 통합 테스트로만 검증했다.
+- SQLite 드라이버는 연결 하나를 모든 요청이 공유하므로 [ADR-0025](./0025-sqlite-query-gate.md)의 쿼리 게이트가 모든 쿼리를
+  직렬화한다. receipt claim, `sourceRevision` 비교와 캡처의 원자성이 같은 프로세스 안의 동시 요청에 대해서도 성립한다.
+  게이트 대기 상한을 넘기면 503 `DB_BUSY`로 실패하고, 5xx라 receipt로 저장하지 않는다.
 - **ADR-0020 breaking change 기준**: 이 변경은 엔드포인트·필수 필드·응답 필드 제거나 개명·상태 코드 의미·인증 방식을 바꾸지
   않는다. `sourceRevision`은 선택 필드, `current`(`revision` 포함)는 412 body에 추가한 필드다(`ErrorResponse`는 추가 속성을 허용한다).
   최초 평가의 status·body는 그대로이고 같은 key 재시도의 결과만 재생으로 바뀐다. 영향받는 endpoint는 모두

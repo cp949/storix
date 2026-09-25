@@ -148,17 +148,15 @@ FILE snapshot 생성 요청의 선택 필드다. `kind: 'file'`에서만 허용�
 | 항목 | PostgreSQL | SQLite |
 | --- | --- | --- |
 | namespace root 행 잠금 | `withMutation`이 `pessimistic_write`(`FOR UPDATE`)로 잠근다. 같은 namespace의 writer와 snapshot 캡처가 root 잠금에서 선형화된다 | 잠금 호출을 생략한다(`applyRowLockIfSupported`가 쿼리를 그대로 반환) |
-| `sourceRevision` 비교와 캡처의 원자성 | root 잠금 아래에서 비교와 캡처가 이어져 그 사이에 다른 writer가 끼어들지 않는다 | 동시 요청에 대해 보장하지 않는다(아래) |
+| `sourceRevision` 비교와 캡처의 원자성 | root 잠금 아래에서 비교와 캡처가 이어져 그 사이에 다른 writer가 끼어들지 않는다 | 쿼리 게이트가 트랜잭션을 직렬화해 보장한다(아래) |
 | 오류 receipt 저장 | 작업 트랜잭션 롤백 뒤 별도 트랜잭션 | 같은 방식 |
 
-- SQLite 드라이버(TypeORM better-sqlite3)는 연결(QueryRunner) 하나를 모든 요청이 공유하고, 앱에는 트랜잭션을 직렬화하는
-  장치가 없다. 같은 프로세스 안에서도 동시 요청의 트랜잭션은 직렬화·격리되지 않는다.
-  - 두 `dataSource.transaction`이 await 사이에 겹치면 두 번째가
-    `SqliteError: cannot start a transaction within a transaction`으로 실패한다(typeorm 1.1.1, `:memory:` 실측).
-  - 트랜잭션 밖 쿼리도 같은 연결을 쓰므로 다른 요청의 열린 트랜잭션에 섞인다. 그 쿼리는 커밋 전 쓰기를 읽고, 그
-    트랜잭션이 롤백되면 그 쿼리의 쓰기도 함께 사라진다(같은 조건 실측).
-- 따라서 SQLite에서 겹친 요청은 오류로 끝날 수 있고, `sourceRevision` 비교와 캡처의 원자성은 동시 요청에 대해 보장하지
-  않는다. receipt·snapshot 코드에 한정되지 않는 SQLite 드라이버 공통 한계이며 이 문서 범위에서 해결하지 않는다.
+- SQLite 드라이버(TypeORM better-sqlite3)는 연결 하나를 모든 요청이 공유하므로, 앱이 모든 쿼리를 FIFO 게이트로 직렬화한다
+  ([01](./01-db-driver-portability.md)의 SQLite 쿼리 게이트). 트랜잭션 하나가 게이트를 끝까지 쥐고, 다른 트랜잭션과
+  트랜잭션 밖 쿼리(receipt `claim` 포함)는 그동안 기다린다. 그래서 root 행 잠금이 없어도 같은 프로세스 안의 동시 요청이
+  선형화되고, `sourceRevision` 비교와 캡처의 원자성이 성립한다.
+- 대기가 상한을 넘으면 그 쿼리는 실행하지 않고 503 `DB_BUSY`로 실패한다. 5xx라 receipt로 저장하지 않으므로 같은 key로
+  재시도하면 처음부터 다시 평가한다.
 - SQLite는 단일 프로세스 배포 전용이다([01](./01-db-driver-portability.md) 1절).
 - 두 드라이버에서 receipt 저장·재생 로직과 fingerprint 계산은 같은 코드다. 차이는 root 행 잠금 유무다.
 

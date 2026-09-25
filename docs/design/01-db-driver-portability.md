@@ -92,7 +92,7 @@ repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유�
 | raw SQL의 timestamp 읽기 | SQLite는 `Date`가 아니라 공백 구분 문자열(`2026-09-08 23:02:01`)을 돌려준다. `new Date()`에 그대로 넘기면 V8이 로컬 타임존으로 해석해 컨테이너 타임존이 UTC가 아닐 때 시각이 조용히 틀어진다. raw 경로는 `T`·`Z`를 보정하는 `parseSqlTimestamp`를 거친다. TypeORM 엔티티 경로는 이 보정을 이미 한다 |
 | `LIKE` 대소문자 | SQLite는 기본이 ASCII 대소문자 무시다. 연결 직후 `PRAGMA case_sensitive_like = ON`을 한 번 실행해 Postgres와 맞춘다(`persistence.module.ts`) |
 | 재귀 CTE 상한 | Postgres는 바깥 `SELECT`의 `LIMIT`으로 CTE 평가가 멈춘다. SQLite는 재귀 항 안쪽 `LIMIT`이 있어야 큐 확장이 멈춘다. 상한이 필요한 재귀 쿼리는 위치를 드라이버별로 나눈다 |
-| row lock | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. `better-sqlite3`의 동기 실행은 개별 쿼리의 순서만 보장한다. 연결 하나를 모든 요청이 공유하고 앱에 트랜잭션 직렬화 장치가 없어, 겹친 요청의 트랜잭션은 격리되지 않고 오류로 끝날 수 있다([02](./02-receipt-error-replay.md) 6절) |
+| row lock | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. 그 대신 SQLite 쿼리 게이트가 모든 쿼리를 직렬화한다(아래) |
 | 트랜잭션 격리 | Postgres는 읽기 스냅샷에 `REPEATABLE READ`를 지정하고, SQLite는 기본 트랜잭션을 쓴다 |
 
 새 raw SQL을 추가할 때는 위 표의 항목에 해당하는지 먼저 확인한다. 해당하지 않는 SQL은 분기 없이 공유한다.
@@ -156,3 +156,24 @@ repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유�
 
 3절의 엔티티 컬럼 상수, 3.1의 마이그레이션 분기, 4절의 방언 차이 표, 6·7절의 GC 락과 `DbDumpTool` 구현, 8절의 spec 분리다.
 드라이버 판정 함수(`getDbDriver`, `isSqliteDataSource`)는 `postgres`·`sqlite` 이분법이라 함께 고쳐야 한다.
+
+## SQLite 쿼리 게이트
+
+TypeORM better-sqlite3 드라이버는 DataSource당 연결 하나와 QueryRunner 하나를 모든 호출자에게 재사용한다. 그대로 두면 같은 틱에
+시작한 트랜잭션은 `cannot start a transaction within a transaction`으로 실패하고, 뒤늦게 겹친 트랜잭션은 `SAVEPOINT`로 중첩돼
+앞 트랜잭션의 롤백에 함께 사라지며, 트랜잭션 밖 쿼리는 열린 트랜잭션에 섞인다. 결정과 대안은
+[ADR-0025](../../apps/api/docs/adr/0025-sqlite-query-gate.md)다.
+
+- `persistence/sqlite-gate.ts`의 `installSqliteGate`가 DataSource 초기화 직후 `persistence.module.ts`의 `dataSourceFactory`에서
+  호출된다. PostgreSQL DataSource에는 설치하지 않는다. 마이그레이션과 별도 프로세스 잡의 DataSource(`AppDataSource`)도 대상이 아니다.
+- 연결은 하나다. `createQueryRunner`는 호출마다 새 runner를 만들고, 게이트는 트랜잭션을 연 runner를 소유자로 기록한다.
+  소유자의 쿼리는 통과하고 그 외 쿼리는 FIFO 순서로 게이트를 한 번씩 얻는다. 최상위 트랜잭션이 끝나면(COMMIT·ROLLBACK)
+  소유권이 풀리고 다음 대기자에게 넘어간다. prepared statement 캐시는 연결 객체별로 runner 사이에 공유한다.
+- 트랜잭션 콜백 안(같은 비동기 범위)에서 만든 QueryRunner는 소유 runner를 그대로 받는다. manager 없이 실행한 쿼리와 다시 연
+  트랜잭션이 교착하지 않고 같은 트랜잭션에 참여한다(중첩은 `SAVEPOINT`). 범위는 최상위 `dataSource.manager.transaction` 호출마다
+  AsyncLocalStorage로 만들고 트랜잭션이 끝나면 닫는다.
+- 대기 상한은 30초(`SQLITE_GATE_WAIT_TIMEOUT_MS`)다. 넘기면 그 쿼리는 실행하지 않고 `SqliteGateTimeoutError`(503 `DB_BUSY`,
+  `Retry-After: 1`)로 실패한다.
+- 불변식: 한 시점에 연결에서 실행 중인 쿼리 흐름은 하나다. 트랜잭션 안에서 외부 I/O를 기다리는 동안 다른 모든 요청이 대기하므로,
+  트랜잭션 콜백 안에 외부 I/O를 새로 넣지 않는다(현재는 스냅샷 본문 조회의 `storage.get`이 유일하다).
+- 게이트는 읽기 동시성을 제공하지 않는다. 클라이언트 취소는 처리하지 않는다.
