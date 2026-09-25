@@ -116,14 +116,20 @@ export class ConditionalContentService {
       };
     }
     try {
+      const replayMaxBytes =
+        claim.kind === 'complete'
+          ? Math.max(maxBytes, Number(claim.receipt.requestBodyBytes ?? 0))
+          : maxBytes;
       const declaredLength = contentLength === undefined ? null : Number(contentLength);
       if (declaredLength !== null && (!Number.isSafeInteger(declaredLength) || declaredLength < 0)) {
         throw new VfsInvalidMutationRequestError();
       }
-      if (declaredLength !== null && declaredLength > maxBytes) throw new VfsFileTooLargeError(maxBytes);
+      if (declaredLength !== null && declaredLength > replayMaxBytes) {
+        throw new VfsFileTooLargeError(replayMaxBytes);
+      }
 
       if (claim.kind === 'complete' || parseError) {
-        const replayed = await hashStream(source, maxBytes);
+        const replayed = await hashStream(source, replayMaxBytes);
         const currentFingerprint = fingerprint(path, condition, mimeType, replayed.sha256);
         if (claim.kind === 'complete') {
           if (claim.receipt.method !== 'POST' || claim.receipt.fingerprint !== currentFingerprint) {
@@ -144,7 +150,16 @@ export class ConditionalContentService {
           namespaceId,
           root.id,
           async () => null,
-          (tx) => this.receipts.complete(tx, identity, claim.generation, currentFingerprint, 'POST', result),
+          (tx) =>
+            this.receipts.complete(
+              tx,
+              identity,
+              claim.generation,
+              currentFingerprint,
+              'POST',
+              result,
+              replayed.size,
+            ),
         );
         return result;
       }
@@ -206,11 +221,19 @@ export class ConditionalContentService {
               encryptionIv,
             }),
           (tx, result) =>
-            this.receipts.complete(tx, identity, claim.generation, currentFingerprint, 'POST', {
-              status: result.value.status,
-              body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
-              headers: { 'x-request-id': requestId },
-            }),
+            this.receipts.complete(
+              tx,
+              identity,
+              claim.generation,
+              currentFingerprint,
+              'POST',
+              {
+                status: result.value.status,
+                body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
+                headers: { 'x-request-id': requestId },
+              },
+              uploaded.size,
+            ),
         );
         return {
           status: applied.value.status,

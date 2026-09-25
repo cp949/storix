@@ -64,13 +64,15 @@ export function runVfsMutationReceiptSharedTests(
       namespace.id,
       root.id,
       (tx) => nodeRepository.ensureDirectory(namespace.id, root.id, ['a'], false, tx),
-      async (tx) => receiptRepository.complete(tx, identity, 1, 'a'.repeat(64), 'POST', response),
+      async (tx) => receiptRepository.complete(tx, identity, 1, 'a'.repeat(64), 'POST', response, 123),
     );
     const replay = await receiptRepository.claim(identity, new Date(now.getTime() + 29 * 86400_000));
     expect(replay).toMatchObject({
       kind: 'complete',
       receipt: { responseStatus: 201, fingerprint: 'a'.repeat(64) },
     });
+    if (replay.kind !== 'complete') throw new Error('expected a complete receipt');
+    expect(Number(replay.receipt.requestBodyBytes)).toBe(123);
     expect(await nodeRepository.resolvePath(namespace.id, root.id, ['a'])).not.toBeNull();
   });
 

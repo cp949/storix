@@ -62,6 +62,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
         'response_status',
         'response_body',
         'response_headers',
+        'request_body_bytes',
       ]),
     );
     const indexes = await dataSource.query('PRAGMA index_list(vfs_mutation_receipt)');

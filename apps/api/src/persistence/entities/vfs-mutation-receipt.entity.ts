@@ -41,6 +41,9 @@ export class VfsMutationReceiptEntity {
   @Column({ name: 'response_headers', type: 'text', nullable: true })
   responseHeaders: string | null;
 
+  @Column({ name: 'request_body_bytes', type: 'bigint', nullable: true })
+  requestBodyBytes: string | null;
+
   @Column({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

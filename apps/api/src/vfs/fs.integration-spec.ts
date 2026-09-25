@@ -318,6 +318,27 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional content upload', () => {
+    it('replays an accepted upload after the namespace file-size limit is lowered', async () => {
+      const namespaceId = await createNamespace('conditional-content-replay-limit-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+      const bytes = Buffer.from('accepted before the limit changed');
+      const key = randomUUID();
+      const send = () =>
+        request(httpServer)
+          .post(base)
+          .query({ path: '/code.py' })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('X-If-Absent', 'true')
+          .set('Content-Type', 'application/octet-stream')
+          .send(bytes);
+      const first = await send().expect(201);
+      await migrationDataSource.getRepository(NamespaceEntity).update(namespaceId, { maxFileSizeBytes: '1' });
+      const replay = await send().expect(201);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+    });
+
     it('stores binary bytes and replays the exact upload without another Blob row', async () => {
       const namespaceId = await createNamespace('conditional-content-http-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs`;

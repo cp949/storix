@@ -129,6 +129,7 @@ export class VfsMutationReceiptRepository {
     fingerprint: string,
     method: string,
     response: ReceiptResponse,
+    requestBodyBytes?: number,
   ): Promise<void> {
     const now = new Date();
     const result = await tx.manager
@@ -144,6 +145,7 @@ export class VfsMutationReceiptRepository {
         responseStatus: response.status,
         responseBody: JSON.stringify(response.body),
         responseHeaders: JSON.stringify(response.headers),
+        requestBodyBytes: requestBodyBytes === undefined ? null : String(requestBodyBytes),
         updatedAt: now,
       })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)

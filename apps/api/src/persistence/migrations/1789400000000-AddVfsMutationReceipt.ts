@@ -19,6 +19,7 @@ export class AddVfsMutationReceipt1789400000000 implements MigrationInterface {
           "response_status" smallint,
           "response_body" text,
           "response_headers" text,
+          "request_body_bytes" bigint,
           "created_at" datetime NOT NULL DEFAULT (datetime('now')),
           "updated_at" datetime NOT NULL DEFAULT (datetime('now')),
           PRIMARY KEY ("namespace_id", "scope", "idempotency_key")
@@ -39,6 +40,7 @@ export class AddVfsMutationReceipt1789400000000 implements MigrationInterface {
           "response_status" smallint,
           "response_body" text,
           "response_headers" text,
+          "request_body_bytes" bigint,
           "created_at" timestamptz NOT NULL DEFAULT now(),
           "updated_at" timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY ("namespace_id", "scope", "idempotency_key")

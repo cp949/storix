@@ -119,7 +119,8 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
+          description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
+          schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
       requestBody:
         required: true
         content:
@@ -414,7 +415,8 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
+          description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
+          schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
         - name: X-If-Absent
           in: header
           required: false
