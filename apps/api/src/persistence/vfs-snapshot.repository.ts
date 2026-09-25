@@ -126,6 +126,7 @@ export class VfsSnapshotRepository {
       )
       .execute();
     if (charged.affected !== 1) throw new VfsSnapshotLimitExceededError();
+    tx.logicalByteDelta += bytes;
     for (const [blobId, occurrences] of refs) {
       if (!(await this.blobs.incrementLiveReferenceCount(tx.manager, tx.namespaceId, blobId, occurrences))) {
         throw new VfsInvalidOperationError(input.sourcePath);
@@ -261,5 +262,6 @@ export class VfsSnapshotRepository {
         bytes: String(current.logicalBytes),
       })
       .execute();
+    tx.logicalByteDelta -= BigInt(String(current.logicalBytes));
   }
 }

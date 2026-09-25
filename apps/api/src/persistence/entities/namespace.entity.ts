@@ -61,6 +61,12 @@ export class NamespaceEntity {
   @Column({ name: 'retained_snapshot_byte_count', type: 'bigint', default: 0 })
   retainedSnapshotByteCount: string;
 
+  @Column({ name: 'max_total_logical_bytes', type: 'bigint', nullable: true })
+  maxTotalLogicalBytes: string | null;
+
+  @Column({ name: 'live_file_byte_count', type: 'bigint', default: 0 })
+  liveFileByteCount: string;
+
   @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

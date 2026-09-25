@@ -8,7 +8,13 @@ import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.en
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
-import { IdempotencyKeyReusedError, NamespaceAlreadyExistsError, NamespaceNotFoundError } from './namespace.errors.js';
+import {
+  IdempotencyKeyReusedError,
+  NamespaceAlreadyExistsError,
+  NamespaceNotFoundError,
+  NamespaceQuotaLimitExceedsGlobalError,
+} from './namespace.errors.js';
+import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POSTGRES_UNIQUE_VIOLATION = '23505';
@@ -36,6 +42,7 @@ export class NamespaceService {
     name: string,
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
+    maxTotalLogicalBytes: string | null = null,
   ): Promise<CreateNamespaceResult> {
     if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
       throw new NamespaceEncryptionNotConfiguredError();
@@ -43,7 +50,18 @@ export class NamespaceService {
 
     // accessPolicy를 해시에 포함하지 않으면 같은 Idempotency-Key로 정책만 바꾼
     // 재요청이 IdempotencyKeyReusedError 없이 캐시 응답을 돌려준다.
-    const requestHash = canonicalJsonHash({ name, encryptionPolicy, accessPolicy });
+    try {
+      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes);
+    } catch {
+      throw new NamespaceQuotaLimitExceedsGlobalError();
+    }
+
+    const requestHash = canonicalJsonHash({
+      name,
+      encryptionPolicy,
+      accessPolicy,
+      ...(maxTotalLogicalBytes === null ? {} : { maxTotalLogicalBytes }),
+    });
 
     const existing = await this.idempotencyRepo.findOneBy({ key: idempotencyKey });
     if (existing) {
@@ -59,7 +77,12 @@ export class NamespaceService {
     }
 
     try {
-      const namespace = await this.provisioningRepo.createWithRoot(name, encryptionPolicy, accessPolicy);
+      const namespace = await this.provisioningRepo.createWithRoot(
+        name,
+        encryptionPolicy,
+        accessPolicy,
+        maxTotalLogicalBytes,
+      );
       const body = toNamespaceResponse(namespace);
       await this.recordIdempotency(idempotencyKey, requestHash, 201, body);
       return { status: 201, body };
@@ -91,7 +114,7 @@ export class NamespaceService {
       order: { name: 'ASC', id: 'ASC' },
     });
 
-    return namespaces.map(toNamespaceResponse);
+    return namespaces.map((namespace) => toNamespaceResponse(namespace));
   }
 
   private async recordIdempotency(

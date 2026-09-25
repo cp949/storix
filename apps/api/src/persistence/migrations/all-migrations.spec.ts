@@ -12,6 +12,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddGcState1789300000000',
       'AddVfsMutationReceipt1789400000000',
       'AddVfsSnapshots1790400000000',
+      'AddNamespaceLogicalQuota1791400000000',
     ]);
   });
 });

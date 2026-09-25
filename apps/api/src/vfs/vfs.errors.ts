@@ -185,3 +185,12 @@ export class VfsSnapshotLimitExceededError extends DomainError {
     super('Snapshot Node 수 또는 logical byte 보존 한도 초과');
   }
 }
+
+export class VfsQuotaExceededError extends DomainError {
+  readonly code = 'VFS_QUOTA_EXCEEDED';
+  readonly status = 413;
+
+  constructor(readonly maxTotalLogicalBytes: string, readonly usedTotalLogicalBytes: string) {
+    super(`namespace logical byte quota exceeded (${usedTotalLogicalBytes}/${maxTotalLogicalBytes})`);
+  }
+}

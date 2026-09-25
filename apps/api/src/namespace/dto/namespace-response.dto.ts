@@ -4,6 +4,7 @@ import {
   NamespaceEntity,
   NamespaceStatus,
 } from '../../persistence/entities/namespace.entity.js';
+import { resolveNamespaceQuota, resolveTotalLogicalBytes } from '../../vfs/namespace-quota.js';
 
 export interface NamespaceResponseDto {
   readonly id: string;
@@ -13,9 +14,13 @@ export interface NamespaceResponseDto {
   readonly status: NamespaceStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly quota: { readonly limitBytes: string; readonly usedBytes: string };
 }
 
-export function toNamespaceResponse(entity: NamespaceEntity): NamespaceResponseDto {
+export function toNamespaceResponse(
+  entity: NamespaceEntity,
+  globalLimit?: string,
+): NamespaceResponseDto {
   return {
     id: entity.id,
     name: entity.name,
@@ -24,5 +29,12 @@ export function toNamespaceResponse(entity: NamespaceEntity): NamespaceResponseD
     status: entity.status,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
+    quota: {
+      limitBytes: resolveNamespaceQuota(entity.maxTotalLogicalBytes ?? null, globalLimit).toString(),
+      usedBytes: resolveTotalLogicalBytes(
+        String(entity.liveFileByteCount ?? '0'),
+        String(entity.retainedSnapshotByteCount ?? '0'),
+      ).toString(),
+    },
   };
 }

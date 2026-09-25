@@ -2,6 +2,7 @@ import {
   NamespaceInvalidAccessPolicyError,
   NamespaceInvalidEncryptionPolicyError,
   NamespaceInvalidNameError,
+  NamespaceInvalidTotalLogicalBytesError,
   NamespacePublicEncryptionConflictError,
 } from '../namespace.errors.js';
 import { parseCreateNamespaceRequest } from './create-namespace.dto.js';
@@ -20,6 +21,24 @@ describe('parseCreateNamespaceRequest', () => {
   it('name에 대문자가 있으면 거부한다', () => {
     expect(() => parseCreateNamespaceRequest({ name: 'ACME' })).toThrow(NamespaceInvalidNameError);
   });
+
+  it('maxTotalLogicalBytes를 decimal string으로 반환한다', () => {
+    expect(parseCreateNamespaceRequest({ name: 'acme', maxTotalLogicalBytes: '9007199254740993' })).toEqual({
+      name: 'acme',
+      encryptionPolicy: 'NONE',
+      accessPolicy: 'PRIVATE',
+      maxTotalLogicalBytes: '9007199254740993',
+    });
+  });
+
+  it.each([0, '0', '-1', '1.5', 1.5, '1e6', '9223372036854775808', null])(
+    'maxTotalLogicalBytes가 양의 int64 decimal string이 아니면 거부한다: %s',
+    (value) => {
+      expect(() => parseCreateNamespaceRequest({ name: 'acme', maxTotalLogicalBytes: value })).toThrow(
+        NamespaceInvalidTotalLogicalBytesError,
+      );
+    },
+  );
 
   it('name에 허용되지 않는 문자가 있으면 거부한다', () => {
     expect(() => parseCreateNamespaceRequest({ name: 'a/b' })).toThrow(NamespaceInvalidNameError);

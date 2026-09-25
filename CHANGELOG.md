@@ -42,6 +42,8 @@
 
 ### Added
 
+- namespace별 논리 저장량 상한을 추가했다. live FILE과 보존 snapshot의 FILE entry bytes를 함께 계산하며, namespace 생성 또는 전용 관리자 API에서 상한을 설정할 수 있다. 초과 변경은 원자적으로 413 `VFS_QUOTA_EXCEEDED`를 반환하고, namespace 응답에 적용 상한과 사용량을 decimal string으로 제공한다.
+
 - FILE snapshot 생성 요청에 선택 필드 `sourceRevision`(`r1.`)을 추가했다. 원본의 현재 revision과 다르면
   snapshot을 만들지 않고 412를 반환한다. 비교는 캡처와 같은 transaction에서 수행하며 검사 순서는
   404 → 409 → 412다. 문자열이 아닌 값(`null`·숫자·불리언·객체·배열)이나 TREE 요청에 지정하면 400

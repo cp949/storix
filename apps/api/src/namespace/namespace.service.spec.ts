@@ -59,7 +59,7 @@ describe('NamespaceService', () => {
 
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE', 'PRIVATE');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE', 'PRIVATE', null);
       expect(idempotencyRepo.insert).toHaveBeenCalledWith(
         expect.objectContaining({ key: 'key-1', responseStatus: 201 }),
       );
@@ -136,7 +136,7 @@ describe('NamespaceService', () => {
       const result = await service.create('key-1', 'acme', 'ENCRYPTED');
 
       expect(result.status).toBe(201);
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE', null);
     });
 
     it('accessPolicy를 provisioningRepo에 그대로 전달한다', async () => {
@@ -144,7 +144,7 @@ describe('NamespaceService', () => {
 
       await service.create('key-public', 'public-ns', 'NONE', 'PUBLIC');
 
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC');
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC', null);
     });
 
     it('accessPolicy만 다른 재요청은 같은 Idempotency-Key로 재사용할 수 없다', async () => {

@@ -30,7 +30,9 @@ import {
   VfsPreconditionFailedError,
   VfsRevisionExhaustedError,
   VfsVersionConflictError,
+  VfsQuotaExceededError,
 } from '../vfs/vfs.errors.js';
+import { resolveNamespaceQuota } from '../vfs/namespace-quota.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
@@ -91,6 +93,8 @@ export interface MutationTx {
   readonly namespaceId: string;
   readonly rootId: string;
   readonly changed: Map<string, { path: string; increment: boolean }>;
+  liveFileByteDelta: bigint;
+  logicalByteDelta: bigint;
 }
 
 export interface SnapshotSourceRow {
@@ -252,14 +256,54 @@ export class VfsNodeRepository {
       if (!root || root.type !== 'DIRECTORY') {
         throw new VfsNodeNotFoundError('/');
       }
-      const tx: MutationTx = { manager, namespaceId, rootId, changed: new Map() };
+      const tx: MutationTx = {
+        manager,
+        namespaceId,
+        rootId,
+        changed: new Map(),
+        liveFileByteDelta: 0n,
+        logicalByteDelta: 0n,
+      };
       const value = await work(tx);
+      await this.applyLogicalByteQuota(tx);
       const affectedRevisions = await this.bumpAndReadChangedNodes(tx);
       if (afterBump) {
         await afterBump(tx, { value, affectedRevisions });
       }
       return { value, affectedRevisions };
     });
+  }
+
+  private recordLiveByteDelta(tx: MutationTx, delta: bigint): void {
+    tx.liveFileByteDelta += delta;
+    tx.logicalByteDelta += delta;
+  }
+
+  private async applyLogicalByteQuota(tx: MutationTx): Promise<void> {
+    if (tx.logicalByteDelta <= 0n && tx.liveFileByteDelta === 0n) return;
+
+    const namespaces = tx.manager.getRepository(NamespaceEntity);
+    const namespace = await namespaces.findOneByOrFail({ id: tx.namespaceId });
+    const liveBytes = BigInt(String(namespace.liveFileByteCount)) + tx.liveFileByteDelta;
+    const retainedBytes = BigInt(String(namespace.retainedSnapshotByteCount));
+    if (liveBytes < 0n || liveBytes > 9223372036854775807n) {
+      throw new Error('namespace live file byte counter out of int64 range');
+    }
+    const totalBytes = liveBytes + retainedBytes;
+    if (totalBytes > 9223372036854775807n) {
+      throw new Error('namespace total logical byte counter out of int64 range');
+    }
+
+    if (tx.logicalByteDelta > 0n) {
+      const limit = resolveNamespaceQuota(
+        namespace.maxTotalLogicalBytes === null ? null : String(namespace.maxTotalLogicalBytes),
+      );
+      if (totalBytes > limit) throw new VfsQuotaExceededError(limit.toString(), totalBytes.toString());
+    }
+
+    if (tx.liveFileByteDelta !== 0n) {
+      await namespaces.update({ id: tx.namespaceId }, { liveFileByteCount: liveBytes.toString() });
+    }
   }
 
   private markChanged(tx: MutationTx, id: string, increment: boolean): void {
@@ -541,6 +585,7 @@ export class VfsNodeRepository {
         .where('id = :id', { id: existing.id })
         .execute();
       this.markChanged(tx, existing.id, true);
+      this.recordLiveByteDelta(tx, BigInt(blob.size) - BigInt(String(existing.size)));
       return { kind: 'replaced', node: toRecord({ ...existing, ...blob }) };
     }
     const created = await nodeRepo.save(
@@ -555,6 +600,7 @@ export class VfsNodeRepository {
       }),
     );
     this.markChanged(tx, created.id, false);
+    this.recordLiveByteDelta(tx, BigInt(blob.size));
     return { kind: 'created', node: toRecord(created) };
   }
 
@@ -870,6 +916,7 @@ export class VfsNodeRepository {
       }),
     );
     this.markChanged(tx, created.id, false);
+    this.recordLiveByteDelta(tx, BigInt(emptyBlob.size));
 
     return { kind: 'created', node: toRecord(created) };
   }
@@ -917,12 +964,15 @@ export class VfsNodeRepository {
         throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
       }
       const previousBlobId = existing.blobId;
+      if (existing.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
+      const previousSize = BigInt(existing.size);
 
       existing.blobId = createdBlob.id;
       existing.size = newBlob.size;
       existing.mimeType = newBlob.mimeType;
       const saved = await nodeRepo.save(existing);
       this.markChanged(tx, saved.id, false);
+      this.recordLiveByteDelta(tx, BigInt(newBlob.size) - previousSize);
 
       await this.blobRepository.decrementReferenceCount(manager, previousBlobId, 1);
 
@@ -942,6 +992,7 @@ export class VfsNodeRepository {
       }),
     );
     this.markChanged(tx, created.id, false);
+    this.recordLiveByteDelta(tx, BigInt(newBlob.size));
 
     return { kind: 'created', node: toRecord(created) };
   }
@@ -1163,6 +1214,8 @@ export class VfsNodeRepository {
         throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
       }
       await nodeRepo.remove(target);
+      if (target.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
+      this.recordLiveByteDelta(tx, -BigInt(target.size));
       await this.blobRepository.decrementReferenceCount(manager, target.blobId, 1);
       return;
     }
@@ -1176,14 +1229,14 @@ export class VfsNodeRepository {
     // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
     // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
     const ph = new DialectPlaceholders(this.isSqlite);
-    const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
+    const subtreeRows: { id: string; type: VfsNodeType; blob_id: string | null; size: string | null }[] = await manager.query(
       `WITH RECURSIVE subtree AS (
-           SELECT id, namespace_id, blob_id FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
+           SELECT id, namespace_id, type, blob_id, size FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
            UNION ALL
-           SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
+           SELECT vn.id, vn.namespace_id, vn.type, vn.blob_id, vn.size FROM vfs_node vn
            INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
          )
-         SELECT id, blob_id FROM subtree`,
+         SELECT id, type, blob_id, size FROM subtree`,
       ph.params,
     );
 
@@ -1192,6 +1245,13 @@ export class VfsNodeRepository {
     }
 
     const ids = subtreeRows.map((row) => row.id);
+    let removedBytes = 0n;
+    for (const row of subtreeRows) {
+      if (row.type === 'FILE') {
+        if (row.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
+        removedBytes += BigInt(row.size);
+      }
+    }
     await this.applyRowLockIfSupported(
       manager
         .createQueryBuilder(VfsNodeEntity, 'n')
@@ -1207,6 +1267,7 @@ export class VfsNodeRepository {
     }
 
     await nodeRepo.delete(ids);
+    this.recordLiveByteDelta(tx, -removedBytes);
 
     // CTE 결과의 row 순서는 비결정적이라 Map의 삽입 순서를 그대로 따르면 decrement
     // 호출 순서가 매번 달라진다. 여러 독립적인 row에 대한 write를 한 트랜잭션에서
@@ -1277,6 +1338,8 @@ export class VfsNodeRepository {
         }),
       );
       this.markChanged(tx, created.id, false);
+      if (sourceNode.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
+      this.recordLiveByteDelta(tx, BigInt(sourceNode.size));
 
       return { node: toRecord(created), finalPath: joinSegments(finalSegments) };
     }
@@ -1350,6 +1413,8 @@ export class VfsNodeRepository {
           if (!child.blob_id) {
             throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
           }
+          if (child.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
+          this.recordLiveByteDelta(tx, BigInt(child.size));
           blobIncrements.set(child.blob_id, (blobIncrements.get(child.blob_id) ?? 0) + 1);
         } else {
           queue.push({ oldParentId: child.id, newParentId: newId });

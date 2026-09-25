@@ -21,6 +21,7 @@ import {
   VfsRevisionExhaustedError,
   VfsPreconditionFailedError,
   VfsVersionConflictError,
+  VfsQuotaExceededError,
 } from '../vfs/vfs.errors.js';
 
 export interface VfsNodeRepositoryTestContext {
@@ -969,6 +970,105 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       const root = await getRepo().getRoot(randomUUID());
 
       expect(root).toBeNull();
+    });
+  });
+
+  describe('namespace total logical quota', () => {
+    it('denies an over-limit create and overwrite without persisting node, blob, revision, or usage', async () => {
+      const namespace = await createNamespace('logical-quota-node-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '3' });
+      const root = (await getRepo().getRoot(namespace.id))!;
+
+      await expect(
+        getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['too-large'],
+          false,
+          makeBlobData({ size: '4' }),
+          null,
+          false,
+        ),
+      ).rejects.toThrow(VfsQuotaExceededError);
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['too-large'])).toBeNull();
+      expect(await getDs().getRepository(BlobEntity).countBy({ namespaceId: namespace.id })).toBe(0);
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('0');
+
+      const created = await getRepo().putFileContent(
+        namespace.id,
+        root.id,
+        ['file'],
+        false,
+        makeBlobData({ size: '3' }),
+        null,
+        false,
+      );
+      const revisionBeforeDeniedOverwrite = (await getRepo().getRoot(namespace.id))!.version;
+      await expect(
+        getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['file'],
+          false,
+          makeBlobData({ size: '4' }),
+          created.node.version,
+          false,
+        ),
+      ).rejects.toThrow(VfsQuotaExceededError);
+      expect(String((await getRepo().resolvePath(namespace.id, root.id, ['file']))?.size)).toBe('3');
+      expect((await getRepo().getRoot(namespace.id))!.version).toBe(revisionBeforeDeniedOverwrite);
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+    });
+
+    it('subtracts live bytes on delete and permits zero or negative deltas while over quota', async () => {
+      const namespace = await createNamespace('logical-quota-delete-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '3' });
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().putFileContent(namespace.id, root.id, ['file'], false, makeBlobData({ size: '3' }), null, false);
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '2' });
+
+      await getRepo().touchFile(namespace.id, root.id, ['file'], false, makeBlobData());
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+      await getRepo().removeNode(namespace.id, root.id, ['file'], false, 100);
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('0');
+    });
+
+    it('move keeps usage unchanged while COW copy adds logical bytes and is rolled back over limit', async () => {
+      const namespace = await createNamespace('logical-quota-copy-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '5' });
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const file = await getRepo().putFileContent(
+        namespace.id,
+        root.id,
+        ['file'],
+        false,
+        makeBlobData({ size: '3' }),
+        null,
+        false,
+      );
+
+      await getRepo().moveNode(namespace.id, root.id, ['file'], ['moved'], false);
+      await expect(getRepo().copyNode(namespace.id, root.id, ['moved'], ['copy'], false, 100)).rejects.toThrow(
+        VfsQuotaExceededError,
+      );
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['copy'])).toBeNull();
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['moved']))?.id).toBe(file.node.id);
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+    });
+
+    it('serializes concurrent positive deltas at the namespace root lock', async () => {
+      const namespace = await createNamespace('logical-quota-race-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '5' });
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const write = (name: string) =>
+        getRepo().putFileContent(namespace.id, root.id, [name], false, makeBlobData({ size: '4' }), null, false);
+
+      const outcomes = await Promise.allSettled([write('first'), write('second')]);
+      expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      const error = outcomes.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+      expect(error.reason).toBeInstanceOf(VfsQuotaExceededError);
+      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('4');
     });
   });
 

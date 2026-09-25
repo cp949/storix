@@ -26,6 +26,7 @@ import {
   VfsPreconditionRequiredError,
   VfsRevisionExhaustedError,
   VfsSnapshotLimitExceededError,
+  VfsQuotaExceededError,
 } from './vfs.errors.js';
 
 class CodedError extends DomainError {
@@ -50,6 +51,7 @@ describe('isReplayableMutationError', () => {
     ['413 VFS_DELETE_LIMIT_EXCEEDED', new VfsDeleteLimitExceededError(5)],
     ['413 VFS_COPY_LIMIT_EXCEEDED', new VfsCopyLimitExceededError(5)],
     ['413 VFS_SNAPSHOT_LIMIT_EXCEEDED', new VfsSnapshotLimitExceededError()],
+    ['413 VFS_QUOTA_EXCEEDED', new VfsQuotaExceededError('10', '11')],
     ['428 VFS_PRECONDITION_REQUIRED', new VfsPreconditionRequiredError()],
     ['499 경계', new CodedError('EDGE_499', 499)],
   ])('결정적 4xx DomainError는 저장 대상이다: %s', (_title, error) => {

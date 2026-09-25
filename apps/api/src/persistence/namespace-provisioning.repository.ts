@@ -18,11 +18,12 @@ export class NamespaceProvisioningRepository {
     name: string,
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
+    maxTotalLogicalBytes: string | null = null,
   ): Promise<NamespaceEntity> {
     try {
       return await this.dataSource.transaction(async (manager) => {
         const namespace = await manager.save(
-          manager.create(NamespaceEntity, { name, encryptionPolicy, accessPolicy }),
+          manager.create(NamespaceEntity, { name, encryptionPolicy, accessPolicy, maxTotalLogicalBytes }),
         );
         await manager.save(
           manager.create(VfsNodeEntity, {

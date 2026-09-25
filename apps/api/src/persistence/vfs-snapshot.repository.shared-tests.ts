@@ -8,6 +8,7 @@ import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js'
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { VfsSnapshotRepository } from './vfs-snapshot.repository.js';
+import { VfsQuotaExceededError } from '../vfs/vfs.errors.js';
 
 export function runSnapshotRepositoryTests(
   context: () => {
@@ -44,6 +45,7 @@ export function runSnapshotRepositoryTests(
       size: '7',
       mimeType: 'text/plain',
     });
+    await ds().getRepository(NamespaceEntity).increment({ id: namespaceId }, 'liveFileByteCount', 7);
     return { node, blob };
   }
   async function capture(
@@ -233,6 +235,26 @@ export function runSnapshotRepositoryTests(
     expect((await ds().getRepository(BlobEntity).findOneByOrFail({ id: blob.id })).zeroSince).toBeInstanceOf(
       Date,
     );
+  });
+
+  it('counts each retained snapshot in the namespace total and rolls back an over-limit capture', async () => {
+    const { namespace, root } = await fixture();
+    await ds().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '13' });
+    const live = await context().nodes.putFileContent(
+      namespace.id,
+      root.id,
+      ['a'],
+      false,
+      { storageKey: `blobs/${randomUUID()}`, size: '7', mimeType: 'text/plain', sha256: '0'.repeat(64), encryptionIv: null },
+      null,
+      false,
+    );
+
+    await expect(capture(namespace.id, root.id, ['a'])).rejects.toThrow(VfsQuotaExceededError);
+    expect(await ds().getRepository(VfsSnapshotEntity).countBy({ namespaceId: namespace.id })).toBe(0);
+    expect(String((await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).retainedSnapshotByteCount)).toBe('0');
+    expect(String((await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('7');
+    expect((await ds().getRepository(BlobEntity).findOneByOrFail({ id: live.node.blobId! })).referenceCount).toBe(1);
   });
   it('receipt-stage failure rolls back snapshot accounting, manifest and Blob pin', async () => {
     const { namespace, root } = await fixture();

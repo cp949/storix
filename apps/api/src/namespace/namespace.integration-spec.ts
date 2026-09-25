@@ -25,6 +25,7 @@ describe('Namespace HTTP contract', () => {
     process.env.STORIX_DB_PASSWORD = container.getPassword();
     process.env.STORIX_DB_NAME = container.getDatabase();
     process.env.STORIX_ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
+    process.env.STORIX_ADMIN_API_KEY = 'quota-admin-secret';
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -71,6 +72,45 @@ describe('Namespace HTTP contract', () => {
       status: 'ACTIVE',
     });
     expect(response.body.id).toEqual(expect.any(String));
+    expect(response.body.quota).toEqual({ limitBytes: '53687091200', usedBytes: '0' });
+  });
+
+  it('namespace 생성 시 더 낮은 logical quota를 지정하고 응답·조회에 노출한다', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'create-quota')
+      .send({ name: 'quota-create', maxTotalLogicalBytes: '1024' })
+      .expect(201);
+
+    expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
+    const fetched = await request(app.getHttpServer()).get(`/api/v1/namespaces/${created.body.id}`).expect(200);
+    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
+  });
+
+  it('quota 관리자 경로는 전용 키를 요구하고 변경 receipt를 재생한다', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', 'create-admin-quota')
+      .send({ name: 'quota-admin-update' })
+      .expect(201);
+    const path = `/api/v1/admin/namespaces/${created.body.id}/quota`;
+
+    await request(app.getHttpServer()).patch(path).send({ maxTotalLogicalBytes: '2048' }).expect(401);
+    const first = await request(app.getHttpServer())
+      .patch(path)
+      .set('Authorization', 'Bearer quota-admin-secret')
+      .set('Idempotency-Key', 'quota-admin-patch')
+      .send({ maxTotalLogicalBytes: '2048' })
+      .expect(200);
+    expect(first.body.quota.limitBytes).toBe('2048');
+
+    const replay = await request(app.getHttpServer())
+      .patch(path)
+      .set('Authorization', 'Bearer quota-admin-secret')
+      .set('Idempotency-Key', 'quota-admin-patch')
+      .send({ maxTotalLogicalBytes: '2048' })
+      .expect(200);
+    expect(replay.body).toEqual(first.body);
   });
 
   it('같은 key와 같은 body로 재시도하면 새로 만들지 않고 같은 결과를 재생한다', async () => {

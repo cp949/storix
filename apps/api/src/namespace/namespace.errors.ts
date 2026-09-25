@@ -71,3 +71,21 @@ export class NamespacePublicEncryptionConflictError extends DomainError {
     super('ENCRYPTED namespace는 PUBLIC으로 생성할 수 없음');
   }
 }
+
+export class NamespaceInvalidTotalLogicalBytesError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES';
+  readonly status = 400;
+
+  constructor(readonly value: unknown) {
+    super('maxTotalLogicalBytes는 1 이상의 int64 범위 decimal string이어야 함');
+  }
+}
+
+export class NamespaceQuotaLimitExceedsGlobalError extends DomainError {
+  readonly code = 'NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL';
+  readonly status = 400;
+
+  constructor() {
+    super('namespace quota가 Storix 전체 논리 바이트 상한을 초과함');
+  }
+}
