@@ -268,22 +268,16 @@ export function runSnapshotRepositoryTests(
     expect(paths).toEqual(['.', 'Z', 'a', 'a.b', 'a/z', 'é', 'é', '한', '😀']);
   });
   it.each([{ maxRetainedSnapshotNodes: 1 }, { maxRetainedSnapshotBytes: '7' }])(
-    'captures respect retained ceilings (parallel PostgreSQL, single-writer SQLite) %j',
+    'captures respect retained ceilings (parallel attempts) %j',
     async (limits) => {
       const { namespace, root } = await fixture();
       const { blob } = await file(namespace.id, root.id, 'a');
       await ds().getRepository(NamespaceEntity).update(namespace.id, limits);
-      // SQLite fixture는 단일 연결/단일 writer 모델이다. PostgreSQL만 root lock 경합을 검증한다.
-      const results =
-        ds().options.type === 'better-sqlite3'
-          ? [
-              ...(await Promise.allSettled([capture(namespace.id, root.id, ['a'])])),
-              ...(await Promise.allSettled([capture(namespace.id, root.id, ['a'])])),
-            ]
-          : await Promise.allSettled([
-              capture(namespace.id, root.id, ['a']),
-              capture(namespace.id, root.id, ['a']),
-            ]);
+      // PostgreSQL은 root lock, SQLite는 쿼리 게이트가 두 capture를 직렬화한다.
+      const results = await Promise.allSettled([
+        capture(namespace.id, root.id, ['a']),
+        capture(namespace.id, root.id, ['a']),
+      ]);
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const rejected = results.find((r) => r.status === 'rejected');
       expect(rejected).toMatchObject({ reason: { status: 413 } });

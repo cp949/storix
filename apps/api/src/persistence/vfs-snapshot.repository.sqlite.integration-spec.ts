@@ -12,6 +12,7 @@ import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { VfsSnapshotRepository } from './vfs-snapshot.repository.js';
 import { runSnapshotRepositoryTests } from './vfs-snapshot.repository.shared-tests.js';
+import { installSqliteGate } from './sqlite-gate.js';
 
 describe.each(['memory', 'file'])('VfsSnapshotRepository (SQLite %s)', (storage) => {
   let dataSource: DataSource;
@@ -32,6 +33,8 @@ describe.each(['memory', 'file'])('VfsSnapshotRepository (SQLite %s)', (storage)
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
+    // 앱과 같이 쿼리 게이트를 걸어 동시 시도를 실제로 직렬화한다.
+    installSqliteGate(dataSource);
     const blobs = new BlobRepository(dataSource);
     nodes = new VfsNodeRepository(
       dataSource.getRepository(NamespaceEntity),

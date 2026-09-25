@@ -101,11 +101,9 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
 
   async function runSameConditionAttempts<T>(namespaceId: string, attempt: () => Promise<T>) {
     if (getDs().options.type === 'better-sqlite3') {
-      // :memory: fixture는 한 연결만 사용한다. 중첩 BEGIN은 SQLite 오류이므로
-      // 동일한 조건을 직렬로 재평가하는 계약만 여기서 확인한다.
-      const first = await Promise.allSettled([attempt()]);
-      const second = await Promise.allSettled([attempt()]);
-      return [...first, ...second];
+      // SQLite는 root row 잠금이 없다. 쿼리 게이트가 두 시도를 한 줄로 세워, 동일한 조건을
+      // 순서대로 재평가하는 계약을 실제 동시 시도로 확인한다.
+      return Promise.allSettled([attempt(), attempt()]);
     }
 
     const holder = getDs().createQueryRunner();
@@ -938,11 +936,9 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         false,
       );
       const before = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
-      let read;
-      if (getDs().options.type === 'better-sqlite3') {
-        // The SQLite fixture has one connection, so its transactions must run in sequence.
-        read = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
-        await getRepo().putFileContent(
+      const [read] = await Promise.all([
+        getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10),
+        getRepo().putFileContent(
           namespace.id,
           root.id,
           ['a', 'x'],
@@ -950,21 +946,8 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
           makeBlobData(),
           first.node.version,
           false,
-        );
-      } else {
-        [read] = await Promise.all([
-          getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10),
-          getRepo().putFileContent(
-            namespace.id,
-            root.id,
-            ['a', 'x'],
-            false,
-            makeBlobData(),
-            first.node.version,
-            false,
-          ),
-        ]);
-      }
+        ),
+      ]);
       const after = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
       expect([
         [before.directory.version, before.rows[0].version],

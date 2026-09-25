@@ -8,6 +8,7 @@ import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { runVfsNodeRepositorySharedTests } from './vfs-node.repository.shared-tests.js';
+import { installSqliteGate } from './sqlite-gate.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(migrations.sqlite.integration-spec.ts와
 // 동일 관례) — 그 외 실행에서는 jest.integration.config.cjs의 testPathIgnorePatterns가 제외한다.
@@ -36,6 +37,8 @@ describe('VfsNodeRepository (SQLite)', () => {
     await dataSource.initialize();
     await dataSource.runMigrations();
     await dataSource.query('PRAGMA case_sensitive_like = ON');
+    // 앱과 같이 쿼리 게이트를 걸어 동시 시도를 실제로 직렬화한다.
+    installSqliteGate(dataSource);
 
     repository = new VfsNodeRepository(
       dataSource.getRepository(NamespaceEntity),

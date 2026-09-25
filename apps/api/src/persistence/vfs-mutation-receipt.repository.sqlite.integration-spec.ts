@@ -9,6 +9,7 @@ import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { VfsMutationReceiptRepository } from './vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { runVfsMutationReceiptSharedTests } from './vfs-mutation-receipt.repository.shared-tests.js';
+import { installSqliteGate } from './sqlite-gate.js';
 
 describe('VFS mutation receipt (SQLite)', () => {
   let dataSource: DataSource;
@@ -26,6 +27,8 @@ describe('VFS mutation receipt (SQLite)', () => {
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
+    // 앱과 같이 쿼리 게이트를 걸어 동시 시도를 실제로 직렬화한다.
+    installSqliteGate(dataSource);
     receiptRepository = new VfsMutationReceiptRepository(dataSource);
     nodeRepository = new VfsNodeRepository(
       dataSource.getRepository(NamespaceEntity),
