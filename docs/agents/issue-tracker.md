@@ -1,6 +1,8 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+
+Design specs and implementation plans are not issues. One-off task documents live in `_works/` (untracked), long-lived designs in `docs/design/`. See `docs/agents/rubber-workflow.md`. Do not register them with `gh issue create`.
 
 ## Conventions
 
