@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../common/domain-error.js';
-import { resolveErrorCode, resolveErrorMessage, resolveErrorPath } from '../common/domain-error.filter.js';
 import {
   VfsMutationReceiptRepository,
   ReceiptIdentity,
@@ -9,8 +8,9 @@ import {
 } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { parseConditionalMutation, ConditionalMutation } from './dto/conditional-mutation-request.dto.js';
+import { busyResponse, ErrorReceiptOwner, replayReceipt, storeErrorReceipt } from './mutation-receipt.js';
 import { requireRoot } from './require-root.js';
-import { VfsInvalidMutationRequestError, VfsInvalidPathError } from './vfs.errors.js';
+import { VfsInvalidMutationRequestError } from './vfs.errors.js';
 
 export type MutationHttpResult = ReceiptResponse;
 
@@ -47,20 +47,6 @@ export function identityOf(
   return { namespaceId, scope, key: key.toLowerCase() };
 }
 
-export function errorResponse(error: DomainError, requestId: string): MutationHttpResult {
-  const path = resolveErrorPath(error);
-  return {
-    status: error.status,
-    body: {
-      code: resolveErrorCode(error, error.status),
-      message: resolveErrorMessage(error, error.status),
-      ...(path ? { path } : {}),
-      requestId,
-    },
-    headers: { 'x-request-id': requestId },
-  };
-}
-
 @Injectable()
 export class MutationService {
   constructor(
@@ -89,64 +75,57 @@ export class MutationService {
     }
     const requestFingerprint = fingerprint(method, command, bytes);
     const claim = await this.receipts.claim(identity, new Date());
-    if (claim.kind === 'busy') {
-      return {
-        status: 409,
-        body: { code: 'MUTATION_IN_PROGRESS', message: 'mutation 처리 중', requestId },
-        headers: { 'retry-after': String(claim.retryAfterSeconds), 'x-request-id': requestId },
-      };
-    }
-    if (claim.kind === 'complete') {
-      const receipt = claim.receipt;
-      if (receipt.method !== method || receipt.fingerprint !== requestFingerprint) {
-        return {
-          status: 409,
-          body: { code: 'MUTATION_KEY_REUSED', message: '다른 요청에 사용한 mutation key', requestId },
-          headers: { 'x-request-id': requestId },
-        };
-      }
-      return {
-        status: receipt.responseStatus as number,
-        body: JSON.parse(receipt.responseBody as string) as unknown,
-        headers: JSON.parse(receipt.responseHeaders as string) as Record<string, string>,
-      };
-    }
+    if (claim.kind === 'busy') return busyResponse(claim.retryAfterSeconds, requestId);
+    if (claim.kind === 'complete') return replayReceipt(claim.receipt, method, requestFingerprint, requestId);
 
+    const owner: ErrorReceiptOwner = {
+      identity,
+      generation: claim.generation,
+      fingerprint: requestFingerprint,
+      method,
+    };
     try {
-      if (parseError) {
-        const result = errorResponse(parseError, requestId);
-        if (parseError instanceof VfsInvalidPathError) {
-          await this.receipts.release(identity, claim.generation);
-          return result;
-        }
-        await this.nodes.withMutation(
-          namespaceId,
-          root.id,
-          async () => null,
-          (tx) => this.receipts.complete(tx, identity, claim.generation, requestFingerprint, method, result),
-        );
-        return result;
-      }
-      const validCommand = command as ConditionalMutation;
-      const applied = await this.nodes.withMutation(
-        namespaceId,
-        root.id,
-        (tx) => this.nodes.applyConditionalMutation(tx, validCommand),
-        (tx, result) =>
-          this.receipts.complete(tx, identity, claim.generation, requestFingerprint, method, {
-            status: result.value.status,
-            body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
-            headers: { 'x-request-id': requestId },
-          }),
+      if (parseError) return await storeErrorReceipt(this.receipts, owner, parseError, requestId);
+      return await this.apply(namespaceId, root.id, command as ConditionalMutation, owner, requestId).catch(
+        (error: unknown) => storeErrorReceipt(this.receipts, owner, error, requestId),
       );
-      return {
-        status: applied.value.status,
-        body: { resource: applied.value.resource, affectedRevisions: applied.affectedRevisions },
-        headers: { 'x-request-id': requestId },
-      };
     } catch (error) {
       await this.receipts.release(identity, claim.generation);
       throw error;
     }
+  }
+
+  // 성공 receipt는 같은 트랜잭션의 after-bump에서 완료한다. 여기서 던진 오류는 롤백 뒤
+  // storeErrorReceipt가 저장 여부를 판정한다.
+  private async apply(
+    namespaceId: string,
+    rootId: string,
+    command: ConditionalMutation,
+    owner: ErrorReceiptOwner,
+    requestId: string,
+  ): Promise<MutationHttpResult> {
+    const toResponse = (result: {
+      value: { status: number; resource: unknown };
+      affectedRevisions: unknown;
+    }): MutationHttpResult => ({
+      status: result.value.status,
+      body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
+      headers: { 'x-request-id': requestId },
+    });
+    const applied = await this.nodes.withMutation(
+      namespaceId,
+      rootId,
+      (tx) => this.nodes.applyConditionalMutation(tx, command),
+      (tx, result) =>
+        this.receipts.complete(
+          tx,
+          owner.identity,
+          owner.generation,
+          owner.fingerprint,
+          owner.method,
+          toResponse(result),
+        ),
+    );
+    return toResponse(applied);
   }
 }

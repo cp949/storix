@@ -7,18 +7,33 @@ import { VfsSnapshotRepository } from '../persistence/vfs-snapshot.repository.js
 import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { errorResponse } from './mutation-receipt.js';
+import { VfsPreconditionFailedError } from './vfs.errors.js';
 
 describe('VfsSnapshotService receipts', () => {
   const namespaceId = randomUUID();
   const rootId = randomUUID();
   const tx = {} as MutationTx;
   const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
   const release = jest.fn<(...args: unknown[]) => Promise<void>>();
   const claim = jest.fn<VfsMutationReceiptRepository['claim']>();
   const withMutation = jest.fn<VfsNodeRepository['withMutation']>();
-  const nodes = { getRoot: async () => ({ id: rootId }), withMutation } as unknown as VfsNodeRepository;
-  const receipts = { claim, complete, release } as unknown as VfsMutationReceiptRepository;
-  const snapshots = {} as VfsSnapshotRepository;
+  const restoreBlob = jest.fn<VfsNodeRepository['restoreBlob']>();
+  const findForUpdate = jest.fn<VfsSnapshotRepository['findForUpdate']>();
+  const getFileEntry = jest.fn<VfsSnapshotRepository['getFileEntry']>();
+  const nodes = {
+    getRoot: async () => ({ id: rootId }),
+    withMutation,
+    restoreBlob,
+  } as unknown as VfsNodeRepository;
+  const receipts = {
+    claim,
+    complete,
+    completeAfterRollback,
+    release,
+  } as unknown as VfsMutationReceiptRepository;
+  const snapshots = { findForUpdate, getFileEntry } as unknown as VfsSnapshotRepository;
   const storage = { get: async () => Readable.from([]) } as unknown as BlobStorage;
   let service: VfsSnapshotService;
 
@@ -26,6 +41,7 @@ describe('VfsSnapshotService receipts', () => {
     jest.clearAllMocks();
     claim.mockResolvedValue({ kind: 'owner', generation: 1 });
     complete.mockResolvedValue(undefined);
+    completeAfterRollback.mockResolvedValue(undefined);
     release.mockResolvedValue(undefined);
     withMutation.mockImplementation(async (_ns, _root, work, afterBump) => {
       const value = await work(tx);
@@ -36,12 +52,11 @@ describe('VfsSnapshotService receipts', () => {
     service = new VfsSnapshotService(nodes, snapshots, receipts, storage, null);
   });
 
-  it('유효하지 않은 JSON의 receipt를 root transaction의 after-bump에 저장한다', async () => {
+  it('유효하지 않은 JSON의 400을 root transaction 없이 독립 완료로 저장한다', async () => {
     const result = await service.create(namespaceId, 'scope', randomUUID(), Buffer.from('{broken'), 'req-1');
     expect(result.status).toBe(400);
     expect(result.body).toMatchObject({ code: 'VFS_INVALID_MUTATION_REQUEST', requestId: 'req-1' });
-    expect(complete).toHaveBeenCalledWith(
-      tx,
+    expect(completeAfterRollback).toHaveBeenCalledWith(
       expect.objectContaining({ namespaceId }),
       1,
       expect.any(String),
@@ -49,10 +64,12 @@ describe('VfsSnapshotService receipts', () => {
       result,
       7,
     );
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
     expect(release).not.toHaveBeenCalled();
   });
 
-  it('restore 조건 누락은 finalize 뒤에도 428 body와 receipt를 그대로 유지한다', async () => {
+  it('restore 조건 누락은 finalize 없이 428 body와 receipt를 그대로 유지한다', async () => {
     const result = await service.restore(
       namespaceId,
       randomUUID(),
@@ -63,50 +80,108 @@ describe('VfsSnapshotService receipts', () => {
     );
     expect(result.status).toBe(428);
     expect(result.body).toMatchObject({ code: 'VFS_PRECONDITION_REQUIRED', requestId: 'req' });
-    expect(complete.mock.calls[0][5]).toEqual(result);
+    expect(completeAfterRollback.mock.calls[0][4]).toEqual(result);
   });
 
-  it.each(['create', 'delete'] as const)(
-    '%s JSON 오류 receipt는 finalize 확장 뒤에도 같은 응답을 재생한다',
-    async (operation) => {
-      const key = randomUUID();
-      const snapshotId = randomUUID();
-      const raw = Buffer.from('{broken');
-      const run = () =>
-        operation === 'create'
-          ? service.create(namespaceId, 'scope', key, raw, 'req-first')
-          : service.delete(namespaceId, snapshotId, 'scope', key, raw, 'req-first');
-      const result = await run();
-      const receipt = new VfsMutationReceiptEntity();
-      receipt.method = 'POST';
-      receipt.fingerprint = complete.mock.calls[0][3] as string;
-      receipt.responseStatus = result.status;
-      receipt.responseBody = JSON.stringify(result.body);
-      receipt.responseHeaders = JSON.stringify(result.headers);
-      claim.mockResolvedValueOnce({ kind: 'complete', receipt });
-      expect(await run()).toEqual(result);
-      expect(withMutation).toHaveBeenCalledTimes(1);
-      expect(complete).toHaveBeenCalledTimes(1);
-    },
-  );
+  it.each(['create', 'delete'] as const)('%s JSON 오류 receipt는 같은 응답을 재생한다', async (operation) => {
+    const key = randomUUID();
+    const snapshotId = randomUUID();
+    const raw = Buffer.from('{broken');
+    const run = (requestId: string) =>
+      operation === 'create'
+        ? service.create(namespaceId, 'scope', key, raw, requestId)
+        : service.delete(namespaceId, snapshotId, 'scope', key, raw, requestId);
+    const result = await run('req-first');
+    const receipt = new VfsMutationReceiptEntity();
+    receipt.method = 'POST';
+    receipt.fingerprint = completeAfterRollback.mock.calls[0][2] as string;
+    receipt.responseStatus = result.status;
+    receipt.responseBody = JSON.stringify(result.body);
+    receipt.responseHeaders = JSON.stringify(result.headers);
+    claim.mockResolvedValueOnce({ kind: 'complete', receipt });
+    expect(await run('req-second')).toEqual(result);
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+  });
 
-  it('receipt 완료 실패는 claim을 해제하고 오류를 전파한다', async () => {
-    complete.mockRejectedValueOnce(new Error('database unavailable'));
+  it('오류 receipt 완료 실패는 claim을 해제하고 오류를 전파한다', async () => {
+    completeAfterRollback.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
     await expect(service.create(namespaceId, 'scope', randomUUID(), undefined, 'req')).rejects.toThrow(
-      'database unavailable',
+      'VFS mutation claim lost',
     );
     expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('서로 다른 mutation route의 잘못된 본문도 fingerprint가 다르다', async () => {
     await service.create(namespaceId, 'scope', randomUUID(), Buffer.from('{broken'), 'req');
-    const createFingerprint = complete.mock.calls[0][3];
+    const createFingerprint = completeAfterRollback.mock.calls[0][2];
     await service.delete(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{broken'), 'req');
-    const deleteFingerprint = complete.mock.calls[1][3];
+    const deleteFingerprint = completeAfterRollback.mock.calls[1][2];
     expect(deleteFingerprint).not.toBe(createFingerprint);
     await service.restore(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{broken'), 'req');
-    expect(complete.mock.calls[2][3]).not.toBe(createFingerprint);
-    expect(complete.mock.calls[2][3]).not.toBe(deleteFingerprint);
+    expect(completeAfterRollback.mock.calls[2][2]).not.toBe(createFingerprint);
+    expect(completeAfterRollback.mock.calls[2][2]).not.toBe(deleteFingerprint);
+  });
+
+  it('work의 restore 412를 롤백 뒤 current body로 저장하고 finalize와 성공 완료를 건너뛴다', async () => {
+    const snapshotId = randomUUID();
+    findForUpdate.mockResolvedValueOnce({ kind: 'FILE' } as Awaited<
+      ReturnType<VfsSnapshotRepository['findForUpdate']>
+    >);
+    getFileEntry.mockResolvedValueOnce({ blobId: randomUUID(), size: '3', mimeType: 'text/plain' } as Awaited<
+      ReturnType<VfsSnapshotRepository['getFileEntry']>
+    >);
+    restoreBlob.mockRejectedValueOnce(new VfsPreconditionFailedError('/source', null));
+    const raw = Buffer.from('{"path":"/source","ifAbsent":true}');
+
+    const result = await service.restore(namespaceId, snapshotId, 'scope', randomUUID(), raw, 'req-412');
+
+    expect(result).toEqual(errorResponse(new VfsPreconditionFailedError('/source', null), 'req-412'));
+    expect(completeAfterRollback).toHaveBeenCalledWith(
+      expect.objectContaining({ namespaceId }),
+      1,
+      expect.any(String),
+      'POST',
+      result,
+      raw.length,
+    );
+    expect(complete).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('work의 404를 저장하고 일반 Error는 claim을 해제한다', async () => {
+    findForUpdate.mockResolvedValueOnce(null);
+    const missing = await service.delete(
+      namespaceId,
+      randomUUID(),
+      'scope',
+      randomUUID(),
+      Buffer.from('{}'),
+      'r',
+    );
+    expect(missing.status).toBe(404);
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+
+    findForUpdate.mockRejectedValueOnce(new Error('database unavailable'));
+    await expect(
+      service.delete(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{}'), 'r'),
+    ).rejects.toThrow('database unavailable');
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('성공 receipt 완료 실패(claim lost)는 오류 receipt로 저장하지 않는다', async () => {
+    findForUpdate.mockResolvedValueOnce({} as Awaited<ReturnType<VfsSnapshotRepository['findForUpdate']>>);
+    const remove = jest.fn(async () => undefined);
+    (snapshots as unknown as { remove: typeof remove }).remove = remove;
+    complete.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
+
+    await expect(
+      service.delete(namespaceId, randomUUID(), 'scope', randomUUID(), Buffer.from('{}'), 'r'),
+    ).rejects.toThrow('VFS mutation claim lost');
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });
 

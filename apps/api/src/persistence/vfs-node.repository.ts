@@ -375,8 +375,13 @@ export class VfsNodeRepository {
   private assertRevision(node: VfsNodeEntity, revision: string, path: string): void {
     const expected = decodeRevision(revision);
     if (node.id !== expected.id || node.version !== expected.version) {
-      throw new VfsPreconditionFailedError(path);
+      throw new VfsPreconditionFailedError(path, this.currentOf(node, path));
     }
+  }
+
+  // 412 body의 current. stat 응답과 같은 mapper를 쓰며, 트랜잭션 안에서 읽은 엔티티로 만든다.
+  private currentOf(node: VfsNodeEntity | null, path: string): VfsNodeResponseDto | null {
+    return node ? toNodeResponse(toRecord(node), path) : null;
   }
 
   async applyConditionalMutation(
@@ -392,8 +397,9 @@ export class VfsNodeRepository {
     const namespaceId = tx.namespaceId;
     const rootId = tx.rootId;
     if (command.kind === 'mkdir') {
-      if (await this.resolvePathInTx(tx, command.segments)) {
-        throw new VfsPreconditionFailedError(command.path);
+      const existing = await this.resolvePathInTx(tx, command.segments);
+      if (existing) {
+        throw new VfsPreconditionFailedError(command.path, this.currentOf(existing, command.path));
       }
       const result = await this.ensureDirectory(namespaceId, rootId, command.segments, false, tx);
       return { status: 201, resource: toNodeResponse(result.node, command.path) };
@@ -447,7 +453,12 @@ export class VfsNodeRepository {
       return { status: 201, resource: toNodeResponse(result.node, result.finalPath) };
     } catch (error) {
       if (error instanceof VfsAlreadyExistsError) {
-        throw new VfsPreconditionFailedError(error.path);
+        // 충돌한 목적지 노드를 같은 트랜잭션에서 다시 읽는다(경로는 정규화된 세그먼트 조합이다).
+        const collision = await this.resolvePathInTx(
+          tx,
+          error.path.split('/').filter((segment) => segment.length > 0),
+        );
+        throw new VfsPreconditionFailedError(error.path, this.currentOf(collision, error.path));
       }
       throw error;
     }
@@ -463,7 +474,7 @@ export class VfsNodeRepository {
     const path = joinSegments(segments);
     const existing = await this.resolvePathInTx(tx, segments);
     if ('ifAbsent' in condition) {
-      if (existing) throw new VfsPreconditionFailedError(path);
+      if (existing) throw new VfsPreconditionFailedError(path, this.currentOf(existing, path));
     } else {
       if (!existing) throw new VfsNodeNotFoundError(path);
       this.assertRevision(existing, condition.ifRevision, path);
@@ -496,7 +507,7 @@ export class VfsNodeRepository {
     const existing = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, name);
     if (existing?.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
     if ('ifAbsent' in condition) {
-      if (existing) throw new VfsPreconditionFailedError(path);
+      if (existing) throw new VfsPreconditionFailedError(path, this.currentOf(existing, path));
     } else {
       if (!existing) throw new VfsNodeNotFoundError(path);
       this.assertRevision(existing, condition.ifRevision, path);
@@ -647,7 +658,7 @@ export class VfsNodeRepository {
         throw new VfsInvalidCursorError('directory mismatch');
       }
       if (cursor && cursor.directoryRevision !== encodeRevision(directory)) {
-        throw new VfsPreconditionFailedError(canonicalPath);
+        throw new VfsPreconditionFailedError(canonicalPath, this.currentOf(directory, canonicalPath));
       }
       const qb = manager
         .getRepository(VfsNodeEntity)

@@ -24,7 +24,13 @@ import type { ContentPayload } from './content.service.js';
 import { toNodeResponse } from './dto/node-response.dto.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { parseSnapshotCreateRequest, parseSnapshotRestoreRequest } from './dto/snapshot-request.dto.js';
-import { errorResponse, hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
+import {
+  busyResponse,
+  replayReceipt,
+  storeErrorReceipt,
+  type ErrorReceiptOwner,
+} from './mutation-receipt.js';
+import { hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
 import { decodeSnapshotCursor, encodeSnapshotCursor } from './snapshot-cursor.js';
 import { resolveLimit } from './pagination.js';
 import { parseRange } from './range.js';
@@ -375,45 +381,42 @@ export class VfsSnapshotService {
       createHash('sha256').update(bytes).digest('hex'),
     ]);
     const claim = await this.receipts.claim(identity, new Date());
-    if (claim.kind === 'busy')
-      return {
-        status: 409,
-        body: { code: 'MUTATION_IN_PROGRESS', message: 'mutation 처리 중', requestId },
-        headers: { 'retry-after': String(claim.retryAfterSeconds), 'x-request-id': requestId },
-      };
-    if (claim.kind === 'complete') {
-      const receipt = claim.receipt;
-      if (receipt.method !== 'POST' || receipt.fingerprint !== fingerprint)
-        return {
-          status: 409,
-          body: { code: 'MUTATION_KEY_REUSED', message: '다른 요청에 사용한 mutation key', requestId },
-          headers: { 'x-request-id': requestId },
-        };
-      return {
-        status: receipt.responseStatus as number,
-        body: JSON.parse(receipt.responseBody as string) as unknown,
-        headers: JSON.parse(receipt.responseHeaders as string) as Record<string, string>,
-      };
-    }
+    if (claim.kind === 'busy') return busyResponse(claim.retryAfterSeconds, requestId);
+    if (claim.kind === 'complete') return replayReceipt(claim.receipt, 'POST', fingerprint, requestId);
+    const owner: ErrorReceiptOwner = {
+      identity,
+      generation: claim.generation,
+      fingerprint,
+      method: 'POST',
+      requestBodyBytes: bytes.length,
+    };
     try {
+      if (parseError) return await storeErrorReceipt(this.receipts, owner, parseError, requestId);
       let response: MutationHttpResult | undefined;
-      await this.nodes.withMutation(
-        namespaceId,
-        root.id,
-        (tx) => (parseError ? Promise.resolve(errorResponse(parseError, requestId)) : work(tx, command as T)),
-        async (tx, applied) => {
-          response = finalize ? await finalize(tx, applied.value, applied.affectedRevisions) : applied.value;
-          await this.receipts.complete(
-            tx,
-            identity,
-            claim.generation,
-            fingerprint,
-            'POST',
-            response,
-            bytes.length,
-          );
-        },
-      );
+      try {
+        await this.nodes.withMutation(
+          namespaceId,
+          root.id,
+          (tx) => work(tx, command as T),
+          async (tx, applied) => {
+            response = finalize
+              ? await finalize(tx, applied.value, applied.affectedRevisions)
+              : applied.value;
+            await this.receipts.complete(
+              tx,
+              identity,
+              claim.generation,
+              fingerprint,
+              'POST',
+              response,
+              bytes.length,
+            );
+          },
+        );
+      } catch (error) {
+        // work·finalize·성공 receipt 완료 중 하나가 실패해 트랜잭션이 롤백됐다.
+        return await storeErrorReceipt(this.receipts, owner, error, requestId);
+      }
       return response!;
     } catch (error) {
       await this.receipts.release(identity, claim.generation);

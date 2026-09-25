@@ -16,6 +16,7 @@ import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
 import { VfsModule } from './vfs.module.js';
+import { encodeRevision } from './revision.js';
 import { snapshotPost, treeSnapshotContract } from './vfs-snapshot-tree.test-support.js';
 
 describe('SQLite file + MinIO snapshot HTTP durability', () => {
@@ -189,5 +190,88 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
       bytes,
     );
     await http().get(`${base}/snapshots/${deletedSnapshot.body.snapshotId}`).expect(404);
+  });
+
+  it('조건부 mutation·content 오류 receipt를 앱과 DB 연결 재생성 뒤 최초 body와 X-Request-Id로 재생한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const ns = await http()
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'error-receipt-restart' })
+      .expect(201);
+    const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+    await http()
+      .post(`${base}/content`)
+      .query({ path: '/doc' })
+      .set('Content-Type', 'text/plain')
+      .send('first')
+      .expect(201);
+    const statAtConflict = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
+    const mutate = (key: string, body: string) =>
+      http()
+        .post(`${base}/mutations`)
+        .set('Content-Type', 'application/json')
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'error-receipt')
+        .send(body);
+    const upload = (key: string, path: string, headers: Record<string, string>) => {
+      let call = http()
+        .post(`${base}/content/conditional`)
+        .query({ path })
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'error-receipt')
+        .set('Content-Type', 'application/octet-stream');
+      for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+      return call.send(Buffer.from('body'));
+    };
+    const staleKey = randomUUID();
+    const staleBody = JSON.stringify({
+      kind: 'delete',
+      path: '/doc',
+      ifRevision: encodeRevision({ id: randomUUID(), version: 1 }),
+    });
+    const stale = await mutate(staleKey, staleBody).expect(412);
+    expect(stale.body.current).toEqual(statAtConflict);
+    const nfdKey = randomUUID();
+    const nfdBody = '{"kind":"mkdir","path":"/e\\u0301","ifAbsent":true}';
+    const nfd = await mutate(nfdKey, nfdBody).expect(400);
+    expect(nfd.body.code).toBe('VFS_INVALID_PATH');
+    const existsKey = randomUUID();
+    const exists = await upload(existsKey, '/doc', { 'X-If-Absent': 'true' }).expect(412);
+    expect(exists.body.current).toEqual(statAtConflict);
+    const headerKey = randomUUID();
+    const badHeader = await upload(headerKey, '/doc', { 'X-If-Absent': 'yes' }).expect(400);
+    const missingParentKey = randomUUID();
+    const missingParent = await upload(missingParentKey, '/parent/x', { 'X-If-Absent': 'true' }).expect(404);
+
+    await http()
+      .post(`${base}/content`)
+      .query({ path: '/doc', force: true })
+      .set('Content-Type', 'text/plain')
+      .send('changed after the conflict')
+      .expect(200);
+    await http().post(`${base}/mkdir`).send({ path: '/parent' }).expect(201);
+    const oldDataSource = app.get(DataSource);
+    await app.close();
+    expect(oldDataSource.isInitialized).toBe(false);
+    app = await bootstrap();
+
+    for (const [send, original] of [
+      [() => mutate(staleKey, staleBody), stale],
+      [() => mutate(nfdKey, nfdBody), nfd],
+      [() => upload(existsKey, '/doc', { 'X-If-Absent': 'true' }), exists],
+      [() => upload(headerKey, '/doc', { 'X-If-Absent': 'yes' }), badHeader],
+      [() => upload(missingParentKey, '/parent/x', { 'X-If-Absent': 'true' }), missingParent],
+    ] as const) {
+      const replay = await send().expect(original.status);
+      expect(replay.body).toEqual(original.body);
+      expect(replay.headers['x-request-id']).toBe(original.headers['x-request-id']);
+    }
+    expect((await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body).not.toEqual(
+      statAtConflict,
+    );
+    expect((await upload(headerKey, '/doc', { 'X-If-Absent': 'false' }).expect(409)).body.code).toBe(
+      'MUTATION_KEY_REUSED',
+    );
   });
 });

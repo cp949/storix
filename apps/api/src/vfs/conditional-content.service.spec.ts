@@ -7,152 +7,194 @@ import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receip
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { ConditionalContentService } from './conditional-content.service.js';
+import type { VfsNodeResponseDto } from './dto/node-response.dto.js';
+import { errorResponse } from './mutation-receipt.js';
 import { PathResolver } from './path-resolver.js';
-import { VfsInvalidPathError } from './vfs.errors.js';
+import { encodeRevision } from './revision.js';
+import { VfsInvalidPathError, VfsPreconditionFailedError } from './vfs.errors.js';
 
-describe('ConditionalContentService path parsing', () => {
+describe('ConditionalContentService 오류 receipt', () => {
   const namespaceId = randomUUID();
   const rootId = randomUUID();
   const withMutation = jest.fn<VfsNodeRepository['withMutation']>();
+  const putConditionalContent = jest.fn<VfsNodeRepository['putConditionalContent']>();
+  const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const release = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const put = jest.fn<BlobStorage['put']>();
+  const deleteObject = jest.fn<BlobStorage['delete']>();
   const nodes = {
     getRootWithLimits: async () => ({
       root: { id: rootId },
       limits: { maxFileSizeBytes: null, encryptionPolicy: 'PLAINTEXT' },
     }),
     withMutation,
+    putConditionalContent,
   } as unknown as VfsNodeRepository;
   const receipts = {
-    claim: async () => ({ kind: 'owner', generation: 1 }),
-    complete: async () => undefined,
-    release: async () => undefined,
+    claim: async () => ({ kind: 'owner', generation: 2 }),
+    renew: async () => true,
+    complete,
+    completeAfterRollback,
+    release,
   } as unknown as VfsMutationReceiptRepository;
   const service = new ConditionalContentService(
     new PathResolver(),
     nodes,
     receipts,
-    {
-      generate: () => {
-        throw new Error('unexpected upload');
-      },
-    } as StorageKeyGenerator,
-    {} as BlobStorage,
+    { generate: () => 'object-key' } as StorageKeyGenerator,
+    { put, delete: deleteObject } as unknown as BlobStorage,
     null,
     { get: () => undefined } as unknown as ConfigService,
   );
 
-  beforeEach(() => withMutation.mockClear());
-
-  it('NFD raw path를 업로드 전에 400 응답으로 확정한다', async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    complete.mockResolvedValue(undefined);
+    completeAfterRollback.mockResolvedValue(undefined);
+    release.mockResolvedValue(undefined);
+    deleteObject.mockResolvedValue(undefined);
+    put.mockImplementation(async (_key, stream) => {
+      for await (const chunk of stream) {
+        void chunk;
+      }
+    });
     withMutation.mockImplementation(async (_ns, _root, work, afterBump) => {
       const tx = {} as Parameters<NonNullable<typeof afterBump>>[0];
       const value = await work(tx);
       if (afterBump) await afterBump(tx, { value, affectedRevisions: [] });
       return { value, affectedRevisions: [] };
     });
-    const result = await service.put(
-      namespaceId,
-      'scope',
-      randomUUID(),
-      '/e\u0301',
-      'true',
-      undefined,
-      Readable.from([Buffer.from('body')]),
-      'application/octet-stream',
-      undefined,
-      'req-1',
-    );
-    expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_PATH', requestId: 'req-1' } });
   });
 
-  it('NFD path의 body를 소진하고 claim을 해제하며 완료 receipt와 업로드를 남기지 않는다', async () => {
-    const complete = jest.fn(async () => undefined);
-    const release = jest.fn(async () => undefined);
-    const put = jest.fn<BlobStorage['put']>();
-    const deleteObject = jest.fn<BlobStorage['delete']>();
-    const localService = new ConditionalContentService(
-      new PathResolver(),
-      nodes,
-      {
-        claim: async () => ({ kind: 'owner', generation: 1 }),
-        complete,
-        release,
-      } as unknown as VfsMutationReceiptRepository,
-      { generate: () => 'object-key' } as StorageKeyGenerator,
-      { put, delete: deleteObject } as unknown as BlobStorage,
-      null,
-      { get: () => undefined } as unknown as ConfigService,
-    );
-    const source = Readable.from([Buffer.from('body')]);
-    const result = await localService.put(
+  function upload(
+    path: string,
+    ifAbsent: string | undefined,
+    ifRevision: string | undefined,
+    source: Readable = Readable.from([Buffer.from('body')]),
+    requestId = 'req-1',
+  ) {
+    return service.put(
       namespaceId,
       'scope',
       randomUUID(),
-      '/e\u0301',
-      'true',
-      undefined,
+      path,
+      ifAbsent,
+      ifRevision,
       source,
       'application/octet-stream',
       undefined,
-      'req-2',
+      requestId,
     );
+  }
+
+  it('NFD raw path를 업로드 전에 400 응답으로 확정한다', async () => {
+    const result = await upload('/é', 'true', undefined);
+    expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_PATH', requestId: 'req-1' } });
+  });
+
+  it('NFD path의 body를 소진하고 400을 오류 receipt로 저장하며 업로드를 남기지 않는다', async () => {
+    const source = Readable.from([Buffer.from('body')]);
+    const result = await upload('/é', 'true', undefined, source, 'req-2');
+
     expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_PATH' } });
     expect(source.readableEnded).toBe(true);
-    expect(release).toHaveBeenCalledTimes(1);
-    expect(complete).not.toHaveBeenCalled();
+    expect(completeAfterRollback).toHaveBeenCalledWith(
+      expect.objectContaining({ namespaceId }),
+      2,
+      expect.any(String),
+      'POST',
+      result,
+      4,
+    );
+    expect(release).not.toHaveBeenCalled();
     expect(withMutation).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(deleteObject).not.toHaveBeenCalled();
   });
 
-  it('업로드 뒤 path 거부 시 object 삭제를 시도하고 claim을 해제한다', async () => {
-    const release = jest.fn(async () => undefined);
-    const complete = jest.fn(async () => undefined);
-    const deleteObject = jest
-      .fn<BlobStorage['delete']>()
-      .mockRejectedValue(new Error('object cleanup failed'));
-    const put = jest.fn<BlobStorage['put']>().mockImplementation(async (_key, stream) => {
-      for await (const chunk of stream) {
-        void chunk;
-      }
-    });
-    const localNodes = {
-      getRootWithLimits: nodes.getRootWithLimits,
-      withMutation: async (_ns: string, _root: string, work: (tx: unknown) => Promise<unknown>) => work({}),
-      putConditionalContent: async () => {
-        throw new VfsInvalidPathError('/rejected');
-      },
-    } as unknown as VfsNodeRepository;
-    const localService = new ConditionalContentService(
-      new PathResolver(),
-      localNodes,
-      {
-        claim: async () => ({ kind: 'owner', generation: 1 }),
-        renew: async () => true,
-        complete,
-        release,
-      } as unknown as VfsMutationReceiptRepository,
-      { generate: () => 'object-key' } as StorageKeyGenerator,
-      { put, delete: deleteObject } as unknown as BlobStorage,
-      null,
-      { get: () => undefined } as unknown as ConfigService,
-    );
-    await expect(
-      localService.put(
-        namespaceId,
-        'scope',
-        randomUUID(),
-        '/valid',
-        'true',
-        undefined,
-        Readable.from([Buffer.from('body')]),
-        'application/octet-stream',
-        undefined,
-        'req-3',
-      ),
-    ).rejects.toBeInstanceOf(VfsInvalidPathError);
+  it('업로드 뒤 work의 path 거부는 object 삭제를 시도하고 400을 오류 receipt로 저장한다', async () => {
+    deleteObject.mockRejectedValueOnce(new Error('object cleanup failed'));
+    putConditionalContent.mockRejectedValueOnce(new VfsInvalidPathError('/rejected'));
+
+    const result = await upload('/valid', 'true', undefined);
+
+    expect(result).toEqual(errorResponse(new VfsInvalidPathError('/rejected'), 'req-1'));
     expect(put).toHaveBeenCalledTimes(1);
     expect(deleteObject).toHaveBeenCalledWith('object-key');
-    expect(release).toHaveBeenCalledTimes(1);
+    expect(completeAfterRollback).toHaveBeenCalledWith(
+      expect.objectContaining({ namespaceId }),
+      2,
+      expect.any(String),
+      'POST',
+      result,
+      4,
+    );
     expect(complete).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('work의 412는 current를 담은 body로 저장되고 업로드 object는 삭제된다', async () => {
+    const current: VfsNodeResponseDto = {
+      path: '/valid',
+      name: 'valid',
+      type: 'FILE',
+      size: 3,
+      mimeType: 'text/plain',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      version: 5,
+    };
+    putConditionalContent.mockRejectedValueOnce(new VfsPreconditionFailedError('/valid', current));
+
+    const result = await upload('/valid', 'true', undefined);
+
+    expect(result.status).toBe(412);
+    expect(result.body).toMatchObject({ code: 'VFS_PRECONDITION_FAILED', current });
+    expect(completeAfterRollback.mock.calls[0][4]).toEqual(result);
+    expect(deleteObject).toHaveBeenCalledWith('object-key');
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('업로드 뒤 일반 Error는 object 삭제 후 claim을 해제하고 다시 던진다', async () => {
+    putConditionalContent.mockRejectedValueOnce(new Error('database unavailable'));
+
+    await expect(upload('/valid', 'true', undefined)).rejects.toThrow('database unavailable');
+    expect(deleteObject).toHaveBeenCalledWith('object-key');
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('오류 receipt fencing 실패는 claim 해제 뒤 claim lost 오류를 전파한다', async () => {
+    putConditionalContent.mockRejectedValueOnce(new VfsInvalidPathError('/rejected'));
+    completeAfterRollback.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
+
+    await expect(upload('/valid', 'true', undefined)).rejects.toThrow('VFS mutation claim lost');
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('잘못된 조건 헤더 조합과 정규화 실패 원본 경로는 서로 다른 fingerprint를 만든다', async () => {
+    const revision = encodeRevision({ id: randomUUID(), version: 1 });
+    const cases: [string, string | undefined, string | undefined, number][] = [
+      ['/x', undefined, undefined, 428],
+      ['/x', 'false', undefined, 400],
+      ['/x', 'yes', undefined, 400],
+      ['/x', 'true', revision, 400],
+      ['/x', undefined, '', 400],
+      ['/x', undefined, 'bad', 400],
+      ['/x', undefined, 'r1.bad', 400],
+      ['/é', 'true', undefined, 400],
+      ['/è', 'true', undefined, 400],
+      ['/a/../b', 'true', undefined, 400],
+    ];
+    for (const [path, ifAbsent, ifRevision, status] of cases) {
+      expect((await upload(path, ifAbsent, ifRevision)).status).toBe(status);
+    }
+    const fingerprints = completeAfterRollback.mock.calls.map((call) => call[2]);
+    expect(fingerprints).toHaveLength(cases.length);
+    expect(new Set(fingerprints).size).toBe(cases.length);
+
+    await upload('/x', 'false', undefined);
+    expect(completeAfterRollback.mock.calls.at(-1)?.[2]).toBe(fingerprints[1]);
   });
 });

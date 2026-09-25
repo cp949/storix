@@ -16,16 +16,13 @@ import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { hashStream, uploadStream } from '../storage/stream-upload.js';
-import { errorResponse, hashParts, identityOf, MutationHttpResult } from './mutation.service.js';
+import { busyResponse, ErrorReceiptOwner, replayReceipt, storeErrorReceipt } from './mutation-receipt.js';
+import { hashParts, identityOf, MutationHttpResult } from './mutation.service.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
 import { decodeRevision } from './revision.js';
-import {
-  VfsInvalidMutationRequestError,
-  VfsInvalidPathError,
-  VfsPreconditionRequiredError,
-} from './vfs.errors.js';
+import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from './vfs.errors.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -42,20 +39,20 @@ function parsePrecondition(
   return { ifRevision };
 }
 
-function fingerprint(
-  path: string,
+// 조건이 유효하면 정규화 조건만 식별한다(기존 receipt fingerprint와 호환). 조건이 무효면
+// 원본 헤더 값을 식별해 서로 다른 잘못된 헤더 조합이 같은 key에서 재생되지 않게 한다.
+// path는 정규화에 성공하면 정규 경로, 실패하면 원본 경로 문자열이다.
+function conditionIdentity(
   condition: ContentPrecondition | null,
-  mimeType: string,
-  bodyHash: string,
+  ifAbsent: string | undefined,
+  ifRevision: string | undefined,
 ): string {
-  return hashParts([
-    'POST',
-    'content/conditional',
-    path,
-    JSON.stringify(condition ?? 'invalid'),
-    mimeType,
-    bodyHash,
-  ]);
+  if (condition) return JSON.stringify(condition);
+  return JSON.stringify({ invalid: { ifAbsent: ifAbsent ?? null, ifRevision: ifRevision ?? null } });
+}
+
+function fingerprint(path: string, condition: string, mimeType: string, bodyHash: string): string {
+  return hashParts(['POST', 'content/conditional', path, condition, mimeType, bodyHash]);
 }
 
 @Injectable()
@@ -111,19 +108,15 @@ export class ConditionalContentService {
       else throw error;
     }
 
+    const conditionKey = conditionIdentity(condition, ifAbsent, ifRevision);
     const claim = await this.receipts.claim(identity, new Date());
-    if (claim.kind === 'busy') {
-      return {
-        status: 409,
-        body: { code: 'MUTATION_IN_PROGRESS', message: 'mutation 처리 중', requestId },
-        headers: { 'retry-after': String(claim.retryAfterSeconds), 'x-request-id': requestId },
-      };
-    }
+    if (claim.kind === 'busy') return busyResponse(claim.retryAfterSeconds, requestId);
     try {
       const replayMaxBytes =
         claim.kind === 'complete'
           ? Math.max(maxBytes, Number(claim.receipt.requestBodyBytes ?? 0))
           : maxBytes;
+      // 아래 두 오류와 hash/upload 중 한도 초과 413은 fingerprint를 만들기 전이라 저장하지 않는다.
       const declaredLength = contentLength === undefined ? null : Number(contentLength);
       if (declaredLength !== null && (!Number.isSafeInteger(declaredLength) || declaredLength < 0)) {
         throw new VfsInvalidMutationRequestError();
@@ -134,42 +127,22 @@ export class ConditionalContentService {
 
       if (claim.kind === 'complete' || parseError) {
         const replayed = await hashStream(source, replayMaxBytes);
-        const currentFingerprint = fingerprint(path, condition, mimeType, replayed.sha256);
+        const currentFingerprint = fingerprint(path, conditionKey, mimeType, replayed.sha256);
         if (claim.kind === 'complete') {
-          if (claim.receipt.method !== 'POST' || claim.receipt.fingerprint !== currentFingerprint) {
-            return {
-              status: 409,
-              body: { code: 'MUTATION_KEY_REUSED', message: '다른 요청에 사용한 mutation key', requestId },
-              headers: { 'x-request-id': requestId },
-            };
-          }
-          return {
-            status: claim.receipt.responseStatus as number,
-            body: JSON.parse(claim.receipt.responseBody as string) as unknown,
-            headers: JSON.parse(claim.receipt.responseHeaders as string) as Record<string, string>,
-          };
+          return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
         }
-        const result = errorResponse(parseError as DomainError, requestId);
-        if (parseError instanceof VfsInvalidPathError) {
-          await this.receipts.release(identity, claim.generation);
-          return result;
-        }
-        await this.nodes.withMutation(
-          namespaceId,
-          root.id,
-          async () => null,
-          (tx) =>
-            this.receipts.complete(
-              tx,
-              identity,
-              claim.generation,
-              currentFingerprint,
-              'POST',
-              result,
-              replayed.size,
-            ),
+        return await storeErrorReceipt(
+          this.receipts,
+          {
+            identity,
+            generation: claim.generation,
+            fingerprint: currentFingerprint,
+            method: 'POST',
+            requestBodyBytes: replayed.size,
+          },
+          parseError,
+          requestId,
         );
-        return result;
       }
 
       const validCondition = condition as ContentPrecondition;
@@ -211,11 +184,17 @@ export class ConditionalContentService {
         clearTimeout(durationTimer);
         if (renewal) await renewal;
       }
+      const owner: ErrorReceiptOwner = {
+        identity,
+        generation: claim.generation,
+        fingerprint: fingerprint(path, conditionKey, mimeType, uploaded.sha256),
+        method: 'POST',
+        requestBodyBytes: uploaded.size,
+      };
       try {
         if (leaseLost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
           throw new Error('VFS mutation claim lost');
         }
-        const currentFingerprint = fingerprint(path, validCondition, mimeType, uploaded.sha256);
         const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
         const applied = await this.nodes.withMutation(
           namespaceId,
@@ -231,16 +210,16 @@ export class ConditionalContentService {
           (tx, result) =>
             this.receipts.complete(
               tx,
-              identity,
-              claim.generation,
-              currentFingerprint,
-              'POST',
+              owner.identity,
+              owner.generation,
+              owner.fingerprint,
+              owner.method,
               {
                 status: result.value.status,
                 body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
                 headers: { 'x-request-id': requestId },
               },
-              uploaded.size,
+              owner.requestBodyBytes,
             ),
         );
         return {
@@ -249,8 +228,9 @@ export class ConditionalContentService {
           headers: { 'x-request-id': requestId },
         };
       } catch (error) {
+        // 반영에 실패했으므로(트랜잭션 롤백 또는 claim lost) 업로드한 object를 가리키는 Blob row가 없다.
         await this.storage.delete(storageKey).catch(() => undefined);
-        throw error;
+        return await storeErrorReceipt(this.receipts, owner, error, requestId);
       }
     } catch (error) {
       if (claim.kind === 'owner') await this.receipts.release(identity, claim.generation);

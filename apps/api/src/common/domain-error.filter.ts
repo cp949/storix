@@ -8,6 +8,7 @@ interface DomainErrorShape {
   readonly code?: unknown;
   readonly status?: unknown;
   readonly path?: unknown;
+  readonly current?: unknown;
 }
 
 const INTERNAL_ERROR_MESSAGE = 'Internal server error';
@@ -28,6 +29,13 @@ export function resolveErrorCode(exception: unknown, status: number): string {
 export function resolveErrorPath(exception: unknown): string | undefined {
   const path = (exception as DomainErrorShape)?.path;
   return typeof path === 'string' ? path : undefined;
+}
+
+// current는 412 오류만 담는 필드다. 값이 없으면(undefined) body에 키를 만들지 않아
+// 다른 오류의 body 형태를 바꾸지 않는다. null은 "노드 없음"이라는 값이므로 유지한다.
+export function resolveErrorCurrent(exception: unknown): { current: unknown } | undefined {
+  const current = (exception as DomainErrorShape)?.current;
+  return current === undefined ? undefined : { current };
 }
 
 export function resolveErrorMessage(exception: unknown, status: number): string {
@@ -85,6 +93,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       code: resolveErrorCode(exception, status),
       message: resolveErrorMessage(exception, status),
       path: resolveErrorPath(exception),
+      ...resolveErrorCurrent(exception),
       requestId: request.requestId,
     });
   }

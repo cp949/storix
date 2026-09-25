@@ -15,6 +15,7 @@ import { Client as MinioClient } from 'minio';
 import request from 'supertest';
 import { DataSource, IsNull } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
+import { DomainError } from '../common/domain-error.js';
 import { NamespaceModule } from '../namespace/namespace.module.js';
 import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
@@ -23,12 +24,23 @@ import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
+import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { VfsModule } from './vfs.module.js';
 import { encodeRevision } from './revision.js';
 
 const MAX_FILE_SIZE_BYTES = 1048576;
+
+// 저장하지 않는 5xx DomainError를 주입하기 위한 테스트 전용 오류
+class InjectedUnavailableError extends DomainError {
+  readonly code = 'INJECTED_UNAVAILABLE';
+  readonly status = 503;
+
+  constructor() {
+    super('injected unavailable');
+  }
+}
 
 function postChunked(
   port: number,
@@ -802,13 +814,23 @@ describe('Fs HTTP contract', () => {
       await snapshotPost(base, `/${id}/restore`, key, raw).expect(200);
     });
 
-    it('restore 412를 receipt로 고정하지 않고 target 제거 뒤 같은 key로 생성한다', async () => {
+    it('restore 412를 current와 함께 receipt로 고정해 target 제거 뒤에도 같은 key는 재생한다', async () => {
       const { base, id } = await restoreFixture('snapshot-restore-condition-retry');
       const key = randomUUID();
       const raw = '{"path":"/source","ifAbsent":true}';
-      await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
+      const stat = (await request(httpServer).get(`${base}/stat`).query({ path: '/source' }).expect(200))
+        .body;
+      const first = await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
+      expect(first.body).toMatchObject({ code: 'VFS_PRECONDITION_FAILED', path: '/source', current: stat });
       await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
-      await snapshotPost(base, `/${id}/restore`, key, raw).expect(201);
+      const replay = await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      expect(
+        (await snapshotPost(base, `/${id}/restore`, key, '{"path":"/source","ifAbsent":true }').expect(409))
+          .body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      await snapshotPost(base, `/${id}/restore`, randomUUID(), raw).expect(201);
     });
 
     it.each(['restore', 'delete'] as const)(
@@ -1031,7 +1053,7 @@ describe('Fs HTTP contract', () => {
       await snapshotPost(base, `/${snapshot.body.snapshotId}/delete`, deletionKey, '{}').expect(200);
     });
 
-    it('한도 초과를 완료 receipt로 보존하지 않으며 원본 종류와 ID를 검증한다', async () => {
+    it('한도 초과 413을 완료 receipt로 재생하며 원본 종류와 ID를 검증한다', async () => {
       const ns = await createNamespace('snapshot-file-errors');
       const base = `/api/v1/namespaces/${ns}/fs`;
       await request(httpServer)
@@ -1043,16 +1065,19 @@ describe('Fs HTTP contract', () => {
       await migrationDataSource.getRepository(NamespaceEntity).update(ns, { maxSnapshotBytes: '1' });
       const key = randomUUID();
       const raw = '{"kind":"file","path":"/a"}';
-      expect((await snapshotPost(base, '', key, raw).expect(413)).body.code).toBe(
-        'VFS_SNAPSHOT_LIMIT_EXCEEDED',
-      );
+      const limited = await snapshotPost(base, '', key, raw).expect(413);
+      expect(limited.body.code).toBe('VFS_SNAPSHOT_LIMIT_EXCEEDED');
       expect(await app.get(DataSource).getRepository(VfsSnapshotEntity).countBy({ namespaceId: ns })).toBe(0);
       expect(
         (await migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ namespaceId: ns }))
           .referenceCount,
       ).toBe(1);
       await migrationDataSource.getRepository(NamespaceEntity).update(ns, { maxSnapshotBytes: null });
-      const snapshot = await snapshotPost(base, '', key, raw).expect(201);
+      const replayed = await snapshotPost(base, '', key, raw).expect(413);
+      expect(replayed.body).toEqual(limited.body);
+      expect(replayed.headers['x-request-id']).toBe(limited.headers['x-request-id']);
+      expect(await app.get(DataSource).getRepository(VfsSnapshotEntity).countBy({ namespaceId: ns })).toBe(0);
+      const snapshot = await snapshotPost(base, '', randomUUID(), raw).expect(201);
       await request(httpServer)
         .get(`${base}/snapshots/${snapshot.body.snapshotId}/content`)
         .query({ path: ['a', 'b'] })
@@ -1096,21 +1121,26 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional mutation receipts', () => {
-    it('NFD path 거부 뒤 같은 key로 NFC JSON mutation을 수락한다', async () => {
+    it('NFD path 거부를 receipt로 재생하고 같은 key의 NFC 요청은 key 재사용으로 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-nfd-retry-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
       const key = randomUUID();
-      const send = (path: string) =>
+      const send = (path: string, idempotencyKey = key) =>
         request(httpServer)
           .post(base)
-          .set('Idempotency-Key', key)
+          .set('Idempotency-Key', idempotencyKey)
           .set('X-Mutation-Scope', 'caller-a')
           .send({ kind: 'mkdir', path, ifAbsent: true });
-      expect((await send('/e\u0301').expect(400)).body.code).toBe('VFS_INVALID_PATH');
+      const rejected = await send('/e\u0301').expect(400);
+      expect(rejected.body.code).toBe('VFS_INVALID_PATH');
       expect(
-        await migrationDataSource.getRepository(VfsMutationReceiptEntity).count({ where: { namespaceId } }),
-      ).toBe(0);
-      const accepted = await send('/é').expect(201);
+        await migrationDataSource.getRepository(VfsMutationReceiptEntity).findBy({ namespaceId }),
+      ).toMatchObject([{ state: 'COMPLETE', responseStatus: 400 }]);
+      const replay = await send('/e\u0301').expect(400);
+      expect(replay.body).toEqual(rejected.body);
+      expect(replay.headers['x-request-id']).toBe(rejected.headers['x-request-id']);
+      expect((await send('/é').expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+      const accepted = await send('/é', randomUUID()).expect(201);
       expect(accepted.body.resource.path).toBe('/é');
     });
 
@@ -1371,7 +1401,7 @@ describe('Fs HTTP contract', () => {
       expect((await badRequest().expect(400)).body).toEqual(broken.body);
     });
 
-    it('does not cache a failed revision condition', async () => {
+    it('조건 불일치 412를 최초 body(current 포함)로 재생하고 이후 변경에도 current를 고정한다', async () => {
       const namespaceId = await createNamespace('conditional-stale-http-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs`;
       await request(httpServer).post(`${base}/mkdir`).send({ path: '/a' }).expect(201);
@@ -1389,9 +1419,25 @@ describe('Fs HTTP contract', () => {
           .set('Idempotency-Key', key)
           .set('X-Mutation-Scope', 'caller-a')
           .send({ kind: 'delete', path: '/a', ifRevision: revision, recursive: true });
-      expect((await send(encodeRevision(old)).expect(412)).body.code).toBe('VFS_PRECONDITION_FAILED');
+      const statAt412 = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
+        .body;
+      const failed = await send(encodeRevision(old)).expect(412);
+      expect(failed.body).toMatchObject({ code: 'VFS_PRECONDITION_FAILED', path: '/a', current: statAt412 });
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/a/later' }).expect(201);
+      const statLater = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
+        .body;
+      expect(statLater).not.toEqual(statAt412);
+      const replay = await send(encodeRevision(old)).expect(412);
+      expect(replay.body).toEqual(failed.body);
+      expect(replay.headers['x-request-id']).toBe(failed.headers['x-request-id']);
       const current = await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: old.id });
-      const accepted = await send(encodeRevision(current)).expect(200);
+      expect((await send(encodeRevision(current)).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+      const accepted = await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'caller-a')
+        .send({ kind: 'delete', path: '/a', ifRevision: encodeRevision(current), recursive: true })
+        .expect(200);
       expect(accepted.body).toMatchObject({ resource: null });
       expect(accepted.body.affectedRevisions.map((item: { path: string }) => item.path)).toEqual(['/']);
     });
@@ -1438,25 +1484,30 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional content upload', () => {
-    it('NFD path 거부 뒤 같은 key로 NFC content upload를 수락한다', async () => {
+    it('NFD path 거부를 receipt로 재생하고 같은 key의 NFC upload는 key 재사용으로 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-content-nfd-retry-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
       const key = randomUUID();
-      const send = (path: string) =>
+      const send = (path: string, idempotencyKey = key) =>
         request(httpServer)
           .post(base)
           .query({ path })
-          .set('Idempotency-Key', key)
+          .set('Idempotency-Key', idempotencyKey)
           .set('X-Mutation-Scope', 'caller-a')
           .set('X-If-Absent', 'true')
           .set('Content-Type', 'application/octet-stream')
           .send(Buffer.from('body'));
-      expect((await send('/e\u0301').expect(400)).body.code).toBe('VFS_INVALID_PATH');
+      const rejected = await send('/e\u0301').expect(400);
+      expect(rejected.body.code).toBe('VFS_INVALID_PATH');
       expect(
-        await migrationDataSource.getRepository(VfsMutationReceiptEntity).count({ where: { namespaceId } }),
-      ).toBe(0);
+        await migrationDataSource.getRepository(VfsMutationReceiptEntity).findBy({ namespaceId }),
+      ).toMatchObject([{ state: 'COMPLETE', responseStatus: 400 }]);
       expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(0);
-      const accepted = await send('/é').expect(201);
+      const replay = await send('/e\u0301').expect(400);
+      expect(replay.body).toEqual(rejected.body);
+      expect(replay.headers['x-request-id']).toBe(rejected.headers['x-request-id']);
+      expect((await send('/é').expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+      const accepted = await send('/é', randomUUID()).expect(201);
       expect(accepted.body.resource.path).toBe('/é');
     });
 
@@ -1545,11 +1596,15 @@ describe('Fs HTTP contract', () => {
       const root = await migrationDataSource
         .getRepository(VfsNodeEntity)
         .findOneByOrFail({ namespaceId, parentId: IsNull() });
-      const replaceKey = randomUUID();
-      const stale = await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), {
-        'X-If-Revision': encodeRevision(root),
-      }).expect(412);
+      const staleKey = randomUUID();
+      const sendStale = () =>
+        put(staleKey, '/x', 'text/plain', Buffer.from('second'), {
+          'X-If-Revision': encodeRevision(root),
+        });
+      const stale = await sendStale().expect(412);
       expect(stale.body.code).toBe('VFS_PRECONDITION_FAILED');
+      expect(stale.body.current).toMatchObject({ path: '/x', type: 'FILE', size: 5 });
+      const replaceKey = randomUUID();
       const replaced = await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), {
         'X-If-Revision': revision,
       }).expect(200);
@@ -1562,6 +1617,16 @@ describe('Fs HTTP contract', () => {
             .expect(200)
         ).text,
       ).toBe('second');
+      const staleReplay = await sendStale().expect(412);
+      expect(staleReplay.body).toEqual(stale.body);
+      expect(staleReplay.headers['x-request-id']).toBe(stale.headers['x-request-id']);
+      expect(
+        (
+          await put(staleKey, '/x', 'text/plain', Buffer.from('second'), {
+            'X-If-Revision': revision,
+          }).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
       expect(
         (
           await put(replaceKey, '/x', 'text/plain', Buffer.from('other'), {
@@ -1592,22 +1657,27 @@ describe('Fs HTTP contract', () => {
       ).toBe('MUTATION_KEY_REUSED');
     });
 
-    it('releases a 404 claim so the same upload can succeed after its parent appears', async () => {
+    it('부모 부재 404를 receipt로 재생해 부모 생성 뒤에도 같은 key는 404를 받는다', async () => {
       const namespaceId = await createNamespace('conditional-content-parent-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs`;
       const key = randomUUID();
-      const send = () =>
+      const send = (idempotencyKey = key) =>
         request(httpServer)
           .post(`${base}/content/conditional`)
           .query({ path: '/parent/x' })
-          .set('Idempotency-Key', key)
+          .set('Idempotency-Key', idempotencyKey)
           .set('X-Mutation-Scope', 'caller-a')
           .set('X-If-Absent', 'true')
           .set('Content-Type', 'text/plain')
           .send(Buffer.from('content'));
-      expect((await send().expect(404)).body.code).toBe('VFS_NODE_NOT_FOUND');
+      const missing = await send().expect(404);
+      expect(missing.body.code).toBe('VFS_NODE_NOT_FOUND');
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(0);
       await request(httpServer).post(`${base}/mkdir`).send({ path: '/parent' }).expect(201);
-      await send().expect(201);
+      const replay = await send().expect(404);
+      expect(replay.body).toEqual(missing.body);
+      expect(replay.headers['x-request-id']).toBe(missing.headers['x-request-id']);
+      await send(randomUUID()).expect(201);
     });
 
     it('requires a condition and does not freeze a 413 response', async () => {
@@ -1735,6 +1805,226 @@ describe('Fs HTTP contract', () => {
       const responses = await Promise.all([send(randomUUID()), send(randomUUID())]);
       expect(responses.map((response) => response.status).sort()).toEqual([201, 412]);
       expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(1);
+    });
+  });
+
+  describe('결정적 4xx 오류 receipt', () => {
+    const scope = 'error-receipt';
+    const mutate = (namespaceId: string, key: string, body: string) =>
+      request(httpServer)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/mutations`)
+        .set('Content-Type', 'application/json')
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', scope)
+        .send(body);
+    const upload = (
+      namespaceId: string,
+      key: string,
+      path: string,
+      headers: Record<string, string>,
+      bytes = Buffer.from('body'),
+    ) => {
+      let call = request(httpServer)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content/conditional`)
+        .query({ path })
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', scope)
+        .set('Content-Type', 'application/octet-stream');
+      for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+      return call.send(bytes);
+    };
+    const receiptOf = (namespaceId: string, key: string) =>
+      migrationDataSource
+        .getRepository(VfsMutationReceiptEntity)
+        .findOneBy({ namespaceId, scope, idempotencyKey: key });
+
+    it('5xx DomainError와 일반 Error는 저장하지 않고 같은 key 재시도에서 재평가한다', async () => {
+      const namespaceId = await createNamespace('error-receipt-transient');
+      const nodes = app.get(VfsNodeRepository);
+      const jsonKey = randomUUID();
+      const jsonBody = '{"kind":"mkdir","path":"/a","ifAbsent":true}';
+      const jsonSpy = jest
+        .spyOn(nodes, 'applyConditionalMutation')
+        .mockRejectedValueOnce(new Error('injected database failure'))
+        .mockRejectedValueOnce(new InjectedUnavailableError());
+      try {
+        await mutate(namespaceId, jsonKey, jsonBody).expect(500);
+        expect(await receiptOf(namespaceId, jsonKey)).toBeNull();
+        await mutate(namespaceId, jsonKey, jsonBody).expect(503);
+        expect(await receiptOf(namespaceId, jsonKey)).toBeNull();
+      } finally {
+        jsonSpy.mockRestore();
+      }
+      expect((await mutate(namespaceId, jsonKey, jsonBody).expect(201)).body.resource.path).toBe('/a');
+
+      const uploadKey = randomUUID();
+      const contentSpy = jest
+        .spyOn(nodes, 'putConditionalContent')
+        .mockRejectedValueOnce(new Error('injected database failure'));
+      try {
+        await upload(namespaceId, uploadKey, '/a/file', { 'X-If-Absent': 'true' }).expect(500);
+      } finally {
+        contentSpy.mockRestore();
+      }
+      expect(await receiptOf(namespaceId, uploadKey)).toBeNull();
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(0);
+      expect(
+        (await upload(namespaceId, uploadKey, '/a/file', { 'X-If-Absent': 'true' }).expect(201)).body.resource
+          .path,
+      ).toBe('/a/file');
+    });
+
+    it('진행 중 claim은 응답을 저장하지 않고 lease 만료 뒤 같은 key로 처리한다', async () => {
+      const namespaceId = await createNamespace('error-receipt-in-progress');
+      const key = randomUUID();
+      const body = '{"kind":"mkdir","path":"/a","ifAbsent":true}';
+      await app
+        .get(VfsMutationReceiptRepository)
+        .claim({ namespaceId, scope, key }, new Date(Date.now() - 59_000));
+      const busy = await mutate(namespaceId, key, body).expect(409);
+      expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
+      expect(await receiptOf(namespaceId, key)).toMatchObject({
+        state: 'RESERVED',
+        generation: 1,
+        responseStatus: null,
+        responseBody: null,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const accepted = await mutate(namespaceId, key, body).expect(201);
+      expect(await receiptOf(namespaceId, key)).toMatchObject({
+        state: 'COMPLETE',
+        generation: 2,
+        responseStatus: 201,
+      });
+      expect((await mutate(namespaceId, key, body).expect(201)).body).toEqual(accepted.body);
+    });
+
+    it('content의 잘못된 조건 헤더 조합과 원본 경로는 같은 key에서 서로의 오류를 재생하지 않는다', async () => {
+      const namespaceId = await createNamespace('error-receipt-content-headers');
+      const missingKey = randomUUID();
+      const missing = await upload(namespaceId, missingKey, '/x', {}).expect(428);
+      expect(missing.body.code).toBe('VFS_PRECONDITION_REQUIRED');
+      for (const headers of [{ 'X-If-Absent': 'false' }, { 'X-If-Revision': 'bad' }] as Record<
+        string,
+        string
+      >[]) {
+        expect((await upload(namespaceId, missingKey, '/x', headers).expect(409)).body.code).toBe(
+          'MUTATION_KEY_REUSED',
+        );
+      }
+      const missingReplay = await upload(namespaceId, missingKey, '/x', {}).expect(428);
+      expect(missingReplay.body).toEqual(missing.body);
+      expect(missingReplay.headers['x-request-id']).toBe(missing.headers['x-request-id']);
+
+      const invalidKey = randomUUID();
+      const invalid = await upload(namespaceId, invalidKey, '/x', { 'X-If-Absent': 'yes' }).expect(400);
+      expect(invalid.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
+      for (const headers of [
+        { 'X-If-Absent': 'false' },
+        { 'X-If-Absent': 'true', 'X-If-Revision': encodeRevision({ id: randomUUID(), version: 1 }) },
+        { 'X-If-Revision': 'bad' },
+      ] as Record<string, string>[]) {
+        expect((await upload(namespaceId, invalidKey, '/x', headers).expect(409)).body.code).toBe(
+          'MUTATION_KEY_REUSED',
+        );
+      }
+      expect(
+        (await upload(namespaceId, invalidKey, '/x', { 'X-If-Absent': 'yes' }).expect(400)).body,
+      ).toEqual(invalid.body);
+
+      const pathKey = randomUUID();
+      const nfd = await upload(namespaceId, pathKey, '/e\u0301', { 'X-If-Absent': 'true' }).expect(400);
+      expect(nfd.body.code).toBe('VFS_INVALID_PATH');
+      expect(
+        (await upload(namespaceId, pathKey, '/a\u0301', { 'X-If-Absent': 'true' }).expect(409)).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      expect(
+        (await upload(namespaceId, pathKey, '/e\u0301', { 'X-If-Absent': 'true' }).expect(400)).body,
+      ).toEqual(nfd.body);
+    });
+
+    it('JSON mutation·content·snapshot 오류 receipt를 PostgreSQL 앱 재시작 뒤 최초 body와 X-Request-Id로 재생한다', async () => {
+      const namespaceId = await createNamespace('error-receipt-pg-restart');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/doc' })
+        .set('Content-Type', 'text/plain')
+        .send('first')
+        .expect(201);
+      const staleRevision = encodeRevision({ id: randomUUID(), version: 1 });
+      const statAtConflict = (
+        await request(httpServer).get(`${base}/stat`).query({ path: '/doc' }).expect(200)
+      ).body;
+      const jsonKey = randomUUID();
+      const jsonBody = JSON.stringify({ kind: 'delete', path: '/doc', ifRevision: staleRevision });
+      const jsonFailed = await mutate(namespaceId, jsonKey, jsonBody).expect(412);
+      expect(jsonFailed.body.current).toEqual(statAtConflict);
+      const uploadKey = randomUUID();
+      const uploadFailed = await upload(namespaceId, uploadKey, '/doc', { 'X-If-Absent': 'true' }).expect(
+        412,
+      );
+      expect(uploadFailed.body.current).toEqual(statAtConflict);
+      const snapshotKey = randomUUID();
+      const snapshotBody = '{"kind":"file","path":"/missing"}';
+      const snapshotRequest = () =>
+        request(httpServer)
+          .post(`${base}/snapshots`)
+          .set('Content-Type', 'application/json')
+          .set('Idempotency-Key', snapshotKey)
+          .set('X-Mutation-Scope', scope)
+          .send(snapshotBody);
+      const snapshotFailed = await snapshotRequest().expect(404);
+
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/doc', force: true })
+        .set('Content-Type', 'text/plain')
+        .send('changed after the conflict')
+        .expect(200);
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/missing' })
+        .set('Content-Type', 'text/plain')
+        .send('now present')
+        .expect(201);
+      const oldDataSource = app.get(DataSource);
+      await app.close();
+      expect(oldDataSource.isInitialized).toBe(false);
+      await bootstrap();
+
+      for (const [send, original] of [
+        [() => mutate(namespaceId, jsonKey, jsonBody), jsonFailed],
+        [() => upload(namespaceId, uploadKey, '/doc', { 'X-If-Absent': 'true' }), uploadFailed],
+        [snapshotRequest, snapshotFailed],
+      ] as const) {
+        const replay = await send().expect(original.status);
+        expect(replay.body).toEqual(original.body);
+        expect(replay.headers['x-request-id']).toBe(original.headers['x-request-id']);
+      }
+      expect(
+        (await request(httpServer).get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body,
+      ).not.toEqual(statAtConflict);
+      expect(
+        (
+          await mutate(
+            namespaceId,
+            jsonKey,
+            JSON.stringify({ kind: 'delete', path: '/doc', ifRevision: 'x' }),
+          ).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      expect(
+        (
+          await upload(
+            namespaceId,
+            uploadKey,
+            '/doc',
+            { 'X-If-Absent': 'true' },
+            Buffer.from('other'),
+          ).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
     });
   });
 

@@ -3,6 +3,9 @@ import { DataSource } from 'typeorm';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { VfsMutationReceiptRepository } from './vfs-mutation-receipt.repository.js';
+import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
+
+const RECEIPT_MS = 30 * 86400_000;
 
 export function runVfsMutationReceiptSharedTests(
   getContext: () => {
@@ -130,6 +133,92 @@ export function runVfsMutationReceiptSharedTests(
       ),
     ).rejects.toThrow('VFS mutation claim lost');
     expect(await nodeRepository.resolvePath(namespace.id, root.id, ['a'])).toBeNull();
+  });
+
+  describe('롤백 뒤 독립 트랜잭션 완료(completeAfterRollback)', () => {
+    const errorResponse = {
+      status: 412,
+      body: { code: 'VFS_PRECONDITION_FAILED', path: '/a', current: null, requestId: 'req-first' },
+      headers: { 'x-request-id': 'req-first' },
+    };
+
+    it('오류 응답을 그대로 저장하고 보존 기한을 claim이 아닌 완료 시점부터 30일로 잡는다', async () => {
+      const { dataSource, receiptRepository } = getContext();
+      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        'receipt-error-complete-ns',
+      );
+      const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+      const claimedAt = new Date(Date.now() - 30_000);
+      expect(await receiptRepository.claim(identity, claimedAt)).toEqual({ kind: 'owner', generation: 1 });
+      const before = Date.now();
+      await receiptRepository.completeAfterRollback(identity, 1, 'f'.repeat(64), 'POST', errorResponse, 9);
+      const after = Date.now();
+
+      const row = await dataSource.getRepository(VfsMutationReceiptEntity).findOneByOrFail({
+        namespaceId: identity.namespaceId,
+        scope: identity.scope,
+        idempotencyKey: identity.key,
+      });
+      expect(row).toMatchObject({
+        state: 'COMPLETE',
+        generation: 1,
+        leaseExpiresAt: null,
+        method: 'POST',
+        fingerprint: 'f'.repeat(64),
+        responseStatus: 412,
+      });
+      expect(JSON.parse(row.responseBody!)).toEqual(errorResponse.body);
+      expect(JSON.parse(row.responseHeaders!)).toEqual(errorResponse.headers);
+      expect(Number(row.requestBodyBytes)).toBe(9);
+      // 초 단위 저장 정밀도를 감안해 1초 여유를 둔다.
+      expect(row.expiresAt.getTime()).toBeGreaterThanOrEqual(before + RECEIPT_MS - 1000);
+      expect(row.expiresAt.getTime()).toBeLessThanOrEqual(after + RECEIPT_MS + 1000);
+      expect(row.expiresAt.getTime()).toBeGreaterThan(claimedAt.getTime() + RECEIPT_MS + 20_000);
+
+      const replay = await receiptRepository.claim(identity, new Date(before + RECEIPT_MS - 60_000));
+      expect(replay).toMatchObject({ kind: 'complete', receipt: { responseStatus: 412 } });
+      expect((await receiptRepository.claim(identity, new Date(after + RECEIPT_MS + 2000))).kind).toBe(
+        'owner',
+      );
+    });
+
+    it('takeover 뒤의 stale generation은 완료하지 못하고 새 owner의 claim을 유지한다', async () => {
+      const { dataSource, receiptRepository } = getContext();
+      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        'receipt-error-fence-ns',
+      );
+      const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+      const claimedAt = new Date(Date.now() - 61_000);
+      expect(await receiptRepository.claim(identity, claimedAt)).toEqual({ kind: 'owner', generation: 1 });
+      expect(await receiptRepository.claim(identity, new Date())).toEqual({ kind: 'owner', generation: 2 });
+
+      await expect(
+        receiptRepository.completeAfterRollback(identity, 1, 'f'.repeat(64), 'POST', errorResponse),
+      ).rejects.toThrow('VFS mutation claim lost');
+      const row = await dataSource.getRepository(VfsMutationReceiptEntity).findOneByOrFail({
+        namespaceId: identity.namespaceId,
+        scope: identity.scope,
+        idempotencyKey: identity.key,
+      });
+      expect(row).toMatchObject({ state: 'RESERVED', generation: 2, responseStatus: null });
+    });
+
+    it('lease가 만료된 owner는 takeover가 없어도 완료하지 못한다', async () => {
+      const { dataSource, receiptRepository } = getContext();
+      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        'receipt-error-expired-ns',
+      );
+      const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+      expect(await receiptRepository.claim(identity, new Date(Date.now() - 61_000))).toEqual({
+        kind: 'owner',
+        generation: 1,
+      });
+
+      await expect(
+        receiptRepository.completeAfterRollback(identity, 1, 'f'.repeat(64), 'POST', errorResponse),
+      ).rejects.toThrow('VFS mutation claim lost');
+      expect((await receiptRepository.claim(identity, new Date())).kind).toBe('owner');
+    });
   });
 
   it('prunes expired completed receipts and permits key reuse', async () => {

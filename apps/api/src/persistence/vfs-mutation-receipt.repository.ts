@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import type { MutationTx } from './vfs-node.repository.js';
@@ -131,8 +131,46 @@ export class VfsMutationReceiptRepository {
     response: ReceiptResponse,
     requestBodyBytes?: number,
   ): Promise<void> {
+    await this.completeWith(
+      tx.manager,
+      identity,
+      generation,
+      fingerprint,
+      method,
+      response,
+      requestBodyBytes,
+    );
+  }
+
+  // 작업 트랜잭션이 롤백된 뒤 오류 응답을 확정하는 경로다. 롤백된(PostgreSQL에서는
+  // abort된) 트랜잭션을 재사용할 수 없으므로 새 짧은 트랜잭션을 연다. fencing 조건과
+  // 저장 필드는 complete와 같다.
+  async completeAfterRollback(
+    identity: ReceiptIdentity,
+    generation: number,
+    fingerprint: string,
+    method: string,
+    response: ReceiptResponse,
+    requestBodyBytes?: number,
+  ): Promise<void> {
+    await this.dataSource.transaction((manager) =>
+      this.completeWith(manager, identity, generation, fingerprint, method, response, requestBodyBytes),
+    );
+  }
+
+  // 보존 기한은 claim 시점이 아니라 완료 시점부터 RECEIPT_DAYS다.
+  // generation과 미만료 lease가 모두 맞는 owner만 완료할 수 있다.
+  private async completeWith(
+    manager: EntityManager,
+    identity: ReceiptIdentity,
+    generation: number,
+    fingerprint: string,
+    method: string,
+    response: ReceiptResponse,
+    requestBodyBytes: number | undefined,
+  ): Promise<void> {
     const now = new Date();
-    const result = await tx.manager
+    const result = await manager
       .getRepository(VfsMutationReceiptEntity)
       .createQueryBuilder()
       .update(VfsMutationReceiptEntity)

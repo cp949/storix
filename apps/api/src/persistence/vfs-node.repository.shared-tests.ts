@@ -665,6 +665,211 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
     });
   });
 
+  describe('412 오류의 current', () => {
+    async function rejection(promise: Promise<unknown>): Promise<VfsPreconditionFailedError> {
+      const error = await promise.then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(VfsPreconditionFailedError);
+      return error as VfsPreconditionFailedError;
+    }
+
+    function metadataOf(node: { name: string; type: string; version: number }, path: string) {
+      return expect.objectContaining({ path, name: node.name, type: node.type, version: node.version });
+    }
+
+    it('mkdir 대상이 이미 있으면 기존 노드 metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-mkdir-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const existing = (await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false)).node;
+      const error = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind: 'mkdir',
+            path: '/a',
+            segments: ['a'],
+            ifAbsent: true,
+          }),
+        ),
+      );
+      expect(error.current).toEqual({
+        path: '/a',
+        name: 'a',
+        type: 'DIRECTORY',
+        size: null,
+        mimeType: null,
+        createdAt: existing.createdAt.toISOString(),
+        updatedAt: existing.updatedAt.toISOString(),
+        version: existing.version,
+      });
+    });
+
+    it('delete revision 불일치 시 현재 노드 metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-delete-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const old = (await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false)).node;
+      await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().applyConditionalMutation(tx, {
+          kind: 'delete',
+          path: '/a',
+          segments: ['a'],
+          ifRevision: encodeRevision(old),
+          recursive: false,
+        }),
+      );
+      const recreated = (await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false)).node;
+      const error = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind: 'delete',
+            path: '/a',
+            segments: ['a'],
+            ifRevision: encodeRevision(old),
+            recursive: false,
+          }),
+        ),
+      );
+      expect(error.current).toEqual(metadataOf(recreated, '/a'));
+    });
+
+    it('move과 copy의 source revision 불일치 시 source metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-source-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const source = (await getRepo().ensureDirectory(namespace.id, root.id, ['source'], false)).node;
+      const stale = encodeRevision({ id: source.id, version: source.version + 5 });
+      for (const kind of ['move', 'copy'] as const) {
+        const error = await rejection(
+          getRepo().withMutation(namespace.id, root.id, (tx) =>
+            getRepo().applyConditionalMutation(tx, {
+              kind,
+              source: '/source',
+              sourceSegments: ['source'],
+              destination: '/dest',
+              destinationSegments: ['dest'],
+              sourceRevision: stale,
+              destinationAbsent: true,
+            }),
+          ),
+        );
+        expect(error.current).toEqual(metadataOf(source, '/source'));
+      }
+    });
+
+    it('move과 copy의 목적지가 이미 있으면 충돌한 목적지 노드를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-destination-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const source = (await getRepo().ensureDirectory(namespace.id, root.id, ['source'], false)).node;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['dest'], false);
+      const nested = (await getRepo().ensureDirectory(namespace.id, root.id, ['dest', 'source'], false)).node;
+      const rootFile = await createFile(namespace.id, root.id, 'file.txt');
+      for (const kind of ['move', 'copy'] as const) {
+        // 디렉터리 목적지 아래에 같은 이름이 있는 충돌
+        const nestedError = await rejection(
+          getRepo().withMutation(namespace.id, root.id, (tx) =>
+            getRepo().applyConditionalMutation(tx, {
+              kind,
+              source: '/source',
+              sourceSegments: ['source'],
+              destination: '/dest',
+              destinationSegments: ['dest'],
+              sourceRevision: encodeRevision(source),
+              destinationAbsent: true,
+            }),
+          ),
+        );
+        expect(nestedError.path).toBe('/dest/source');
+        expect(nestedError.current).toEqual(metadataOf(nested, '/dest/source'));
+        // 파일 목적지와의 충돌
+        const fileError = await rejection(
+          getRepo().withMutation(namespace.id, root.id, (tx) =>
+            getRepo().applyConditionalMutation(tx, {
+              kind,
+              source: '/source',
+              sourceSegments: ['source'],
+              destination: '/file.txt',
+              destinationSegments: ['file.txt'],
+              sourceRevision: encodeRevision(source),
+              destinationAbsent: true,
+            }),
+          ),
+        );
+        expect(fileError.current).toEqual(metadataOf(rootFile, '/file.txt'));
+      }
+    });
+
+    it('content 생성 조건과 revision 조건 위반 시 현재 파일 metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-content-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(tx, ['x'], { ifAbsent: true }, makeBlobData()),
+      );
+      const file = (await getRepo().resolvePath(namespace.id, root.id, ['x']))!;
+      const absentError = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().putConditionalContent(tx, ['x'], { ifAbsent: true }, makeBlobData()),
+        ),
+      );
+      expect(absentError.current).toEqual(metadataOf(file, '/x'));
+      const staleError = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().putConditionalContent(
+            tx,
+            ['x'],
+            { ifRevision: encodeRevision({ id: file.id, version: file.version + 3 }) },
+            makeBlobData(),
+          ),
+        ),
+      );
+      expect(staleError.current).toEqual(metadataOf(file, '/x'));
+    });
+
+    it('restore 조건 위반 시 현재 파일 metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-restore-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const file = await createFile(namespace.id, root.id, 'x');
+      const blob = { blobId: randomUUID(), size: '0', mimeType: 'application/octet-stream' };
+      const absentError = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().restoreBlob(tx, ['x'], { ifAbsent: true }, blob),
+        ),
+      );
+      expect(absentError.current).toEqual(metadataOf(file, '/x'));
+      const staleError = await rejection(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().restoreBlob(
+            tx,
+            ['x'],
+            { ifRevision: encodeRevision({ id: file.id, version: file.version + 3 }) },
+            blob,
+          ),
+        ),
+      );
+      expect(staleError.current).toEqual(metadataOf(file, '/x'));
+    });
+
+    it('만료된 목록 cursor의 412는 현재 directory metadata를 current로 담는다', async () => {
+      const namespace = await createNamespace('current-cursor-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'x'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'y'], false);
+      const first = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 1);
+      const cursor = {
+        directoryId: first.directory.id,
+        directoryRevision: encodeRevision(first.directory),
+        name: first.rows[0].name,
+        id: first.rows[0].id,
+      };
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'z'], false);
+      const directory = (await getRepo().resolvePath(namespace.id, root.id, ['a']))!;
+      const error = await rejection(
+        getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1),
+      );
+      expect(error.current).toEqual(metadataOf(directory, '/a'));
+    });
+  });
+
   describe('revision snapshot reads', () => {
     it('invalidates a cursor after a descendant changes but not after an independent branch changes', async () => {
       const namespace = await createNamespace('revision-snapshot-ns');

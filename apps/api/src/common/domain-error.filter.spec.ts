@@ -3,6 +3,8 @@ import { jest } from '@jest/globals';
 import { DomainError } from './domain-error.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
+import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../vfs/vfs.errors.js';
+import type { VfsNodeResponseDto } from '../vfs/dto/node-response.dto.js';
 
 function createHost(requestId = 'req-1') {
   const json = jest.fn();
@@ -53,8 +55,69 @@ class ForcedReportClientError extends DomainError {
   }
 }
 
+const CURRENT: VfsNodeResponseDto = {
+  path: '/a',
+  name: 'a',
+  type: 'FILE',
+  size: 3,
+  mimeType: 'text/plain',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-02T00:00:00.000Z',
+  version: 2,
+};
+
 describe('DomainErrorFilter', () => {
   const filter = new DomainErrorFilter();
+
+  it('412 오류는 current metadata를 body에 포함한다', () => {
+    const { host, json, status } = createHost();
+
+    filter.catch(new VfsPreconditionFailedError('/a', CURRENT), host);
+
+    expect(status).toHaveBeenCalledWith(412);
+    expect(json).toHaveBeenCalledWith({
+      code: 'VFS_PRECONDITION_FAILED',
+      message: 'mutation 전제조건 불일치: /a',
+      path: '/a',
+      current: CURRENT,
+      requestId: 'req-1',
+    });
+  });
+
+  it('412 오류의 current가 null이면 null을 body에 유지한다', () => {
+    const { host, json } = createHost();
+
+    filter.catch(new VfsPreconditionFailedError('/a', null), host);
+
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ current: null }));
+  });
+
+  it('current가 없는 다른 DomainError의 body에는 current 키를 넣지 않는다', () => {
+    const { host, json } = createHost();
+
+    filter.catch(new VfsNodeNotFoundError('/a'), host);
+
+    const body = json.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(body)).not.toContain('current');
+    expect(body).toEqual({
+      code: 'VFS_NODE_NOT_FOUND',
+      message: '존재하지 않는 경로: /a',
+      path: '/a',
+      requestId: 'req-1',
+    });
+  });
+
+  it('500 응답에는 current를 노출하지 않는다', () => {
+    const { host, json } = createHost();
+
+    filter.catch(Object.assign(new Error('boom'), { status: 500, current: CURRENT }), host);
+
+    expect(json).toHaveBeenCalledWith({
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error',
+      requestId: 'req-1',
+    });
+  });
 
   it('code와 status를 가진 에러를 해당 status와 {code, message, requestId} body로 응답한다', () => {
     const { host, json, status } = createHost();
