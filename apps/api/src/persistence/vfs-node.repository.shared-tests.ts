@@ -247,6 +247,31 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
   });
 
   describe('conditional mutations', () => {
+    it('requires absence for create and an exact revision for overwrite', async () => {
+      const namespace = await createNamespace('conditional-content-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const first = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(tx, ['x'], { ifAbsent: true }, makeBlobData()),
+      );
+      expect(first.value).toMatchObject({ status: 201, resource: { path: '/x' } });
+      const created = (await getRepo().resolvePath(namespace.id, root.id, ['x']))!;
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().putConditionalContent(tx, ['x'], { ifAbsent: true }, makeBlobData()),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      await expect(
+        getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().putConditionalContent(tx, ['x'], { ifRevision: encodeRevision(root) }, makeBlobData()),
+        ),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['x']))!.version).toBe(created.version);
+      const second = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(tx, ['x'], { ifRevision: encodeRevision(created) }, makeBlobData()),
+      );
+      expect(second.value).toMatchObject({ status: 200, resource: { path: '/x' } });
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['x']))!.version).toBe(created.version + 1);
+    });
     it('creates only when absent and rejects a second create with 412', async () => {
       const namespace = await createNamespace('conditional-mkdir-ns');
       const root = (await getRepo().getRoot(namespace.id))!;

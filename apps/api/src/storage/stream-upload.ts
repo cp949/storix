@@ -10,6 +10,17 @@ export interface StreamedUpload {
   readonly sha256: string;
 }
 
+export async function hashStream(source: Readable, maxBytes: number): Promise<StreamedUpload> {
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const chunk of source as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > maxBytes) throw new VfsFileTooLargeError(maxBytes);
+    hash.update(chunk);
+  }
+  return { size, sha256: hash.digest('hex') };
+}
+
 export async function uploadStream(
   storage: Pick<BlobStorage, 'put' | 'delete'>,
   key: string,

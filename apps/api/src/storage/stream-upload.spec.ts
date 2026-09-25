@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { BlobObjectInfo, BlobRange, BlobStorage } from './blob-storage.js';
-import { uploadStream } from './stream-upload.js';
+import { hashStream, uploadStream } from './stream-upload.js';
 import { VfsFileTooLargeError } from './storage.errors.js';
 
 class RecordingBlobStorage implements BlobStorage {
@@ -73,7 +73,7 @@ class SlowConsumingBlobStorage implements BlobStorage {
     for await (const chunk of stream as AsyncIterable<Buffer>) {
       chunks.push(chunk);
       // 각 청크 수신 후 지연을 두어 소비 속도를 늦춤
-      await new Promise(resolve => setTimeout(resolve, this.delayMs));
+      await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     }
     this.received = Buffer.concat(chunks);
   }
@@ -99,7 +99,10 @@ function* chunksOf(text: string, chunkSize: number): Generator<Buffer> {
 }
 
 // 청크 개수를 추적하는 제너레이터
-function* trackingChunksOf(text: string, chunkSize: number): Generator<{
+function* trackingChunksOf(
+  text: string,
+  chunkSize: number,
+): Generator<{
   chunk: Buffer;
   totalYielded: number;
 }> {
@@ -163,7 +166,13 @@ describe('uploadStream', () => {
     const storage = new SlowConsumingBlobStorage(5); // 각 청크 수신 후 5ms 지연
     const source = Readable.from(chunksOf(largePayload, 8192)); // 8KB 청크로 분할
 
-    const result = await uploadStream(storage, 'blobs/00/key', source, 'application/octet-stream', 200 * 1024);
+    const result = await uploadStream(
+      storage,
+      'blobs/00/key',
+      source,
+      'application/octet-stream',
+      200 * 1024,
+    );
 
     expect(result.size).toBe(Buffer.byteLength(largePayload));
     expect(result.sha256).toBe(createHash('sha256').update(largePayload).digest('hex'));
@@ -259,5 +268,17 @@ describe('uploadStream', () => {
     await expect(
       uploadStream(storage, 'blobs/00/key', source, 'application/octet-stream', 200 * 1024),
     ).rejects.toThrow('minio 연결 실패');
+  });
+});
+
+describe('hashStream', () => {
+  it('hashes the entire raw stream without storing it', async () => {
+    const bytes = Buffer.from([0, 1, 255, 0, 128]);
+    const result = await hashStream(Readable.from([bytes.subarray(0, 2), bytes.subarray(2)]), 5);
+    expect(result).toEqual({ size: 5, sha256: createHash('sha256').update(bytes).digest('hex') });
+  });
+
+  it('rejects a replay body that exceeds the same size limit', async () => {
+    await expect(hashStream(Readable.from([Buffer.alloc(6)]), 5)).rejects.toThrow(VfsFileTooLargeError);
   });
 });

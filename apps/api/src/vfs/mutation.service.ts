@@ -16,7 +16,7 @@ export type MutationHttpResult = ReceiptResponse;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function hashParts(parts: readonly string[]): string {
+export function hashParts(parts: readonly string[]): string {
   const hash = createHash('sha256');
   for (const part of parts) {
     const bytes = Buffer.from(part, 'utf8');
@@ -36,7 +36,7 @@ function fingerprint(method: string, command: ConditionalMutation | null, rawBod
   ]);
 }
 
-function identityOf(
+export function identityOf(
   namespaceId: string,
   scope: string | undefined,
   key: string | undefined,
@@ -47,7 +47,7 @@ function identityOf(
   return { namespaceId, scope, key: key.toLowerCase() };
 }
 
-function errorResponse(error: DomainError, requestId: string): MutationHttpResult {
+export function errorResponse(error: DomainError, requestId: string): MutationHttpResult {
   const path = resolveErrorPath(error);
   return {
     status: error.status,

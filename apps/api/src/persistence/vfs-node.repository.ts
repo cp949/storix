@@ -84,6 +84,8 @@ export interface AffectedRevision {
   readonly revision: string;
 }
 
+export type ContentPrecondition = { readonly ifAbsent: true } | { readonly ifRevision: string };
+
 interface FindRecursiveRow {
   readonly id: string;
   readonly name: string;
@@ -370,6 +372,36 @@ export class VfsNodeRepository {
       }
       throw error;
     }
+  }
+
+  async putConditionalContent(
+    tx: MutationTx,
+    segments: string[],
+    condition: ContentPrecondition,
+    blob: BlobData,
+  ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto }> {
+    const path = joinSegments(segments);
+    const existing = await this.resolvePathInTx(tx, segments);
+    if ('ifAbsent' in condition) {
+      if (existing) throw new VfsPreconditionFailedError(path);
+    } else {
+      if (!existing) throw new VfsNodeNotFoundError(path);
+      this.assertRevision(existing, condition.ifRevision, path);
+    }
+    const outcome = await this.putFileContent(
+      tx.namespaceId,
+      tx.rootId,
+      segments,
+      false,
+      blob,
+      existing?.version ?? null,
+      false,
+      tx,
+    );
+    return {
+      status: outcome.kind === 'created' ? 201 : 200,
+      resource: toNodeResponse(outcome.node, path),
+    };
   }
 
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {

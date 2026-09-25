@@ -385,6 +385,75 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/content/conditional:
+    post:
+      operationId: putConditionalContent
+      summary: 조건부 파일 콘텐츠 업로드(raw stream)
+      tags: [fs]
+      description: |
+        이미 존재하는 부모 아래에 파일을 생성하거나 수정한다. UUID key와 scope를
+        동일하게 재사용하면 저장 없이 raw body를 해시해 원래 결과를 30일간 재생한다.
+        `X-If-Absent`와 `X-If-Revision`은 정확히 하나만 지정한다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Mutation-Scope
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: X-If-Absent
+          in: header
+          required: false
+          schema: { type: string, enum: ['true'] }
+        - name: X-If-Revision
+          in: header
+          required: false
+          schema: { type: string, pattern: '^r1\.' }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: 수정됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: key 재사용 또는 진행 중인 claim; 진행 중이면 Retry-After 반환
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '412':
+          description: revision 불일치 또는 대상 존재
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '413':
+          description: 파일 크기 상한 초과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '428':
+          description: 필수 조건 누락
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/namespaces/{namespaceId}/fs/content:
     post:
       operationId: putContent

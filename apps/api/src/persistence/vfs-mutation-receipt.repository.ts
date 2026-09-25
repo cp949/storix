@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
+import { parsePositiveInt } from '../common/env-parsing.js';
 import type { MutationTx } from './vfs-node.repository.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 
@@ -21,8 +22,11 @@ export type ReceiptClaim =
   | { readonly kind: 'complete'; readonly receipt: VfsMutationReceiptEntity }
   | { readonly kind: 'busy'; readonly retryAfterSeconds: number };
 
-const LEASE_MS = 60_000;
 const RECEIPT_DAYS = 30;
+
+export function mutationLeaseSeconds(): number {
+  return parsePositiveInt(process.env.STORIX_MUTATION_LEASE_SECONDS, 60);
+}
 
 function expiresAfter(now: Date, ms: number): Date {
   return new Date(now.getTime() + ms);
@@ -44,13 +48,14 @@ export class VfsMutationReceiptRepository {
 
   async claim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim> {
     const sqlite = isSqliteDataSource(this.dataSource.options);
+    const leaseMs = mutationLeaseSeconds() * 1000;
     const toSqlTime = (date: Date): string =>
       sqlite ? date.toISOString().replace('T', ' ').replace('Z', '') : date.toISOString();
     const params = [
       identity.namespaceId,
       identity.scope,
       identity.key,
-      toSqlTime(expiresAfter(now, LEASE_MS)),
+      toSqlTime(expiresAfter(now, leaseMs)),
       toSqlTime(expiresAfter(now, RECEIPT_DAYS * 86400_000)),
     ];
     const placeholders = params.map((_, index) => (sqlite ? '?' : `$${index + 1}`));
@@ -71,7 +76,7 @@ export class VfsMutationReceiptRepository {
       .update(VfsMutationReceiptEntity)
       .set({
         generation: () => 'generation + 1',
-        leaseExpiresAt: expiresAfter(now, LEASE_MS),
+        leaseExpiresAt: expiresAfter(now, leaseMs),
         updatedAt: now,
       })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
@@ -103,10 +108,11 @@ export class VfsMutationReceiptRepository {
   }
 
   async renew(identity: ReceiptIdentity, generation: number, now: Date): Promise<boolean> {
+    const leaseMs = mutationLeaseSeconds() * 1000;
     const result = await this.repo
       .createQueryBuilder()
       .update(VfsMutationReceiptEntity)
-      .set({ leaseExpiresAt: expiresAfter(now, LEASE_MS), updatedAt: now })
+      .set({ leaseExpiresAt: expiresAfter(now, leaseMs), updatedAt: now })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
       .andWhere("state = 'RESERVED' AND generation = :generation AND lease_expires_at > :now", {
         generation,

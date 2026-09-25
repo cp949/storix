@@ -214,6 +214,8 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_MAX_FILE_SIZE_BYTES` | 선택 | `5368709120` | app | 업로드 상한(5 GiB) |
 | `STORIX_MAX_SYNC_DELETE_NODES` | 선택 | `1000` | app | recursive rm이 동기 처리하는 노드 수 상한 |
 | `STORIX_MAX_SYNC_COPY_NODES` | 선택 | `1000` | app | recursive cp 노드 수 상한 |
+| `STORIX_MUTATION_LEASE_SECONDS` | 선택 | `60` | app | 조건부 업로드 claim lease(초). 업로드 중 이 시간의 1/3 간격으로 갱신 |
+| `STORIX_MUTATION_MAX_UPLOAD_SECONDS` | 선택 | `86400` | app | 조건부 raw 업로드 한 요청의 최대 지속 시간(초, 기본 24시간) |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` | 선택 | `300` | app | presigned URL 만료(초). 상한 `604800`(7일), 초과하면 부팅 거부 |
 | `STORIX_ORPHAN_GRACE_PERIOD` | 선택 | `86400` | gc | 참조 0 이후 회수까지 유예(초) |
 | `STORIX_GC_MIN_INTERVAL` | 선택 | `3600` | gc | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초). advisory lock + 이 간격으로 함대 전체에서 한 인스턴스만 실행되게 한다 |

@@ -13,6 +13,7 @@ import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
+import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsModule } from './vfs.module.js';
 
@@ -59,8 +60,8 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       type: 'postgres',
       url: postgresContainer.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 3),
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, VfsMutationReceiptEntity],
+      migrations: ALL_MIGRATIONS,
     });
     await migrationDataSource.initialize();
     await migrationDataSource.runMigrations();
@@ -93,14 +94,20 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     return response.body.id;
   }
 
-  async function readRawStoredObject(namespaceId: string, path: string): Promise<{ raw: Buffer; iv: Buffer | null }> {
+  async function readRawStoredObject(
+    namespaceId: string,
+    path: string,
+  ): Promise<{ raw: Buffer; iv: Buffer | null }> {
     const rows = await migrationDataSource.query(
       `SELECT b.storage_key, b.encryption_iv
        FROM vfs_node vn JOIN blob b ON b.id = vn.blob_id
        WHERE vn.namespace_id = $1 AND vn.name = $2`,
       [namespaceId, path],
     );
-    const stream = await minioClient.getObject(process.env.STORIX_STORAGE_BUCKET as string, rows[0].storage_key);
+    const stream = await minioClient.getObject(
+      process.env.STORIX_STORAGE_BUCKET as string,
+      rows[0].storage_key,
+    );
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(chunk as Buffer);
@@ -124,6 +131,35 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     expect(raw).not.toEqual(Buffer.from(plaintext));
     expect(raw.length).toBe(Buffer.byteLength(plaintext));
     expect(iv).not.toBeNull();
+  });
+
+  it('조건부 업로드도 암호문을 저장하고 동일한 평문을 재생한다', async () => {
+    const namespaceId = await createEncryptedNamespace(`enc-conditional-${randomUUID()}`);
+    const key = randomUUID();
+    const plaintext = Buffer.from('encrypted conditional content');
+    const send = () =>
+      request(httpServer)
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content/conditional`)
+        .query({ path: '/secret.bin' })
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'caller-a')
+        .set('X-If-Absent', 'true')
+        .set('Content-Type', 'application/octet-stream')
+        .send(plaintext);
+    const first = await send().expect(201);
+    const replay = await send().expect(201);
+    expect(replay.body).toEqual(first.body);
+    const stored = await readRawStoredObject(namespaceId, 'secret.bin');
+    expect(stored.raw).not.toEqual(plaintext);
+    expect(stored.iv).not.toBeNull();
+    expect(
+      (
+        await request(httpServer)
+          .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+          .query({ path: '/secret.bin' })
+          .expect(200)
+      ).body,
+    ).toEqual(plaintext);
   });
 
   it('전체 다운로드는 원문과 동일하다', async () => {

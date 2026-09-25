@@ -23,6 +23,7 @@ import { parseMoveRequest } from './dto/move-request.dto.js';
 import { parseTouchRequest } from './dto/touch-request.dto.js';
 import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
+import { ConditionalContentService } from './conditional-content.service.js';
 
 @Controller('api/v1/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -32,7 +33,38 @@ export class FsController {
     private readonly vfsService: VfsService,
     private readonly contentService: ContentService,
     private readonly mutationService: MutationService,
+    private readonly conditionalContentService: ConditionalContentService,
   ) {}
+
+  @Post('content/conditional')
+  async putConditionalContent(
+    @Param('namespaceId') namespaceId: string,
+    @Query('path') path: string | undefined,
+    @Headers('x-mutation-scope') scope: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Headers('x-if-absent') ifAbsent: string | undefined,
+    @Headers('x-if-revision') ifRevision: string | undefined,
+    @Headers('content-type') contentType: string | undefined,
+    @Headers('content-length') contentLength: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.conditionalContentService.put(
+      namespaceId,
+      scope,
+      key,
+      path ?? '',
+      ifAbsent,
+      ifRevision,
+      req,
+      contentType,
+      contentLength,
+      req.requestId,
+    );
+    res.status(result.status);
+    for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+    return result.body;
+  }
 
   @Post('mutations')
   async mutate(

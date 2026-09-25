@@ -9,11 +9,12 @@ import { PathResolver } from './path-resolver.js';
 import { PublicFsController } from './public-fs.controller.js';
 import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
+import { ConditionalContentService } from './conditional-content.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule],
   controllers: [FsController, PublicFsController],
-  providers: [VfsService, ContentService, PathResolver, MutationService],
+  providers: [VfsService, ContentService, PathResolver, MutationService, ConditionalContentService],
 })
 export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

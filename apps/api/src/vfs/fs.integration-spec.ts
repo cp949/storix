@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { jest } from '@jest/globals';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { INestApplication } from '@nestjs/common';
@@ -18,6 +19,8 @@ import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
+import { BLOB_STORAGE } from '../storage/storage.constants.js';
+import type { BlobStorage } from '../storage/blob-storage.js';
 import { VfsModule } from './vfs.module.js';
 import { encodeRevision } from './revision.js';
 
@@ -27,6 +30,7 @@ function postChunked(
   port: number,
   path: string,
   chunks: Buffer[],
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
@@ -35,7 +39,7 @@ function postChunked(
         port,
         path,
         method: 'POST',
-        headers: { 'content-type': 'application/octet-stream' },
+        headers: { 'content-type': 'application/octet-stream', ...extraHeaders },
       },
       (res) => {
         const data: Buffer[] = [];
@@ -57,6 +61,38 @@ function postChunked(
       req.end();
     })().catch(reject);
   });
+}
+
+function startHeldUpload(
+  port: number,
+  path: string,
+  headers: Record<string, string>,
+): { req: ReturnType<typeof httpRequest>; response: Promise<{ status: number; body: unknown }> } {
+  let resolveResponse!: (value: { status: number; body: unknown }) => void;
+  let rejectResponse!: (reason: unknown) => void;
+  const response = new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+    resolveResponse = resolve;
+    rejectResponse = reject;
+  });
+  const req = httpRequest(
+    {
+      host: '127.0.0.1',
+      port,
+      path,
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', ...headers },
+    },
+    (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolveResponse({ status: res.statusCode ?? 0, body: text ? JSON.parse(text) : null });
+      });
+    },
+  );
+  req.on('error', rejectResponse);
+  return { req, response };
 }
 
 describe('Fs HTTP contract', () => {
@@ -278,6 +314,259 @@ describe('Fs HTTP contract', () => {
         .expect(409);
       expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
       expect(Number(busy.headers['retry-after'])).toBeGreaterThan(0);
+    });
+  });
+
+  describe('conditional content upload', () => {
+    it('stores binary bytes and replays the exact upload without another Blob row', async () => {
+      const namespaceId = await createNamespace('conditional-content-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      const key = randomUUID();
+      const bytes = Buffer.from([0, 1, 2, 255, 0, 128]);
+      const send = (value: Buffer) =>
+        request(httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path: '/image.bin' })
+          .set('Content-Type', 'application/octet-stream')
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('X-If-Absent', 'true')
+          .send(value);
+      const first = await send(bytes).expect(201);
+      expect(first.body).toMatchObject({ resource: { path: '/image.bin' } });
+      const blobCount = await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } });
+      const storage = app.get<BlobStorage>(BLOB_STORAGE);
+      const putSpy = jest.spyOn(storage, 'put');
+      try {
+        const replay = await send(bytes).expect(201);
+        expect(replay.body).toEqual(first.body);
+        expect(putSpy).not.toHaveBeenCalled();
+      } finally {
+        putSpy.mockRestore();
+      }
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(
+        blobCount,
+      );
+      const downloaded = await request(httpServer)
+        .get(`${base}/content`)
+        .query({ path: '/image.bin' })
+        .expect(200);
+      expect(downloaded.body).toEqual(bytes);
+    });
+
+    it('requires an exact revision for replacement and rejects changed replay fingerprints', async () => {
+      const namespaceId = await createNamespace('conditional-content-replace-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+      const createKey = randomUUID();
+      const put = (
+        key: string,
+        path: string,
+        mime: string,
+        bytes: Buffer,
+        condition: Record<string, string>,
+      ) => {
+        let call = request(httpServer)
+          .post(base)
+          .query({ path })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('Content-Type', mime);
+        for (const [name, value] of Object.entries(condition)) call = call.set(name, value);
+        return call.send(bytes);
+      };
+      const created = await put(createKey, '/x', 'text/plain', Buffer.from('first'), {
+        'X-If-Absent': 'true',
+      }).expect(201);
+      const revision = created.body.affectedRevisions.find((item: { path: string }) => item.path === '/x')
+        .revision as string;
+      const root = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId, parentId: IsNull() });
+      const replaceKey = randomUUID();
+      const stale = await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), {
+        'X-If-Revision': encodeRevision(root),
+      }).expect(412);
+      expect(stale.body.code).toBe('VFS_PRECONDITION_FAILED');
+      const replaced = await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), {
+        'X-If-Revision': revision,
+      }).expect(200);
+      expect(replaced.body.resource.path).toBe('/x');
+      expect(
+        (
+          await request(httpServer)
+            .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+            .query({ path: '/x' })
+            .expect(200)
+        ).text,
+      ).toBe('second');
+      expect(
+        (
+          await put(replaceKey, '/x', 'text/plain', Buffer.from('other'), {
+            'X-If-Revision': revision,
+          }).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      expect(
+        (
+          await put(replaceKey, '/x', 'application/octet-stream', Buffer.from('second'), {
+            'X-If-Revision': revision,
+          }).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      expect(
+        (
+          await put(replaceKey, '/y', 'text/plain', Buffer.from('second'), {
+            'X-If-Revision': revision,
+          }).expect(409)
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+      expect(
+        (
+          await put(replaceKey, '/x', 'text/plain', Buffer.from('second'), { 'X-If-Absent': 'true' }).expect(
+            409,
+          )
+        ).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+    });
+
+    it('releases a 404 claim so the same upload can succeed after its parent appears', async () => {
+      const namespaceId = await createNamespace('conditional-content-parent-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      const key = randomUUID();
+      const send = () =>
+        request(httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path: '/parent/x' })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('X-If-Absent', 'true')
+          .set('Content-Type', 'text/plain')
+          .send(Buffer.from('content'));
+      expect((await send().expect(404)).body.code).toBe('VFS_NODE_NOT_FOUND');
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/parent' }).expect(201);
+      await send().expect(201);
+    });
+
+    it('requires a condition and does not freeze a 413 response', async () => {
+      const namespaceId = await createNamespace('conditional-content-limit-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+      const key = randomUUID();
+      const missing = await request(httpServer)
+        .post(base)
+        .query({ path: '/x' })
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'caller-a')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('small'))
+        .expect(428);
+      expect(missing.body.code).toBe('VFS_PRECONDITION_REQUIRED');
+      const tooLargeKey = randomUUID();
+      const send = (bytes: Buffer) =>
+        request(httpServer)
+          .post(base)
+          .query({ path: '/big' })
+          .set('Idempotency-Key', tooLargeKey)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('X-If-Absent', 'true')
+          .set('Content-Type', 'application/octet-stream')
+          .send(bytes);
+      expect((await send(Buffer.alloc(MAX_FILE_SIZE_BYTES + 1)).expect(413)).body.code).toBe(
+        'VFS_FILE_TOO_LARGE',
+      );
+      expect((await send(Buffer.from('ok')).expect(201)).body.resource.path).toBe('/big');
+      const chunked = await postChunked(
+        serverPort,
+        `${base}?path=/chunked`,
+        [Buffer.alloc(MAX_FILE_SIZE_BYTES), Buffer.from([1])],
+        { 'Idempotency-Key': randomUUID(), 'X-Mutation-Scope': 'caller-a', 'X-If-Absent': 'true' },
+      );
+      expect(chunked.status).toBe(413);
+    });
+
+    it('renews a short lease while an upload waits for more chunks', async () => {
+      const previous = process.env.STORIX_MUTATION_LEASE_SECONDS;
+      process.env.STORIX_MUTATION_LEASE_SECONDS = '2';
+      const namespaceId = await createNamespace('conditional-content-renew-ns');
+      const key = randomUUID();
+      const held = startHeldUpload(
+        serverPort,
+        `/api/v1/namespaces/${namespaceId}/fs/content/conditional?path=/held`,
+        { 'Idempotency-Key': key, 'X-Mutation-Scope': 'caller-a', 'X-If-Absent': 'true' },
+      );
+      try {
+        held.req.write(Buffer.from('first'));
+        let receipt: VfsMutationReceiptEntity | null = null;
+        for (let attempt = 0; attempt < 100 && !receipt; attempt += 1) {
+          receipt = await migrationDataSource
+            .getRepository(VfsMutationReceiptEntity)
+            .findOneBy({ namespaceId, scope: 'caller-a', idempotencyKey: key });
+          if (!receipt) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(receipt).not.toBeNull();
+        expect(receipt!.leaseExpiresAt!.getTime() - Date.now()).toBeLessThan(3000);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const renewed = await migrationDataSource
+          .getRepository(VfsMutationReceiptEntity)
+          .findOneByOrFail({ namespaceId, scope: 'caller-a', idempotencyKey: key });
+        expect(renewed.leaseExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+        held.req.end(Buffer.from('second'));
+        expect((await held.response).status).toBe(201);
+      } finally {
+        void held.response.catch(() => undefined);
+        held.req.destroy();
+        if (previous === undefined) delete process.env.STORIX_MUTATION_LEASE_SECONDS;
+        else process.env.STORIX_MUTATION_LEASE_SECONDS = previous;
+      }
+    });
+
+    it('fences an upload owner whose lease was taken over before commit', async () => {
+      const namespaceId = await createNamespace('conditional-content-fence-ns');
+      const key = randomUUID();
+      const held = startHeldUpload(
+        serverPort,
+        `/api/v1/namespaces/${namespaceId}/fs/content/conditional?path=/fenced`,
+        { 'Idempotency-Key': key, 'X-Mutation-Scope': 'caller-a', 'X-If-Absent': 'true' },
+      );
+      try {
+        held.req.write(Buffer.from('first'));
+        let receipt: VfsMutationReceiptEntity | null = null;
+        for (let attempt = 0; attempt < 100 && !receipt; attempt += 1) {
+          receipt = await migrationDataSource
+            .getRepository(VfsMutationReceiptEntity)
+            .findOneBy({ namespaceId, scope: 'caller-a', idempotencyKey: key });
+          if (!receipt) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(receipt).not.toBeNull();
+        const takeover = await app
+          .get(VfsMutationReceiptRepository)
+          .claim({ namespaceId, scope: 'caller-a', key }, new Date(receipt!.leaseExpiresAt!.getTime() + 1));
+        expect(takeover).toEqual({ kind: 'owner', generation: 2 });
+        held.req.end(Buffer.from('second'));
+        expect((await held.response).status).toBe(500);
+        const root = await migrationDataSource
+          .getRepository(VfsNodeEntity)
+          .findOneByOrFail({ namespaceId, parentId: IsNull() });
+        expect(
+          await migrationDataSource
+            .getRepository(VfsNodeEntity)
+            .findOneBy({ namespaceId, parentId: root.id, name: 'fenced' }),
+        ).toBeNull();
+      } finally {
+        void held.response.catch(() => undefined);
+        held.req.destroy();
+      }
+    });
+
+    it('serializes same-path conditional creates to one 201 and one 412', async () => {
+      const namespaceId = await createNamespace('conditional-content-race-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+      const send = (key: string) => request(httpServer).post(base).query({ path: '/same' })
+        .set('Idempotency-Key', key).set('X-Mutation-Scope', 'caller-a')
+        .set('X-If-Absent', 'true').set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('race'));
+      const responses = await Promise.all([send(randomUUID()), send(randomUUID())]);
+      expect(responses.map((response) => response.status).sort()).toEqual([201, 412]);
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(1);
     });
   });
 
