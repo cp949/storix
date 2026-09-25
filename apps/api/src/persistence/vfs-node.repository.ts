@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { KeysetCursor } from '../common/keyset-cursor.js';
+import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsAlreadyExistsError,
@@ -14,6 +15,7 @@ import {
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
+  VfsRevisionExhaustedError,
   VfsVersionConflictError,
 } from '../vfs/vfs.errors.js';
 import { BlobRepository } from './blob.repository.js';
@@ -63,6 +65,18 @@ export interface BlobData {
 export type PutFileOutcome =
   | { readonly kind: 'created'; readonly node: VfsNodeRecord }
   | { readonly kind: 'replaced'; readonly node: VfsNodeRecord };
+
+export interface MutationTx {
+  readonly manager: EntityManager;
+  readonly namespaceId: string;
+  readonly rootId: string;
+  readonly changed: Map<string, { path: string; increment: boolean }>;
+}
+
+export interface AffectedRevision {
+  readonly path: string;
+  readonly revision: string;
+}
 
 interface FindRecursiveRow {
   readonly id: string;
@@ -184,6 +198,87 @@ export class VfsNodeRepository {
 
   private get isSqlite(): boolean {
     return isSqliteDataSource(this.dataSource.options);
+  }
+
+  async withMutation<T>(
+    namespaceId: string,
+    rootId: string,
+    work: (tx: MutationTx) => Promise<T>,
+    afterBump?: (
+      tx: MutationTx,
+      result: { value: T; affectedRevisions: AffectedRevision[] },
+    ) => Promise<void>,
+  ): Promise<{ value: T; affectedRevisions: AffectedRevision[] }> {
+    return this.dataSource.transaction(async (manager) => {
+      const root = await this.applyRowLockIfSupported(
+        manager
+          .createQueryBuilder(VfsNodeEntity, 'n')
+          .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
+      ).getOne();
+      if (!root || root.type !== 'DIRECTORY') {
+        throw new VfsNodeNotFoundError('/');
+      }
+      const tx: MutationTx = { manager, namespaceId, rootId, changed: new Map() };
+      const value = await work(tx);
+      const affectedRevisions = await this.bumpAndReadChangedNodes(tx);
+      if (afterBump) {
+        await afterBump(tx, { value, affectedRevisions });
+      }
+      return { value, affectedRevisions };
+    });
+  }
+
+  private markChanged(tx: MutationTx, id: string, increment: boolean): void {
+    const previous = tx.changed.get(id);
+    if (!previous) {
+      tx.changed.set(id, { path: '', increment });
+    }
+  }
+
+  private async markAncestorChain(tx: MutationTx, id: string): Promise<void> {
+    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    let currentId: string | null = id;
+    while (currentId) {
+      this.markChanged(tx, currentId, true);
+      const current: VfsNodeEntity | null = await nodeRepo.findOneBy({
+        id: currentId,
+        namespaceId: tx.namespaceId,
+      });
+      if (!current) throw new VfsNodeNotFoundError('/');
+      currentId = current.parentId;
+    }
+  }
+
+  private async bumpAndReadChangedNodes(tx: MutationTx): Promise<AffectedRevision[]> {
+    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    for (const [id, change] of tx.changed) {
+      if (!change.increment) continue;
+      const result = await nodeRepo
+        .createQueryBuilder()
+        .update(VfsNodeEntity)
+        .set({ version: () => 'version + 1', updatedAt: () => 'CURRENT_TIMESTAMP' })
+        .where('id = :id AND version < :maxVersion', { id, maxVersion: MAX_VFS_VERSION })
+        .execute();
+      if (result.affected !== 1) {
+        throw new VfsRevisionExhaustedError();
+      }
+    }
+
+    const result: AffectedRevision[] = [];
+    for (const id of tx.changed.keys()) {
+      const node = await nodeRepo.findOneBy({ id, namespaceId: tx.namespaceId });
+      if (!node) continue;
+      const names: string[] = [];
+      let parent = node;
+      while (parent.parentId) {
+        names.unshift(parent.name);
+        const next = await nodeRepo.findOneBy({ id: parent.parentId, namespaceId: tx.namespaceId });
+        if (!next) throw new Error('VFS parent node missing');
+        parent = next;
+      }
+      result.push({ path: joinSegments(names), revision: encodeRevision(node) });
+    }
+    return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
@@ -325,49 +420,58 @@ export class VfsNodeRepository {
     rootId: string,
     segments: string[],
     parents: boolean,
+    tx?: MutationTx,
   ): Promise<{ node: VfsNodeRecord; created: boolean }> {
-    return this.dataSource.transaction(async (manager) => {
-      const nodeRepo = manager.getRepository(VfsNodeEntity);
-      let parentId = rootId;
-      let parentType: VfsNodeType = 'DIRECTORY';
-      let created = false;
-      let current: VfsNodeEntity | null = null;
+    if (!tx) {
+      return (
+        await this.withMutation(namespaceId, rootId, (inner) =>
+          this.ensureDirectory(namespaceId, rootId, segments, parents, inner),
+        )
+      ).value;
+    }
+    const manager = tx.manager;
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    let parentId = rootId;
+    let parentType: VfsNodeType = 'DIRECTORY';
+    let created = false;
+    let current: VfsNodeEntity | null = null;
 
-      for (let i = 0; i < segments.length; i += 1) {
-        const name = segments[i];
-        const isLast = i === segments.length - 1;
+    for (let i = 0; i < segments.length; i += 1) {
+      const name = segments[i];
+      const isLast = i === segments.length - 1;
 
-        if (parentType !== 'DIRECTORY') {
-          throw new VfsNotDirectoryError(joinSegments(segments.slice(0, i)));
-        }
-
-        await this.applyRowLockIfSupported(
-          manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
-        ).getOne();
-
-        let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
-
-        if (child) {
-          if (isLast && (child.type === 'FILE' || !parents)) {
-            throw new VfsAlreadyExistsError(joinSegments(segments));
-          }
-        } else {
-          if (!isLast && !parents) {
-            throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
-          }
-          child = await nodeRepo.save(nodeRepo.create({ namespaceId, parentId, type: 'DIRECTORY', name }));
-          if (isLast) {
-            created = true;
-          }
-        }
-
-        current = child;
-        parentId = child.id;
-        parentType = child.type;
+      if (parentType !== 'DIRECTORY') {
+        throw new VfsNotDirectoryError(joinSegments(segments.slice(0, i)));
       }
 
-      return { node: toRecord(current as VfsNodeEntity), created };
-    });
+      await this.applyRowLockIfSupported(
+        manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
+      ).getOne();
+
+      let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
+
+      if (child) {
+        if (isLast && (child.type === 'FILE' || !parents)) {
+          throw new VfsAlreadyExistsError(joinSegments(segments));
+        }
+      } else {
+        if (!isLast && !parents) {
+          throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
+        }
+        child = await nodeRepo.save(nodeRepo.create({ namespaceId, parentId, type: 'DIRECTORY', name }));
+        await this.markAncestorChain(tx, parentId);
+        this.markChanged(tx, child.id, false);
+        if (isLast) {
+          created = true;
+        }
+      }
+
+      current = child;
+      parentId = child.id;
+      parentType = child.type;
+    }
+
+    return { node: toRecord(current as VfsNodeEntity), created };
   }
 
   async touchFile(
@@ -376,42 +480,54 @@ export class VfsNodeRepository {
     segments: string[],
     parents: boolean,
     emptyBlob: BlobData,
+    tx?: MutationTx,
   ): Promise<PutFileOutcome> {
-    return this.dataSource.transaction(async (manager) => {
-      const nodeRepo = manager.getRepository(VfsNodeEntity);
-      const blobRepo = manager.getRepository(BlobEntity);
-      const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents);
-      const name = segments[segments.length - 1];
+    if (!tx) {
+      return (
+        await this.withMutation(namespaceId, rootId, (inner) =>
+          this.touchFile(namespaceId, rootId, segments, parents, emptyBlob, inner),
+        )
+      ).value;
+    }
+    const manager = tx.manager;
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    const blobRepo = manager.getRepository(BlobEntity);
+    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents, tx);
+    const name = segments[segments.length - 1];
 
-      const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
 
-      if (existing) {
-        if (existing.type === 'DIRECTORY') {
-          throw new VfsIsDirectoryError(joinSegments(segments));
-        }
-        // content는 그대로 두고 updatedAt만 갱신해 diff를 발생시킨다.
-        // TypeORM은 변경된 column이 없으면 UPDATE 자체를 생략해 @VersionColumn도
-        // 증가하지 않으므로, save()만 호출해서는 touch의 "version만 올린다" 요구를 만족할 수 없다.
-        existing.updatedAt = new Date();
-        const touched = await nodeRepo.save(existing);
-        return { kind: 'replaced', node: toRecord(touched) };
+    if (existing) {
+      if (existing.type === 'DIRECTORY') {
+        throw new VfsIsDirectoryError(joinSegments(segments));
       }
+      if (existing.version >= MAX_VFS_VERSION) {
+        throw new VfsRevisionExhaustedError();
+      }
+      // content는 그대로 두고 updatedAt만 갱신해 diff를 발생시킨다.
+      // TypeORM은 변경된 column이 없으면 UPDATE 자체를 생략해 @VersionColumn도
+      // 증가하지 않으므로, save()만 호출해서는 touch의 "version만 올린다" 요구를 만족할 수 없다.
+      existing.updatedAt = new Date();
+      const touched = await nodeRepo.save(existing);
+      this.markChanged(tx, touched.id, false);
+      return { kind: 'replaced', node: toRecord(touched) };
+    }
 
-      const blob = await blobRepo.save(blobRepo.create({ namespaceId, ...emptyBlob, referenceCount: 1 }));
-      const created = await nodeRepo.save(
-        nodeRepo.create({
-          namespaceId,
-          parentId,
-          type: 'FILE',
-          name,
-          blobId: blob.id,
-          size: emptyBlob.size,
-          mimeType: emptyBlob.mimeType,
-        }),
-      );
+    const blob = await blobRepo.save(blobRepo.create({ namespaceId, ...emptyBlob, referenceCount: 1 }));
+    const created = await nodeRepo.save(
+      nodeRepo.create({
+        namespaceId,
+        parentId,
+        type: 'FILE',
+        name,
+        blobId: blob.id,
+        size: emptyBlob.size,
+        mimeType: emptyBlob.mimeType,
+      }),
+    );
+    this.markChanged(tx, created.id, false);
 
-      return { kind: 'created', node: toRecord(created) };
-    });
+    return { kind: 'created', node: toRecord(created) };
   }
 
   async putFileContent(
@@ -422,58 +538,68 @@ export class VfsNodeRepository {
     newBlob: BlobData,
     ifMatchVersion: number | null,
     force: boolean,
+    tx?: MutationTx,
   ): Promise<PutFileOutcome> {
-    return this.dataSource.transaction(async (manager) => {
-      const nodeRepo = manager.getRepository(VfsNodeEntity);
-      const blobRepo = manager.getRepository(BlobEntity);
-      const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents);
-      const name = segments[segments.length - 1];
+    if (!tx) {
+      return (
+        await this.withMutation(namespaceId, rootId, (inner) =>
+          this.putFileContent(namespaceId, rootId, segments, parents, newBlob, ifMatchVersion, force, inner),
+        )
+      ).value;
+    }
+    const manager = tx.manager;
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    const blobRepo = manager.getRepository(BlobEntity);
+    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents, tx);
+    const name = segments[segments.length - 1];
 
-      const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
 
-      if (existing) {
-        if (existing.type === 'DIRECTORY') {
-          throw new VfsIsDirectoryError(joinSegments(segments));
-        }
-        if (!force && (ifMatchVersion === null || ifMatchVersion !== existing.version)) {
-          throw new VfsVersionConflictError(joinSegments(segments));
-        }
-
-        const createdBlob = await blobRepo.save(
-          blobRepo.create({ namespaceId, ...newBlob, referenceCount: 1 }),
-        );
-        if (existing.blobId === null) {
-          throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-        }
-        const previousBlobId = existing.blobId;
-
-        existing.blobId = createdBlob.id;
-        existing.size = newBlob.size;
-        existing.mimeType = newBlob.mimeType;
-        const saved = await nodeRepo.save(existing);
-
-        await this.blobRepository.decrementReferenceCount(manager, previousBlobId, 1);
-
-        return { kind: 'replaced', node: toRecord(saved) };
+    if (existing) {
+      if (existing.type === 'DIRECTORY') {
+        throw new VfsIsDirectoryError(joinSegments(segments));
+      }
+      if (existing.version >= MAX_VFS_VERSION) {
+        throw new VfsRevisionExhaustedError();
+      }
+      if (!force && (ifMatchVersion === null || ifMatchVersion !== existing.version)) {
+        throw new VfsVersionConflictError(joinSegments(segments));
       }
 
       const createdBlob = await blobRepo.save(
         blobRepo.create({ namespaceId, ...newBlob, referenceCount: 1 }),
       );
-      const created = await nodeRepo.save(
-        nodeRepo.create({
-          namespaceId,
-          parentId,
-          type: 'FILE',
-          name,
-          blobId: createdBlob.id,
-          size: newBlob.size,
-          mimeType: newBlob.mimeType,
-        }),
-      );
+      if (existing.blobId === null) {
+        throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
+      }
+      const previousBlobId = existing.blobId;
 
-      return { kind: 'created', node: toRecord(created) };
-    });
+      existing.blobId = createdBlob.id;
+      existing.size = newBlob.size;
+      existing.mimeType = newBlob.mimeType;
+      const saved = await nodeRepo.save(existing);
+      this.markChanged(tx, saved.id, false);
+
+      await this.blobRepository.decrementReferenceCount(manager, previousBlobId, 1);
+
+      return { kind: 'replaced', node: toRecord(saved) };
+    }
+
+    const createdBlob = await blobRepo.save(blobRepo.create({ namespaceId, ...newBlob, referenceCount: 1 }));
+    const created = await nodeRepo.save(
+      nodeRepo.create({
+        namespaceId,
+        parentId,
+        type: 'FILE',
+        name,
+        blobId: createdBlob.id,
+        size: newBlob.size,
+        mimeType: newBlob.mimeType,
+      }),
+    );
+    this.markChanged(tx, created.id, false);
+
+    return { kind: 'created', node: toRecord(created) };
   }
 
   private async resolveDestinationPlacement(
@@ -483,6 +609,8 @@ export class VfsNodeRepository {
     sourceSegments: string[],
     destinationSegments: string[],
     destinationParents: boolean,
+    tx?: MutationTx,
+    markSourceAncestors = true,
   ): Promise<{
     sourceNode: VfsNodeEntity;
     finalParentId: string;
@@ -490,7 +618,15 @@ export class VfsNodeRepository {
     finalSegments: string[];
   }> {
     const resolveSource = async (): Promise<VfsNodeEntity> => {
-      const parentId = await this.lockParentChain(manager, namespaceId, rootId, sourceSegments, false);
+      const parentId = await this.lockParentChain(
+        manager,
+        namespaceId,
+        rootId,
+        sourceSegments,
+        false,
+        tx,
+        markSourceAncestors,
+      );
       const name = sourceSegments[sourceSegments.length - 1];
       const node = await this.lockTargetNode(manager, namespaceId, parentId, name);
       if (!node) {
@@ -500,7 +636,7 @@ export class VfsNodeRepository {
     };
 
     const resolveDestinationParent = () =>
-      this.lockParentChain(manager, namespaceId, rootId, destinationSegments, destinationParents);
+      this.lockParentChain(manager, namespaceId, rootId, destinationSegments, destinationParents, tx);
 
     // source/destination의 조상 chain이 겹칠 수 있어, 한 트랜잭션 안에서 두 path를
     // 잠그는 순서가 호출마다 뒤바뀌면 반대 방향으로 동시에 실행되는 mv/cp끼리 교착
@@ -542,9 +678,11 @@ export class VfsNodeRepository {
         : (destinationTarget as VfsNodeEntity).id
       : destinationParentId;
     const finalName = nestUnderDirectory ? sourceBasename : (destinationName as string);
-    const finalSegments = nestUnderDirectory
-      ? [...destinationSegments, sourceBasename]
-      : destinationSegments;
+    const finalSegments = nestUnderDirectory ? [...destinationSegments, sourceBasename] : destinationSegments;
+
+    if (tx && nestUnderDirectory && destinationTarget) {
+      this.markChanged(tx, destinationTarget.id, true);
+    }
 
     // "directory를 자신 또는 자기 subtree 아래로 move/copy" 금지는 spec상 directory에만
     // 적용된다(file은 자기 경로 자신을 "목적지"로 지정해도 일반 충돌로 취급).
@@ -574,50 +712,82 @@ export class VfsNodeRepository {
     sourceSegments: string[],
     destinationSegments: string[],
     destinationParents: boolean,
+    tx?: MutationTx,
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
-    return this.dataSource.transaction(async (manager) => {
-      const { sourceNode, finalParentId, finalName, finalSegments } = await this.resolveDestinationPlacement(
-        manager,
-        namespaceId,
-        rootId,
-        sourceSegments,
-        destinationSegments,
-        destinationParents,
-      );
+    if (!tx) {
+      return (
+        await this.withMutation(namespaceId, rootId, (inner) =>
+          this.moveNode(namespaceId, rootId, sourceSegments, destinationSegments, destinationParents, inner),
+        )
+      ).value;
+    }
+    const manager = tx.manager;
+    const { sourceNode, finalParentId, finalName, finalSegments } = await this.resolveDestinationPlacement(
+      manager,
+      namespaceId,
+      rootId,
+      sourceSegments,
+      destinationSegments,
+      destinationParents,
+      tx,
+    );
 
-      sourceNode.parentId = finalParentId;
-      sourceNode.name = finalName;
-      const saved = await manager.getRepository(VfsNodeEntity).save(sourceNode);
+    if (sourceNode.version >= MAX_VFS_VERSION) {
+      throw new VfsRevisionExhaustedError();
+    }
 
-      return { node: toRecord(saved), finalPath: joinSegments(finalSegments) };
-    });
+    sourceNode.parentId = finalParentId;
+    sourceNode.name = finalName;
+    const saved = await manager.getRepository(VfsNodeEntity).save(sourceNode);
+    this.markChanged(tx, saved.id, false);
+    const ph = new DialectPlaceholders(this.isSqlite);
+    const descendants: { id: string }[] = await manager.query(
+      `WITH RECURSIVE subtree AS (
+           SELECT id FROM vfs_node WHERE parent_id = ${ph.bind(saved.id)}
+           UNION ALL SELECT n.id FROM vfs_node n JOIN subtree s ON n.parent_id = s.id
+         ) SELECT id FROM subtree`,
+      ph.params,
+    );
+    for (const descendant of descendants) this.markChanged(tx, descendant.id, true);
+
+    return { node: toRecord(saved), finalPath: joinSegments(finalSegments) };
   }
 
-  async removeEmptyDirectory(namespaceId: string, rootId: string, segments: string[]): Promise<void> {
-    return this.dataSource.transaction(async (manager) => {
-      const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false);
-      const name = segments[segments.length - 1];
-      const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
+  async removeEmptyDirectory(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+    tx?: MutationTx,
+  ): Promise<void> {
+    if (!tx) {
+      await this.withMutation(namespaceId, rootId, (inner) =>
+        this.removeEmptyDirectory(namespaceId, rootId, segments, inner),
+      );
+      return;
+    }
+    const manager = tx.manager;
+    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
+    const name = segments[segments.length - 1];
+    const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
 
-      if (!target) {
-        throw new VfsNodeNotFoundError(joinSegments(segments));
-      }
-      if (target.type === 'FILE') {
-        throw new VfsNotDirectoryError(joinSegments(segments));
-      }
+    if (!target) {
+      throw new VfsNodeNotFoundError(joinSegments(segments));
+    }
+    if (target.type === 'FILE') {
+      throw new VfsNotDirectoryError(joinSegments(segments));
+    }
 
-      const childCount = await manager
-        .createQueryBuilder(VfsNodeEntity, 'n')
-        .where('n.namespace_id = :namespaceId', { namespaceId })
-        .andWhere('n.parent_id = :parentId', { parentId: target.id })
-        .getCount();
+    const childCount = await manager
+      .createQueryBuilder(VfsNodeEntity, 'n')
+      .where('n.namespace_id = :namespaceId', { namespaceId })
+      .andWhere('n.parent_id = :parentId', { parentId: target.id })
+      .getCount();
 
-      if (childCount > 0) {
-        throw new VfsDirectoryNotEmptyError(joinSegments(segments));
-      }
+    if (childCount > 0) {
+      throw new VfsDirectoryNotEmptyError(joinSegments(segments));
+    }
 
-      await manager.getRepository(VfsNodeEntity).remove(target);
-    });
+    await manager.getRepository(VfsNodeEntity).remove(target);
   }
 
   async removeNode(
@@ -626,74 +796,83 @@ export class VfsNodeRepository {
     segments: string[],
     recursive: boolean,
     maxSyncDeleteNodes: number,
+    tx?: MutationTx,
   ): Promise<void> {
-    return this.dataSource.transaction(async (manager) => {
-      const nodeRepo = manager.getRepository(VfsNodeEntity);
-      const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false);
-      const name = segments[segments.length - 1];
-      const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    if (!tx) {
+      await this.withMutation(namespaceId, rootId, (inner) =>
+        this.removeNode(namespaceId, rootId, segments, recursive, maxSyncDeleteNodes, inner),
+      );
+      return;
+    }
+    const manager = tx.manager;
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
+    const name = segments[segments.length - 1];
+    const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
 
-      if (!target) {
-        throw new VfsNodeNotFoundError(joinSegments(segments));
+    if (!target) {
+      throw new VfsNodeNotFoundError(joinSegments(segments));
+    }
+
+    if (target.type === 'FILE') {
+      if (!target.blobId) {
+        throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
       }
+      await nodeRepo.remove(target);
+      await this.blobRepository.decrementReferenceCount(manager, target.blobId, 1);
+      return;
+    }
 
-      if (target.type === 'FILE') {
-        if (!target.blobId) {
-          throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-        }
-        await nodeRepo.remove(target);
-        await this.blobRepository.decrementReferenceCount(manager, target.blobId, 1);
-        return;
-      }
+    if (!recursive) {
+      throw new VfsIsDirectoryError(joinSegments(segments));
+    }
 
-      if (!recursive) {
-        throw new VfsIsDirectoryError(joinSegments(segments));
-      }
-
-      // target 자신의 row lock을 이미 보유하고 있어 이 subtree 안팎으로의 모든
-      // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
-      // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
-      // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
-      const ph = new DialectPlaceholders(this.isSqlite);
-      const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
-        `WITH RECURSIVE subtree AS (
+    // target 자신의 row lock을 이미 보유하고 있어 이 subtree 안팎으로의 모든
+    // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
+    // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
+    // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
+    const ph = new DialectPlaceholders(this.isSqlite);
+    const subtreeRows: { id: string; blob_id: string | null }[] = await manager.query(
+      `WITH RECURSIVE subtree AS (
            SELECT id, namespace_id, blob_id FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
            UNION ALL
            SELECT vn.id, vn.namespace_id, vn.blob_id FROM vfs_node vn
            INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
          )
          SELECT id, blob_id FROM subtree`,
-        ph.params,
-      );
+      ph.params,
+    );
 
-      if (subtreeRows.length > maxSyncDeleteNodes) {
-        throw new VfsDeleteLimitExceededError(maxSyncDeleteNodes);
+    if (subtreeRows.length > maxSyncDeleteNodes) {
+      throw new VfsDeleteLimitExceededError(maxSyncDeleteNodes);
+    }
+
+    const ids = subtreeRows.map((row) => row.id);
+    await this.applyRowLockIfSupported(
+      manager
+        .createQueryBuilder(VfsNodeEntity, 'n')
+        .where('n.id IN (:...ids)', { ids })
+        .orderBy('n.id', 'ASC'),
+    ).getMany();
+
+    const blobDecrements = new Map<string, number>();
+    for (const row of subtreeRows) {
+      if (row.blob_id) {
+        blobDecrements.set(row.blob_id, (blobDecrements.get(row.blob_id) ?? 0) + 1);
       }
+    }
 
-      const ids = subtreeRows.map((row) => row.id);
-      await this.applyRowLockIfSupported(
-        manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id IN (:...ids)', { ids }).orderBy('n.id', 'ASC'),
-      ).getMany();
+    await nodeRepo.delete(ids);
 
-      const blobDecrements = new Map<string, number>();
-      for (const row of subtreeRows) {
-        if (row.blob_id) {
-          blobDecrements.set(row.blob_id, (blobDecrements.get(row.blob_id) ?? 0) + 1);
-        }
-      }
+    // CTE 결과의 row 순서는 비결정적이라 Map의 삽입 순서를 그대로 따르면 decrement
+    // 호출 순서가 매번 달라진다. 여러 독립적인 row에 대한 write를 한 트랜잭션에서
+    // 수행할 때는 고정된 정렬 순서로 처리해 두는 편이 이후 잠재적인 AB-BA 교착의
+    // 소지를 없앤다(moveNode의 lock 순서와 동일한 원리).
+    const sortedBlobDecrements = [...blobDecrements].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 
-      await nodeRepo.delete(ids);
-
-      // CTE 결과의 row 순서는 비결정적이라 Map의 삽입 순서를 그대로 따르면 decrement
-      // 호출 순서가 매번 달라진다. 여러 독립적인 row에 대한 write를 한 트랜잭션에서
-      // 수행할 때는 고정된 정렬 순서로 처리해 두는 편이 이후 잠재적인 AB-BA 교착의
-      // 소지를 없앤다(moveNode의 lock 순서와 동일한 원리).
-      const sortedBlobDecrements = [...blobDecrements].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-
-      for (const [blobId, count] of sortedBlobDecrements) {
-        await this.blobRepository.decrementReferenceCount(manager, blobId, count);
-      }
-    });
+    for (const [blobId, count] of sortedBlobDecrements) {
+      await this.blobRepository.decrementReferenceCount(manager, blobId, count);
+    }
   }
 
   async copyNode(
@@ -703,48 +882,67 @@ export class VfsNodeRepository {
     destinationSegments: string[],
     destinationParents: boolean,
     maxSyncCopyNodes: number,
+    tx?: MutationTx,
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
-    return this.dataSource.transaction(async (manager) => {
-      const nodeRepo = manager.getRepository(VfsNodeEntity);
-      const blobRepo = manager.getRepository(BlobEntity);
-
-      const { sourceNode, finalParentId, finalName, finalSegments } = await this.resolveDestinationPlacement(
-        manager,
-        namespaceId,
-        rootId,
-        sourceSegments,
-        destinationSegments,
-        destinationParents,
-      );
-
-      if (sourceNode.type === 'FILE') {
-        if (!sourceNode.blobId) {
-          throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-        }
-
-        // COW: MinIO I/O 없이 같은 Blob을 가리키는 새 Node만 만들고 참조 수를 늘린다.
-        await blobRepo.increment({ id: sourceNode.blobId }, 'referenceCount', 1);
-        const created = await nodeRepo.save(
-          nodeRepo.create({
+    if (!tx) {
+      return (
+        await this.withMutation(namespaceId, rootId, (inner) =>
+          this.copyNode(
             namespaceId,
-            parentId: finalParentId,
-            type: 'FILE',
-            name: finalName,
-            blobId: sourceNode.blobId,
-            size: sourceNode.size,
-            mimeType: sourceNode.mimeType,
-          }),
-        );
+            rootId,
+            sourceSegments,
+            destinationSegments,
+            destinationParents,
+            maxSyncCopyNodes,
+            inner,
+          ),
+        )
+      ).value;
+    }
+    const manager = tx.manager;
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    const blobRepo = manager.getRepository(BlobEntity);
 
-        return { node: toRecord(created), finalPath: joinSegments(finalSegments) };
+    const { sourceNode, finalParentId, finalName, finalSegments } = await this.resolveDestinationPlacement(
+      manager,
+      namespaceId,
+      rootId,
+      sourceSegments,
+      destinationSegments,
+      destinationParents,
+      tx,
+      false,
+    );
+
+    if (sourceNode.type === 'FILE') {
+      if (!sourceNode.blobId) {
+        throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
       }
 
-      // DIRECTORY: resolveDestinationPlacement 안에서 source 자신의 row lock을 이미
-      // 획득했으므로(removeNode와 동일 원리), 아래 조회~생성 사이에 source subtree
-      // 구성이 바뀔 수 없다.
-      const ph = new DialectPlaceholders(this.isSqlite);
-      const subtreeRows: CopySourceRow[] = await manager.query(
-        `WITH RECURSIVE subtree AS (
+      // COW: MinIO I/O 없이 같은 Blob을 가리키는 새 Node만 만들고 참조 수를 늘린다.
+      await blobRepo.increment({ id: sourceNode.blobId }, 'referenceCount', 1);
+      const created = await nodeRepo.save(
+        nodeRepo.create({
+          namespaceId,
+          parentId: finalParentId,
+          type: 'FILE',
+          name: finalName,
+          blobId: sourceNode.blobId,
+          size: sourceNode.size,
+          mimeType: sourceNode.mimeType,
+        }),
+      );
+      this.markChanged(tx, created.id, false);
+
+      return { node: toRecord(created), finalPath: joinSegments(finalSegments) };
+    }
+
+    // DIRECTORY: resolveDestinationPlacement 안에서 source 자신의 row lock을 이미
+    // 획득했으므로(removeNode와 동일 원리), 아래 조회~생성 사이에 source subtree
+    // 구성이 바뀔 수 없다.
+    const ph = new DialectPlaceholders(this.isSqlite);
+    const subtreeRows: CopySourceRow[] = await manager.query(
+      `WITH RECURSIVE subtree AS (
            SELECT id, parent_id, type, name, blob_id, size, mime_type
            FROM vfs_node WHERE id = ${ph.bind(sourceNode.id)} AND namespace_id = ${ph.bind(namespaceId)}
            UNION ALL
@@ -753,91 +951,92 @@ export class VfsNodeRepository {
            INNER JOIN subtree s ON vn.namespace_id = ${ph.bind(namespaceId)} AND vn.parent_id = s.id
          )
          SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT ${ph.bind(maxSyncCopyNodes + 1)}`,
-        ph.params,
-      );
+      ph.params,
+    );
 
-      if (subtreeRows.length > maxSyncCopyNodes) {
-        throw new VfsCopyLimitExceededError(maxSyncCopyNodes);
+    if (subtreeRows.length > maxSyncCopyNodes) {
+      throw new VfsCopyLimitExceededError(maxSyncCopyNodes);
+    }
+
+    const childrenByParent = new Map<string, CopySourceRow[]>();
+    for (const row of subtreeRows) {
+      if (row.id === sourceNode.id) {
+        continue;
       }
+      const siblings = childrenByParent.get(row.parent_id as string) ?? [];
+      siblings.push(row);
+      childrenByParent.set(row.parent_id as string, siblings);
+    }
 
-      const childrenByParent = new Map<string, CopySourceRow[]>();
-      for (const row of subtreeRows) {
-        if (row.id === sourceNode.id) {
-          continue;
-        }
-        const siblings = childrenByParent.get(row.parent_id as string) ?? [];
-        siblings.push(row);
-        childrenByParent.set(row.parent_id as string, siblings);
-      }
+    const newRoot = await nodeRepo.save(
+      nodeRepo.create({ namespaceId, parentId: finalParentId, type: 'DIRECTORY', name: finalName }),
+    );
+    this.markChanged(tx, newRoot.id, false);
 
-      const newRoot = await nodeRepo.save(
-        nodeRepo.create({ namespaceId, parentId: finalParentId, type: 'DIRECTORY', name: finalName }),
-      );
+    // 자식마다 save()를 순차 await하면 상한(최대 maxSyncCopyNodes)만큼 DB 왕복이
+    // 발생하는 동안 lockParentChain이 잡은 namespace root lock을 계속 붙들고 있어
+    // 같은 namespace의 다른 모든 mutation을 그만큼 오래 막는다. id를 미리 발급해
+    // 트리 전체를 메모리에서 구성한 뒤 한 번에 bulk insert한다. id/created_at/
+    // updated_at/version은 DB DEFAULT가 있으므로 자식 row에는 id만 직접 채운다.
+    const blobIncrements = new Map<string, number>();
+    const childRows: {
+      id: string;
+      namespaceId: string;
+      parentId: string;
+      type: VfsNodeType;
+      name: string;
+      blobId: string | null;
+      size: string | null;
+      mimeType: string | null;
+    }[] = [];
+    // BFS로 부모의 새 id가 먼저 정해진 뒤 자식의 parentId를 채운다. 실제 insert는
+    // 한 트랜잭션 안에서 한 번에 일어나므로, 이 순서는 in-memory 구성 단계에서만
+    // 필요하다.
+    const queue: { oldParentId: string; newParentId: string }[] = [
+      { oldParentId: sourceNode.id, newParentId: newRoot.id },
+    ];
 
-      // 자식마다 save()를 순차 await하면 상한(최대 maxSyncCopyNodes)만큼 DB 왕복이
-      // 발생하는 동안 lockParentChain이 잡은 namespace root lock을 계속 붙들고 있어
-      // 같은 namespace의 다른 모든 mutation을 그만큼 오래 막는다. id를 미리 발급해
-      // 트리 전체를 메모리에서 구성한 뒤 한 번에 bulk insert한다. id/created_at/
-      // updated_at/version은 DB DEFAULT가 있으므로 자식 row에는 id만 직접 채운다.
-      const blobIncrements = new Map<string, number>();
-      const childRows: {
-        id: string;
-        namespaceId: string;
-        parentId: string;
-        type: VfsNodeType;
-        name: string;
-        blobId: string | null;
-        size: string | null;
-        mimeType: string | null;
-      }[] = [];
-      // BFS로 부모의 새 id가 먼저 정해진 뒤 자식의 parentId를 채운다. 실제 insert는
-      // 한 트랜잭션 안에서 한 번에 일어나므로, 이 순서는 in-memory 구성 단계에서만
-      // 필요하다.
-      const queue: { oldParentId: string; newParentId: string }[] = [
-        { oldParentId: sourceNode.id, newParentId: newRoot.id },
-      ];
+    while (queue.length > 0) {
+      const { oldParentId, newParentId } = queue.shift() as { oldParentId: string; newParentId: string };
 
-      while (queue.length > 0) {
-        const { oldParentId, newParentId } = queue.shift() as { oldParentId: string; newParentId: string };
+      for (const child of childrenByParent.get(oldParentId) ?? []) {
+        const newId = randomUUID();
 
-        for (const child of childrenByParent.get(oldParentId) ?? []) {
-          const newId = randomUUID();
-
-          if (child.type === 'FILE') {
-            if (!child.blob_id) {
-              throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-            }
-            blobIncrements.set(child.blob_id, (blobIncrements.get(child.blob_id) ?? 0) + 1);
-          } else {
-            queue.push({ oldParentId: child.id, newParentId: newId });
+        if (child.type === 'FILE') {
+          if (!child.blob_id) {
+            throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
           }
-
-          childRows.push({
-            id: newId,
-            namespaceId,
-            parentId: newParentId,
-            type: child.type,
-            name: child.name,
-            blobId: child.blob_id,
-            size: child.size,
-            mimeType: child.mime_type,
-          });
+          blobIncrements.set(child.blob_id, (blobIncrements.get(child.blob_id) ?? 0) + 1);
+        } else {
+          queue.push({ oldParentId: child.id, newParentId: newId });
         }
-      }
 
-      if (childRows.length > 0) {
-        await nodeRepo.insert(nodeRepo.create(childRows));
+        childRows.push({
+          id: newId,
+          namespaceId,
+          parentId: newParentId,
+          type: child.type,
+          name: child.name,
+          blobId: child.blob_id,
+          size: child.size,
+          mimeType: child.mime_type,
+        });
       }
+    }
 
-      // moveNode/removeNode와 동일한 이유로, 여러 독립적인 Blob에 대한 증가를
-      // 고정된 순서(blobId 오름차순)로 수행해 잠재적 AB-BA 교착 소지를 없앤다.
-      const sortedBlobIncrements = [...blobIncrements].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-      for (const [blobId, count] of sortedBlobIncrements) {
-        await blobRepo.increment({ id: blobId }, 'referenceCount', count);
-      }
+    if (childRows.length > 0) {
+      await nodeRepo.insert(nodeRepo.create(childRows));
+      for (const child of childRows) this.markChanged(tx, child.id, false);
+    }
 
-      return { node: toRecord(newRoot), finalPath: joinSegments(finalSegments) };
-    });
+    // moveNode/removeNode와 동일한 이유로, 여러 독립적인 Blob에 대한 증가를
+    // 고정된 순서(blobId 오름차순)로 수행해 잠재적 AB-BA 교착 소지를 없앤다.
+    const sortedBlobIncrements = [...blobIncrements].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const [blobId, count] of sortedBlobIncrements) {
+      await blobRepo.increment({ id: blobId }, 'referenceCount', count);
+    }
+
+    return { node: toRecord(newRoot), finalPath: joinSegments(finalSegments) };
   }
 
   async getBlobStorageInfo(
@@ -854,6 +1053,8 @@ export class VfsNodeRepository {
     rootId: string,
     segments: string[],
     parents: boolean,
+    tx?: MutationTx,
+    markAncestors = true,
   ): Promise<string> {
     const nodeRepo = manager.getRepository(VfsNodeEntity);
     let parentId = rootId;
@@ -876,6 +1077,10 @@ export class VfsNodeRepository {
           throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
         }
         child = await nodeRepo.save(nodeRepo.create({ namespaceId, parentId, type: 'DIRECTORY', name }));
+        if (tx) {
+          await this.markAncestorChain(tx, parentId);
+          this.markChanged(tx, child.id, false);
+        }
       }
 
       parentId = child.id;
@@ -889,6 +1094,10 @@ export class VfsNodeRepository {
     await this.applyRowLockIfSupported(
       manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
     ).getOne();
+
+    if (tx && markAncestors) {
+      await this.markAncestorChain(tx, parentId);
+    }
 
     return parentId;
   }
