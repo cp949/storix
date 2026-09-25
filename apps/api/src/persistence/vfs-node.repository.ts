@@ -9,6 +9,7 @@ import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { decodeRevision } from '../vfs/revision.js';
 import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
+import { assertConditionalSegments } from '../vfs/path-resolver.js';
 import { toNodeResponse, VfsNodeResponseDto } from '../vfs/dto/node-response.dto.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
@@ -382,6 +383,12 @@ export class VfsNodeRepository {
     tx: MutationTx,
     command: ConditionalMutation,
   ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null }> {
+    if (command.kind === 'mkdir' || command.kind === 'delete') {
+      assertConditionalSegments(command.segments);
+    } else {
+      assertConditionalSegments(command.sourceSegments);
+      assertConditionalSegments(command.destinationSegments);
+    }
     const namespaceId = tx.namespaceId;
     const rootId = tx.rootId;
     if (command.kind === 'mkdir') {
@@ -452,6 +459,7 @@ export class VfsNodeRepository {
     condition: ContentPrecondition,
     blob: BlobData,
   ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto }> {
+    assertConditionalSegments(segments);
     const path = joinSegments(segments);
     const existing = await this.resolvePathInTx(tx, segments);
     if ('ifAbsent' in condition) {

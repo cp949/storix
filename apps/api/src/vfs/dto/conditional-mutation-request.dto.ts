@@ -40,7 +40,7 @@ function pathOf(value: unknown, allowRoot: boolean): { canonical: string; segmen
   if (typeof value !== 'string') {
     throw new VfsInvalidMutationRequestError();
   }
-  const path = resolver.resolve(value);
+  const path = resolver.resolveConditional(value);
   if (!allowRoot && path.segments.length === 0) {
     throw new VfsInvalidMutationRequestError();
   }

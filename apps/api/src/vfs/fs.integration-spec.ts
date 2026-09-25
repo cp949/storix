@@ -449,6 +449,60 @@ describe('Fs HTTP contract', () => {
       await request(httpServer).get(`${base}/snapshots/${disposable.body.snapshotId}`).expect(404);
     });
 
+    it('조건부 JSON mutation과 raw upload receipt를 PostgreSQL 앱 재시작 후 재생한다', async () => {
+      const ns = await createNamespace('conditional-mutation-pg-restart');
+      const base = `/api/v1/namespaces/${ns}/fs`;
+      const jsonKey = randomUUID();
+      const jsonBody = '{"kind":"mkdir","path":"/receipt-dir","ifAbsent":true}';
+      const sendJson = () =>
+        request(httpServer)
+          .post(`${base}/mutations`)
+          .set('Content-Type', 'application/json')
+          .set('Idempotency-Key', jsonKey)
+          .set('X-Mutation-Scope', 'restart-contract')
+          .send(jsonBody);
+      const jsonResult = await sendJson().expect(201);
+      const uploadKey = randomUUID();
+      const uploadBytes = Buffer.from([0, 255, 128, 65]);
+      const sendUpload = () =>
+        request(httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path: '/receipt-dir/file.bin' })
+          .set('Content-Type', 'application/octet-stream')
+          .set('Idempotency-Key', uploadKey)
+          .set('X-Mutation-Scope', 'restart-contract')
+          .set('X-If-Absent', 'true')
+          .send(uploadBytes);
+      const uploadResult = await sendUpload().expect(201);
+      const blobCount = await migrationDataSource
+        .getRepository(BlobEntity)
+        .count({ where: { namespaceId: ns } });
+
+      const oldDataSource = app.get(DataSource);
+      await app.close();
+      expect(oldDataSource.isInitialized).toBe(false);
+      await bootstrap();
+      expect(app.get(DataSource)).not.toBe(oldDataSource);
+
+      const replayedJson = await sendJson().expect(201);
+      expect(replayedJson.body).toEqual(jsonResult.body);
+      expect(replayedJson.headers['x-request-id']).toBe(jsonResult.headers['x-request-id']);
+      const replayedUpload = await sendUpload().expect(201);
+      expect(replayedUpload.body).toEqual(uploadResult.body);
+      expect(replayedUpload.headers['x-request-id']).toBe(uploadResult.headers['x-request-id']);
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId: ns } })).toBe(
+        blobCount,
+      );
+      expect(
+        (
+          await request(httpServer)
+            .get(`${base}/content`)
+            .query({ path: '/receipt-dir/file.bin' })
+            .expect(200)
+        ).body,
+      ).toEqual(uploadBytes);
+    });
+
     it.each([
       { writer: 'overwrite', first: 'snapshot' },
       { writer: 'overwrite', first: 'writer' },
@@ -1042,6 +1096,228 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional mutation receipts', () => {
+    it('NFD path 거부 뒤 같은 key로 NFC JSON mutation을 수락한다', async () => {
+      const namespaceId = await createNamespace('conditional-nfd-retry-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
+      const key = randomUUID();
+      const send = (path: string) =>
+        request(httpServer)
+          .post(base)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .send({ kind: 'mkdir', path, ifAbsent: true });
+      expect((await send('/e\u0301').expect(400)).body.code).toBe('VFS_INVALID_PATH');
+      expect(
+        await migrationDataSource.getRepository(VfsMutationReceiptEntity).count({ where: { namespaceId } }),
+      ).toBe(0);
+      const accepted = await send('/é').expect(201);
+      expect(accepted.body.resource.path).toBe('/é');
+    });
+
+    it('rejects decomposed delete, move, and copy paths while accepting their NFC forms', async () => {
+      const namespaceId = await createNamespace('conditional-path-operations-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      const mutate = (body: Record<string, unknown>) =>
+        request(httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', randomUUID())
+          .set('X-Mutation-Scope', 'path-contract')
+          .send(body);
+      const revision = async (path: string): Promise<string> =>
+        (await request(httpServer).get(`${base}/revision`).query({ path }).expect(200)).body
+          .revision as string;
+
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/é' }).expect(201);
+      const deleteRevision = await revision('/é');
+      expect(
+        (await mutate({ kind: 'delete', path: '/e\u0301', ifRevision: deleteRevision }).expect(400)).body
+          .code,
+      ).toBe('VFS_INVALID_PATH');
+      await mutate({ kind: 'delete', path: '/é', ifRevision: deleteRevision }).expect(200);
+
+      for (const kind of ['move', 'copy'] as const) {
+        const source = `/é-${kind}`;
+        const destination = `/é-${kind}-result`;
+        await request(httpServer).post(`${base}/mkdir`).send({ path: source }).expect(201);
+        const sourceRevision = await revision(source);
+        const command = { kind, source, destination, sourceRevision, destinationAbsent: true };
+        for (const invalid of [
+          { ...command, source: `/e\u0301-${kind}` },
+          { ...command, destination: `/e\u0301-${kind}-result` },
+        ]) {
+          expect((await mutate(invalid).expect(400)).body.code).toBe('VFS_INVALID_PATH');
+        }
+        expect((await mutate(command).expect(kind === 'move' ? 200 : 201)).body.resource.path).toBe(
+          destination,
+        );
+      }
+    });
+
+    it('keeps tree, revisions, bytes, and Blob references after failed conditions', async () => {
+      const namespaceId = await createNamespace('conditional-failure-state-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/parent' }).expect(201);
+      await request(httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/parent/file' })
+        .set('Content-Type', 'text/plain')
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'state-contract')
+        .set('X-If-Absent', 'true')
+        .send('original')
+        .expect(201);
+      const read = async () => ({
+        root: (await request(httpServer).get(`${base}/revision`).query({ path: '/' }).expect(200)).body,
+        parent: (await request(httpServer).get(`${base}/revision`).query({ path: '/parent' }).expect(200))
+          .body,
+        file: (await request(httpServer).get(`${base}/revision`).query({ path: '/parent/file' }).expect(200))
+          .body,
+        tree: (
+          await request(httpServer)
+            .get(`${base}/ls`)
+            .query({ path: '/parent', consistency: 'revision' })
+            .expect(200)
+        ).body,
+        blobs: (await migrationDataSource.getRepository(BlobEntity).findBy({ namespaceId }))
+          .map((blob) => ({ id: blob.id, referenceCount: blob.referenceCount }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      });
+      const before = await read();
+      const failedCopy = await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'state-contract')
+        .send({
+          kind: 'copy',
+          source: '/parent/file',
+          destination: '/parent/copied',
+          sourceRevision: before.root.revision,
+          destinationAbsent: true,
+        })
+        .expect(412);
+      expect(failedCopy.body.code).toBe('VFS_PRECONDITION_FAILED');
+      const failedUpload = await request(httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/parent/file' })
+        .set('Content-Type', 'text/plain')
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'state-contract')
+        .set('X-If-Revision', before.root.revision)
+        .send('replacement')
+        .expect(412);
+      expect(failedUpload.body.code).toBe('VFS_PRECONDITION_FAILED');
+      expect(await read()).toEqual(before);
+      expect(
+        (await request(httpServer).get(`${base}/content`).query({ path: '/parent/file' }).expect(200)).text,
+      ).toBe('original');
+      await request(httpServer).get(`${base}/revision`).query({ path: '/parent/copied' }).expect(404);
+    });
+
+    it('matches move and copy affectedRevisions to reads and invalidates changed directory cursors', async () => {
+      const namespaceId = await createNamespace('conditional-move-copy-revisions-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      for (const path of [
+        '/src',
+        '/dst',
+        '/src/a',
+        '/src/a/child',
+        '/src/a/child/grandchild',
+        '/src/b',
+        '/src/c',
+        '/dst/a',
+        '/dst/b',
+      ]) {
+        await request(httpServer).post(`${base}/mkdir`).send({ path }).expect(201);
+      }
+      const revision = async (path: string): Promise<string> =>
+        (await request(httpServer).get(`${base}/revision`).query({ path }).expect(200)).body
+          .revision as string;
+      const cursor = async (path: string): Promise<string> => {
+        const page = await request(httpServer)
+          .get(`${base}/ls`)
+          .query({ path, consistency: 'revision', limit: 1 })
+          .expect(200);
+        expect(page.body.nextCursor).toMatch(/^rc1\./);
+        return page.body.nextCursor as string;
+      };
+      const expectStale = async (path: string, previousCursor: string): Promise<void> => {
+        expect(
+          (
+            await request(httpServer)
+              .get(`${base}/ls`)
+              .query({ path, consistency: 'revision', limit: 1, cursor: previousCursor })
+              .expect(412)
+          ).body.code,
+        ).toBe('VFS_PRECONDITION_FAILED');
+      };
+      const expectAffected = async (
+        response: { affectedRevisions: { path: string; revision: string }[] },
+        paths: string[],
+      ): Promise<void> => {
+        expect(response.affectedRevisions.map((entry) => entry.path).sort()).toEqual(paths);
+        for (const path of paths) {
+          const affected = response.affectedRevisions.find((entry) => entry.path === path);
+          expect(affected).toEqual({ path, revision: await revision(path) });
+        }
+      };
+
+      const sourceCursor = await cursor('/src');
+      const destinationCursor = await cursor('/dst');
+      const movedChildBefore = await revision('/src/a/child');
+      const moved = await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'revision-contract')
+        .send({
+          kind: 'move',
+          source: '/src/a',
+          destination: '/dst/moved',
+          sourceRevision: await revision('/src/a'),
+          destinationAbsent: true,
+        })
+        .expect(200);
+      expect(moved.body.resource.path).toBe('/dst/moved');
+      await expectAffected(moved.body, [
+        '/',
+        '/dst',
+        '/dst/moved',
+        '/dst/moved/child',
+        '/dst/moved/child/grandchild',
+        '/src',
+      ]);
+      expect(await revision('/dst/moved/child')).not.toBe(movedChildBefore);
+      await request(httpServer).get(`${base}/revision`).query({ path: '/src/a' }).expect(404);
+      await expectStale('/src', sourceCursor);
+      await expectStale('/dst', destinationCursor);
+
+      const copiedSourceRevision = await revision('/dst/moved');
+      const copiedSourceChildRevision = await revision('/dst/moved/child');
+      const nextSourceCursor = await cursor('/src');
+      const copied = await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'revision-contract')
+        .send({
+          kind: 'copy',
+          source: '/dst/moved',
+          destination: '/src/copied',
+          sourceRevision: copiedSourceRevision,
+          destinationAbsent: true,
+        })
+        .expect(201);
+      expect(copied.body.resource.path).toBe('/src/copied');
+      await expectAffected(copied.body, [
+        '/',
+        '/src',
+        '/src/copied',
+        '/src/copied/child',
+        '/src/copied/child/grandchild',
+      ]);
+      expect(await revision('/dst/moved')).toBe(copiedSourceRevision);
+      expect(await revision('/dst/moved/child')).toBe(copiedSourceChildRevision);
+      await expectStale('/src', nextSourceCursor);
+    });
+
     it('replays the exact JSON request without increasing revisions again', async () => {
       const namespaceId = await createNamespace('conditional-mkdir-http-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
@@ -1162,6 +1438,28 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional content upload', () => {
+    it('NFD path 거부 뒤 같은 key로 NFC content upload를 수락한다', async () => {
+      const namespaceId = await createNamespace('conditional-content-nfd-retry-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;
+      const key = randomUUID();
+      const send = (path: string) =>
+        request(httpServer)
+          .post(base)
+          .query({ path })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .set('X-If-Absent', 'true')
+          .set('Content-Type', 'application/octet-stream')
+          .send(Buffer.from('body'));
+      expect((await send('/e\u0301').expect(400)).body.code).toBe('VFS_INVALID_PATH');
+      expect(
+        await migrationDataSource.getRepository(VfsMutationReceiptEntity).count({ where: { namespaceId } }),
+      ).toBe(0);
+      expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(0);
+      const accepted = await send('/é').expect(201);
+      expect(accepted.body.resource.path).toBe('/é');
+    });
+
     it('replays an accepted upload after the namespace file-size limit is lowered', async () => {
       const namespaceId = await createNamespace('conditional-content-replay-limit-ns');
       const base = `/api/v1/namespaces/${namespaceId}/fs/content/conditional`;

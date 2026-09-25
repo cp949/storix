@@ -53,6 +53,27 @@ describe('PathResolver', () => {
   it('세그먼트에 제어 문자가 포함되면 거부한다', () => {
     expect(() => resolver.resolve('/a/b\u0001c')).toThrow(VfsInvalidPathError);
   });
+
+  it('일반 경로는 NFD segment를 변경하지 않고 허용한다', () => {
+    expect(resolver.resolve('/e\u0301')).toEqual({ canonical: '/e\u0301', segments: ['e\u0301'] });
+  });
+
+  it('조건부 경로는 NFC segment를 허용한다', () => {
+    expect(resolver.resolveConditional('/\u00e9')).toEqual({ canonical: '/\u00e9', segments: ['\u00e9'] });
+  });
+
+  it('조건부 경로는 NFD segment를 400 경로 오류로 거부한다', () => {
+    expect(() => resolver.resolveConditional('/e\u0301')).toThrow(VfsInvalidPathError);
+    try {
+      resolver.resolveConditional('/e\u0301');
+    } catch (error) {
+      expect(error).toMatchObject({ status: 400 });
+    }
+  });
+
+  it.each(['/a/../b', '/a/b\\c', '/a/b\u0001c'])('조건부 경로도 기존 금지 segment를 거부한다: %j', (raw) => {
+    expect(() => resolver.resolveConditional(raw)).toThrow(VfsInvalidPathError);
+  });
 });
 
 describe('joinChildPath', () => {

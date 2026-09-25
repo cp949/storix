@@ -43,6 +43,8 @@ describe('snapshot paths', () => {
   });
 
   it('preserves distinct Unicode forms and encodes their UTF-8 bytes as lowercase hex', () => {
+    expect(resolveSnapshotSourcePath('/e\u0301').canonical).toBe('/e\u0301');
+    expect(resolveSnapshotRestorePath('/e\u0301').canonical).toBe('/e\u0301');
     expect(resolveSnapshotRelativePath('\u00e9').canonical).toBe('\u00e9');
     expect(resolveSnapshotRelativePath('e\u0301').canonical).toBe('e\u0301');
     expect(snapshotPathKey('\u00e9')).toBe('c3a9');

@@ -72,6 +72,88 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
     );
   }
 
+  async function captureState(namespaceId: string) {
+    const nodes = await getDs()
+      .getRepository(VfsNodeEntity)
+      .find({
+        where: { namespaceId },
+        order: { id: 'ASC' },
+      });
+    const blobs = await getDs()
+      .getRepository(BlobEntity)
+      .find({
+        where: { namespaceId },
+        order: { id: 'ASC' },
+      });
+    return {
+      nodes: nodes.map(({ id, parentId, name, type, blobId, version }) => ({
+        id,
+        parentId,
+        name,
+        type,
+        blobId,
+        version,
+      })),
+      blobs: blobs.map(({ id, referenceCount }) => ({ id, referenceCount })),
+    };
+  }
+
+  async function runSameConditionAttempts<T>(namespaceId: string, attempt: () => Promise<T>) {
+    if (getDs().options.type === 'better-sqlite3') {
+      // :memory: fixture는 한 연결만 사용한다. 중첩 BEGIN은 SQLite 오류이므로
+      // 동일한 조건을 직렬로 재평가하는 계약만 여기서 확인한다.
+      const first = await Promise.allSettled([attempt()]);
+      const second = await Promise.allSettled([attempt()]);
+      return [...first, ...second];
+    }
+
+    const holder = getDs().createQueryRunner();
+    await holder.connect();
+    await holder.startTransaction();
+    let pending: Promise<PromiseSettledResult<T>[]> | undefined;
+    try {
+      const [{ pid }] = (await holder.query('SELECT pg_backend_pid() AS pid')) as { pid: number }[];
+      const lockedRoots = (await holder.query(
+        'SELECT id FROM vfs_node WHERE namespace_id = $1 AND parent_id IS NULL FOR UPDATE',
+        [namespaceId],
+      )) as { id: string }[];
+      expect(lockedRoots).toHaveLength(1);
+      pending = Promise.allSettled([attempt(), attempt()]);
+      const deadline = Date.now() + 5000;
+      let blocked = 0;
+      while (Date.now() < deadline) {
+        // pg_stat_activity.query에는 bind 값이 표시되지 않는다. 위에서 이 namespace의
+        // root row 하나를 잠근 holder PID로 차단 연쇄를 묶고, root 조회 SQL만 센다.
+        const [{ count }] = (await getDs().query(
+          `WITH RECURSIVE blocked AS (
+             SELECT pid, unnest(pg_blocking_pids(pid)) AS blocker_pid
+             FROM pg_stat_activity WHERE datname = current_database()
+           ), root_waiters(pid) AS (
+             SELECT pid FROM blocked WHERE blocker_pid = $1
+             UNION
+             SELECT b.pid FROM blocked b JOIN root_waiters w ON b.blocker_pid = w.pid
+           )
+           SELECT COUNT(DISTINCT a.pid)::int AS count
+           FROM root_waiters w JOIN pg_stat_activity a ON a.pid = w.pid
+           WHERE a.query LIKE '%vfs_node%'
+             AND a.query LIKE '%namespace_id%'
+             AND a.query LIKE '%parent_id%IS NULL%'
+             AND a.query LIKE '%FOR UPDATE%'`,
+          [pid],
+        )) as { count: number }[];
+        blocked = count;
+        if (blocked >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(2);
+    } finally {
+      await holder.rollbackTransaction();
+      await holder.release();
+      if (pending) await pending;
+    }
+    return pending!;
+  }
+
   describe('mutation revisions', () => {
     it('increments root and existing ancestors once for create and overwrite', async () => {
       const namespace = await createNamespace('mutation-revisions-ns');
@@ -248,6 +330,220 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
   });
 
   describe('conditional mutations', () => {
+    it.each(['create', 'update', 'delete', 'move', 'copy'] as const)(
+      '%s precondition failure preserves the tree, blob references, and all revisions',
+      async (kind) => {
+        const namespace = await createNamespace(`atomic-stale-${kind}-ns`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+        await getRepo().ensureDirectory(namespace.id, root.id, ['b'], false);
+        const initial = await getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['a', 'source'],
+          false,
+          makeBlobData(),
+          null,
+          false,
+        );
+        const staleRevision = encodeRevision(initial.node);
+        if (kind !== 'create') {
+          await getRepo().withMutation(namespace.id, root.id, (tx) =>
+            getRepo().putConditionalContent(
+              tx,
+              ['a', 'source'],
+              { ifRevision: staleRevision },
+              makeBlobData(),
+            ),
+          );
+        }
+        const before = await captureState(namespace.id);
+        const attempt = () =>
+          getRepo().withMutation(namespace.id, root.id, (tx) => {
+            if (kind === 'create') {
+              return getRepo().applyConditionalMutation(tx, {
+                kind: 'mkdir',
+                path: '/a/source',
+                segments: ['a', 'source'],
+                ifAbsent: true,
+              });
+            }
+            if (kind === 'update') {
+              return getRepo().putConditionalContent(
+                tx,
+                ['a', 'source'],
+                { ifRevision: staleRevision },
+                makeBlobData(),
+              );
+            }
+            if (kind === 'delete') {
+              return getRepo().applyConditionalMutation(tx, {
+                kind: 'delete',
+                path: '/a/source',
+                segments: ['a', 'source'],
+                ifRevision: staleRevision,
+                recursive: false,
+              });
+            }
+            return getRepo().applyConditionalMutation(tx, {
+              kind,
+              source: '/a/source',
+              sourceSegments: ['a', 'source'],
+              destination: '/b',
+              destinationSegments: ['b'],
+              sourceRevision: staleRevision,
+              destinationAbsent: true,
+            });
+          });
+        await expect(attempt()).rejects.toThrow(VfsPreconditionFailedError);
+        expect(await captureState(namespace.id)).toEqual(before);
+      },
+    );
+
+    it.each(['copy', 'delete'] as const)(
+      '%s rolls back tree, blob references, and revisions when commit preparation fails',
+      async (kind) => {
+        const namespace = await createNamespace(`atomic-rollback-${kind}-ns`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+        await getRepo().ensureDirectory(namespace.id, root.id, ['b'], false);
+        const source = await getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['a', 'source'],
+          false,
+          makeBlobData(),
+          null,
+          false,
+        );
+        const before = await captureState(namespace.id);
+        await expect(
+          getRepo().withMutation(
+            namespace.id,
+            root.id,
+            (tx) =>
+              kind === 'copy'
+                ? getRepo().applyConditionalMutation(tx, {
+                    kind: 'copy',
+                    source: '/a/source',
+                    sourceSegments: ['a', 'source'],
+                    destination: '/b',
+                    destinationSegments: ['b'],
+                    sourceRevision: encodeRevision(source.node),
+                    destinationAbsent: true,
+                  })
+                : getRepo().applyConditionalMutation(tx, {
+                    kind: 'delete',
+                    path: '/a/source',
+                    segments: ['a', 'source'],
+                    ifRevision: encodeRevision(source.node),
+                    recursive: false,
+                  }),
+            async () => {
+              throw new Error('commit preparation failed');
+            },
+          ),
+        ).rejects.toThrow('commit preparation failed');
+        expect(await captureState(namespace.id)).toEqual(before);
+      },
+    );
+
+    it.each(['create', 'update', 'delete', 'move'] as const)(
+      '%s with the same condition has exactly one winner',
+      async (kind) => {
+        const namespace = await createNamespace(`atomic-race-${kind}-ns`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+        await getRepo().ensureDirectory(namespace.id, root.id, ['b'], false);
+        const source =
+          kind === 'create'
+            ? null
+            : await getRepo().putFileContent(
+                namespace.id,
+                root.id,
+                ['a', 'source'],
+                false,
+                makeBlobData(),
+                null,
+                false,
+              );
+        const revision = source ? encodeRevision(source.node) : null;
+        const rootBefore = (await getRepo().getRoot(namespace.id))!;
+        const aBefore = (await getRepo().resolvePath(namespace.id, root.id, ['a']))!;
+        const bBefore = (await getRepo().resolvePath(namespace.id, root.id, ['b']))!;
+        const attempt = () =>
+          getRepo().withMutation(namespace.id, root.id, (tx) => {
+            if (kind === 'create')
+              return getRepo().applyConditionalMutation(tx, {
+                kind: 'mkdir',
+                path: '/a/new',
+                segments: ['a', 'new'],
+                ifAbsent: true,
+              });
+            if (kind === 'update')
+              return getRepo().putConditionalContent(
+                tx,
+                ['a', 'source'],
+                { ifRevision: revision! },
+                makeBlobData(),
+              );
+            if (kind === 'delete')
+              return getRepo().applyConditionalMutation(tx, {
+                kind: 'delete',
+                path: '/a/source',
+                segments: ['a', 'source'],
+                ifRevision: revision!,
+                recursive: false,
+              });
+            return getRepo().applyConditionalMutation(tx, {
+              kind: 'move',
+              source: '/a/source',
+              sourceSegments: ['a', 'source'],
+              destination: '/b',
+              destinationSegments: ['b'],
+              sourceRevision: revision!,
+              destinationAbsent: true,
+            });
+          });
+        const results = await runSameConditionAttempts(namespace.id, attempt);
+        expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+        const rejected = results.find((result) => result.status === 'rejected');
+        expect(rejected?.reason).toBeInstanceOf(
+          kind === 'delete' || kind === 'move' ? VfsNodeNotFoundError : VfsPreconditionFailedError,
+        );
+        expect((await getRepo().getRoot(namespace.id))!.version).toBe(rootBefore.version + 1);
+        expect((await getRepo().resolvePath(namespace.id, root.id, ['a']))!.version).toBe(
+          aBefore.version + 1,
+        );
+        expect((await getRepo().resolvePath(namespace.id, root.id, ['b']))!.version).toBe(
+          bBefore.version + Number(kind === 'move'),
+        );
+        const atSource = await getRepo().resolvePath(namespace.id, root.id, ['a', 'source']);
+        const blobs = await getDs()
+          .getRepository(BlobEntity)
+          .find({ where: { namespaceId: namespace.id } });
+        if (kind === 'create') {
+          expect(await getRepo().resolvePath(namespace.id, root.id, ['a', 'new'])).toMatchObject({
+            version: 1,
+          });
+          expect(blobs).toHaveLength(0);
+        } else if (kind === 'update') {
+          expect(atSource?.version).toBe(source!.node.version + 1);
+          expect(blobs.map((blob) => blob.referenceCount).sort()).toEqual([0, 1]);
+        } else if (kind === 'delete') {
+          expect(atSource).toBeNull();
+          expect(blobs.map((blob) => blob.referenceCount)).toEqual([0]);
+        } else {
+          expect(atSource).toBeNull();
+          expect(await getRepo().resolvePath(namespace.id, root.id, ['b', 'source'])).toMatchObject({
+            version: source!.node.version + 1,
+          });
+          expect(blobs.map((blob) => blob.referenceCount)).toEqual([1]);
+        }
+      },
+    );
+
     it('requires absence for create and an exact revision for overwrite', async () => {
       const namespace = await createNamespace('conditional-content-ns');
       const root = (await getRepo().getRoot(namespace.id))!;

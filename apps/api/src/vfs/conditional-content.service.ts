@@ -21,7 +21,11 @@ import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
 import { decodeRevision } from './revision.js';
-import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from './vfs.errors.js';
+import {
+  VfsInvalidMutationRequestError,
+  VfsInvalidPathError,
+  VfsPreconditionRequiredError,
+} from './vfs.errors.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -97,7 +101,7 @@ export class ConditionalContentService {
     let condition: ContentPrecondition | null = null;
     let parseError: DomainError | null = null;
     try {
-      const resolved = this.paths.resolve(rawPath);
+      const resolved = this.paths.resolveConditional(rawPath);
       if (resolved.segments.length === 0) throw new VfsInvalidMutationRequestError();
       path = resolved.canonical;
       segments = resolved.segments;
@@ -146,6 +150,10 @@ export class ConditionalContentService {
           };
         }
         const result = errorResponse(parseError as DomainError, requestId);
+        if (parseError instanceof VfsInvalidPathError) {
+          await this.receipts.release(identity, claim.generation);
+          return result;
+        }
         await this.nodes.withMutation(
           namespaceId,
           root.id,

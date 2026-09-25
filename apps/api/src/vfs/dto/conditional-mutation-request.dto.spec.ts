@@ -68,4 +68,32 @@ describe('conditional mutation request', () => {
       expect(error).toMatchObject({ status: 400 });
     }
   });
+
+  it.each([
+    { kind: 'mkdir', path: '/e\u0301', ifAbsent: true },
+    { kind: 'delete', path: '/e\u0301', ifRevision: revision },
+    {
+      kind: 'move',
+      source: '/e\u0301',
+      destination: '/dst',
+      sourceRevision: revision,
+      destinationAbsent: true,
+    },
+    {
+      kind: 'copy',
+      source: '/src',
+      destination: '/e\u0301',
+      sourceRevision: revision,
+      destinationAbsent: true,
+    },
+  ])('rejects NFD conditional paths during parse with 400: %j', (body) => {
+    expect(() => parseConditionalMutation(body)).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
+  it('accepts NFC conditional paths unchanged', () => {
+    expect(parseConditionalMutation({ kind: 'mkdir', path: '/\u00e9', ifAbsent: true })).toMatchObject({
+      path: '/\u00e9',
+      segments: ['\u00e9'],
+    });
+  });
 });

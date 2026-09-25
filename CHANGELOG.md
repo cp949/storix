@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 조건부 VFS 변경과 콘텐츠 업로드는 각 경로 segment에 NFC 형식을 요구한다.
+  분해된 Unicode 경로는 정규화 없이 400 `VFS_INVALID_PATH`로 거부하며,
+  기존 비조건부 경로 API의 입력 규칙은 유지한다.
+
 ### Added
 
 - 불변 VFS FILE/TREE snapshot을 추가했다. 원본 변경 후 고정된 파일 내용을

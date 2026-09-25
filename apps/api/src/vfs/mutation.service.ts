@@ -10,7 +10,7 @@ import {
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { parseConditionalMutation, ConditionalMutation } from './dto/conditional-mutation-request.dto.js';
 import { requireRoot } from './require-root.js';
-import { VfsInvalidMutationRequestError } from './vfs.errors.js';
+import { VfsInvalidMutationRequestError, VfsInvalidPathError } from './vfs.errors.js';
 
 export type MutationHttpResult = ReceiptResponse;
 
@@ -115,6 +115,10 @@ export class MutationService {
     try {
       if (parseError) {
         const result = errorResponse(parseError, requestId);
+        if (parseError instanceof VfsInvalidPathError) {
+          await this.receipts.release(identity, claim.generation);
+          return result;
+        }
         await this.nodes.withMutation(
           namespaceId,
           root.id,
