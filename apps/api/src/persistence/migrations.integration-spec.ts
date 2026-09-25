@@ -31,6 +31,155 @@ describe('Migration: InitSchema', () => {
     await container.stop();
   });
 
+  describe('snapshot schema', () => {
+    it('captures immutable metadata and manifest columns with UUID and timestamp types', async () => {
+      const columns: { table_name: string; column_name: string; data_type: string }[] =
+        await dataSource.query(`
+        SELECT table_name, column_name, data_type FROM information_schema.columns
+        WHERE table_name IN ('vfs_snapshot', 'vfs_snapshot_entry')
+      `);
+      expect(columns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'id', data_type: 'uuid' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot',
+            column_name: 'namespace_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'kind' }),
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'source_path' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot',
+            column_name: 'root_node_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'source_revision' }),
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'root_type' }),
+          expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'node_count' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot',
+            column_name: 'logical_bytes',
+            data_type: 'bigint',
+          }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot',
+            column_name: 'created_at',
+            data_type: 'timestamp with time zone',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'id', data_type: 'uuid' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot_entry',
+            column_name: 'namespace_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot_entry',
+            column_name: 'snapshot_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'relative_path' }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'path_key' }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'type' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot_entry',
+            column_name: 'source_node_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'source_revision' }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot_entry',
+            column_name: 'blob_id',
+            data_type: 'uuid',
+          }),
+          expect.objectContaining({
+            table_name: 'vfs_snapshot_entry',
+            column_name: 'size',
+            data_type: 'bigint',
+          }),
+          expect.objectContaining({ table_name: 'vfs_snapshot_entry', column_name: 'mime_type' }),
+        ]),
+      );
+    });
+
+    it('enforces snapshot and entry foreign keys and checks without indexing long path text', async () => {
+      const constraints: { table_name: string; constraint_name: string; constraint_type: string }[] =
+        await dataSource.query(`
+          SELECT tc.table_name, tc.constraint_name, tc.constraint_type
+          FROM information_schema.table_constraints tc
+          WHERE tc.table_name IN ('vfs_snapshot', 'vfs_snapshot_entry')
+        `);
+      const definitions: { conname: string; definition: string }[] = await dataSource.query(`
+        SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid IN ('vfs_snapshot'::regclass, 'vfs_snapshot_entry'::regclass)
+      `);
+      expect(
+        constraints.filter(
+          (row) => row.table_name === 'vfs_snapshot' && row.constraint_type === 'FOREIGN KEY',
+        ),
+      ).toHaveLength(1);
+      expect(
+        constraints.filter(
+          (row) => row.table_name === 'vfs_snapshot_entry' && row.constraint_type === 'FOREIGN KEY',
+        ),
+      ).toHaveLength(3);
+      expect(definitions.map((row) => row.definition)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'FOREIGN KEY (namespace_id, blob_id) REFERENCES blob(namespace_id, id) ON DELETE RESTRICT',
+          ),
+        ]),
+      );
+      expect(
+        definitions.some(
+          (row) =>
+            row.definition.includes('type') &&
+            row.definition.includes('FILE') &&
+            row.definition.includes('DIRECTORY'),
+        ),
+      ).toBe(true);
+      expect(
+        definitions.some((row) => row.definition.includes('size') && row.definition.includes('>= 0')),
+      ).toBe(true);
+      const indexes: { indexname: string; indexdef: string }[] = await dataSource.query(`
+        SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'vfs_snapshot_entry'
+      `);
+      expect(indexes.map((row) => row.indexname)).toContain('idx_vfs_snapshot_entry_snapshot_id');
+      expect(indexes.some((row) => /relative_path|path_key/.test(row.indexdef))).toBe(false);
+    });
+
+    it('defaults retained usage to zero and rejects invalid namespace snapshot limits or usage', async () => {
+      const columns: { column_name: string; column_default: string | null }[] = await dataSource.query(`
+        SELECT column_name, column_default FROM information_schema.columns
+        WHERE table_name = 'namespace' AND column_name IN (
+          'max_sync_snapshot_nodes', 'max_snapshot_bytes', 'max_retained_snapshot_nodes',
+          'max_retained_snapshot_bytes', 'retained_snapshot_node_count', 'retained_snapshot_byte_count')
+      `);
+      expect(columns).toHaveLength(6);
+      const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'snapshot-limits-pg' });
+      const usage = await dataSource.query(
+        `SELECT retained_snapshot_node_count, retained_snapshot_byte_count
+        FROM namespace WHERE id = $1`,
+        [namespace.id],
+      );
+      expect(usage[0]).toMatchObject({ retained_snapshot_node_count: 0, retained_snapshot_byte_count: '0' });
+      for (const column of [
+        'max_sync_snapshot_nodes',
+        'max_snapshot_bytes',
+        'max_retained_snapshot_nodes',
+        'max_retained_snapshot_bytes',
+      ]) {
+        await expect(
+          dataSource.query(`UPDATE namespace SET ${column} = 0 WHERE id = $1`, [namespace.id]),
+        ).rejects.toThrow();
+      }
+      for (const column of ['retained_snapshot_node_count', 'retained_snapshot_byte_count']) {
+        await expect(
+          dataSource.query(`UPDATE namespace SET ${column} = -1 WHERE id = $1`, [namespace.id]),
+        ).rejects.toThrow();
+      }
+    });
+  });
+
   it('creates the fenced VFS receipt table without changing namespace idempotency keys', async () => {
     const columns: { column_name: string; data_type: string }[] = await dataSource.query(`
       SELECT column_name, data_type FROM information_schema.columns
@@ -559,8 +708,12 @@ describe('Migration: AddBlobZeroSince backfill', () => {
   });
 
   it('reference_count=0인 기존 blob에 zero_since를 백필한다', async () => {
-    const namespaceRepo = preBackfillDataSource.getRepository(NamespaceEntity);
-    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'backfill-test-ns' }));
+    // 백필 이전 스키마에는 최신 NamespaceEntity의 snapshot 컬럼이 없으므로 raw SQL을 쓴다.
+    const namespaceId = randomUUID();
+    await preBackfillDataSource.query(`INSERT INTO namespace (id, name) VALUES ($1, $2)`, [
+      namespaceId,
+      'backfill-test-ns',
+    ]);
 
     // 마이그레이션 전에 reference_count=0인 blob을 삽입 — BlobEntity는 이 시점에
     // 아직 없는 zero_since 컬럼도 매핑하고 있어 repo.save()를 쓰면 그 컬럼까지
@@ -569,7 +722,7 @@ describe('Migration: AddBlobZeroSince backfill', () => {
     await preBackfillDataSource.query(
       `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
-      [blobId, namespace.id, 'blobs/ab/backfill-test', '100', 'application/octet-stream', 'e'.repeat(64), 0],
+      [blobId, namespaceId, 'blobs/ab/backfill-test', '100', 'application/octet-stream', 'e'.repeat(64), 0],
     );
 
     // AddBlobZeroSince 마이그레이션 실행

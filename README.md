@@ -214,6 +214,10 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_MAX_FILE_SIZE_BYTES` | 선택 | `5368709120` | app | 업로드 상한(5 GiB) |
 | `STORIX_MAX_SYNC_DELETE_NODES` | 선택 | `1000` | app | recursive rm이 동기 처리하는 노드 수 상한 |
 | `STORIX_MAX_SYNC_COPY_NODES` | 선택 | `1000` | app | recursive cp 노드 수 상한 |
+| `STORIX_MAX_SYNC_SNAPSHOT_NODES` | 선택 | `1000` | app | snapshot 한 건의 최대 manifest 노드 수(디렉터리 포함) |
+| `STORIX_MAX_SNAPSHOT_BYTES` | 선택 | `5368709120` | app | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB) |
+| `STORIX_MAX_RETAINED_SNAPSHOT_NODES` | 선택 | `100000` | app | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한 |
+| `STORIX_MAX_RETAINED_SNAPSHOT_BYTES` | 선택 | `53687091200` | app | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB) |
 | `STORIX_MUTATION_LEASE_SECONDS` | 선택 | `60` | app | 조건부 업로드 claim lease(초). 업로드 중 이 시간의 1/3 간격으로 갱신 |
 | `STORIX_MUTATION_MAX_UPLOAD_SECONDS` | 선택 | `86400` | app | 조건부 raw 업로드 한 요청의 최대 지속 시간(초, 기본 24시간) |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` | 선택 | `300` | app | presigned URL 만료(초). 상한 `604800`(7일), 초과하면 부팅 거부 |
@@ -226,6 +230,30 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_BACKUP_DIR` | 필수 | — | backup | 백업 저장 디렉터리. compose 실행에서는 `/backups`(호스트 `./backups`)가 기본 |
 | `STORIX_RESTORE_SOURCE_DIR` | 필수 | — | restore | 복구할 백업 디렉터리. 빈 문자열도 거부 |
 | `STORIX_RESTORE_FORCE` | 선택 | `false` | restore | 대상에 데이터가 있어도 덮어쓴다(되돌릴 수 없음) |
+
+### 불변 VFS snapshot
+
+`/api/v1/namespaces/{namespaceId}/fs/snapshots`에서 현재 파일(FILE)이나
+디렉터리 하위 트리(TREE)의 불변 manifest를 만든다. FILE은 고정된 binary bytes와
+MIME 조회 및 revision 조건부 파일 복원을 지원한다. TREE는 manifest 목록과
+파일별 내용 조회를 지원한다. TREE 전체 복원은 제공하지 않는다. snapshot ID는
+현재 VFS 경로의 revision과 별개이며, 원본 파일 변경·삭제 후에도 snapshot의
+내용을 읽을 수 있다.
+
+작업당 한도는 snapshot 하나의 manifest 항목 수(디렉터리 포함)와 파일 크기의
+논리적 합계에 적용한다. 보존 총량은 namespace 안의 모든 snapshot에 같은
+방식으로 적용한다. 같은 Blob이 여러 항목에 나타나면 항목마다 계산한다.
+namespace별 snapshot 한도 재정의는 전역 한도보다 낮게만 적용된다. snapshot은
+자동 만료되지 않으므로 `POST .../snapshots/{snapshotId}/delete`로 명시적으로
+삭제해야 보존 예산과 Blob 참조가 해제된다. 보존 중인 snapshot은 Blob을 계속
+참조하므로 원본 파일을 삭제해도 GC가 그 Blob을 회수하지 않는다.
+
+snapshot 복구와 마이그레이션 롤백에는 DB의 metadata·manifest와 Blob 오브젝트를
+**같은 시점**의 상태로 함께 백업한 자료가 필요하다. 운영 백업 시 쓰기와 GC를
+멈추고 DB·버킷 상태를 일관되게 확보해야 한다. 백업 잡은 쓰기를 자동으로
+중지하지 않는다. DB 마이그레이션의 `down()`만
+실행하면 이후 생성된 snapshot 데이터는 보존되지 않는다. 기존
+`docs/deployment/backup-restore.md`의 백업/복구 절차를 참조한다.
 
 ## 개발
 

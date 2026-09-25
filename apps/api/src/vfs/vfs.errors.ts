@@ -170,3 +170,12 @@ export class VfsPresignedEncryptedUnsupportedError extends DomainError {
     super(`ENCRYPTED namespace는 presigned 다운로드를 지원하지 않음: ${path}`);
   }
 }
+
+export class VfsSnapshotLimitExceededError extends DomainError {
+  readonly code = 'VFS_SNAPSHOT_LIMIT_EXCEEDED';
+  readonly status = 413;
+
+  constructor() {
+    super('Snapshot Node 수 또는 logical byte 보존 한도 초과');
+  }
+}

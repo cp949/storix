@@ -70,6 +70,12 @@ export interface BlobData {
   readonly encryptionIv: Buffer | null;
 }
 
+export interface RestorableBlob {
+  readonly blobId: string;
+  readonly size: string;
+  readonly mimeType: string;
+}
+
 export type PutFileOutcome =
   | { readonly kind: 'created'; readonly node: VfsNodeRecord }
   | { readonly kind: 'replaced'; readonly node: VfsNodeRecord };
@@ -79,6 +85,18 @@ export interface MutationTx {
   readonly namespaceId: string;
   readonly rootId: string;
   readonly changed: Map<string, { path: string; increment: boolean }>;
+}
+
+export interface SnapshotSourceRow {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly name: string;
+  readonly type: VfsNodeType;
+  readonly revision: string;
+  readonly relativePath: string;
+  readonly blobId: string | null;
+  readonly size: string | null;
+  readonly mimeType: string | null;
 }
 
 export interface AffectedRevision {
@@ -301,6 +319,58 @@ export class VfsNodeRepository {
     return node;
   }
 
+  // ORDER BY 없는 LIMIT으로 PostgreSQL recursive CTE의 평가도 maxNodes + 1에서
+  // 멈춘다. SQLite는 recursive term 내부 LIMIT으로 큐의 확장까지 제한한다.
+  async captureSnapshotRows(
+    tx: MutationTx,
+    segments: string[],
+    maxNodes: number,
+  ): Promise<SnapshotSourceRow[]> {
+    if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new Error('Invalid snapshot node limit');
+    const source = await this.resolvePathInTx(tx, segments);
+    if (!source) throw new VfsNodeNotFoundError(joinSegments(segments));
+    const ph = new DialectPlaceholders(this.isSqlite);
+    const namespace = ph.bind(tx.namespaceId);
+    const sourceId = ph.bind(source.id);
+    const childNamespace = ph.bind(tx.namespaceId);
+    const bound = ph.bind(maxNodes + 1);
+    const rows: (CopySourceRow & { version: number; relative_path: string })[] = await tx.manager.query(
+      `WITH RECURSIVE tree AS (
+        SELECT id, parent_id, type, name, blob_id, size, mime_type, version, '.' AS relative_path
+        FROM vfs_node WHERE namespace_id = ${namespace} AND id = ${sourceId}
+        UNION ALL
+        SELECT n.id, n.parent_id, n.type, n.name, n.blob_id, n.size, n.mime_type, n.version,
+          CASE WHEN t.relative_path = '.' THEN n.name ELSE t.relative_path || '/' || n.name END
+        FROM vfs_node n JOIN tree t ON n.parent_id = t.id
+        WHERE n.namespace_id = ${childNamespace}
+        ${this.isSqlite ? `LIMIT ${bound}` : ''}
+      ) SELECT * FROM tree ${this.isSqlite ? '' : `LIMIT ${bound}`}`,
+      ph.params,
+    );
+    // SQL 밖에서 bounded 결과만 정렬하여 recursive CTE의 조기 LIMIT을 유지한다.
+    // capture의 첫 행은 source root이며 나머지는 UTF-8 byte 순서다.
+    rows.sort((left, right) => {
+      if (left.relative_path === right.relative_path) return 0;
+      if (left.relative_path === '.') return -1;
+      if (right.relative_path === '.') return 1;
+      return Buffer.compare(
+        Buffer.from(left.relative_path, 'utf8'),
+        Buffer.from(right.relative_path, 'utf8'),
+      );
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      parentId: row.parent_id,
+      name: row.name,
+      type: row.type,
+      revision: encodeRevision(row),
+      relativePath: row.relative_path,
+      blobId: row.blob_id,
+      size: row.size === null ? null : String(row.size),
+      mimeType: row.mime_type,
+    }));
+  }
+
   private assertRevision(node: VfsNodeEntity, revision: string, path: string): void {
     const expected = decodeRevision(revision);
     if (node.id !== expected.id || node.version !== expected.version) {
@@ -404,6 +474,64 @@ export class VfsNodeRepository {
       status: outcome.kind === 'created' ? 201 : 200,
       resource: toNodeResponse(outcome.node, path),
     };
+  }
+
+  async restoreBlob(
+    tx: MutationTx,
+    segments: string[],
+    condition: ContentPrecondition,
+    blob: RestorableBlob,
+  ): Promise<PutFileOutcome> {
+    const path = joinSegments(segments);
+    const parentId = await this.lockParentChain(tx.manager, tx.namespaceId, tx.rootId, segments, false, tx);
+    const name = segments[segments.length - 1];
+    const existing = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, name);
+    if (existing?.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
+    if ('ifAbsent' in condition) {
+      if (existing) throw new VfsPreconditionFailedError(path);
+    } else {
+      if (!existing) throw new VfsNodeNotFoundError(path);
+      this.assertRevision(existing, condition.ifRevision, path);
+    }
+    if (existing && existing.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
+    if (existing?.blobId !== blob.blobId) {
+      if (
+        !(await this.blobRepository.incrementLiveReferenceCount(tx.manager, tx.namespaceId, blob.blobId, 1))
+      )
+        throw new VfsInvalidOperationError(path);
+      if (existing?.blobId) await this.blobRepository.decrementReferenceCount(tx.manager, existing.blobId, 1);
+    }
+    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    if (existing) {
+      // 같은 Blob을 복원해도 현재 파일 mutation이므로 revision을 정확히 한 번 올린다.
+      // save()의 자동 version 갱신 대신 withMutation의 공통 bump에 맡긴다.
+      await nodeRepo
+        .createQueryBuilder()
+        .update(VfsNodeEntity)
+        .set({
+          blobId: blob.blobId,
+          size: blob.size,
+          mimeType: blob.mimeType,
+          version: () => 'version',
+        })
+        .where('id = :id', { id: existing.id })
+        .execute();
+      this.markChanged(tx, existing.id, true);
+      return { kind: 'replaced', node: toRecord({ ...existing, ...blob }) };
+    }
+    const created = await nodeRepo.save(
+      nodeRepo.create({
+        namespaceId: tx.namespaceId,
+        parentId,
+        name,
+        type: 'FILE',
+        blobId: blob.blobId,
+        size: blob.size,
+        mimeType: blob.mimeType,
+      }),
+    );
+    this.markChanged(tx, created.id, false);
+    return { kind: 'created', node: toRecord(created) };
   }
 
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {

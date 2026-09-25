@@ -1,3 +1,5 @@
+import { VfsSnapshotService } from './vfs-snapshot.service.js';
+import { VfsSnapshotController } from './vfs-snapshot.controller.js';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
 import { EncryptionModule } from '../encryption/encryption.module.js';
@@ -13,11 +15,20 @@ import { ConditionalContentService } from './conditional-content.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule],
-  controllers: [FsController, PublicFsController],
-  providers: [VfsService, ContentService, PathResolver, MutationService, ConditionalContentService],
+  controllers: [FsController, PublicFsController, VfsSnapshotController],
+  providers: [
+    VfsSnapshotService,
+    VfsService,
+    ContentService,
+    PathResolver,
+    MutationService,
+    ConditionalContentService,
+  ],
 })
 export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware).forRoutes(FsController, PublicFsController);
+    consumer
+      .apply(RequestContextMiddleware)
+      .forRoutes(FsController, PublicFsController, VfsSnapshotController);
   }
 }

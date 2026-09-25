@@ -7,6 +7,8 @@ import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
+import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
+import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 const entities = [
@@ -16,6 +18,8 @@ const entities = [
   IdempotencyKeyEntity,
   AuditLogEntity,
   VfsMutationReceiptEntity,
+  VfsSnapshotEntity,
+  VfsSnapshotEntryEntity,
 ];
 const migrations = ALL_MIGRATIONS;
 

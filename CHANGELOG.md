@@ -10,6 +10,9 @@
 
 ### Added
 
+- 불변 VFS FILE/TREE snapshot을 추가했다. 원본 변경 후 고정된 파일 내용을
+  조회하고, FILE을 revision 조건으로 복원하며, 명시적으로 삭제할 수 있다.
+  namespace별 snapshot 보존 한도와 Blob GC 참조를 관리한다.
 - VFS `POST /fs/mutations` 조건부 디렉터리·트리 변경과 30일 재시도 영수증.
   기존 `/api/v1` 변경 경로의 요청·응답 형식은 유지하면서 조상 revision을 갱신한다.
 - `POST /fs/content/conditional` raw stream 업로드에 revision 조건과 30일 영수증 재생을 추가했다.

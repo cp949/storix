@@ -60,7 +60,7 @@ describe('감사 로그 end-to-end', () => {
       url: postgresContainer.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 4),
+      migrations: ALL_MIGRATIONS,
     });
     await migrationDataSource.initialize();
     await migrationDataSource.runMigrations();

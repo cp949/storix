@@ -8,6 +8,9 @@
 
 **단일 프로세스 all-in-one 전제**: API·마이그레이션·gc·backup·restore가
 같은 호스트에서, 동시에 겹쳐 돌지 않는다는 가정 위에 설계돼 있다.
+VFS snapshot 생성·복원·삭제도 **단일 프로세스·단일 writer** 순차 실행만
+지원한다. 여러 SQLite 연결에서 동시에 snapshot 변경을 실행하는 구성은
+지원하지 않는다.
 
 - 여러 WAS 호스트가 같은 SQLite 파일을 공유하는 멀티프로세스/멀티호스트
   배포는 지원하지 않는다(Postgres + `README.versitygw.md`의 멀티 인스턴스
@@ -52,6 +55,10 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
   실행 중에도 일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에
   만든다(Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object
   미러링 절차는 드라이버 무관 — `docs/deployment/backup-restore.md` 참고.
+  불변 VFS snapshot을 복원하려면 SQLite DB와 Blob 버킷을 같은 시점에
+  확보해야 한다. 백업 동안 API 쓰기와 GC를 멈춘다. DB 파일만 복구하거나
+  snapshot 마이그레이션의 `down()`만 실행하면 snapshot의 Blob 참조와
+  manifest를 함께 보존할 수 없다.
 - **복구**: 마찬가지로 `docker compose -f docker-compose.yml
   -f docker-compose.sqlite.yml --profile restore run --rm restore` 또는
   호스트에서 `restore:run:prod`(개발 중 `restore:run`)를 직접 실행한다.

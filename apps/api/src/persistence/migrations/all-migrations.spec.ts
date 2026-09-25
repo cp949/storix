@@ -11,6 +11,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddAuditLog1789200000000',
       'AddGcState1789300000000',
       'AddVfsMutationReceipt1789400000000',
+      'AddVfsSnapshots1790400000000',
     ]);
   });
 });

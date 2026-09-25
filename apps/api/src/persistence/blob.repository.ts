@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
+import { BlobEntity } from './entities/blob.entity.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 
 export interface OrphanBlobRow {
@@ -28,6 +29,28 @@ export class BlobRepository {
 
   private get isSqlite(): boolean {
     return isSqliteDataSource(this.dataSource.options);
+  }
+
+  // Snapshot은 살아 있는 Blob만 pin할 수 있다. 0인 행은 GC가 이미 선택했을 수
+  // 있으므로 복구하지 않는다. 호출자는 false를 받으면 전체 트랜잭션을 롤백한다.
+  async incrementLiveReferenceCount(
+    manager: EntityManager,
+    namespaceId: string,
+    blobId: string,
+    count: number,
+  ): Promise<boolean> {
+    if (!Number.isSafeInteger(count) || count < 1) throw new Error('Invalid Blob reference increment');
+    const result = await manager
+      .createQueryBuilder()
+      .update(BlobEntity)
+      .set({ referenceCount: () => 'reference_count + :count' })
+      .where('id = :blobId AND namespace_id = :namespaceId AND reference_count > 0', {
+        blobId,
+        namespaceId,
+        count,
+      })
+      .execute();
+    return result.affected === 1;
   }
 
   // reference_count를 원자적으로 감소시키고, 그 결과가 0이 되는 경우에만 같은

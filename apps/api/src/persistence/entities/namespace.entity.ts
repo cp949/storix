@@ -43,6 +43,24 @@ export class NamespaceEntity {
   @Column({ name: 'max_sync_copy_nodes', type: 'integer', nullable: true })
   maxSyncCopyNodes: number | null;
 
+  @Column({ name: 'max_sync_snapshot_nodes', type: 'integer', nullable: true })
+  maxSyncSnapshotNodes: number | null;
+
+  @Column({ name: 'max_snapshot_bytes', type: 'bigint', nullable: true })
+  maxSnapshotBytes: string | null;
+
+  @Column({ name: 'max_retained_snapshot_nodes', type: 'integer', nullable: true })
+  maxRetainedSnapshotNodes: number | null;
+
+  @Column({ name: 'max_retained_snapshot_bytes', type: 'bigint', nullable: true })
+  maxRetainedSnapshotBytes: string | null;
+
+  @Column({ name: 'retained_snapshot_node_count', type: 'integer', default: 0 })
+  retainedSnapshotNodeCount: number;
+
+  @Column({ name: 'retained_snapshot_byte_count', type: 'bigint', default: 0 })
+  retainedSnapshotByteCount: string;
+
   @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

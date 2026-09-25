@@ -1,4 +1,4 @@
-import { isMutationJsonRoute, isRawUploadRoute } from './body-parser.js';
+import { isMutationJsonRoute, isRawUploadRoute, isSnapshotJsonMutationRoute } from './body-parser.js';
 
 describe('isRawUploadRoute', () => {
   it('conditional raw content route bypasses JSON parsing', () => {
@@ -41,4 +41,24 @@ describe('isMutationJsonRoute', () => {
     expect(isMutationJsonRoute({ method: 'POST', path: '/api/v1/namespaces/abc/fs/mkdir' })).toBe(false);
     expect(isMutationJsonRoute({ method: 'GET', path: '/api/v1/namespaces/abc/fs/mutations' })).toBe(false);
   });
+});
+
+describe('snapshot JSON mutation routes', () => {
+  const base = '/api/v1/namespaces/abc/fs/snapshots';
+  const id = '550e8400-e29b-41d4-a716-446655440000';
+  it.each(['', `/${id}/restore`, `/${id}/delete`])('raw JSON을 보존한다: %s', (suffix) => {
+    expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(true);
+    expect(isSnapshotJsonMutationRoute({ method: 'post', path: (base + suffix).toUpperCase() + '/' })).toBe(
+      true,
+    );
+  });
+  it.each(['GET', 'PUT', 'DELETE'])('다른 method는 매칭하지 않는다: %s', (method) => {
+    expect(isSnapshotJsonMutationRoute({ method, path: base })).toBe(false);
+  });
+  it.each(['/content', '/entries', `/${id}`, '/invalid/delete', `/${id}/delete/extra`, 'extra'])(
+    '다른 경로는 매칭하지 않는다: %s',
+    (suffix) => {
+      expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(false);
+    },
+  );
 });

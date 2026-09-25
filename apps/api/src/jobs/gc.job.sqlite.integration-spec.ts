@@ -35,7 +35,7 @@ describe('GcJob 통합 (SQLite)', () => {
       synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 3),
+      migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

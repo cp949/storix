@@ -35,7 +35,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('6개 마이그레이션이 전부 적용된다', async () => {
+  it('7개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -44,7 +44,129 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddAuditLog1789200000000',
       'AddGcState1789300000000',
       'AddVfsMutationReceipt1789400000000',
+      'AddVfsSnapshots1790400000000',
     ]);
+  });
+
+  describe('snapshot schema', () => {
+    it('creates metadata and manifest columns, foreign keys, and a snapshot_id index', async () => {
+      const snapshotColumns = await dataSource.query('PRAGMA table_info(vfs_snapshot)');
+      const entryColumns = await dataSource.query('PRAGMA table_info(vfs_snapshot_entry)');
+      expect(snapshotColumns.map((column: { name: string }) => column.name)).toEqual(
+        expect.arrayContaining([
+          'id',
+          'namespace_id',
+          'kind',
+          'source_path',
+          'root_node_id',
+          'source_revision',
+          'root_type',
+          'node_count',
+          'logical_bytes',
+          'created_at',
+        ]),
+      );
+      expect(entryColumns.map((column: { name: string }) => column.name)).toEqual(
+        expect.arrayContaining([
+          'id',
+          'namespace_id',
+          'snapshot_id',
+          'relative_path',
+          'path_key',
+          'type',
+          'source_node_id',
+          'source_revision',
+          'blob_id',
+          'size',
+          'mime_type',
+        ]),
+      );
+      const snapshotFks = await dataSource.query('PRAGMA foreign_key_list(vfs_snapshot)');
+      const entryFks = await dataSource.query('PRAGMA foreign_key_list(vfs_snapshot_entry)');
+      expect(snapshotFks.map((fk: { table: string }) => fk.table)).toContain('namespace');
+      expect(entryFks.map((fk: { table: string }) => fk.table)).toEqual(
+        expect.arrayContaining(['namespace', 'vfs_snapshot', 'blob']),
+      );
+      expect(
+        entryFks
+          .filter((fk: { table: string; on_delete: string }) => fk.table === 'blob')
+          .every((fk: { on_delete: string }) => fk.on_delete === 'RESTRICT'),
+      ).toBe(true);
+      const indexes = await dataSource.query('PRAGMA index_list(vfs_snapshot_entry)');
+      expect(indexes.map((index: { name: string }) => index.name)).toContain(
+        'idx_vfs_snapshot_entry_snapshot_id',
+      );
+      const snapshotIndex = await dataSource.query('PRAGMA index_info(idx_vfs_snapshot_entry_snapshot_id)');
+      expect(snapshotIndex.map((column: { name: string }) => column.name)).toEqual(['snapshot_id']);
+      const uniqueColumns = await Promise.all(
+        indexes
+          .filter((index: { unique: number }) => index.unique === 1)
+          .map(async (index: { name: string }) => {
+            const columns = await dataSource.query(`PRAGMA index_info("${index.name}")`);
+            return columns.map((column: { name: string }) => column.name);
+          }),
+      );
+      expect(
+        uniqueColumns.some(
+          (columns: string[]) => columns.includes('relative_path') || columns.includes('path_key'),
+        ),
+      ).toBe(false);
+    });
+
+    it('defaults retained usage to zero and rejects nonpositive overrides and negative usage', async () => {
+      const namespace = await dataSource
+        .getRepository(NamespaceEntity)
+        .save({ name: 'snapshot-limits-sqlite' });
+      const usage = await dataSource.query(
+        `SELECT retained_snapshot_node_count, retained_snapshot_byte_count
+        FROM namespace WHERE id = ?`,
+        [namespace.id],
+      );
+      expect(usage[0]).toMatchObject({ retained_snapshot_node_count: 0, retained_snapshot_byte_count: 0 });
+      for (const column of [
+        'max_sync_snapshot_nodes',
+        'max_snapshot_bytes',
+        'max_retained_snapshot_nodes',
+        'max_retained_snapshot_bytes',
+      ]) {
+        await expect(
+          dataSource.query(`UPDATE namespace SET ${column} = 0 WHERE id = ?`, [namespace.id]),
+        ).rejects.toThrow();
+      }
+      for (const column of ['retained_snapshot_node_count', 'retained_snapshot_byte_count']) {
+        await expect(
+          dataSource.query(`UPDATE namespace SET ${column} = -1 WHERE id = ?`, [namespace.id]),
+        ).rejects.toThrow();
+      }
+    });
+
+    it('rejects invalid manifest entry types and negative sizes', async () => {
+      const namespace = await dataSource
+        .getRepository(NamespaceEntity)
+        .save({ name: 'snapshot-entry-sqlite' });
+      const snapshotId = randomUUID();
+      await dataSource.query(
+        `INSERT INTO vfs_snapshot
+        (id, namespace_id, kind, source_path, root_node_id, source_revision, root_type, node_count, logical_bytes)
+        VALUES (?, ?, 'TREE', '/source', ?, 'r1.root', 'DIRECTORY', 1, 0)`,
+        [snapshotId, namespace.id, randomUUID()],
+      );
+      const addEntry = (
+        relativePath: string,
+        pathKey: string,
+        type = 'DIRECTORY',
+        size: number | null = null,
+      ) =>
+        dataSource.query(
+          `INSERT INTO vfs_snapshot_entry
+          (id, namespace_id, snapshot_id, relative_path, path_key, type, source_node_id, source_revision, size)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'r1.entry', ?)`,
+          [randomUUID(), namespace.id, snapshotId, relativePath, pathKey, type, randomUUID(), size],
+        );
+      await addEntry('a', '61');
+      await expect(addEntry('b', '62', 'UNKNOWN')).rejects.toThrow();
+      await expect(addEntry('b', '62', 'FILE', -1)).rejects.toThrow();
+    });
   });
 
   it('VFS mutation receipt에 namespace FK와 expiry index를 생성한다', async () => {

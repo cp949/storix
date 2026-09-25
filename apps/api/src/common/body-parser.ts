@@ -17,6 +17,16 @@ export function isMutationJsonRoute(req: Pick<Request, 'method' | 'path'>): bool
   return req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/mutations');
 }
 
+export function isSnapshotJsonMutationRoute(req: Pick<Request, 'method' | 'path'>): boolean {
+  const path = req.path.toLowerCase().replace(/\/+$/, '');
+  return (
+    req.method.toUpperCase() === 'POST' &&
+    /\/fs\/snapshots(?:\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:restore|delete))?$/.test(
+      path,
+    )
+  );
+}
+
 // JSON/urlencoded 요청은 제어 데이터만 다루므로 namespace별 조정 대신 고정 상한으로
 // 조기 차단한다. raw 업로드는 이 파서를 우회하고 별도 파일 크기 상한을 적용한다.
 const JSON_BODY_LIMIT = '16kb';
@@ -46,7 +56,8 @@ export function configureBodyParsers(app: INestApplication): void {
     raw({
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
-        isMutationJsonRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
+        (isMutationJsonRoute(req as Request) || isSnapshotJsonMutationRoute(req as Request)) &&
+        matchesContentType(req as Request, 'application/json'),
     }),
   );
   httpAdapter.use(
@@ -55,6 +66,7 @@ export function configureBodyParsers(app: INestApplication): void {
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
+        !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/json'),
     }),
   );
@@ -65,6 +77,7 @@ export function configureBodyParsers(app: INestApplication): void {
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
+        !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),
     }),
   );

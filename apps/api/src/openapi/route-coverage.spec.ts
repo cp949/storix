@@ -1,3 +1,4 @@
+import { VfsSnapshotController } from '../vfs/vfs-snapshot.controller.js';
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -65,6 +66,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     const codeRoutes = [
       ...controllerRoutes(NamespaceController),
       ...controllerRoutes(FsController),
+      ...controllerRoutes(VfsSnapshotController),
       ...controllerRoutes(PublicFsController),
     ].sort();
 
@@ -106,4 +108,68 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     );
     expect(spec.paths[`${base}/ls`].get.responses).toHaveProperty('412');
   });
+});
+
+it('snapshot mutation과 content의 계약을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as {
+    paths: Record<string, Record<string, { parameters: unknown[]; responses: Record<string, unknown> }>>;
+    components: { schemas: Record<string, { required: string[] }> };
+  };
+  const base = '/api/v1/namespaces/{namespaceId}/fs/snapshots';
+  for (const path of [base, `${base}/{snapshotId}/delete`]) {
+    expect(spec.paths[path].post.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+        expect.objectContaining({ name: 'X-Mutation-Scope', in: 'header', required: true }),
+      ]),
+    );
+    expect(spec.paths[path].post.responses).toHaveProperty('409.headers.Retry-After.schema.type', 'integer');
+    expect(Object.keys(spec.paths[path].post.responses)).toEqual(
+      expect.arrayContaining(['400', '404', '409', '413']),
+    );
+  }
+  expect(spec.paths[base].post.responses).toHaveProperty('201');
+  expect(spec.paths[`${base}/{snapshotId}/content`].get.responses).toHaveProperty('206');
+  expect(spec.components.schemas.SnapshotMetadata.required).toEqual(
+    expect.arrayContaining([
+      'snapshotId',
+      'kind',
+      'sourcePath',
+      'sourceRevision',
+      'nodeCount',
+      'logicalBytes',
+      'createdAt',
+    ]),
+  );
+});
+
+it('FILE restore는 조건과 생성/교체/충돌 응답을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const operation = spec.paths['/api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/restore']?.post;
+  expect(operation).toBeDefined();
+  expect(Object.keys(operation.responses)).toEqual(
+    expect.arrayContaining(['200', '201', '400', '404', '409', '412', '428']),
+  );
+  expect(spec.components.schemas.SnapshotRestoreRequest.oneOf).toHaveLength(2);
+});
+
+it('TREE entries는 snapshot cursor와 공개 manifest page를 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const base = '/api/v1/namespaces/{namespaceId}/fs/snapshots';
+  const entries = spec.paths[`${base}/{snapshotId}/entries`]?.get;
+  expect(entries).toBeDefined();
+  expect(entries.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'cursor', in: 'query' }),
+      expect.objectContaining({
+        name: 'limit',
+        in: 'query',
+        schema: expect.objectContaining({ default: 100, maximum: 1000 }),
+      }),
+    ]),
+  );
+  expect(spec.components.schemas.SnapshotEntryPage.required).toEqual(['items', 'nextCursor']);
+  expect(spec.paths[`${base}/{snapshotId}/content`].get.parameters).toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: 'path', in: 'query' })]),
+  );
 });
