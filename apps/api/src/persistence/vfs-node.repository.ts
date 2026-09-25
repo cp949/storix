@@ -17,6 +17,7 @@ import {
   VfsDeleteLimitExceededError,
   VfsDirectoryNotEmptyError,
   VfsInvalidOperationError,
+  VfsInvalidCursorError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
@@ -28,6 +29,7 @@ import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
+import type { RevisionCursor } from '../vfs/revision-cursor.js';
 
 export interface VfsNodeRecord {
   readonly id: string;
@@ -463,6 +465,73 @@ export class VfsNodeRepository {
     }
 
     return node ? toRecord(node) : null;
+  }
+
+  private readSnapshot<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return this.isSqlite
+      ? this.dataSource.transaction(work)
+      : this.dataSource.transaction('REPEATABLE READ', work);
+  }
+
+  private async resolveInReadTx(
+    manager: EntityManager,
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+  ): Promise<VfsNodeEntity | null> {
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    let node = await nodeRepo.findOneBy({ id: rootId, namespaceId });
+    for (const segment of segments) {
+      if (!node || node.type !== 'DIRECTORY') return null;
+      node = await nodeRepo.findOneBy({ namespaceId, parentId: node.id, name: segment });
+    }
+    return node;
+  }
+
+  async readRevision(namespaceId: string, rootId: string, segments: string[]): Promise<VfsNodeRecord | null> {
+    return this.readSnapshot(async (manager) => {
+      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      return node ? toRecord(node) : null;
+    });
+  }
+
+  async listRevisionChildren(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+    canonicalPath: string,
+    cursor: RevisionCursor | null,
+    limit: number,
+  ): Promise<{ directory: VfsNodeRecord; rows: VfsNodeRecord[] }> {
+    return this.readSnapshot(async (manager) => {
+      const directory = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      if (!directory) throw new VfsNodeNotFoundError(canonicalPath);
+      if (directory.type !== 'DIRECTORY') throw new VfsNotDirectoryError(canonicalPath);
+      if (cursor?.directoryId !== undefined && cursor.directoryId !== directory.id) {
+        throw new VfsInvalidCursorError('directory mismatch');
+      }
+      if (cursor && cursor.directoryRevision !== encodeRevision(directory)) {
+        throw new VfsPreconditionFailedError(canonicalPath);
+      }
+      const qb = manager
+        .getRepository(VfsNodeEntity)
+        .createQueryBuilder('n')
+        .where('n.namespace_id = :namespaceId AND n.parent_id = :parentId', {
+          namespaceId,
+          parentId: directory.id,
+        })
+        .orderBy('n.name', 'ASC')
+        .addOrderBy('n.id', 'ASC')
+        .take(limit + 1);
+      if (cursor) {
+        qb.andWhere('(n.name, n.id) > (:cursorName, :cursorId)', {
+          cursorName: cursor.name,
+          cursorId: cursor.id,
+        });
+      }
+      const rows = await qb.getMany();
+      return { directory: toRecord(directory), rows: rows.map(toRecord) };
+    });
   }
 
   async listChildren(

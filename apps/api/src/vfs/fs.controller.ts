@@ -212,8 +212,14 @@ export class FsController {
     @Query('path') path: string | undefined,
     @Query('cursor') cursor: string | undefined,
     @Query('limit') limit: string | undefined,
+    @Query('consistency') consistency: string | undefined,
   ) {
-    return this.vfsService.ls(namespaceId, path ?? '', cursor, limit);
+    return this.vfsService.ls(namespaceId, path ?? '', cursor, limit, consistency);
+  }
+
+  @Get('revision')
+  revision(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
+    return this.vfsService.revision(namespaceId, path ?? '');
   }
 
   @Get('stat')

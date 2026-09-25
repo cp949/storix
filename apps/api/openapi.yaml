@@ -772,6 +772,30 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/revision:
+    get:
+      operationId: getRevision
+      summary: 파일 또는 디렉터리의 opaque revision 조회
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 현재 revision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, revision]
+                properties:
+                  path: { type: string }
+                  revision: { type: string, pattern: '^r1\.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/namespaces/{namespaceId}/fs/ls:
     get:
       operationId: ls
@@ -787,13 +811,20 @@ paths:
             type: string
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
+        - name: consistency
+          in: query
+          required: false
+          description: '`revision`이면 디렉터리 revision에 묶인 `rc1.` cursor를 사용한다. 생략 시 기존 응답·cursor 계약을 유지한다.'
+          schema: { type: string, enum: [revision] }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VfsNodePage'
+                oneOf:
+                  - $ref: '#/components/schemas/VfsNodePage'
+                  - $ref: '#/components/schemas/RevisionVfsNodePage'
         '400':
           description: 경로가 유효하지 않거나(`VFS_INVALID_PATH`) cursor가 유효하지 않음(`VFS_INVALID_CURSOR`)
           content:
@@ -806,6 +837,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: 대상이 디렉터리가 아님(`VFS_NOT_DIRECTORY`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '412':
+          description: cursor의 디렉터리 revision이 현재와 다름(`VFS_PRECONDITION_FAILED`)
           content:
             application/json:
               schema:
@@ -1133,6 +1170,24 @@ components:
           type: string
           nullable: true
           description: 다음 페이지 요청의 `cursor`. 더 가져올 항목이 없으면 `null`.
+    RevisionVfsNodePage:
+      type: object
+      required: [items, nextCursor, directoryRevision]
+      properties:
+        directoryRevision: { type: string, pattern: '^r1\.' }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/VfsNode'
+              - type: object
+                required: [revision]
+                properties:
+                  revision: { type: string, pattern: '^r1\.' }
+        nextCursor:
+          type: string
+          nullable: true
+          description: '`rc1.` 접두사를 가진 다음 페이지 cursor. 없으면 null.'
     MkdirRequest:
       type: object
       required: [path]

@@ -21,6 +21,8 @@ import {
   VfsNotDirectoryError,
 } from './vfs.errors.js';
 import { resolveLimit } from './pagination.js';
+import { decodeRevisionCursor, encodeRevisionCursor } from './revision-cursor.js';
+import { encodeRevision } from './revision.js';
 
 const NAME_FILTER_MODES: readonly NameFilterMode[] = ['exact', 'contains', 'prefix', 'suffix'];
 
@@ -35,6 +37,12 @@ export interface FindOptions {
 export interface PageResult {
   readonly items: VfsNodeResponseDto[];
   readonly nextCursor: string | null;
+}
+
+export interface RevisionPageResult {
+  readonly items: (VfsNodeResponseDto & { readonly revision: string })[];
+  readonly nextCursor: string | null;
+  readonly directoryRevision: string;
 }
 
 function isNameFilterMode(value: string | undefined): value is NameFilterMode {
@@ -151,9 +159,43 @@ export class VfsService {
     rawPath: string,
     cursorParam: string | undefined,
     limitParam: string | undefined,
-  ): Promise<PageResult> {
+    consistency?: string,
+  ): Promise<PageResult | RevisionPageResult> {
     const root = await requireRoot(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
+    if (consistency === 'revision') {
+      const cursor = cursorParam ? decodeRevisionCursor(cursorParam) : null;
+      const limit = resolveLimit(limitParam);
+      const { directory, rows } = await this.repo.listRevisionChildren(
+        namespaceId,
+        root.id,
+        segments,
+        canonical,
+        cursor,
+        limit,
+      );
+      const directoryRevision = encodeRevision(directory);
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      const last = page[page.length - 1];
+      return {
+        directoryRevision,
+        items: page.map((row) => ({
+          ...toNodeResponse(row, joinChildPath(canonical, row.name)),
+          revision: encodeRevision(row),
+        })),
+        nextCursor:
+          hasMore && last
+            ? encodeRevisionCursor({
+                directoryId: directory.id,
+                directoryRevision,
+                name: last.name,
+                id: last.id,
+              })
+            : null,
+      };
+    }
+    if (consistency !== undefined) throw new VfsInvalidCursorError(consistency);
     const target = await this.resolveTarget(namespaceId, root, segments);
 
     if (!target) {
@@ -168,6 +210,14 @@ export class VfsService {
     const rows = await this.repo.listChildren(namespaceId, target.id, cursor, limit);
 
     return this.paginate(rows, limit, (row) => joinChildPath(canonical, row.name));
+  }
+
+  async revision(namespaceId: string, rawPath: string): Promise<{ path: string; revision: string }> {
+    const root = await requireRoot(this.repo, namespaceId);
+    const { canonical, segments } = this.pathResolver.resolve(rawPath);
+    const node = await this.repo.readRevision(namespaceId, root.id, segments);
+    if (!node) throw new VfsNodeNotFoundError(canonical);
+    return { path: canonical, revision: encodeRevision(node) };
   }
 
   async stat(namespaceId: string, rawPath: string): Promise<VfsNodeResponseDto> {

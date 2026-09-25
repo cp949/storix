@@ -12,6 +12,7 @@ import {
   VfsCopyLimitExceededError,
   VfsDeleteLimitExceededError,
   VfsDirectoryNotEmptyError,
+  VfsInvalidCursorError,
   VfsInvalidOperationError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
@@ -365,6 +366,91 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         ),
       ).rejects.toThrow(VfsPreconditionFailedError);
       expect(await getRepo().resolvePath(namespace.id, root.id, ['copy'])).toBeNull();
+    });
+  });
+
+  describe('revision snapshot reads', () => {
+    it('invalidates a cursor after a descendant changes but not after an independent branch changes', async () => {
+      const namespace = await createNamespace('revision-snapshot-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['b'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'x'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'y'], false);
+      const first = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 1);
+      const cursor = {
+        directoryId: first.directory.id,
+        directoryRevision: encodeRevision(first.directory),
+        name: first.rows[0].name,
+        id: first.rows[0].id,
+      };
+      await getRepo().ensureDirectory(namespace.id, root.id, ['b', 'other'], false);
+      expect(
+        (await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1)).rows[0].name,
+      ).toBe('y');
+      await getRepo().putFileContent(
+        namespace.id,
+        root.id,
+        ['a', 'x', 'code.py'],
+        false,
+        makeBlobData(),
+        null,
+        false,
+      );
+      await expect(
+        getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1),
+      ).rejects.toThrow(VfsPreconditionFailedError);
+      await expect(
+        getRepo().listRevisionChildren(namespace.id, root.id, ['b'], '/b', cursor, 1),
+      ).rejects.toThrow(VfsInvalidCursorError);
+    });
+
+    it('reads directory and child revisions from one transaction during a concurrent content change', async () => {
+      const namespace = await createNamespace('revision-read-write-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      const first = await getRepo().putFileContent(
+        namespace.id,
+        root.id,
+        ['a', 'x'],
+        false,
+        makeBlobData(),
+        null,
+        false,
+      );
+      const before = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
+      let read;
+      if (getDs().options.type === 'better-sqlite3') {
+        // The SQLite fixture has one connection, so its transactions must run in sequence.
+        read = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
+        await getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['a', 'x'],
+          false,
+          makeBlobData(),
+          first.node.version,
+          false,
+        );
+      } else {
+        [read] = await Promise.all([
+          getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10),
+          getRepo().putFileContent(
+            namespace.id,
+            root.id,
+            ['a', 'x'],
+            false,
+            makeBlobData(),
+            first.node.version,
+            false,
+          ),
+        ]);
+      }
+      const after = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 10);
+      expect([
+        [before.directory.version, before.rows[0].version],
+        [after.directory.version, after.rows[0].version],
+      ]).toContainEqual([read.directory.version, read.rows[0].version]);
     });
   });
 
