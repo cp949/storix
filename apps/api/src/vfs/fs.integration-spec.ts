@@ -15,8 +15,11 @@ import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
+import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
+import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsModule } from './vfs.module.js';
+import { encodeRevision } from './revision.js';
 
 const MAX_FILE_SIZE_BYTES = 1048576;
 
@@ -27,7 +30,13 @@ function postChunked(
 ): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/octet-stream' } },
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+      },
       (res) => {
         const data: Buffer[] = [];
         res.on('data', (chunk: Buffer) => data.push(chunk));
@@ -90,8 +99,8 @@ describe('Fs HTTP contract', () => {
       type: 'postgres',
       url: postgresContainer.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
-      migrations: ALL_MIGRATIONS.slice(0, 3),
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, VfsMutationReceiptEntity],
+      migrations: ALL_MIGRATIONS,
     });
     await migrationDataSource.initialize();
     await migrationDataSource.runMigrations();
@@ -151,6 +160,126 @@ describe('Fs HTTP contract', () => {
       }),
     );
   }
+
+  describe('conditional mutation receipts', () => {
+    it('replays the exact JSON request without increasing revisions again', async () => {
+      const namespaceId = await createNamespace('conditional-mkdir-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
+      const key = randomUUID();
+      const body = '{"kind":"mkdir","path":"/a","ifAbsent":true}';
+      const send = (raw: string) =>
+        request(httpServer)
+          .post(base)
+          .set('Content-Type', 'application/json')
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .send(raw);
+      const first = await send(body).expect(201);
+      expect(first.body).toMatchObject({ resource: { path: '/a' } });
+      expect(first.body.affectedRevisions.map((item: { path: string }) => item.path)).toEqual(['/', '/a']);
+      const replay = await send(body).expect(201);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      const changed = await send('{"kind":"mkdir", "path":"/a","ifAbsent":true}').expect(409);
+      expect(changed.body.code).toBe('MUTATION_KEY_REUSED');
+    });
+
+    it('replays deterministic 428 and 400 responses with the original request ID', async () => {
+      const namespaceId = await createNamespace('conditional-errors-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
+      const key = randomUUID();
+      const send = (body: string) =>
+        request(httpServer)
+          .post(base)
+          .set('Content-Type', 'application/json')
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .send(body);
+      const first = await send('{"kind":"mkdir","path":"/a"}').expect(428);
+      expect(first.body.code).toBe('VFS_PRECONDITION_REQUIRED');
+      const replay = await send('{"kind":"mkdir","path":"/a"}').expect(428);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      const changed = await send('{"kind":"mkdir","path":"/a","ifAbsent":true}').expect(409);
+      expect(changed.body.code).toBe('MUTATION_KEY_REUSED');
+
+      const brokenKey = randomUUID();
+      const badRequest = () =>
+        request(httpServer)
+          .post(base)
+          .set('Content-Type', 'application/json')
+          .set('Idempotency-Key', brokenKey)
+          .set('X-Mutation-Scope', 'caller-a')
+          .send('{broken');
+      const broken = await badRequest().expect(400);
+      expect((await badRequest().expect(400)).body).toEqual(broken.body);
+    });
+
+    it('does not cache a failed revision condition', async () => {
+      const namespaceId = await createNamespace('conditional-stale-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/a' }).expect(201);
+      const root = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId, parentId: IsNull() });
+      const old = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId, parentId: root.id, name: 'a' });
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/a/child' }).expect(201);
+      const key = randomUUID();
+      const send = (revision: string) =>
+        request(httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'caller-a')
+          .send({ kind: 'delete', path: '/a', ifRevision: revision, recursive: true });
+      expect((await send(encodeRevision(old)).expect(412)).body.code).toBe('VFS_PRECONDITION_FAILED');
+      const current = await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: old.id });
+      const accepted = await send(encodeRevision(current)).expect(200);
+      expect(accepted.body).toMatchObject({ resource: null });
+      expect(accepted.body.affectedRevisions.map((item: { path: string }) => item.path)).toEqual(['/']);
+    });
+
+    it('requires UUID identity and bounded scope, and reports an active lease with Retry-After', async () => {
+      const namespaceId = await createNamespace('conditional-identity-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs/mutations`;
+      const body = { kind: 'mkdir', path: '/a', ifAbsent: true };
+      expect(
+        (await request(httpServer).post(base).set('X-Mutation-Scope', 'caller-a').send(body).expect(400)).body
+          .code,
+      ).toBe('VFS_INVALID_MUTATION_REQUEST');
+      expect(
+        (
+          await request(httpServer)
+            .post(base)
+            .set('Idempotency-Key', 'bad')
+            .set('X-Mutation-Scope', 'caller-a')
+            .send(body)
+            .expect(400)
+        ).body.code,
+      ).toBe('VFS_INVALID_MUTATION_REQUEST');
+      expect(
+        (
+          await request(httpServer)
+            .post(base)
+            .set('Idempotency-Key', randomUUID())
+            .set('X-Mutation-Scope', 'x'.repeat(129))
+            .send(body)
+            .expect(400)
+        ).body.code,
+      ).toBe('VFS_INVALID_MUTATION_REQUEST');
+      const key = randomUUID();
+      await app.get(VfsMutationReceiptRepository).claim({ namespaceId, scope: 'caller-a', key }, new Date());
+      const busy = await request(httpServer)
+        .post(base)
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'caller-a')
+        .send(body)
+        .expect(409);
+      expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
+      expect(Number(busy.headers['retry-after'])).toBeGreaterThan(0);
+    });
+  });
 
   describe('공통 검증', () => {
     it('존재하지 않는 namespace는 404를 반환한다', async () => {

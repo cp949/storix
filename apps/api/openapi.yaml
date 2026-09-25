@@ -98,6 +98,88 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/namespaces/{namespaceId}/fs/mutations:
+    post:
+      operationId: conditionalMutation
+      summary: 조건부 VFS 변경
+      tags: [fs]
+      description: |
+        mkdir/delete/move/copy를 원자적으로 적용한다. 같은 scope와 UUID key의
+        같은 raw JSON bytes는 최초 status, body, X-Request-Id를 30일간 재생한다.
+        진행 중인 key는 409와 Retry-After를 반환한다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Mutation-Scope
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [kind, path, ifAbsent]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, enum: [mkdir] }
+                    path: { type: string }
+                    ifAbsent: { type: boolean, enum: [true] }
+                - type: object
+                  required: [kind, path, ifRevision]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, enum: [delete] }
+                    path: { type: string }
+                    ifRevision: { type: string, pattern: '^r1\.' }
+                    recursive: { type: boolean }
+                - type: object
+                  required: [kind, source, destination, sourceRevision, destinationAbsent]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, enum: [move, copy] }
+                    source: { type: string }
+                    destination: { type: string }
+                    sourceRevision: { type: string, pattern: '^r1\.' }
+                    destinationAbsent: { type: boolean, enum: [true] }
+      responses:
+        '200':
+          description: 변경됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: key 재사용 또는 진행 중인 claim; 진행 중이면 Retry-After 헤더 반환
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '412':
+          description: revision 불일치 또는 목적지 존재
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '413':
+          description: 동기 삭제·복사 상한 초과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '428':
+          description: 필수 조건 누락
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/namespaces/{namespaceId}/fs/mkdir:
     post:
       operationId: mkdir
@@ -954,6 +1036,22 @@ components:
         version:
           type: integer
           description: 낙관적 동시성 제어용. `PUT content`의 `If-Match`에 사용한다.
+    ConditionalMutationResult:
+      type: object
+      required: [resource, affectedRevisions]
+      properties:
+        resource:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VfsNode'
+        affectedRevisions:
+          type: array
+          items:
+            type: object
+            required: [path, revision]
+            properties:
+              path: { type: string }
+              revision: { type: string, pattern: '^r1\.' }
     VfsNodePage:
       type: object
       required: [items, nextCursor]

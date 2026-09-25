@@ -10,6 +10,9 @@
 
 ### Added
 
+- VFS `POST /fs/mutations` 조건부 디렉터리·트리 변경과 30일 재시도 영수증.
+  기존 `/api/v1` 변경 경로의 요청·응답 형식은 유지하면서 조상 revision을 갱신한다.
+
 - 단일 개발 호스트와 공유 PostgreSQL·NAS 기반 2노드 운영 환경에서 기존
   Nginx의 private listener로 WAS → Storix mTLS를 적용하는 선택형 배포 시나리오
 - OpenAPI 스펙 초안(`apps/api/openapi.yaml`) — namespace/fs API 계약 문서(`API-01`)

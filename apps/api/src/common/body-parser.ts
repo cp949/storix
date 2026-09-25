@@ -1,4 +1,4 @@
-import { json, urlencoded } from 'express';
+import { json, raw, urlencoded } from 'express';
 import type { INestApplication } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import type { IncomingMessage } from 'node:http';
@@ -9,7 +9,12 @@ import { RequestContextMiddleware } from './request-context.middleware.js';
  * Express의 기본 json/urlencoded 파서가 스트림을 미리 소비하면 안 된다.
  */
 export function isRawUploadRoute(req: Pick<Request, 'method' | 'path'>): boolean {
-  return req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/content');
+  const path = req.path.toLowerCase().replace(/\/+$/, '');
+  return req.method === 'POST' && (path.endsWith('/fs/content') || path.endsWith('/fs/content/conditional'));
+}
+
+export function isMutationJsonRoute(req: Pick<Request, 'method' | 'path'>): boolean {
+  return req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/mutations');
 }
 
 // JSON/urlencoded 요청은 제어 데이터만 다루므로 namespace별 조정 대신 고정 상한으로
@@ -34,12 +39,23 @@ function matchesContentType(req: Request, expected: string): boolean {
 export function configureBodyParsers(app: INestApplication): void {
   const httpAdapter = app.getHttpAdapter().getInstance();
   const requestContextMiddleware = new RequestContextMiddleware();
-  httpAdapter.use((req: Request, res: Response, next: NextFunction) => requestContextMiddleware.use(req, res, next));
+  httpAdapter.use((req: Request, res: Response, next: NextFunction) =>
+    requestContextMiddleware.use(req, res, next),
+  );
+  httpAdapter.use(
+    raw({
+      limit: JSON_BODY_LIMIT,
+      type: (req: IncomingMessage) =>
+        isMutationJsonRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
+    }),
+  );
   httpAdapter.use(
     json({
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
-        !isRawUploadRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
+        !isRawUploadRoute(req as Request) &&
+        !isMutationJsonRoute(req as Request) &&
+        matchesContentType(req as Request, 'application/json'),
     }),
   );
   httpAdapter.use(
@@ -48,6 +64,7 @@ export function configureBodyParsers(app: INestApplication): void {
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
+        !isMutationJsonRoute(req as Request) &&
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),
     }),
   );

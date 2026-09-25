@@ -22,6 +22,7 @@ import { parseMkdirRequest } from './dto/mkdir-request.dto.js';
 import { parseMoveRequest } from './dto/move-request.dto.js';
 import { parseTouchRequest } from './dto/touch-request.dto.js';
 import { VfsService } from './vfs.service.js';
+import { MutationService } from './mutation.service.js';
 
 @Controller('api/v1/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -30,7 +31,29 @@ export class FsController {
   constructor(
     private readonly vfsService: VfsService,
     private readonly contentService: ContentService,
+    private readonly mutationService: MutationService,
   ) {}
+
+  @Post('mutations')
+  async mutate(
+    @Param('namespaceId') namespaceId: string,
+    @Headers('x-mutation-scope') scope: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.mutationService.executeJson(
+      namespaceId,
+      scope,
+      key,
+      'POST',
+      req.body as Buffer | undefined,
+      req.requestId,
+    );
+    res.status(result.status);
+    for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+    return result.body;
+  }
 
   @Post('mkdir')
   async mkdir(
