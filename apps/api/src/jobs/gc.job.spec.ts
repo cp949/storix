@@ -3,6 +3,7 @@ import type { ConfigService } from '@nestjs/config';
 import { GcJob } from './gc.job.js';
 import type { BlobRepository, OrphanBlobRow } from '../persistence/blob.repository.js';
 import type { BlobObjectInfo, BlobStorage } from '../storage/blob-storage.js';
+import type { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 
 describe('GcJob', () => {
   function makeConfig(gracePeriodSeconds: number): ConfigService {
@@ -10,6 +11,28 @@ describe('GcJob', () => {
   }
 
   async function* emptyList(): AsyncIterable<BlobObjectInfo> {}
+
+  it('prunes expired completed mutation receipts during GC', async () => {
+    const storage = {
+      list: emptyList,
+      delete: jest.fn<(key: string) => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const blobRepository = {
+      findAllStorageKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set()),
+      findOrphanBlobs: jest.fn<() => Promise<OrphanBlobRow[]>>().mockResolvedValue([]),
+      deleteBlobRows: jest.fn<(ids: string[]) => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const pruneExpired = jest.fn<(now: Date) => Promise<number>>().mockResolvedValue(2);
+    const job = new GcJob(
+      storage as unknown as BlobStorage,
+      blobRepository as unknown as BlobRepository,
+      makeConfig(3600),
+      { pruneExpired } as unknown as VfsMutationReceiptRepository,
+    );
+    const result = await job.run();
+    expect(result.prunedMutationReceipts).toBe(2);
+    expect(pruneExpired).toHaveBeenCalledWith(expect.any(Date));
+  });
 
   it('MinIO object 삭제가 실패한 blob은 metadata row를 삭제하지 않는다', async () => {
     const deleteMock = jest
@@ -20,18 +43,17 @@ describe('GcJob', () => {
       list: emptyList,
       delete: deleteMock,
     };
-    const findOrphanBlobs = jest
-      .fn<(cutoff: Date) => Promise<OrphanBlobRow[]>>()
-      .mockResolvedValue([
-        { id: 'blob-ok', storageKey: 'blobs/ab/ok' },
-        { id: 'blob-fail', storageKey: 'blobs/ab/fail' },
-      ]);
+    const findOrphanBlobs = jest.fn<(cutoff: Date) => Promise<OrphanBlobRow[]>>().mockResolvedValue([
+      { id: 'blob-ok', storageKey: 'blobs/ab/ok' },
+      { id: 'blob-fail', storageKey: 'blobs/ab/fail' },
+    ]);
     const deleteBlobRows = jest.fn<(ids: string[]) => Promise<void>>().mockResolvedValue(undefined);
-    const blobRepository: Pick<BlobRepository, 'findAllStorageKeys' | 'findOrphanBlobs' | 'deleteBlobRows'> = {
-      findAllStorageKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set()),
-      findOrphanBlobs,
-      deleteBlobRows,
-    };
+    const blobRepository: Pick<BlobRepository, 'findAllStorageKeys' | 'findOrphanBlobs' | 'deleteBlobRows'> =
+      {
+        findAllStorageKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set()),
+        findOrphanBlobs,
+        deleteBlobRows,
+      };
 
     const job = new GcJob(
       storage as unknown as BlobStorage,
@@ -57,11 +79,14 @@ describe('GcJob', () => {
     }
     const deleteMock = jest.fn<(key: string) => Promise<void>>().mockResolvedValue(undefined);
     const storage: Pick<BlobStorage, 'list' | 'delete'> = { list, delete: deleteMock };
-    const blobRepository: Pick<BlobRepository, 'findAllStorageKeys' | 'findOrphanBlobs' | 'deleteBlobRows'> = {
-      findAllStorageKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set(['blobs/ab/known'])),
-      findOrphanBlobs: jest.fn<(cutoff: Date) => Promise<OrphanBlobRow[]>>().mockResolvedValue([]),
-      deleteBlobRows: jest.fn<(ids: string[]) => Promise<void>>().mockResolvedValue(undefined),
-    };
+    const blobRepository: Pick<BlobRepository, 'findAllStorageKeys' | 'findOrphanBlobs' | 'deleteBlobRows'> =
+      {
+        findAllStorageKeys: jest
+          .fn<() => Promise<Set<string>>>()
+          .mockResolvedValue(new Set(['blobs/ab/known'])),
+        findOrphanBlobs: jest.fn<(cutoff: Date) => Promise<OrphanBlobRow[]>>().mockResolvedValue([]),
+        deleteBlobRows: jest.fn<(ids: string[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
 
     const job = new GcJob(
       storage as unknown as BlobStorage,

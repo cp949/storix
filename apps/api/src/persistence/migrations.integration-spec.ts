@@ -31,6 +31,23 @@ describe('Migration: InitSchema', () => {
     await container.stop();
   });
 
+  it('creates the fenced VFS receipt table without changing namespace idempotency keys', async () => {
+    const columns: { column_name: string; data_type: string }[] = await dataSource.query(`
+      SELECT column_name, data_type FROM information_schema.columns
+      WHERE table_name = 'vfs_mutation_receipt'
+    `);
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ column_name: 'namespace_id', data_type: 'uuid' }),
+        expect.objectContaining({ column_name: 'idempotency_key', data_type: 'uuid' }),
+        expect.objectContaining({ column_name: 'generation', data_type: 'integer' }),
+        expect.objectContaining({ column_name: 'expires_at', data_type: 'timestamp with time zone' }),
+      ]),
+    );
+    const oldTable = await dataSource.query(`SELECT to_regclass('idempotency_key') AS name`);
+    expect(oldTable[0].name).toBe('idempotency_key');
+  });
+
   it('namespace row를 생성하고 조회할 수 있다', async () => {
     const repo = dataSource.getRepository(NamespaceEntity);
     const saved = await repo.save(repo.create({ name: 'acme' }));
@@ -374,7 +391,9 @@ describe('Migration: InitSchema', () => {
   describe('암호화 정책 및 blob.encryption_iv 컬럼', () => {
     it('encryption_policy에 ENCRYPTED를 허용한다', async () => {
       const repo = dataSource.getRepository(NamespaceEntity);
-      const saved = await repo.save(repo.create({ name: 'encrypted-ns-owner', encryptionPolicy: 'ENCRYPTED' }));
+      const saved = await repo.save(
+        repo.create({ name: 'encrypted-ns-owner', encryptionPolicy: 'ENCRYPTED' }),
+      );
 
       expect(saved.encryptionPolicy).toBe('ENCRYPTED');
     });
@@ -550,15 +569,7 @@ describe('Migration: AddBlobZeroSince backfill', () => {
     await preBackfillDataSource.query(
       `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
-      [
-        blobId,
-        namespace.id,
-        'blobs/ab/backfill-test',
-        '100',
-        'application/octet-stream',
-        'e'.repeat(64),
-        0,
-      ],
+      [blobId, namespace.id, 'blobs/ab/backfill-test', '100', 'application/octet-stream', 'e'.repeat(64), 0],
     );
 
     // AddBlobZeroSince 마이그레이션 실행
@@ -571,10 +582,7 @@ describe('Migration: AddBlobZeroSince backfill', () => {
     }
 
     // zero_since가 백필되었는지 확인
-    const result = await preBackfillDataSource.query(
-      'SELECT zero_since FROM blob WHERE id = $1',
-      [blobId],
-    );
+    const result = await preBackfillDataSource.query('SELECT zero_since FROM blob WHERE id = $1', [blobId]);
 
     expect(result).toHaveLength(1);
     expect(result[0].zero_since).not.toBeNull();

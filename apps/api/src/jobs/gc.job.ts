@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { BlobRepository } from '../persistence/blob.repository.js';
+import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
@@ -10,6 +11,7 @@ const DELETE_CONCURRENCY = 20;
 export interface GcResult {
   readonly deletedOrphanObjects: number;
   readonly deletedOrphanBlobs: number;
+  readonly prunedMutationReceipts: number;
 }
 
 @Injectable()
@@ -21,6 +23,7 @@ export class GcJob {
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     private readonly blobRepository: BlobRepository,
     config: ConfigService,
+    @Optional() private readonly receiptRepository?: VfsMutationReceiptRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
   }
@@ -30,9 +33,12 @@ export class GcJob {
 
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff);
+    const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
 
-    this.logger.log(`GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`);
-    return { deletedOrphanObjects, deletedOrphanBlobs };
+    this.logger.log(
+      `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
+    );
+    return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts };
   }
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을

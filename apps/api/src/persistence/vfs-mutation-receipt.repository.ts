@@ -1,0 +1,177 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import { isSqliteDataSource } from '../common/db-driver.js';
+import type { MutationTx } from './vfs-node.repository.js';
+import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
+
+export interface ReceiptIdentity {
+  readonly namespaceId: string;
+  readonly scope: string;
+  readonly key: string;
+}
+
+export interface ReceiptResponse {
+  readonly status: number;
+  readonly body: unknown;
+  readonly headers: Record<string, string>;
+}
+
+export type ReceiptClaim =
+  | { readonly kind: 'owner'; readonly generation: number }
+  | { readonly kind: 'complete'; readonly receipt: VfsMutationReceiptEntity }
+  | { readonly kind: 'busy'; readonly retryAfterSeconds: number };
+
+const LEASE_MS = 60_000;
+const RECEIPT_DAYS = 30;
+
+function expiresAfter(now: Date, ms: number): Date {
+  return new Date(now.getTime() + ms);
+}
+
+function keyOf(
+  identity: ReceiptIdentity,
+): Pick<VfsMutationReceiptEntity, 'namespaceId' | 'scope' | 'idempotencyKey'> {
+  return { namespaceId: identity.namespaceId, scope: identity.scope, idempotencyKey: identity.key };
+}
+
+@Injectable()
+export class VfsMutationReceiptRepository {
+  constructor(private readonly dataSource: DataSource) {}
+
+  private get repo() {
+    return this.dataSource.getRepository(VfsMutationReceiptEntity);
+  }
+
+  async claim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim> {
+    const sqlite = isSqliteDataSource(this.dataSource.options);
+    const toSqlTime = (date: Date): string =>
+      sqlite ? date.toISOString().replace('T', ' ').replace('Z', '') : date.toISOString();
+    const params = [
+      identity.namespaceId,
+      identity.scope,
+      identity.key,
+      toSqlTime(expiresAfter(now, LEASE_MS)),
+      toSqlTime(expiresAfter(now, RECEIPT_DAYS * 86400_000)),
+    ];
+    const placeholders = params.map((_, index) => (sqlite ? '?' : `$${index + 1}`));
+    const inserted: { generation: number }[] = await this.dataSource.query(
+      `
+      INSERT INTO vfs_mutation_receipt
+        (namespace_id, scope, idempotency_key, state, generation, lease_expires_at, expires_at)
+      VALUES (${placeholders[0]}, ${placeholders[1]}, ${placeholders[2]}, 'RESERVED', 1, ${placeholders[3]}, ${placeholders[4]})
+      ON CONFLICT (namespace_id, scope, idempotency_key) DO NOTHING
+      RETURNING generation
+    `,
+      params,
+    );
+    if (inserted.length > 0) return { kind: 'owner', generation: 1 };
+
+    const expiredClaim = await this.repo
+      .createQueryBuilder()
+      .update(VfsMutationReceiptEntity)
+      .set({
+        generation: () => 'generation + 1',
+        leaseExpiresAt: expiresAfter(now, LEASE_MS),
+        updatedAt: now,
+      })
+      .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
+      .andWhere("state = 'RESERVED' AND lease_expires_at <= :now", { now })
+      .execute();
+    if (expiredClaim.affected === 1) {
+      const row = await this.repo.findOneByOrFail(keyOf(identity));
+      return { kind: 'owner', generation: row.generation };
+    }
+
+    const row = await this.repo.findOneByOrFail(keyOf(identity));
+    if (row.state === 'COMPLETE') {
+      if (row.expiresAt <= now) {
+        await this.repo
+          .createQueryBuilder()
+          .delete()
+          .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
+          .andWhere("state = 'COMPLETE' AND expires_at <= :now", { now })
+          .execute();
+        return this.claim(identity, now);
+      }
+      return { kind: 'complete', receipt: row };
+    }
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil(((row.leaseExpiresAt?.getTime() ?? now.getTime()) - now.getTime()) / 1000),
+    );
+    return { kind: 'busy', retryAfterSeconds };
+  }
+
+  async renew(identity: ReceiptIdentity, generation: number, now: Date): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(VfsMutationReceiptEntity)
+      .set({ leaseExpiresAt: expiresAfter(now, LEASE_MS), updatedAt: now })
+      .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
+      .andWhere("state = 'RESERVED' AND generation = :generation AND lease_expires_at > :now", {
+        generation,
+        now,
+      })
+      .execute();
+    return result.affected === 1;
+  }
+
+  async complete(
+    tx: MutationTx,
+    identity: ReceiptIdentity,
+    generation: number,
+    fingerprint: string,
+    method: string,
+    response: ReceiptResponse,
+  ): Promise<void> {
+    const now = new Date();
+    const result = await tx.manager
+      .getRepository(VfsMutationReceiptEntity)
+      .createQueryBuilder()
+      .update(VfsMutationReceiptEntity)
+      .set({
+        state: 'COMPLETE',
+        leaseExpiresAt: null,
+        expiresAt: expiresAfter(now, RECEIPT_DAYS * 86400_000),
+        method,
+        fingerprint,
+        responseStatus: response.status,
+        responseBody: JSON.stringify(response.body),
+        responseHeaders: JSON.stringify(response.headers),
+        updatedAt: now,
+      })
+      .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
+      .andWhere("state = 'RESERVED' AND generation = :generation AND lease_expires_at > :now", {
+        generation,
+        now,
+      })
+      .execute();
+    if (result.affected !== 1) throw new Error('VFS mutation claim lost');
+  }
+
+  async release(identity: ReceiptIdentity, generation: number): Promise<void> {
+    await this.repo.delete({ ...keyOf(identity), state: 'RESERVED', generation });
+  }
+
+  async pruneExpired(now: Date): Promise<number> {
+    const expired = await this.repo
+      .createQueryBuilder('r')
+      .where("r.state = 'COMPLETE' AND r.expires_at <= :now", { now })
+      .orderBy('r.expires_at', 'ASC')
+      .take(500)
+      .getMany();
+    for (const row of expired) {
+      await this.repo
+        .createQueryBuilder()
+        .delete()
+        .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', {
+          namespaceId: row.namespaceId,
+          scope: row.scope,
+          key: row.idempotencyKey,
+        })
+        .andWhere("state = 'COMPLETE' AND expires_at <= :now", { now })
+        .execute();
+    }
+    return expired.length;
+  }
+}

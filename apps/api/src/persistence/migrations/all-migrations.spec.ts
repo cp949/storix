@@ -10,6 +10,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddBlobZeroSince1788800000000',
       'AddAuditLog1789200000000',
       'AddGcState1789300000000',
+      'AddVfsMutationReceipt1789400000000',
     ]);
   });
 });

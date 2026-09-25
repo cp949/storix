@@ -35,7 +35,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('5개 마이그레이션이 전부 적용된다', async () => {
+  it('6개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -43,11 +43,39 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddBlobZeroSince1788800000000',
       'AddAuditLog1789200000000',
       'AddGcState1789300000000',
+      'AddVfsMutationReceipt1789400000000',
     ]);
   });
 
+  it('VFS mutation receipt에 namespace FK와 expiry index를 생성한다', async () => {
+    const columns = await dataSource.query('PRAGMA table_info(vfs_mutation_receipt)');
+    expect(columns.map((column: { name: string }) => column.name)).toEqual(
+      expect.arrayContaining([
+        'namespace_id',
+        'scope',
+        'idempotency_key',
+        'state',
+        'generation',
+        'lease_expires_at',
+        'expires_at',
+        'fingerprint',
+        'response_status',
+        'response_body',
+        'response_headers',
+      ]),
+    );
+    const indexes = await dataSource.query('PRAGMA index_list(vfs_mutation_receipt)');
+    expect(indexes.map((index: { name: string }) => index.name)).toEqual(
+      expect.arrayContaining(['idx_vfs_mutation_receipt_lease', 'idx_vfs_mutation_receipt_expires']),
+    );
+    const foreignKeys = await dataSource.query('PRAGMA foreign_key_list(vfs_mutation_receipt)');
+    expect(foreignKeys).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'namespace' })]));
+  });
+
   it('gc_state 테이블은 생성되지 않는다(AddGcState가 SQLite에서 no-op)', async () => {
-    const tables = await dataSource.query(`SELECT name FROM sqlite_master WHERE type='table' AND name='gc_state'`);
+    const tables = await dataSource.query(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='gc_state'`,
+    );
     expect(tables).toHaveLength(0);
   });
 
@@ -130,7 +158,9 @@ describe('마이그레이션 체인 (SQLite)', () => {
 
   it('audit_log를 생성하고 조회한다', async () => {
     const repo = dataSource.getRepository(AuditLogEntity);
-    const saved = await repo.save(repo.create({ requestId: 'req-1', operation: 'FsController.ls', status: 200 }));
+    const saved = await repo.save(
+      repo.create({ requestId: 'req-1', operation: 'FsController.ls', status: 200 }),
+    );
 
     const found = await repo.findOneByOrFail({ id: saved.id });
     expect(found.createdAt).toBeInstanceOf(Date);

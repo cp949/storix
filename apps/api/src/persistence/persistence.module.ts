@@ -8,13 +8,22 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 import { AuditLogRepository } from './audit-log.repository.js';
 import { BlobRepository } from './blob.repository.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { BackupRepository } from './backup.repository.js';
+import { VfsMutationReceiptRepository } from './vfs-mutation-receipt.repository.js';
 
-const ENTITIES = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity];
+const ENTITIES = [
+  NamespaceEntity,
+  VfsNodeEntity,
+  BlobEntity,
+  IdempotencyKeyEntity,
+  AuditLogEntity,
+  VfsMutationReceiptEntity,
+];
 
 // SQLite는 기본적으로 ASCII 대소문자 무시로 LIKE를 평가한다(Postgres는 대소문자
 // 구분) — findRecursive의 name 필터(contains/prefix/suffix)가 두 드라이버에서
@@ -68,8 +77,17 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     BlobRepository,
     AuditLogRepository,
     BackupRepository,
+    VfsMutationReceiptRepository,
     SqliteCaseSensitiveLikeInitializer,
   ],
-  exports: [TypeOrmModule, NamespaceProvisioningRepository, VfsNodeRepository, BlobRepository, AuditLogRepository, BackupRepository],
+  exports: [
+    TypeOrmModule,
+    NamespaceProvisioningRepository,
+    VfsNodeRepository,
+    BlobRepository,
+    AuditLogRepository,
+    BackupRepository,
+    VfsMutationReceiptRepository,
+  ],
 })
 export class PersistenceModule {}

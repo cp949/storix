@@ -6,9 +6,17 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
-const entities = [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity];
+const entities = [
+  NamespaceEntity,
+  VfsNodeEntity,
+  BlobEntity,
+  IdempotencyKeyEntity,
+  AuditLogEntity,
+  VfsMutationReceiptEntity,
+];
 const migrations = ALL_MIGRATIONS;
 
 function buildOptions(): DataSourceOptions {
