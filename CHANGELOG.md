@@ -23,10 +23,11 @@
   평가했고, 파싱 단계 오류 중 `VFS_INVALID_PATH`는 mutation·content에서만 저장하지 않았다(snapshot은 저장).
 - 404·412·413 뒤 상태를 고쳐 같은 key로 재시도하면 최초 오류가 재생된다. 새 key를 사용해야 한다.
   `VFS_INVALID_PATH`도 저장되므로 경로를 고친 요청은 같은 key에서 `MUTATION_KEY_REUSED`를 받는다.
+- snapshot restore/delete에서 UUID 형식이 아닌 `snapshotId`의 404도 유효한 identity와 namespace가 있으면 receipt로 저장한다.
+  같은 key에서 다른 body를 보내면 409 `MUTATION_KEY_REUSED`를 받는다.
 - 재생할 수 없는 오류(receipt가 만들어지기 전에 끝나는 경우)는 이전과 같이 재시도해도 최초 응답 bytes의
   동일성을 보장하지 않는다: JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/`X-Mutation-Scope` 400,
-  namespace 부재 404, snapshot 복원·삭제의 UUID 형식이 아닌 `snapshotId` 404, content의 `Content-Length`
-  형식 오류 400·파일 크기 상한 413.
+  namespace 부재 404, content의 `Content-Length` 형식 오류 400·파일 크기 상한 413.
 - `POST /fs/content/conditional`의 fingerprint가 유효하지 않은 조건 헤더의 원본 값을 포함하도록 바뀌었다.
   이전 빌드는 파싱 단계 오류 전부(428, 잘못된 조건 헤더 400, `VFS_INVALID_REVISION` 400, 유효한 헤더로 보낸
   루트 경로 `/` 400)를 조건 자리에 고정 문자열 `invalid`를 넣은 fingerprint로 저장했다. 그 receipt와 같은

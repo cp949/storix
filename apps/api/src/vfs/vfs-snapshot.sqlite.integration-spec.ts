@@ -96,6 +96,33 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
 
   treeSnapshotContract(() => app);
 
+  it('snapshot ID 형식 오류 receipt를 앱 재시작 뒤 재생하고 다른 body의 같은 key를 거절한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const ns = await http()
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'invalid-snapshot-id-receipt' })
+      .expect(201);
+    const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+    const key = randomUUID();
+    const suffix = '/not-a-uuid/delete';
+    const first = await snapshotPost(app, base, suffix, {}, key).expect(404);
+    expect(first.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND' });
+    expect(first.headers['x-request-id']).toEqual(first.body.requestId);
+
+    const oldDataSource = app.get(DataSource);
+    await app.close();
+    expect(oldDataSource.isInitialized).toBe(false);
+    app = await bootstrap();
+
+    const replay = await snapshotPost(app, base, suffix, {}, key).expect(404);
+    expect(replay.body).toEqual(first.body);
+    expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+
+    const reused = await snapshotPost(app, base, suffix, { different: true }, key).expect(409);
+    expect(reused.body).toMatchObject({ code: 'MUTATION_KEY_REUSED' });
+  });
+
   it('앱과 DB 연결을 재생성해도 metadata/pages/bytes/restore 및 세 mutation receipt가 보존된다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()

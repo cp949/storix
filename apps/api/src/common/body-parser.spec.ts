@@ -52,10 +52,13 @@ describe('snapshot JSON mutation routes', () => {
       true,
     );
   });
+  it.each(['/invalid-id/restore', '/invalid-id/delete'])('%s도 raw JSON으로 읽는다', (suffix) => {
+    expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(true);
+  });
   it.each(['GET', 'PUT', 'DELETE'])('다른 method는 매칭하지 않는다: %s', (method) => {
     expect(isSnapshotJsonMutationRoute({ method, path: base })).toBe(false);
   });
-  it.each(['/content', '/entries', `/${id}`, '/invalid/delete', `/${id}/delete/extra`, 'extra'])(
+  it.each(['/content', '/entries', `/${id}`, `/${id}/delete/extra`, 'extra'])(
     '다른 경로는 매칭하지 않는다: %s',
     (suffix) => {
       expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(false);

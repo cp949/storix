@@ -1,5 +1,6 @@
-import { Body, Controller, INestApplication, Module, Post } from '@nestjs/common';
+import { Body, Controller, INestApplication, Module, Post, Req } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { Request } from 'express';
 import request from 'supertest';
 import { configureBodyParsers } from './body-parser.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
@@ -12,7 +13,18 @@ class ProbeController {
   }
 }
 
-@Module({ controllers: [ProbeController] })
+@Controller('api/v1/namespaces/:namespaceId/fs/snapshots')
+class SnapshotMutationProbeController {
+  @Post(':snapshotId/delete')
+  echoRaw(@Req() req: Request) {
+    return {
+      isBuffer: Buffer.isBuffer(req.body),
+      body: Buffer.isBuffer(req.body) ? req.body.toString('utf8') : null,
+    };
+  }
+}
+
+@Module({ controllers: [ProbeController, SnapshotMutationProbeController] })
 class ProbeModule {}
 
 describe('configureBodyParsers의 요청 바디 크기 상한', () => {
@@ -46,5 +58,15 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
       code: 'BAD_REQUEST',
       requestId: expect.any(String),
     });
+  });
+
+  it('UUID 형식이 아닌 snapshot mutation 경로도 JSON 원본 bytes를 raw Buffer로 전달한다', async () => {
+    const body = '{"different":true}';
+
+    await request(app.getHttpServer())
+      .post('/api/v1/namespaces/abc/fs/snapshots/not-a-uuid/delete')
+      .set('Content-Type', 'application/json')
+      .send(body)
+      .expect(201, { isBuffer: true, body });
   });
 });

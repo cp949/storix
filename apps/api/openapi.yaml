@@ -1320,8 +1320,13 @@ paths:
         재생한다. 따라서 404·412 뒤 상태를 고치고 같은 key로 재시도하면 최초 오류가 재생되므로
         새 key를 사용해야 한다. 재생하지 않는 응답: 5xx, DB/storage 일시 오류, 진행 중 key
         (409 MUTATION_IN_PROGRESS), 409 MUTATION_KEY_REUSED, 401. `Retry-After`는 저장하지 않는다.
+        UUID 형식이 아닌 `snapshotId`는 raw route와 raw JSON body를 fingerprint해 404 `VFS_NODE_NOT_FOUND` receipt로 저장한다.
+        이 경로 오류는 identity가 유효하지 않거나 namespace가 없으면 기존처럼 반환하되 저장하지 않는다. receipt가 namespace
+        foreign key를 참조하기 때문이다. 이 404도 완료 receipt 재생, 409 MUTATION_KEY_REUSED, 409 MUTATION_IN_PROGRESS보다
+        먼저 판정하지 않는다.
         재생 불가 오류(receipt 없음): JSON 본문 16 KiB 초과 413, 잘못된 `Idempotency-Key`/
-        `X-Mutation-Scope` 400, UUID 형식이 아닌 `snapshotId` 404, namespace 부재 404.
+        `X-Mutation-Scope` 400, namespace 부재 404. 본문 상한 초과는 서비스 전에 거절되며, identity 검증 오류는 receipt key를
+        만들 수 없으므로 재생하지 않는다.
         같은 상한과 상태에서는 같은 결과가 나오지만 최초 응답 bytes와 X-Request-Id의 동일성은
         보장하지 않는다.
         412 body의 `current`는 충돌 시점의 target metadata이며 재생 시에도 최초 값이다.
@@ -1365,7 +1370,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: FILE snapshot/namespace/target parent가 없거나 ifRevision target이 없음
+          description: FILE snapshot/namespace/target parent가 없거나 ifRevision target이 없음. UUID 형식 오류 snapshotId는 유효 identity·namespace에서 receipt로 재생된다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1407,9 +1412,10 @@ paths:
         생성과 같은 receipt 계약을 적용한다. 동일 key 재시도는 snapshot이 삭제된 뒤에도
         완료 시점부터 30일 동안 최초 200/body/X-Request-Id를 재생한다. 다른 bytes/route는
         409 MUTATION_KEY_REUSED다. receipt 보존 기간 이후 또는 새 key로 삭제된 snapshot에
-        요청하면 404다. UUID 형식이지만 없는 snapshot의 404는 결정적 4xx라 receipt로 저장되어,
-        같은 key로 재시도하면 최초 404를 재생한다. 재생하지 않는 응답과 재생 불가 오류는
-        snapshot restore와 같다(UUID 형식이 아닌 `snapshotId` 404 포함).
+        요청하면 404다. UUID 형식이지만 없는 snapshot의 404와 UUID 형식이 아닌 `snapshotId` 404는 결정적 4xx라
+        receipt로 저장되어, 같은 identity와 body 재시도에서 최초 status/body/`X-Request-Id`를 재생한다. 잘못된 UUID 형식은
+        raw route 및 raw JSON body를 fingerprint한다. 유효한 identity와 namespace root가 필요하며, identity 검증 실패 또는
+        namespace 부재 응답은 저장하지 않는다. 재생하지 않는 응답과 재생 불가 오류는 snapshot restore와 같다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - $ref: '#/components/parameters/SnapshotId'

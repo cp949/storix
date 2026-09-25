@@ -19,14 +19,18 @@
 
 요청 처리 순서와 receipt 저장 위치는 다음과 같다.
 
-1. snapshot restore·delete는 먼저 `canonicalSnapshotId`로 `snapshotId`를 검사한다(UUID 형식이 아니면 404, 3.3).
+1. snapshot restore·delete는 유효한 UUID `snapshotId`를 소문자 canonical form으로 만든다. UUID 형식이 아니면 404
+   `VFS_NODE_NOT_FOUND`를 보류하고 원래 route 값을 fingerprint에 사용한다. 유효한 identity와 namespace root가 있을 때
+   claim까지 진행해 이 오류도 receipt로 저장한다. identity 검증이나 namespace root 확인이 실패하면 경로 404를 그대로
+   반환하고 receipt는 남기지 않아 기존 오류 우선순위를 유지한다.
 2. 헤더 검증(`identityOf`), namespace root 확인, 요청 파싱. 파싱 오류는 던지지 않고 보류한다. mutation·snapshot은 이어서
    fingerprint를 계산한다.
 3. `receipts.claim`: `owner` / `complete`(재생 또는 `MUTATION_KEY_REUSED`) / `busy`(409 `MUTATION_IN_PROGRESS` +
-   `Retry-After`) 중 하나. 보류한 파싱 오류는 `owner`일 때만 저장하므로 `complete`·`busy`의 응답이 파싱 오류보다 우선한다.
+   `Retry-After`) 중 하나. 보류한 snapshot ID 오류와 파싱 오류는 `owner`일 때만 저장하므로 `complete`·`busy`의 응답이
+   요청 오류보다 우선한다.
 4. content는 claim 뒤 `Content-Length`를 검사하고 본문을 해시한 다음 fingerprint를 계산한다. `complete`이거나 파싱 오류가
    있으면 업로드 없이 해시만 하고, 그 외에는 업로드하면서 해시한다.
-5. `owner`이고 파싱 오류가 있으면 작업 트랜잭션 없이 바로 `storeErrorReceipt`로 저장한다.
+5. `owner`이고 snapshot ID 오류 또는 파싱 오류가 있으면 작업 트랜잭션 없이 바로 `storeErrorReceipt`로 저장한다.
 6. `owner`이고 파싱에 성공했으면 `withMutation` 트랜잭션에서 변경을 수행한다. 성공하면 같은 트랜잭션에서
    `receipts.complete`를 호출한다.
 7. 6단계에서 `DomainError`가 던져지면 트랜잭션이 롤백된다. 롤백 뒤 `storeErrorReceipt`가 저장 대상인지 판정하고,
@@ -54,18 +58,18 @@
 
 ### 3.1 저장하고 재생한다
 
-claim이 `owner`인 요청의 파싱 오류(claim 전에 보류한 것)와 작업 중 던져진 `DomainError` 중 status 400–499이며 아래 제외
-항목에 없는 것이다. 같은 key에 완료 receipt가 있으면 재생 또는 `MUTATION_KEY_REUSED`, 진행 중이면 `MUTATION_IN_PROGRESS`가
-파싱 오류보다 우선한다.
+claim이 `owner`인 요청의 보류된 입력 오류(restore/delete의 snapshot ID 형식), 파싱 오류(claim 전에 보류한 것), 작업 중 던져진
+`DomainError` 중 status 400–499이며 아래 제외 항목에 없는 것이다. 같은 key에 완료 receipt가 있으면 재생 또는
+`MUTATION_KEY_REUSED`, 진행 중이면 `MUTATION_IN_PROGRESS`가 보류한 요청 오류보다 우선한다.
 
-| 종류 | 예 |
-| --- | --- |
-| 요청 형식·경로 오류 400 | `VFS_INVALID_PATH`(NFC 아닌 경로 포함), `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION` |
-| 대상 부재 404 | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 부재) |
-| 상태 충돌 409 | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등 |
-| 조건 불일치 412 | `VFS_PRECONDITION_FAILED`(`current` 포함) |
-| 결정적 상한 413 | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED` |
-| 조건 누락 428 | `VFS_PRECONDITION_REQUIRED` |
+| 종류                    | 예                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 요청 형식·경로 오류 400 | `VFS_INVALID_PATH`(NFC 아닌 경로 포함), `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`                             |
+| 대상 부재 404           | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 부재, 유효한 identity·namespace가 있는 restore/delete의 잘못된 snapshot UUID 형식) |
+| 상태 충돌 409           | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등   |
+| 조건 불일치 412         | `VFS_PRECONDITION_FAILED`(`current` 포함)                                                                                  |
+| 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                                      |
+| 조건 누락 428           | `VFS_PRECONDITION_REQUIRED`                                                                                                |
 
 - 같은 key와 같은 fingerprint의 재시도는 그 사이 VFS 상태가 바뀌었어도 최초 status·body·`X-Request-Id`를 재생한다.
   완료 시점부터 30일이 지나 만료된 receipt는 claim 시 삭제되고 새로 평가한다.
@@ -74,39 +78,44 @@ claim이 `owner`인 요청의 파싱 오류(claim 전에 보류한 것)와 작�
 
 ### 3.2 저장하지 않는다(재시도가 다시 평가한다)
 
-| 종류 | 처리 |
-| --- | --- |
+| 종류                                                                   | 처리                                                                                                                                             |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 5xx `DomainError`, `DomainError`가 아닌 예외(DB·Blob 장애, claim lost) | claim `release`. 오류 receipt 확정 중 claim lost가 나고 namespace가 삭제된 경우에만 404 `NAMESPACE_NOT_FOUND`; 그 외에는 500. 재시도는 새로 평가 |
-| 409 `MUTATION_IN_PROGRESS` | 다른 요청이 claim을 소유 중. receipt를 건드리지 않음 |
-| 409 `MUTATION_KEY_REUSED` | 기존 receipt의 상태를 알리는 응답 |
-| 404 `NAMESPACE_NOT_FOUND` | receipt가 namespace FK를 가져 저장 불가 |
-| 401 | 자격 증명 결과이며 서비스에 도달하지 않음 |
+| 409 `MUTATION_IN_PROGRESS`                                             | 다른 요청이 claim을 소유 중. receipt를 건드리지 않음                                                                                             |
+| 409 `MUTATION_KEY_REUSED`                                              | 기존 receipt의 상태를 알리는 응답                                                                                                                |
+| 404 `NAMESPACE_NOT_FOUND`                                              | receipt가 namespace FK를 가져 저장 불가                                                                                                          |
+| 401                                                                    | 자격 증명 결과이며 서비스에 도달하지 않음                                                                                                        |
 
 ### 3.3 재생 불가(receipt를 만들기 전에 끝남)
 
 fingerprint 또는 claim 이전에 끝나는 오류라 receipt가 없다. 같은 요청을 재시도하면 같은 상한·같은 상태에서 같은
 status와 오류 코드가 나오지만, 응답 bytes(`requestId` 포함)의 동일성은 보장하지 않는다.
 
-| 오류 | 발생 위치 |
-| --- | --- |
-| 413 JSON 본문 16 KiB 초과 | body parser(`configureBodyParsers`), 컨트롤러 도달 전 |
-| 400 잘못된 `Idempotency-Key` 또는 `X-Mutation-Scope` | `identityOf`, claim 전 |
-| 404 namespace 부재 | root 확인, claim 전. FK 때문에 저장도 불가 |
-| 404 UUID 형식이 아닌 `snapshotId`(restore·delete) | 서비스 진입 직후, claim 전 |
-| 400 `Content-Length` 형식 오류 | content: fingerprint(raw body SHA-256) 계산 전 |
-| 413 선언한 `Content-Length`가 파일 크기 상한 초과 | content: 같은 위치 |
-| 413 업로드·해시 스트리밍 중 파일 크기 상한 초과 | content: fingerprint 확정 전 |
+| 오류                                                 | 발생 위치                                             |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| 413 JSON 본문 16 KiB 초과                            | body parser(`configureBodyParsers`), 컨트롤러 도달 전 |
+| 400 잘못된 `Idempotency-Key` 또는 `X-Mutation-Scope` | `identityOf`, claim 전                                |
+| 404 namespace 부재                                   | root 확인, claim 전. FK 때문에 저장도 불가            |
+| 400 `Content-Length` 형식 오류                       | content: fingerprint(raw body SHA-256) 계산 전        |
+| 413 선언한 `Content-Length`가 파일 크기 상한 초과    | content: 같은 위치                                    |
+| 413 업로드·해시 스트리밍 중 파일 크기 상한 초과      | content: fingerprint 확정 전                          |
 
-content 업로드의 파일 크기 상한 413은 request body를 끝까지 해시하지 못하므로 어떤 경로에서도 재생 대상이 아니다.
+UUID 형식이 아닌 snapshot ID는 유효한 identity와 namespace root가 있으면 raw route·raw JSON body를 fingerprint해 404 receipt를
+저장한다. 잘못된 identity 또는 namespace 부재와 함께 발생하면 기존 404 우선순위를 보존하며 저장하지 않는다. snapshot JSON
+본문의 16 KiB 상한 초과는 body parser가 서비스 앞에서 거절하므로 재생되지 않는다.
+
+content 업로드의 파일 크기 상한 413은 request body를 끝까지 해시하지 못하므로 어떤 경로에서도 재생 대상이 아니다. 본문을
+끝까지 소비하지 않고 fingerprint를 추정하면 같은 key의 서로 다른 body를 구분할 수 없고, 상한 초과 본문을 계속 읽으면
+요청 크기 상한의 자원 보호를 무력화하므로 receipt를 만들지 않는다.
 
 ### 3.4 호출자 규칙
 
-| 응답 | 같은 key 재시도 |
-| --- | --- |
-| 5xx, 연결 끊김, 응답 미수신 | 가능. receipt가 있으면 재생, 없으면 새로 평가 |
-| 409 `MUTATION_IN_PROGRESS` | `Retry-After` 뒤 가능 |
+| 응답                                                               | 같은 key 재시도                                           |
+| ------------------------------------------------------------------ | --------------------------------------------------------- |
+| 5xx, 연결 끊김, 응답 미수신                                        | 가능. receipt가 있으면 재생, 없으면 새로 평가             |
+| 409 `MUTATION_IN_PROGRESS`                                         | `Retry-After` 뒤 가능                                     |
 | 404·412·413(상한)·400·409·428을 받은 뒤 상태 또는 입력을 고친 경우 | 최초 오류가 재생되거나 `MUTATION_KEY_REUSED`. 새 key 사용 |
-| 3.3의 오류 | 입력을 고쳐 재시도. 재생 보장 없음 |
+| 3.3의 오류                                                         | 입력을 고쳐 재시도. 재생 보장 없음                        |
 
 ## 4. 412 `current`
 
@@ -146,11 +155,11 @@ FILE snapshot 생성 요청의 선택 필드다. `kind: 'file'`에서만 허용�
 
 ## 6. 드라이버별 직렬화와 보장 범위
 
-| 항목 | PostgreSQL | SQLite |
-| --- | --- | --- |
-| namespace root 행 잠금 | `withMutation`이 `pessimistic_write`(`FOR UPDATE`)로 잠근다. 같은 namespace의 writer와 snapshot 캡처가 root 잠금에서 선형화된다 | 잠금 호출을 생략한다(`applyRowLockIfSupported`가 쿼리를 그대로 반환) |
-| `sourceRevision` 비교와 캡처의 원자성 | root 잠금 아래에서 비교와 캡처가 이어져 그 사이에 다른 writer가 끼어들지 않는다 | 쿼리 게이트가 트랜잭션을 직렬화해 보장한다(아래) |
-| 오류 receipt 저장 | 작업 트랜잭션 롤백 뒤 별도 트랜잭션 | 같은 방식 |
+| 항목                                  | PostgreSQL                                                                                                                      | SQLite                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| namespace root 행 잠금                | `withMutation`이 `pessimistic_write`(`FOR UPDATE`)로 잠근다. 같은 namespace의 writer와 snapshot 캡처가 root 잠금에서 선형화된다 | 잠금 호출을 생략한다(`applyRowLockIfSupported`가 쿼리를 그대로 반환) |
+| `sourceRevision` 비교와 캡처의 원자성 | root 잠금 아래에서 비교와 캡처가 이어져 그 사이에 다른 writer가 끼어들지 않는다                                                 | 쿼리 게이트가 트랜잭션을 직렬화해 보장한다(아래)                     |
+| 오류 receipt 저장                     | 작업 트랜잭션 롤백 뒤 별도 트랜잭션                                                                                             | 같은 방식                                                            |
 
 - SQLite 드라이버(TypeORM better-sqlite3)는 연결 하나를 모든 요청이 공유하므로, 앱이 모든 쿼리를 FIFO 게이트로 직렬화한다
   ([01](./01-db-driver-portability.md)의 SQLite 쿼리 게이트). 트랜잭션 하나가 게이트를 끝까지 쥐고, 다른 트랜잭션과

@@ -89,6 +89,81 @@ describe('VfsSnapshotService receipts', () => {
     expect(completeAfterRollback.mock.calls[0][4]).toEqual(result);
   });
 
+  it.each(['restore', 'delete'] as const)(
+    '%s의 snapshot ID 형식 오류 404를 receipt로 저장하고 같은 요청에서 재생한다',
+    async (operation) => {
+      const key = randomUUID();
+      const snapshotId = 'not-a-snapshot-uuid';
+      const raw = Buffer.from(operation === 'restore' ? '{"path":"/target","ifAbsent":true}' : '{}');
+      const run = (requestId: string, body = raw) =>
+        operation === 'restore'
+          ? service.restore(namespaceId, snapshotId, 'scope', key, body, requestId)
+          : service.delete(namespaceId, snapshotId, 'scope', key, body, requestId);
+
+      const first = await run('req-first');
+      expect(first.status).toBe(404);
+      expect(first.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', requestId: 'req-first' });
+      expect(completeAfterRollback).toHaveBeenCalledWith(
+        expect.objectContaining({ namespaceId }),
+        1,
+        expect.any(String),
+        'POST',
+        first,
+        raw.length,
+      );
+
+      const receipt = new VfsMutationReceiptEntity();
+      receipt.method = 'POST';
+      receipt.fingerprint = completeAfterRollback.mock.calls[0][2] as string;
+      receipt.responseStatus = first.status;
+      receipt.responseBody = JSON.stringify(first.body);
+      receipt.responseHeaders = JSON.stringify(first.headers);
+      claim.mockResolvedValueOnce({ kind: 'complete', receipt });
+
+      expect(await run('req-retry')).toEqual(first);
+      expect(withMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it('잘못된 snapshot ID에서 다른 body를 같은 key로 보내면 409로 거절한다', async () => {
+    const key = randomUUID();
+    const first = await service.delete(namespaceId, 'bad-id', 'scope', key, Buffer.from('{}'), 'req');
+    const receipt = new VfsMutationReceiptEntity();
+    receipt.method = 'POST';
+    receipt.fingerprint = completeAfterRollback.mock.calls[0][2] as string;
+    receipt.responseStatus = first.status;
+    receipt.responseBody = JSON.stringify(first.body);
+    receipt.responseHeaders = JSON.stringify(first.headers);
+    claim.mockResolvedValueOnce({ kind: 'complete', receipt });
+
+    const reused = await service.delete(
+      namespaceId,
+      'bad-id',
+      'scope',
+      key,
+      Buffer.from('{"different":true}'),
+      'req-reused',
+    );
+    expect(reused.status).toBe(409);
+    expect(reused.body).toMatchObject({ code: 'MUTATION_KEY_REUSED', requestId: 'req-reused' });
+  });
+
+  it('잘못된 snapshot ID는 유효한 receipt identity가 없으면 기존 404로 거절한다', async () => {
+    const result = await service.delete(
+      namespaceId,
+      'bad-id',
+      undefined,
+      undefined,
+      Buffer.from('{}'),
+      'req',
+    );
+
+    expect(result.status).toBe(404);
+    expect(result.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', requestId: 'req' });
+    expect(claim).not.toHaveBeenCalled();
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+  });
+
   it.each(['create', 'delete'] as const)('%s JSON 오류 receipt는 같은 응답을 재생한다', async (operation) => {
     const key = randomUUID();
     const snapshotId = randomUUID();

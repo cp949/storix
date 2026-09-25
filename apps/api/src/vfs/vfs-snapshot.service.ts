@@ -26,6 +26,7 @@ import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { parseSnapshotCreateRequest, parseSnapshotRestoreRequest } from './dto/snapshot-request.dto.js';
 import {
   busyResponse,
+  errorResponse,
   replayReceipt,
   storeErrorReceipt,
   type ErrorReceiptOwner,
@@ -75,6 +76,15 @@ export interface SnapshotEntryPage {
   readonly nextCursor: string | null;
 }
 
+interface JsonMutationOptions {
+  readonly finalize?: (
+    tx: MutationTx,
+    result: MutationHttpResult,
+    revisions: AffectedRevision[],
+  ) => Promise<MutationHttpResult>;
+  readonly inputError?: DomainError;
+}
+
 function toMetadata(snapshot: StoredSnapshot): SnapshotMetadata {
   return {
     snapshotId: snapshot.id,
@@ -92,6 +102,11 @@ function toMetadata(snapshot: StoredSnapshot): SnapshotMetadata {
 function canonicalSnapshotId(id: string): string {
   if (!isUuid(id)) throw new VfsNodeNotFoundError(id);
   return id.toLowerCase();
+}
+
+function mutationSnapshotId(id: string): { id: string; error: DomainError | undefined } {
+  if (!isUuid(id)) return { id, error: new VfsNodeNotFoundError(id) };
+  return { id: id.toLowerCase(), error: undefined };
 }
 
 @Injectable()
@@ -272,7 +287,8 @@ export class VfsSnapshotService {
     rawBody: Buffer | undefined,
     requestId: string,
   ): Promise<MutationHttpResult> {
-    const id = canonicalSnapshotId(snapshotId);
+    const input = mutationSnapshotId(snapshotId);
+    const id = input.id;
     let restoredNodeId: string | undefined;
     let restoredPath: string | undefined;
     return this.executeJson(
@@ -308,13 +324,16 @@ export class VfsSnapshotService {
           headers: { 'x-request-id': requestId },
         };
       },
-      async (tx, result, affectedRevisions) => {
-        if (!restoredNodeId || !restoredPath) return result;
-        const node = await tx.manager.findOneByOrFail(VfsNodeEntity, { id: restoredNodeId, namespaceId });
-        return {
-          ...result,
-          body: { snapshotId: id, resource: toNodeResponse(node, restoredPath), affectedRevisions },
-        };
+      {
+        finalize: async (tx, result, affectedRevisions) => {
+          if (!restoredNodeId || !restoredPath) return result;
+          const node = await tx.manager.findOneByOrFail(VfsNodeEntity, { id: restoredNodeId, namespaceId });
+          return {
+            ...result,
+            body: { snapshotId: id, resource: toNodeResponse(node, restoredPath), affectedRevisions },
+          };
+        },
+        inputError: input.error,
       },
     );
   }
@@ -327,7 +346,8 @@ export class VfsSnapshotService {
     rawBody: Buffer | undefined,
     requestId: string,
   ): Promise<MutationHttpResult> {
-    const id = canonicalSnapshotId(snapshotId);
+    const input = mutationSnapshotId(snapshotId);
+    const id = input.id;
     return this.executeJson(
       namespaceId,
       scope,
@@ -355,6 +375,7 @@ export class VfsSnapshotService {
           headers: { 'x-request-id': requestId },
         };
       },
+      { inputError: input.error },
     );
   }
 
@@ -368,14 +389,25 @@ export class VfsSnapshotService {
     requestId: string,
     parse: (body: unknown) => T,
     work: (tx: MutationTx, command: T) => Promise<MutationHttpResult>,
-    finalize?: (
-      tx: MutationTx,
-      result: MutationHttpResult,
-      revisions: AffectedRevision[],
-    ) => Promise<MutationHttpResult>,
+    options?: JsonMutationOptions,
   ): Promise<MutationHttpResult> {
-    const identity = identityOf(namespaceId, scope, key);
-    const root = await requireRoot(this.nodes, namespaceId);
+    const { finalize, inputError } = options ?? {};
+    let identity: ReturnType<typeof identityOf>;
+    try {
+      identity = identityOf(namespaceId, scope, key);
+    } catch (error) {
+      if (inputError && error instanceof VfsInvalidMutationRequestError)
+        return errorResponse(inputError, requestId);
+      throw error;
+    }
+    let root: Awaited<ReturnType<typeof requireRoot>>;
+    try {
+      root = await requireRoot(this.nodes, namespaceId);
+    } catch (error) {
+      if (inputError && error instanceof VfsNamespaceNotFoundError)
+        return errorResponse(inputError, requestId);
+      throw error;
+    }
     const bytes = Buffer.isBuffer(rawBody) ? rawBody : Buffer.alloc(0);
     let command: T | null = null;
     let parseError: DomainError | null = null;
@@ -401,6 +433,7 @@ export class VfsSnapshotService {
       requestBodyBytes: bytes.length,
     };
     try {
+      if (inputError) return await storeErrorReceipt(this.receipts, owner, inputError, requestId);
       if (parseError) return await storeErrorReceipt(this.receipts, owner, parseError, requestId);
       let response: MutationHttpResult | undefined;
       try {
