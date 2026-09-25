@@ -10,6 +10,8 @@
 
 ### Changed
 
+- 조건부 오류 receipt를 확정하는 중 claim을 잃었고 namespace가 이미 삭제됐다면 500 대신 404 `NAMESPACE_NOT_FOUND`를 반환한다. receipt는 저장되지 않는다.
+
 - 조건부 mutation(`POST /fs/mutations`, `POST /fs/content/conditional`)과 snapshot 생성·복원·삭제는
   결정적 4xx 응답도 receipt로 저장해 완료 시점부터 30일 재생한다. 대상은 요청 파싱·작업 단계의
   400(`VFS_INVALID_PATH` 포함)·404·409·412·428과 결정적 413(삭제·복사·snapshot 상한)이며, 같은 key와

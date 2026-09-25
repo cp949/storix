@@ -11,6 +11,7 @@ import type {
   ReceiptResponse,
   VfsMutationReceiptRepository,
 } from '../persistence/vfs-mutation-receipt.repository.js';
+import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 // 조건부 mutation(JSON mutation, conditional content, snapshot)의 receipt 저장·재생 규칙.
 // 세 서비스가 같은 분류기와 같은 재생 응답을 쓰도록 이 모듈 하나에 모은다.
@@ -77,7 +78,8 @@ export function errorResponse(error: DomainError, requestId: string): ReceiptRes
  *
  * 저장 대상이 아니면 오류를 그대로 다시 던진다(호출부가 claim을 해제한다).
  * 저장은 작업 트랜잭션이 롤백된 뒤 별도 트랜잭션에서 generation·lease로 fencing하며,
- * 응답은 저장이 끝난 뒤에만 반환한다. fencing 실패(claim lost)는 그 오류를 전파한다.
+ * 응답은 저장이 끝난 뒤에만 반환한다. fencing 실패가 claim lost이고 namespace 삭제가
+ * 확인되면 저장 불가한 404를 반환하며, 그 외에는 원래 완료 오류를 전파한다.
  */
 export async function storeErrorReceipt(
   receipts: VfsMutationReceiptRepository,
@@ -87,14 +89,30 @@ export async function storeErrorReceipt(
 ): Promise<ReceiptResponse> {
   if (!isReplayableMutationError(error)) throw error;
   const response = errorResponse(error, requestId);
-  await receipts.completeAfterRollback(
-    owner.identity,
-    owner.generation,
-    owner.fingerprint,
-    owner.method,
-    response,
-    owner.requestBodyBytes,
-  );
+  try {
+    await receipts.completeAfterRollback(
+      owner.identity,
+      owner.generation,
+      owner.fingerprint,
+      owner.method,
+      response,
+      owner.requestBodyBytes,
+    );
+  } catch (completionError) {
+    if (
+      completionError instanceof Error &&
+      completionError.message === 'VFS mutation claim lost'
+    ) {
+      try {
+        if (!(await receipts.namespaceExists(owner.identity.namespaceId))) {
+          throw new VfsNamespaceNotFoundError(owner.identity.namespaceId);
+        }
+      } catch (namespaceError) {
+        if (namespaceError instanceof VfsNamespaceNotFoundError) throw namespaceError;
+      }
+    }
+    throw completionError;
+  }
   return response;
 }
 

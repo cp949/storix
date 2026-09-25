@@ -19,6 +19,8 @@
   receipt가 없다. 재시도해도 최초 응답 bytes의 동일성을 보장하지 않는다.
 - **저장 경계**: 작업 트랜잭션이 롤백된 뒤 별도의 짧은 트랜잭션에서 `generation`·lease fencing으로 저장하고, 저장이 끝난
   뒤에만 응답한다. 롤백과 저장 사이에 프로세스가 종료되면 claim이 lease 만료까지 남았다가 재평가된다.
+- 오류 receipt 확정이 claim lost로 실패했을 때 namespace가 이미 삭제된 경우에는 저장 불가한 404
+  `NAMESPACE_NOT_FOUND`를 반환한다. namespace가 남아 있거나 조회가 실패하면 원래 claim-lost 오류를 유지한다.
 - **412 `current`**: 412 body에 충돌 시점의 노드 metadata(`stat` 응답 필드)와 그 노드의 `revision`(`r1.`)을 싣는다. 노드가
   없으면 `null`이다. 소비자가 충돌 시점 ETag를 만들 수 있게 `revision`을 포함한다. `revision`은 412 `current` 전용
   shape에만 있고 `stat` 응답의 `VfsNode`는 바뀌지 않는다. receipt에 고정되므로 재생 시 `revision`을 포함해 최초 값이다.

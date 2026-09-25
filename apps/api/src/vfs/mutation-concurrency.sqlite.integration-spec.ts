@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { jest } from '@jest/globals';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +13,8 @@ import { configureBodyParsers } from '../common/body-parser.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceModule } from '../namespace/namespace.module.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
+import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { snapshotPost } from './vfs-snapshot-tree.test-support.js';
@@ -163,6 +166,51 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
     for (const r of results) expect([201, 409]).toContain(r.status); // 409: 진행 중(MUTATION_IN_PROGRESS)
     const listed = await http().get(`${base}/ls`).query({ path: '/' }).expect(200);
     expect((listed.body.items ?? listed.body).map((n: { name: string }) => n.name)).toEqual(['once']);
+  });
+
+  it('조건부 content 요청의 오류 receipt 확정 중 namespace가 삭제되면 404를 반환한다', async () => {
+    const namespaceId = await createNamespace('concurrent-error-receipt-delete');
+    const receipts = app.get(VfsMutationReceiptRepository);
+    const completeAfterRollback = receipts.completeAfterRollback.bind(receipts);
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    let releaseResolve!: () => void;
+    const released = new Promise<void>((resolve) => {
+      releaseResolve = resolve;
+    });
+    const completionSpy = jest
+      .spyOn(receipts, 'completeAfterRollback')
+      .mockImplementation(async (...args) => {
+        enteredResolve();
+        await released;
+        await completeAfterRollback(...args);
+      });
+
+    try {
+      const responsePromise = http()
+        .post(`/api/v1/namespaces/${namespaceId}/fs/content/conditional`)
+        .query({ path: '/file' })
+        .set('Content-Type', 'application/octet-stream')
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'namespace-delete-race')
+        .send(Buffer.from('body'))
+        .then((response) => response);
+
+      await entered;
+      const dataSource = app.get(DataSource);
+      await dataSource.query('DELETE FROM vfs_node WHERE namespace_id = ?', [namespaceId]);
+      await dataSource.getRepository(NamespaceEntity).delete(namespaceId);
+      releaseResolve();
+
+      const response = await responsePromise;
+      expect(response.status).toBe(404);
+      expect(response.body.code).toBe('NAMESPACE_NOT_FOUND');
+    } finally {
+      releaseResolve();
+      completionSpy.mockRestore();
+    }
   });
 
   it('스냅샷 본문 조회가 트랜잭션 안에서 스토리지를 기다리다 실패해도 그동안 들어온 mkdir 요청이 유실되지 않는다', async () => {

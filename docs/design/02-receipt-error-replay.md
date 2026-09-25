@@ -37,9 +37,10 @@
 - 별도 트랜잭션을 쓰는 이유: PostgreSQL에서 오류가 난 트랜잭션은 abort 상태라 재사용할 수 없고, 변경은 롤백돼야 하므로
   오류 receipt를 같은 트랜잭션에 넣을 수 없다.
 - fencing: `completeAfterRollback`은 성공 경로의 `complete`와 같은 조건(`state = 'RESERVED'`, `generation` 일치,
-  `lease_expires_at > now`)으로 갱신한다. 조건이 맞지 않으면(claim을 잃음) `Error('VFS mutation claim lost')`를 던지며
-  응답을 보내지 않는다. 이 오류는 저장 대상이 아니라 호출부가 `release`(generation 조건부 삭제)하고 500으로 끝난다.
-  새 owner의 claim은 지우지 않는다.
+  `lease_expires_at > now`)으로 갱신한다. 조건이 맞지 않으면(claim을 잃음) `Error('VFS mutation claim lost')`를 던진다.
+  오류 receipt 확정 중 이 오류가 발생하면 namespace 존재를 확인한다. 이미 삭제된 경우 저장 불가한 `NAMESPACE_NOT_FOUND`
+  404를 반환하고 receipt는 남기지 않는다. namespace가 있거나 존재 여부를 확인하지 못하면 원래 claim-lost 오류를 전파해
+  기존처럼 500으로 끝낸다. 새 owner의 claim은 지우지 않는다.
 - 롤백과 저장 사이에 프로세스가 종료되면 claim이 `RESERVED`로 남는다. 응답이 나간 적이 없으므로, lease가 만료된 뒤
   같은 key의 요청이 claim을 인수(`generation + 1`)해 다시 평가한다.
 - content 업로드에서 반영이 실패하면(트랜잭션 롤백 또는 claim lost) 업로드한 object 삭제를 시도하고 삭제 실패는 무시한다.
@@ -75,7 +76,7 @@ claim이 `owner`인 요청의 파싱 오류(claim 전에 보류한 것)와 작�
 
 | 종류 | 처리 |
 | --- | --- |
-| 5xx `DomainError`, `DomainError`가 아닌 예외(DB·Blob 장애, claim lost) | claim `release`. 재시도는 새로 평가 |
+| 5xx `DomainError`, `DomainError`가 아닌 예외(DB·Blob 장애, claim lost) | claim `release`. 오류 receipt 확정 중 claim lost가 나고 namespace가 삭제된 경우에만 404 `NAMESPACE_NOT_FOUND`; 그 외에는 500. 재시도는 새로 평가 |
 | 409 `MUTATION_IN_PROGRESS` | 다른 요청이 claim을 소유 중. receipt를 건드리지 않음 |
 | 409 `MUTATION_KEY_REUSED` | 기존 receipt의 상태를 알리는 응답 |
 | 404 `NAMESPACE_NOT_FOUND` | receipt가 namespace FK를 가져 저장 불가 |

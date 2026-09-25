@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import type { MutationTx } from './vfs-node.repository.js';
+import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 
 export interface ReceiptIdentity {
@@ -155,6 +156,12 @@ export class VfsMutationReceiptRepository {
   ): Promise<void> {
     await this.dataSource.transaction((manager) =>
       this.completeWith(manager, identity, generation, fingerprint, method, response, requestBodyBytes),
+    );
+  }
+
+  async namespaceExists(namespaceId: string): Promise<boolean> {
+    return (
+      (await this.dataSource.getRepository(NamespaceEntity).findOneBy({ id: namespaceId })) !== null
     );
   }
 
