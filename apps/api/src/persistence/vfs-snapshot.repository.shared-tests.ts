@@ -101,6 +101,56 @@ export function runSnapshotRepositoryTests(
     });
     expect((await context().nodes.getRoot(namespace.id))!.version).toBe(root.version);
   });
+  it('lists only immutable FILE snapshots by root node with one page query and stable keyset boundaries', async () => {
+    const { namespace, root } = await fixture();
+    const { node, blob } = await file(namespace.id, root.id, 'listed');
+    const first = await capture(namespace.id, root.id, ['listed']);
+    const second = await capture(namespace.id, root.id, ['listed']);
+    const tree = await capture(namespace.id, root.id, [], 'TREE');
+    const otherNamespace = await fixture();
+    const foreign = await file(otherNamespace.namespace.id, otherNamespace.root.id, 'listed');
+    await capture(otherNamespace.namespace.id, otherNamespace.root.id, ['listed']);
+    if (ds().options.type === 'postgres') {
+      await ds().query(`UPDATE vfs_snapshot SET created_at = $1::timestamptz WHERE id = $2::uuid`, [
+        '2026-09-26T01:02:03.123456Z',
+        first.id,
+      ]);
+      await ds().query(`UPDATE vfs_snapshot SET created_at = $1::timestamptz WHERE id = $2::uuid`, [
+        '2026-09-26T01:02:03.123789Z',
+        second.id,
+      ]);
+      await ds().query(`UPDATE vfs_snapshot SET created_at = $1::timestamptz WHERE id = $2::uuid`, [
+        '2026-09-26T01:02:03.123789Z',
+        tree.id,
+      ]);
+    } else {
+      const same = new Date('2026-09-26T01:02:03.004Z');
+      await ds().getRepository(VfsSnapshotEntity).update([first.id, second.id, tree.id], { createdAt: same });
+    }
+    await context().nodes.removeNode(namespace.id, root.id, ['listed'], false, 1000);
+
+    const p1 = await context().snapshots.listFileSnapshots(namespace.id, node.id, null, 1);
+    expect(p1.items).toHaveLength(1);
+    expect(p1.nextBoundary).not.toBeNull();
+    const p2 = await context().snapshots.listFileSnapshots(namespace.id, node.id, p1.nextBoundary, 1);
+    expect(p2.items).toHaveLength(1);
+    expect(p2.nextBoundary).toBeNull();
+    expect(new Set([...p1.items, ...p2.items].map((item) => item.snapshotId))).toEqual(
+      new Set([first.id, second.id]),
+    );
+    expect(
+      [...p1.items, ...p2.items].every((item) => item.sha256 === blob.sha256 && item.logicalBytes === '7'),
+    ).toBe(true);
+    expect(
+      (await context().snapshots.listFileSnapshots(namespace.id, foreign.node.id, null, 10)).items,
+    ).toEqual([]);
+    expect((await context().snapshots.listFileSnapshots(namespace.id, randomUUID(), null, 10)).items).toEqual(
+      [],
+    );
+    expect(
+      (await context().snapshots.listFileSnapshots(otherNamespace.namespace.id, node.id, null, 10)).items,
+    ).toEqual([]);
+  });
   it('rejects kind/source mismatches and missing capture paths', async () => {
     const { namespace, root } = await fixture();
     const { blob } = await file(namespace.id, root.id, 'a');

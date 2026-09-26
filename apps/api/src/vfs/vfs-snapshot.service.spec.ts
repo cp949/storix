@@ -299,6 +299,51 @@ describe('VfsSnapshotService receipts', () => {
   );
 });
 
+describe('VfsSnapshotService file snapshot list', () => {
+  it('maps repository rows and returns an owner-bound next cursor', async () => {
+    const namespaceId = randomUUID();
+    const rootNodeId = randomUUID();
+    const snapshotId = randomUUID();
+    const listFileSnapshots = jest.fn<VfsSnapshotRepository['listFileSnapshots']>().mockResolvedValue({
+      items: [
+        {
+          snapshotId,
+          createdAt: new Date('2026-09-26T01:02:03.123Z'),
+          createdAtKey: '2026-09-26T01:02:03.123456Z',
+          sourceRevision: 'rev',
+          logicalBytes: '7',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+      nextBoundary: { createdAtKey: '2026-09-26T01:02:03.123456Z', snapshotId },
+    });
+    const snapshots = { listFileSnapshots } as unknown as VfsSnapshotRepository;
+    const nodes = { getRoot: async () => ({ id: randomUUID() }) } as unknown as VfsNodeRepository;
+    const service = new VfsSnapshotService(
+      nodes,
+      snapshots,
+      {} as VfsMutationReceiptRepository,
+      {} as BlobStorage,
+      null,
+    );
+    const page = await service.listFileSnapshots(namespaceId, rootNodeId, undefined, undefined);
+    expect(page.items).toEqual([
+      {
+        snapshotId,
+        createdAt: '2026-09-26T01:02:03.123Z',
+        sourceRevision: 'rev',
+        logicalBytes: '7',
+        sha256: 'a'.repeat(64),
+      },
+    ]);
+    expect(page.nextCursor).toMatch(/^sl1\./);
+    expect(listFileSnapshots).toHaveBeenCalledWith(namespaceId, rootNodeId, null, 100);
+    await expect(service.listFileSnapshots(namespaceId, 'bad', undefined, undefined)).rejects.toMatchObject({
+      code: 'VFS_INVALID_MUTATION_REQUEST',
+    });
+  });
+});
+
 describe('VfsSnapshotService FILE sourceRevision', () => {
   const namespaceId = randomUUID();
   const rootId = randomUUID();
@@ -656,6 +701,6 @@ it('metadata 확인 뒤 삭제된 TREE는 빈 성공 페이지 대신 404를 반
     null,
   );
   await expect(service.listEntries(randomUUID(), randomUUID(), undefined, undefined)).rejects.toMatchObject({
-    code: 'VFS_NODE_NOT_FOUND',
+    code: 'VFS_SNAPSHOT_NOT_FOUND',
   });
 });

@@ -159,7 +159,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       const foreign = await fixture();
       await foreign.http().get(`${foreign.base}/snapshots/${id}/entries`).expect(404);
       await foreign.http().get(`${foreign.base}/snapshots/${id}/content`).query({ path: 'a/b' }).expect(404);
-      await snapshotPost(app, base, `/${id}/restore`, { path: '/restore', ifAbsent: true }).expect(404);
+      await snapshotPost(app, base, `/${id}/restore`, { path: '/restore', ifAbsent: true }).expect(409);
       await snapshotPost(app, base, `/${id}/delete`, {}).expect(200);
       await http().get(`${base}/snapshots/${id}/entries`).expect(404);
     });

@@ -6,6 +6,7 @@ import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
+import { AddVfsSnapshotListIndex1791500000000 } from './migrations/1791500000000-AddVfsSnapshotListIndex.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -35,7 +36,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('8개 마이그레이션이 전부 적용된다', async () => {
+  it('9개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -46,7 +47,22 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddVfsMutationReceipt1789400000000',
       'AddVfsSnapshots1790400000000',
       'AddNamespaceLogicalQuota1791400000000',
+      'AddVfsSnapshotListIndex1791500000000',
     ]);
+  });
+
+  it('snapshot 목록 인덱스 migration은 up/down이 가역이다', async () => {
+    const migration = new AddVfsSnapshotListIndex1791500000000();
+    const runner = dataSource.createQueryRunner();
+    await migration.down(runner);
+    expect(await dataSource.query(`PRAGMA index_list('vfs_snapshot')`)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'IDX_vfs_snapshot_file_list' })]),
+    );
+    await migration.up(runner);
+    expect(await dataSource.query(`PRAGMA index_list('vfs_snapshot')`)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'IDX_vfs_snapshot_file_list' })]),
+    );
+    await runner.release();
   });
 
   describe('snapshot schema', () => {

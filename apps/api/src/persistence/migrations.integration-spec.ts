@@ -8,6 +8,7 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
+import { AddVfsSnapshotListIndex1791500000000 } from './migrations/1791500000000-AddVfsSnapshotListIndex.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -29,6 +30,26 @@ describe('Migration: InitSchema', () => {
   afterAll(async () => {
     await dataSource.destroy();
     await container.stop();
+  });
+
+  it('snapshot 목록 인덱스 migration은 up/down이 가역이다', async () => {
+    const migration = new AddVfsSnapshotListIndex1791500000000();
+    const runner = dataSource.createQueryRunner();
+    await migration.down(runner);
+    const absent = await dataSource.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'vfs_snapshot'`,
+    );
+    expect(absent).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ indexname: 'IDX_vfs_snapshot_file_list' })]),
+    );
+    await migration.up(runner);
+    const present = await dataSource.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'vfs_snapshot'`,
+    );
+    expect(present).toEqual(
+      expect.arrayContaining([expect.objectContaining({ indexname: 'IDX_vfs_snapshot_file_list' })]),
+    );
+    await runner.release();
   });
 
   describe('snapshot schema', () => {

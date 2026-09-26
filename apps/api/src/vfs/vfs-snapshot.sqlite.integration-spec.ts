@@ -96,6 +96,33 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
 
   treeSnapshotContract(() => app);
 
+  it('목록 API에서 SQLite FILE 페이지와 node cursor를 조회한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const ns = await http()
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: randomUUID() })
+      .expect(201);
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
+    await http()
+      .post(`${base}/content`)
+      .query({ path: '/a' })
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('sqlite'))
+      .expect(201);
+    const stat = (await http().get(`${base}/stat`).query({ path: '/a' }).expect(200)).body;
+    const saved = await snapshotPost(app, base, '', { kind: 'file', path: '/a' }).expect(201);
+    const page = (await http().get(`${base}/snapshots`).query({ rootNodeId: stat.id }).expect(200)).body;
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        snapshotId: saved.body.snapshotId,
+        logicalBytes: '6',
+        sha256: createHash('sha256').update('sqlite').digest('hex'),
+      }),
+    ]);
+    expect(page.nextCursor).toBeNull();
+  });
+
   it('snapshot ID 형식 오류 receipt를 앱 재시작 뒤 재생하고 다른 body의 같은 key를 거절한다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()
@@ -107,7 +134,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const key = randomUUID();
     const suffix = '/not-a-uuid/delete';
     const first = await snapshotPost(app, base, suffix, {}, key).expect(404);
-    expect(first.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND' });
+    expect(first.body).toMatchObject({ code: 'VFS_SNAPSHOT_NOT_FOUND' });
     expect(first.headers['x-request-id']).toEqual(first.body.requestId);
 
     const oldDataSource = app.get(DataSource);

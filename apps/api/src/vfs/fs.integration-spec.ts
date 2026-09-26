@@ -354,6 +354,73 @@ describe('Fs HTTP contract', () => {
         .send(body);
     }
 
+    it('파일별 목록은 node ID에 묶이고 cursor를 검증한다', async () => {
+      const ns = await createNamespace('file-snapshot-list');
+      const base = `/api/v2/namespaces/${ns}/fs`;
+      const bytes = Buffer.from('snapshot-list');
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/a' })
+        .set('Content-Type', 'application/octet-stream')
+        .send(bytes)
+        .expect(201);
+      const source = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200)).body;
+      const captured = await snapshotPost(
+        base,
+        '',
+        randomUUID(),
+        JSON.stringify({ kind: 'file', path: '/a' }),
+      ).expect(201);
+      const page = (
+        await request(httpServer).get(`${base}/snapshots`).query({ rootNodeId: source.id }).expect(200)
+      ).body;
+      expect(page.items).toEqual([
+        expect.objectContaining({
+          snapshotId: captured.body.snapshotId,
+          sourceRevision: captured.body.sourceRevision,
+          logicalBytes: String(bytes.length),
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        }),
+      ]);
+      expect(page.nextCursor).toBeNull();
+      await request(httpServer).post(`${base}/mv`).send({ source: '/a', destination: '/moved' }).expect(200);
+      const movedStat = (await request(httpServer).get(`${base}/stat`).query({ path: '/moved' }).expect(200))
+        .body;
+      expect(movedStat.id).toBe(source.id);
+      const afterMove = (
+        await request(httpServer).get(`${base}/snapshots`).query({ rootNodeId: source.id }).expect(200)
+      ).body;
+      expect(afterMove.items).toEqual(page.items);
+
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/a' })
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('replacement'))
+        .expect(201);
+      const replacement = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
+        .body;
+      expect(replacement.id).not.toBe(source.id);
+      const originalNodeSnapshots = (
+        await request(httpServer).get(`${base}/snapshots`).query({ rootNodeId: source.id }).expect(200)
+      ).body;
+      const replacementNodeSnapshots = (
+        await request(httpServer).get(`${base}/snapshots`).query({ rootNodeId: replacement.id }).expect(200)
+      ).body;
+      expect(originalNodeSnapshots.items).toEqual(page.items);
+      expect(replacementNodeSnapshots.items).toEqual([]);
+      await request(httpServer)
+        .get(`${base}/snapshots`)
+        .query({ rootNodeId: randomUUID(), cursor: 'sl1.bogus' })
+        .expect(400)
+        .expect(({ body }) => expect(body.code).toBe('VFS_INVALID_CURSOR'));
+      await request(httpServer)
+        .get(`${base}/snapshots`)
+        .query({ rootNodeId: 'bad' })
+        .expect(400)
+        .expect(({ body }) => expect(body.code).toBe('VFS_INVALID_MUTATION_REQUEST'));
+    });
+
     async function restoreFixture(name: string) {
       const ns = await createNamespace(name);
       const base = `/api/v2/namespaces/${ns}/fs`;
@@ -1088,7 +1155,7 @@ describe('Fs HTTP contract', () => {
       const ds = app.get(DataSource);
       await ds.getRepository(VfsSnapshotEntity).update(id, { kind: 'TREE', rootType: 'DIRECTORY' });
       await snapshotPost(base, `/${id}/restore`, randomUUID(), '{"path":"/source","ifAbsent":true}').expect(
-        404,
+        409,
       );
       expect(
         (await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: node.id })).version,
