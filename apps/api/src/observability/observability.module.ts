@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
@@ -15,6 +15,9 @@ export function resolveErrorReporter(dsn: string | undefined, client: SentryClie
   return dsn ? new SentryErrorReporter(dsn, client) : new NoopErrorReporter();
 }
 
+// 기능 모듈 컨트롤러의 @UseFilters(DomainErrorFilter)는 해당 모듈 DI로 생성되므로,
+// ERROR_REPORTER를 전역으로 노출하지 않으면 @Optional() 주입이 undefined가 되어 500 보고가 누락된다.
+@Global()
 @Module({
   controllers: [MetricsController],
   providers: [
