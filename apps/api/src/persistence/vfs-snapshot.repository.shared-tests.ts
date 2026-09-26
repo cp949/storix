@@ -76,7 +76,13 @@ export function runSnapshotRepositoryTests(
     const { namespace, root } = await fixture();
     const { node, blob } = await file(namespace.id, root.id, 'a');
     const snapshot = await capture(namespace.id, root.id, ['a']);
-    expect(snapshot).toMatchObject({ kind: 'FILE', rootNodeId: node.id, sha256: blob.sha256, nodeCount: 1, logicalBytes: '7' });
+    expect(snapshot).toMatchObject({
+      kind: 'FILE',
+      rootNodeId: node.id,
+      sha256: blob.sha256,
+      nodeCount: 1,
+      logicalBytes: '7',
+    });
     expect(await context().snapshots.get(namespace.id, snapshot.id)).toEqual(snapshot);
     expect(await usage(namespace.id)).toEqual([1, '7']);
     expect((await ds().getRepository(BlobEntity).findOneByOrFail({ id: blob.id })).referenceCount).toBe(2);
@@ -245,16 +251,33 @@ export function runSnapshotRepositoryTests(
       root.id,
       ['a'],
       false,
-      { storageKey: `blobs/${randomUUID()}`, size: '7', mimeType: 'text/plain', sha256: '0'.repeat(64), encryptionIv: null },
+      {
+        storageKey: `blobs/${randomUUID()}`,
+        size: '7',
+        mimeType: 'text/plain',
+        sha256: '0'.repeat(64),
+        encryptionIv: null,
+      },
       null,
       false,
     );
 
     await expect(capture(namespace.id, root.id, ['a'])).rejects.toThrow(VfsQuotaExceededError);
     expect(await ds().getRepository(VfsSnapshotEntity).countBy({ namespaceId: namespace.id })).toBe(0);
-    expect(String((await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).retainedSnapshotByteCount)).toBe('0');
-    expect(String((await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('7');
-    expect((await ds().getRepository(BlobEntity).findOneByOrFail({ id: live.node.blobId! })).referenceCount).toBe(1);
+    expect(
+      String(
+        (await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+          .retainedSnapshotByteCount,
+      ),
+    ).toBe('0');
+    expect(
+      String(
+        (await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount,
+      ),
+    ).toBe('7');
+    expect(
+      (await ds().getRepository(BlobEntity).findOneByOrFail({ id: live.node.blobId! })).referenceCount,
+    ).toBe(1);
   });
   it('receipt-stage failure rolls back snapshot accounting, manifest and Blob pin', async () => {
     const { namespace, root } = await fixture();

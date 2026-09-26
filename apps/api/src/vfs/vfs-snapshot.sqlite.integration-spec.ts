@@ -163,7 +163,10 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const fileBody = { kind: 'file', path: '/dir/a' };
     const file = await snapshotPost(app, base, '', fileBody, fileKey).expect(201);
     const originalStat = (await http().get(`${base}/stat`).query({ path: '/dir/a' }).expect(200)).body;
-    expect(file.body).toMatchObject({ rootNodeId: originalStat.id, sha256: createHash('sha256').update(bytes).digest('hex') });
+    expect(file.body).toMatchObject({
+      rootNodeId: originalStat.id,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
     const fileId = file.body.snapshotId;
     const restoreKey = randomUUID();
     const restoreBody = { path: '/restored', ifAbsent: true };
@@ -356,13 +359,23 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const successBody = { kind: 'file', path: '/doc', sourceRevision: matching };
     const success = await snapshotPost(app, base, '', successBody, successKey).expect(201);
     expect(success.body.sourceRevision).toBe(matching);
-    expect(success.body.sha256).toBe(createHash('sha256').update(Buffer.from([1, 2, 3])).digest('hex'));
-    expect(success.body.rootNodeId).toBe((await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body.id);
+    expect(success.body.sha256).toBe(
+      createHash('sha256')
+        .update(Buffer.from([1, 2, 3]))
+        .digest('hex'),
+    );
+    expect(success.body.rootNodeId).toBe(
+      (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body.id,
+    );
     expect((await rowCounts()).snapshots).toBe(1);
 
     await write(Buffer.from([9, 9]), true).expect(200);
-    expect((await http().get(`${base}/snapshots/${success.body.snapshotId}`).expect(200)).body).toEqual(success.body);
-    expect((await http().get(`${base}/snapshots/${success.body.snapshotId}/content`).expect(200)).body).toEqual(Buffer.from([1, 2, 3]));
+    expect((await http().get(`${base}/snapshots/${success.body.snapshotId}`).expect(200)).body).toEqual(
+      success.body,
+    );
+    expect(
+      (await http().get(`${base}/snapshots/${success.body.snapshotId}/content`).expect(200)).body,
+    ).toEqual(Buffer.from([1, 2, 3]));
     const statAtConflict = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
     const revisionAtConflict = await revisionOf();
     expect(revisionAtConflict).not.toBe(matching);

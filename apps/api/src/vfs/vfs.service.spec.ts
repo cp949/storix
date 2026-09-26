@@ -43,7 +43,9 @@ function makeMatch(overrides: Partial<VfsNodeMatch> = {}): VfsNodeMatch {
 describe('VfsService', () => {
   let repo: {
     getRoot: jest.Mock<() => Promise<VfsNodeRecord | null>>;
-    getRootWithLimits: jest.Mock<() => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>>;
+    getRootWithLimits: jest.Mock<
+      () => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>
+    >;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
     readStat: jest.Mock<() => Promise<{ node: VfsNodeRecord; sha256: string | null } | null>>;
     listChildren: jest.Mock<() => Promise<VfsNodeRecord[]>>;
@@ -58,7 +60,11 @@ describe('VfsService', () => {
   let service: VfsService;
 
   function createService(): VfsService {
-    return new VfsService(new PathResolver(), repo as unknown as VfsNodeRepository, config as unknown as ConfigService);
+    return new VfsService(
+      new PathResolver(),
+      repo as unknown as VfsNodeRepository,
+      config as unknown as ConfigService,
+    );
   }
 
   beforeEach(() => {
@@ -180,20 +186,44 @@ describe('VfsService', () => {
   describe('stat', () => {
     it('FILE 노드와 Blob 해시를 같은 읽기 상태의 DTO로 반환한다', async () => {
       repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
-      const node = makeNode({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab', name: 'a', type: 'FILE', blobId: 'blob-1', size: '0', mimeType: 'text/plain' });
-      repo.readStat.mockResolvedValue({ node, sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' });
+      const node = makeNode({
+        id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab',
+        name: 'a',
+        type: 'FILE',
+        blobId: 'blob-1',
+        size: '0',
+        mimeType: 'text/plain',
+      });
+      repo.readStat.mockResolvedValue({
+        node,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      });
 
       const result = await service.stat(NAMESPACE_ID, '/a');
 
       expect(repo.readStat).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a']);
-      expect(result).toMatchObject({ id: node.id, path: '/a', name: 'a', type: 'FILE', size: 0, mimeType: 'text/plain', updatedAt: node.updatedAt.toISOString(), revision: encodeRevision(node), sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' });
+      expect(result).toMatchObject({
+        id: node.id,
+        path: '/a',
+        name: 'a',
+        type: 'FILE',
+        size: 0,
+        mimeType: 'text/plain',
+        updatedAt: node.updatedAt.toISOString(),
+        revision: encodeRevision(node),
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      });
     });
 
     it('디렉터리에는 해시가 없고 존재하지 않는 경로는 404로 처리한다', async () => {
       repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
       const directory = makeNode({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ac', name: 'dir' });
       repo.readStat.mockResolvedValueOnce({ node: directory, sha256: null }).mockResolvedValueOnce(null);
-      await expect(service.stat(NAMESPACE_ID, '/dir')).resolves.toMatchObject({ id: directory.id, revision: encodeRevision(directory), sha256: null });
+      await expect(service.stat(NAMESPACE_ID, '/dir')).resolves.toMatchObject({
+        id: directory.id,
+        revision: encodeRevision(directory),
+        sha256: null,
+      });
       await expect(service.stat(NAMESPACE_ID, '/missing')).rejects.toThrow(VfsNodeNotFoundError);
     });
   });
@@ -279,9 +309,7 @@ describe('VfsService', () => {
     it('source가 root(/)이면 VfsInvalidOperationError를 던진다', async () => {
       repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
 
-      await expect(service.move(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(
-        VfsInvalidOperationError,
-      );
+      await expect(service.move(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(VfsInvalidOperationError);
       expect(repo.moveNode).not.toHaveBeenCalled();
     });
 
@@ -309,12 +337,16 @@ describe('VfsService', () => {
     it('source가 root(/)이면 VfsInvalidOperationError를 던진다', async () => {
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
 
-      await expect(service.copy(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(
-        VfsInvalidOperationError,
-      );
+      await expect(service.copy(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(VfsInvalidOperationError);
       expect(repo.copyNode).not.toHaveBeenCalled();
     });
 
@@ -323,7 +355,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
@@ -335,7 +373,13 @@ describe('VfsService', () => {
     it('복사에 성공하면 201과 repository가 반환한 최종 경로를 반환한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
@@ -350,7 +394,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: 3, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: 3,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
@@ -364,7 +414,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: 999, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: 999,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.copyNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
@@ -396,7 +452,13 @@ describe('VfsService', () => {
     it('root 경로(/)는 VfsInvalidOperationError를 던진다', async () => {
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
 
       await expect(service.rm(NAMESPACE_ID, '/', true)).rejects.toThrow(VfsInvalidOperationError);
@@ -408,7 +470,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: null, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: null,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.removeNode.mockResolvedValue(undefined);
 
@@ -422,7 +490,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: 3, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: 3,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.removeNode.mockResolvedValue(undefined);
 
@@ -436,7 +510,13 @@ describe('VfsService', () => {
       service = createService();
       repo.getRootWithLimits.mockResolvedValue({
         root: makeNode({ id: 'root', name: '' }),
-        limits: { maxFileSizeBytes: null, maxSyncDeleteNodes: 999, maxSyncCopyNodes: null, encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' },
+        limits: {
+          maxFileSizeBytes: null,
+          maxSyncDeleteNodes: 999,
+          maxSyncCopyNodes: null,
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+        },
       });
       repo.removeNode.mockResolvedValue(undefined);
 

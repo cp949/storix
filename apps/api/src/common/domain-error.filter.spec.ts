@@ -80,9 +80,7 @@ describe('DomainErrorFilter', () => {
 
     expect(setHeader).toHaveBeenCalledWith('Retry-After', '1');
     expect(status).toHaveBeenCalledWith(503);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'DB_BUSY', requestId: 'req-busy' }),
-    );
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'DB_BUSY', requestId: 'req-busy' }));
   });
 
   it('retryAfterSeconds가 없는 오류에는 Retry-After 헤더를 붙이지 않는다', () => {

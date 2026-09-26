@@ -553,15 +553,22 @@ describe('Fs HTTP contract', () => {
         .set('Content-Type', 'application/octet-stream')
         .send(bytes)
         .expect(201);
-      const captured = await snapshotPost(base, '', randomUUID(), '{"kind":"file","path":"/source"}').expect(201);
+      const captured = await snapshotPost(base, '', randomUUID(), '{"kind":"file","path":"/source"}').expect(
+        201,
+      );
       const repository = app.get(VfsSnapshotRepository);
       type HashReader = (manager: EntityManager, snapshot: VfsSnapshotEntity) => Promise<string | null>;
       const original = (Reflect.get(repository, 'fileSha256') as HashReader).bind(repository);
       let entered!: () => void;
       let release!: () => void;
-      const readEntered = new Promise<void>((resolve) => { entered = resolve; });
-      const held = new Promise<void>((resolve) => { release = resolve; });
-      const spy = jest.spyOn(repository as unknown as { fileSha256: HashReader }, 'fileSha256')
+      const readEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const spy = jest
+        .spyOn(repository as unknown as { fileSha256: HashReader }, 'fileSha256')
         .mockImplementation(async (manager, snapshot) => {
           entered();
           await held;

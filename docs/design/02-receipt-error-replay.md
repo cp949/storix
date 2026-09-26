@@ -120,10 +120,12 @@ content 업로드의 파일 크기 상한 413은 request body를 끝까지 해�
 ## 4. 412 `current`
 
 - 값: 충돌 시점에 `work`(트랜잭션 본문, 롤백 전) 안에서 읽은 노드 metadata에 그 노드의 `revision`을 더한 객체다.
-  metadata 필드는 `GET /fs/stat` 응답과 같고(`toNodeResponse`), `revision`은 `r1.` 토큰(`encodeRevision(node)`)이다.
+  metadata 필드는 공통 노드 응답(`toNodeResponse`, `id` 포함)과 같고, `revision`은 `r1.` 토큰(`encodeRevision(node)`)이다.
   노드가 없으면 `null`이다. 소비자는 `current.revision`으로 충돌 시점 ETag를 만든다.
 - shape: `VfsPreconditionCurrentDto`(`VfsNodeResponseDto` + `revision`)를 `toPreconditionCurrent`가 만든다.
-  `revision`은 412 `current`에만 있다. `GET /fs/stat` 등 다른 응답의 `VfsNodeResponseDto`에는 없다.
+  공통 `VfsNodeResponseDto`에는 `revision`이 없다. `GET /fs/stat`(`VfsStatResponseDto`)과 조건부 콘텐츠 성공
+  `resource`(`VfsConditionalContentResourceDto`)는 별도 shape로 `revision`을 더하며, stat 전용 `sha256`은
+  412 `current`에 없다.
 - 생성 지점(`VfsPreconditionFailedError`): revision 불일치(delete·move/copy 원본·content 교체·restore), mkdir 대상 존재,
   move/copy 목적지 충돌, content·restore `ifAbsent` 위반, snapshot `sourceRevision` 불일치, `ls` 만료 cursor
   (`current`는 디렉터리 metadata).

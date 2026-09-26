@@ -79,12 +79,13 @@ export class VfsSnapshotRepository {
       type: 'FILE',
       sourceNodeId: snapshot.rootNodeId,
     });
-    if (!root?.blobId) throw new VfsInvalidOperationError(snapshot.sourcePath);
+    // 같은 읽기 트랜잭션에서 snapshot 행을 읽은 뒤이므로 root entry·Blob 부재는 요청 오류가 아닌 저장 상태 손상이다.
+    if (!root?.blobId) throw new Error('FILE snapshot의 root entry가 없음 — 데이터 일관성 위반');
     const blob = await manager.findOneBy(BlobEntity, {
       id: root.blobId,
       namespaceId: snapshot.namespaceId,
     });
-    if (!blob) throw new VfsInvalidOperationError(snapshot.sourcePath);
+    if (!blob) throw new Error('FILE snapshot root entry가 참조하는 Blob이 없음 — 데이터 일관성 위반');
     return blob.sha256;
   }
 

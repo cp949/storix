@@ -730,15 +730,8 @@ export class VfsNodeRepository {
     rootId: string,
     segments: string[],
   ): Promise<{ node: VfsNodeRecord; sha256: string | null } | null> {
-    return this.readSnapshot(async (manager) => {
-      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
-      if (!node) return null;
-      if (node.type === 'DIRECTORY') return { node: toRecord(node), sha256: null };
-      if (!node.blobId) throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-      const blob = await manager.getRepository(BlobEntity).findOneBy({ id: node.blobId, namespaceId });
-      if (!blob) throw new Error('FILE node가 참조하는 Blob이 없음 — 데이터 일관성 위반');
-      return { node: toRecord(node), sha256: blob.sha256 };
-    });
+    const read = await this.readContentFile(namespaceId, rootId, segments);
+    return read ? { node: read.node, sha256: read.blob?.sha256 ?? null } : null;
   }
 
   async readContentFile(

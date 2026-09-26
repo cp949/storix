@@ -39,10 +39,14 @@ export function toPreconditionCurrent(record: VfsNodeRecord, path: string): VfsP
   return { ...toNodeResponse(record, path), revision: encodeRevision(record) };
 }
 
+// 조건부 콘텐츠 생성·교체 성공 resource. receipt에 고정되므로 재생 시에도 성공 상태의 revision을 반환한다.
 export interface VfsConditionalContentResourceDto extends VfsNodeResponseDto {
   readonly revision: string;
 }
 
-export function toConditionalContentResponse(record: VfsNodeRecord, path: string): VfsConditionalContentResourceDto {
+export function toConditionalContentResponse(
+  record: VfsNodeRecord,
+  path: string,
+): VfsConditionalContentResourceDto {
   return { ...toNodeResponse(record, path), revision: encodeRevision(record) };
 }

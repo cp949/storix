@@ -234,7 +234,11 @@ export class VfsService {
       throw new VfsNodeNotFoundError(canonical);
     }
 
-    return { ...toNodeResponse(target.node, canonical), revision: encodeRevision(target.node), sha256: target.sha256 };
+    return {
+      ...toNodeResponse(target.node, canonical),
+      revision: encodeRevision(target.node),
+      sha256: target.sha256,
+    };
   }
 
   async exists(namespaceId: string, rawPath: string): Promise<{ exists: boolean }> {
