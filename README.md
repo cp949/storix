@@ -202,6 +202,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_PUBLISH_PORT` | 선택 | `3000` | compose | `app` 컨테이너를 호스트에 노출하는 포트 |
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
 | `STORIX_MAX_TOTAL_LOGICAL_BYTES` | 선택 | `53687091200` | app | Namespace 논리 사용량 전역 상한(50 GiB). namespace별 override는 이 값 이하여야 한다 |
+| `STORIX_VFS_CAPABILITIES_CONFIG_PATH` | 선택 | — | app | 시작 시 읽는 선택 VFS capability JSON 파일 경로. 비우면 선택 기능 전부 비활성. JSON은 `globalAllowedCapabilities` 문자열 목록과 `namespaceAllowedCapabilities`(namespace UUID를 키로 하는 문자열 목록 객체)만 허용하며, 파일·구문·schema·namespace 존재 검증 실패 시 시작을 거부한다 |
 | `STORIX_ADMIN_API_KEY` | 선택 | — | app | `/api/v2/admin/*` 전용 관리자 Bearer key. 비우면 관리자 API는 모두 401 |
 | `STORIX_ADMIN_API_KEY_PREVIOUS` | 선택 | — | app | 관리자 키 교체 기간에만 허용하는 이전 Bearer key |
 | `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제이며 compose에서는 `docker-compose.sqlite.yml`을 겹친다 — 상세는 `README.sqlite.md` |

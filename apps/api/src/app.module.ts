@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { CapabilityModule } from './capability/capability.module.js';
 import { HealthModule } from './health/health.module.js';
 import { NamespaceModule } from './namespace/namespace.module.js';
 import { ObservabilityModule } from './observability/observability.module.js';
@@ -11,6 +12,7 @@ import { VfsModule } from './vfs/vfs.module.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
+    CapabilityModule,
     AuditModule,
     HealthModule,
     ObservabilityModule,
