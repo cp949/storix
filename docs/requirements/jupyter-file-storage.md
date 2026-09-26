@@ -52,22 +52,22 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-005 존재하지 않는 파일의 조건부 생성
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** 조건부 생성과 동시성 보장은 확인했으나, 성공 응답의 resource에는 파일 ID가 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** 조건부 콘텐츠 생성의 `resource.id`(VFS 노드 UUID)·정규 경로·`resource.revision`·수정 시각을 공개한다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 140/140에서 동시 생성의 단일 승자, receipt 재생, 이동·교체 시 ID 유지를 확인했다. 삭제·동일 경로 FILE 재생성 시 새 ID를 확인하는 단언은 전체 실행 뒤 보강했으며 해당 사례만 단독 1/1 통과했다. 최종 PostgreSQL/MinIO L2의 파일 HTTP suite는 통과했고 SQLite L2는 12 suites/213 tests 통과했다. PostgreSQL/MinIO L2 전체는 기존 412 repository 기대값의 `id` 누락으로 26 suites 통과·1 suite 실패했으며, 기대값 수정 뒤 해당 spec 114/114가 통과했다.
 - 호출자는 지정 경로에 파일이 없을 때만 전체 바이트를 생성할 수 있어야 한다. 이미 파일이 있으면 기존 파일을 보존하고 충돌 오류를 반환해야 한다. 성공 결과에는 파일 ID, 정규 경로, revision, 수정 시각이 포함되어야 한다.
 - **수용 조건:** 같은 경로에 대한 동시 조건부 생성 두 건 중 최대 한 건만 성공하고, 성공한 파일의 바이트가 온전하다.
 
 ### RQ-006 전체 파일 조회
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** 전체 바이트 조회는 가능하지만 해당 응답에 파일 ID·revision·콘텐츠 해시를 함께 식별할 수 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256`이 반환한 바이트와 같은 노드/Blob 상태를 식별한다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 141/141에서 저장·교체·재시작, stat 대조, 교체 경합을 확인했고, `encrypted-content.integration-spec.ts` L1 5/5에서 복호화 바이트의 해시를 확인했다. 최종 PostgreSQL/MinIO L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다(전체 PostgreSQL/MinIO L2의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과). Range 206에는 세 헤더를 제공하지 않는다.
 - 호출자는 namespace와 경로로 현재 파일 전체를 읽을 수 있어야 한다. 조회 결과에는 반환한 바이트에 대응하는 파일 ID, revision, 콘텐츠 해시를 식별할 수단이 있어야 한다. 디렉터리와 파일 부재는 구분해야 한다.
 - **수용 조건:** 저장 직후와 Storix 재시작 후 조회한 바이트와 해당 revision·해시가 일관된다.
 
 ### RQ-007 본문 없는 메타데이터 조회
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** stat과 revision 조회는 있으나 파일 ID·콘텐츠 해시를 포함한 단일 메타데이터 계약이 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** `GET /fs/stat`의 단일 응답에 노드 ID·정규 경로·크기·MIME·수정 시각·`revision`·`sha256`이 있으며 노드와 참조 Blob을 한 읽기 상태에서 조회한다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 140/140에서 전체 콘텐츠와 크기·SHA-256 일치, 빈 FILE 해시, DIRECTORY의 `sha256: null`, namespace 격리와 부재를 확인했다. 최종 PostgreSQL/MinIO L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다. 기존 412 repository 기대값에 새 `id`가 없어 PostgreSQL/MinIO L2의 한 suite가 실패했으며 기대값 수정 후 해당 spec 114/114 통과했다.
 - 호출자는 파일 본문을 전송받지 않고 파일 ID, 정규 경로, 바이트 크기, MIME 유형, 마지막 수정 시각, 현재 revision, 콘텐츠 해시를 함께 조회할 수 있어야 한다. 해시는 Storix가 전체 조회에서 반환하는 정확한 바이트를 기준으로 계산해야 한다.
 - **수용 조건:** 메타데이터의 크기·해시는 같은 revision으로 조회한 전체 파일의 바이트 길이·SHA-256과 일치한다.
 
@@ -103,8 +103,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-012 스냅샷 생성
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** revision 조건부 FILE 스냅샷은 있으나 생성 메타데이터에 콘텐츠 해시가 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** 조건부 FILE snapshot 생성 결과에 snapshot ID·`rootNodeId`(원본 파일 ID)·원본 경로·revision·생성 시각·크기·보존 바이트 `sha256`이 포함된다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 141/141에서 원본 교체와 캡처 경합의 revision·해시·바이트 일치 및 조건 실패 시 무생성을 확인했다. SQLite ENCRYPTED snapshot L1은 최초 8/10 통과 후 기존 412 기대값 두 곳을 수정해 해당 사례 2/2 통과했다. 최종 PostgreSQL/MinIO L2의 파일 HTTP suite에서 snapshot 삭제 경합 사례가 통과했고 SQLite L2 12 suites/213 tests에서 원본 이동 사례가 통과했다. PostgreSQL/MinIO L2 전체의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과했다.
 - 호출자는 지정 파일의 현재 revision을 조건으로 불변 스냅샷을 만들 수 있어야 한다. 생성 결과에는 스냅샷 ID, 원본 파일 ID·경로·revision, 생성 시각, 크기, 해시가 포함되어야 한다. 조건이 맞지 않으면 스냅샷을 남기지 않아야 한다.
 - **수용 조건:** 파일 변경과 스냅샷 생성이 경합할 때 스냅샷은 명시한 revision의 바이트만 보존하거나 충돌로 거부된다.
 
@@ -117,8 +117,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-014 스냅샷 바이트 조회
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** 스냅샷 바이트와 메타데이터 조회는 있으나 메타데이터에 콘텐츠 해시가 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** FILE snapshot 생성·ID 조회는 보존 root entry의 Blob SHA-256을 반환하고 전체 바이트 조회는 같은 보존 Blob을 읽는다. SQLite ENCRYPTED snapshot L1에서 생성·receipt 재생·재시작·원본 교체·삭제 뒤 메타데이터와 바이트 일치를 확인했다(최초 8/10, 기존 412 기대값 수정 후 실패 사례 2/2). 최종 SQLite L2 12 suites/213 tests에서 원본 이동 직후의 불변성을 확인했고, PostgreSQL/MinIO L2의 파일 HTTP suite에서 snapshot 삭제 경합 사례가 통과했다. PostgreSQL/MinIO L2 전체의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과했다. TREE의 `sha256`은 `null`이다.
 - 호출자는 스냅샷 ID로 생성 당시의 전체 파일 바이트와 메타데이터를 읽을 수 있어야 한다. 원본 파일의 수정·이동·삭제는 보존 중인 스냅샷 내용을 바꾸지 않아야 한다.
 - **수용 조건:** 원본 변경 또는 삭제 뒤에도 스냅샷 바이트·크기·해시가 생성 직후와 같다.
 

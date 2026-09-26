@@ -28,6 +28,23 @@ info:
     지정할 때만 생성한다. `/`는 조회·목록·TREE snapshot 원본과 이동·복사의
     디렉터리 목적지로 사용할 수 있다. 루트 자체를 파일로 쓰거나 이동·삭제할 수는 없다.
 
+    **파일과 FILE snapshot 흐름.** 예를 들어 `/notebook.ipynb`의 새 바이트를
+    `POST /api/v2/namespaces/{namespaceId}/fs/content/conditional?path=/notebook.ipynb`에
+    `X-If-Absent: true`와 고유 `Idempotency-Key`·`X-Mutation-Scope`로 보낸다.
+    201의 `resource.id`는 파일 ID이고 `resource.revision`은 이 상태의 불투명 토큰이다.
+    `GET /fs/stat?path=/notebook.ipynb`에서 같은 ID·revision·`sha256`을 읽거나,
+    인증된 전체 `GET /fs/content?path=/notebook.ipynb` 200의 세 `X-Storix-*` 헤더와
+    받은 전체 바이트의 SHA-256을 비교할 수 있다. 교체할 때는 새 key와
+    `X-If-Revision: <현재 revision>`으로 같은 조건부 콘텐츠 endpoint에 보낸다.
+    FILE snapshot은 `POST /fs/snapshots`에 `{"kind":"file","path":"/notebook.ipynb",
+    "sourceRevision":"<현재 revision>"}`과 새 key·scope로 생성한다. 결과의
+    `rootNodeId`는 원본 파일 ID이고 `sha256`은 보존한 원본 바이트의 해시다.
+    `GET /fs/snapshots/{snapshotId}`의 값과 `GET /fs/snapshots/{snapshotId}/content`의
+    전체 바이트를 대조한 뒤, `POST /fs/snapshots/{snapshotId}/restore`에 대상 `path`와
+    `ifAbsent: true` 또는 현재 대상의 `ifRevision` 중 하나를 보낼 수 있다.
+    각 snapshot 변경 요청에도 새 key·scope가 필요하다. `r1.` revision은 해석하거나
+    순서를 비교하지 않고 동등성 조건으로 사용한다.
+
     SQLite는 단일 서버 인스턴스 배포 전제다. 여러 서버 인스턴스는 공유
     PostgreSQL과 Blob 저장소를 사용한다. SQLite는 모든 쿼리를 한 줄로 직렬화하며,
     앞선 트랜잭션이 30초를 넘게 끝나지 않으면 대기 중인 요청은 503 `DB_BUSY`와

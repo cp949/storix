@@ -48,17 +48,19 @@
 
 ### Added
 
+- 조건부 파일 생성·교체 결과의 `resource.id`·`resource.revision`, `GET /fs/stat`의 노드 ID·revision·FILE SHA-256, 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256` 헤더를 공개한다. FILE snapshot 생성·ID 조회에는 보존 바이트의 `sha256`을 추가하고 `rootNodeId`를 원본 파일 ID로 명시한다. TREE의 `sha256`은 `null`이다.
+
 - namespace별 논리 저장량 상한을 추가했다. live FILE과 보존 snapshot의 FILE entry bytes를 함께 계산하며, namespace 생성 또는 전용 관리자 API에서 상한을 설정할 수 있다. 초과 변경은 원자적으로 413 `VFS_QUOTA_EXCEEDED`를 반환하고, namespace 응답에 적용 상한과 사용량을 decimal string으로 제공한다.
 
 - FILE snapshot 생성 요청에 선택 필드 `sourceRevision`(`r1.`)을 추가했다. 원본의 현재 revision과 다르면
   snapshot을 만들지 않고 412를 반환한다. 비교는 캡처와 같은 transaction에서 수행하며 검사 순서는
   404 → 409 → 412다. 문자열이 아닌 값(`null`·숫자·불리언·객체·배열)이나 TREE 요청에 지정하면 400
   `VFS_INVALID_MUTATION_REQUEST`, 문자열이지만 형식이 틀리면 400 `VFS_INVALID_REVISION`이다. 생략하면
-  기존 동작과 같다. SQLite에서는 같은 프로세스 안에서도 동시 요청의 트랜잭션이 직렬화되지 않아(기존 SQLite
-  드라이버 공통 한계) 비교와 캡처의 원자성을 동시 요청에 대해 보장하지 않는다(`docs/design/02-receipt-error-replay.md`).
+  기존 동작과 같다. SQLite 단일 프로세스 배포에서는 쿼리 게이트가 트랜잭션을 직렬화해 비교와 캡처의
+  원자성을 보장한다(`docs/design/02-receipt-error-replay.md`).
 - 412 응답 body에 `current`(충돌 시점의 대상 노드 metadata와 `revision`, 노드가 없으면 `null`)를 추가했다.
-  metadata 필드는 `GET /fs/stat` 응답과 같고 `revision`(`r1.`)은 충돌 시점 ETag를 만들 수 있게 더한 값이다.
-  `GET /fs/stat` 응답에는 `revision`이 없다. `GET /fs/ls?consistency=revision`의 만료 cursor 412에는 디렉터리
+  `current`에는 충돌 시점 노드의 공통 필드와 `revision`(`r1.`)이 있으며, stat 전용 `sha256`은 없다.
+  `GET /fs/ls?consistency=revision`의 만료 cursor 412에는 디렉터리
   metadata가 실린다. receipt로 재생할 때 `current`는 `revision`을 포함해 최초 값이다.
 - 불변 VFS FILE/TREE snapshot을 추가했다. 원본 변경 후 고정된 파일 내용을
   조회하고, FILE을 revision 조건으로 복원하며, 명시적으로 삭제할 수 있다.
