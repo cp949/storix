@@ -30,7 +30,8 @@ info:
 
     **파일과 FILE snapshot 흐름.** 예를 들어 `/notebook.ipynb`의 새 바이트를
     `POST /api/v2/namespaces/{namespaceId}/fs/content/conditional?path=/notebook.ipynb`에
-    `X-If-Absent: true`와 고유 `Idempotency-Key`·`X-Mutation-Scope`로 보낸다.
+    `X-If-Absent: true`와 UUID 형식 `Idempotency-Key`·비어 있지 않은
+    `X-Mutation-Scope`(UTF-8 최대 128바이트)로 보낸다.
     201의 `resource.id`는 파일 ID이고 `resource.revision`은 이 상태의 불투명 토큰이다.
     `GET /fs/stat?path=/notebook.ipynb`에서 같은 ID·revision·`sha256`을 읽거나,
     인증된 전체 `GET /fs/content?path=/notebook.ipynb` 200의 세 `X-Storix-*` 헤더와
@@ -42,8 +43,115 @@ info:
     `GET /fs/snapshots/{snapshotId}`의 값과 `GET /fs/snapshots/{snapshotId}/content`의
     전체 바이트를 대조한 뒤, `POST /fs/snapshots/{snapshotId}/restore`에 대상 `path`와
     `ifAbsent: true` 또는 현재 대상의 `ifRevision` 중 하나를 보낼 수 있다.
-    각 snapshot 변경 요청에도 새 key·scope가 필요하다. `r1.` revision은 해석하거나
-    순서를 비교하지 않고 동등성 조건으로 사용한다.
+    각 변경 요청에는 새 UUID key를 사용한다. Receipt identity는 namespace/scope/key이며,
+    같은 identity의 다른 method·route·조건·본문은 409 `MUTATION_KEY_REUSED`다.
+    `r1.` revision은 해석하거나 순서를 비교하지 않고 동등성 조건으로 사용한다.
+
+    **호출 예시.** 아래 예시는 이미 프로비저닝된 namespace를 사용한다. Namespace를
+    선택하고 최종 사용자·프로젝트 권한을 확인하는 것은 호출 서버 책임이다. 예시의
+    `STORIX_API_KEY`, `NAMESPACE_ID`, `FILE_REVISION`, `SNAPSHOT_ID`는 실제 값으로
+    바꾼다. 요청 본문은 노트북 JSON을 파싱하지 않고 파일 바이트 그대로 전송한다.
+
+    먼저 적용 한도와 현재 사용량을 인증된 namespace 조회로 확인한다. 바이트 값은
+    10진 문자열이며, `limits.maxFileSizeBytes`가 단일 파일의 실제 적용 상한이다.
+
+    ```sh
+    curl --fail-with-body -H "Authorization: Bearer $STORIX_API_KEY" \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID"
+    ```
+
+    새 파일은 `X-If-Absent: true`로 생성한다. 각 변경 요청마다 새로운 UUID
+    `Idempotency-Key`와 호출자가 정하는 비어 있지 않은 `X-Mutation-Scope`
+    (UTF-8 최대 128바이트)를 보낸다. 동일 namespace/scope/key는 method, route, 조건,
+    본문 fingerprint로 구분되므로 입력을 바꾸거나 다른 작업을 요청할 때 새 key를 쓴다.
+    성공 응답의 `resource.id`는 파일 ID, `resource.revision`은 새 상태의 불투명 토큰이다.
+
+    ```sh
+    curl --fail-with-body -X POST \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      -H "Idempotency-Key: 00000000-0000-4000-8000-000000000001" \
+      -H "X-Mutation-Scope: notebook-service" \
+      -H "X-If-Absent: true" -H "Content-Type: application/octet-stream" \
+      --data-binary @notebook.ipynb \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/content/conditional?path=%2Fnotebook.ipynb"
+    ```
+
+    상태 metadata의 `revision`은 조건부 변경에 쓰고, FILE `sha256`은 저장된 전체
+    원본 바이트의 SHA-256이다. 전체 `GET /fs/content` 200은 `X-Storix-File-Id`,
+    `X-Storix-Revision`, `X-Storix-Sha256`을 반환한다. 마지막 헤더와 받은 바이트의
+    SHA-256을 비교해 전송 완전성을 확인한다. Range 응답에는 전체 파일 해시 검증을 적용하지 않는다.
+
+    ```sh
+    curl --fail-with-body -H "Authorization: Bearer $STORIX_API_KEY" \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/stat?path=%2Fnotebook.ipynb"
+    curl --fail-with-body -D notebook.headers -o notebook.download \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/content?path=%2Fnotebook.ipynb"
+    grep -i '^X-Storix-Sha256:' notebook.headers
+    sha256sum notebook.download
+    ```
+
+    교체는 최신 `FILE_REVISION`을 `X-If-Revision`에 넣고 새 멱등성 키를 사용한다.
+    이 조건이 어긋나면 412 `VFS_PRECONDITION_FAILED`이며 `current`는 충돌 시점 metadata다.
+
+    ```sh
+    curl --fail-with-body -X POST \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      -H "Idempotency-Key: 00000000-0000-4000-8000-000000000002" \
+      -H "X-Mutation-Scope: notebook-service" \
+      -H "X-If-Revision: $FILE_REVISION" -H "Content-Type: application/octet-stream" \
+      --data-binary @notebook.ipynb \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/content/conditional?path=%2Fnotebook.ipynb"
+    ```
+
+    FILE snapshot은 캡처하려는 현재 revision을 `sourceRevision`으로 고정한다. 응답의
+    `snapshotId`, `rootNodeId`, `sha256`을 보존한다. 복원은 현재 대상 revision을 다시
+    조회한 뒤 새 key와 `ifRevision`을 보내며, 새 경로 생성이라면 `ifAbsent: true`를 쓴다.
+
+    ```sh
+    curl --fail-with-body -X POST \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      -H "Idempotency-Key: 00000000-0000-4000-8000-000000000003" \
+      -H "X-Mutation-Scope: notebook-service" -H "Content-Type: application/json" \
+      --data '{"kind":"file","path":"/notebook.ipynb","sourceRevision":"'"$FILE_REVISION"'"}' \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/snapshots"
+    curl --fail-with-body -H "Authorization: Bearer $STORIX_API_KEY" \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/snapshots/$SNAPSHOT_ID"
+    curl --fail-with-body -o snapshot.ipynb -H "Authorization: Bearer $STORIX_API_KEY" \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/snapshots/$SNAPSHOT_ID/content"
+    ```
+
+    snapshot metadata의 `sha256`과 `snapshot.ipynb`의 SHA-256을 대조한다. 실제 복원은
+    snapshot 이후 파일이 바뀐 상태를 대상으로 한다. 먼저 현재 revision을 조건으로 다른
+    바이트를 저장하고, 그 응답의 새 revision을 `FILE_REVISION`에 넣는다.
+
+    ```sh
+    curl --fail-with-body -X POST \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      -H "Idempotency-Key: 00000000-0000-4000-8000-000000000004" \
+      -H "X-Mutation-Scope: notebook-service" \
+      -H "X-If-Revision: $FILE_REVISION" -H "Content-Type: application/octet-stream" \
+      --data-binary @edited-notebook.ipynb \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/content/conditional?path=%2Fnotebook.ipynb"
+    ```
+
+    그 다음 snapshot을 현재의 revision 조건으로 복원한다. 생성 복원은 `ifAbsent: true`를
+    사용하고, 아래처럼 기존 파일을 덮을 때는 최신 `FILE_REVISION`을 사용한다.
+
+    ```sh
+    curl --fail-with-body -X POST \
+      -H "Authorization: Bearer $STORIX_API_KEY" \
+      -H "Idempotency-Key: 00000000-0000-4000-8000-000000000005" \
+      -H "X-Mutation-Scope: notebook-service" -H "Content-Type: application/json" \
+      --data '{"path":"/notebook.ipynb","ifRevision":"'"$FILE_REVISION"'"}' \
+      "https://storix.example/api/v2/namespaces/$NAMESPACE_ID/fs/snapshots/$SNAPSHOT_ID/restore"
+    ```
+
+    `FILE_REVISION`은 각 변경 이후 새 metadata에서 갱신한다. 완료된 조건부 변경과
+    snapshot 변경의 응답은 namespace/scope/key로 구분하며 완료 시점부터 30일간 재생한다.
+    30일이 지나면 같은 key의 재생은 보장되지 않고 새 작업으로 평가될 수 있다. 만료
+    receipt의 물리 정리는 GC 시점에 따르며, 호출자는 보존 기한을 넘겨 key를 재사용하지
+    않는다. 요청 조건·성공 필드·오류 코드는 아래 각 operation 계약을 기준으로 한다.
 
     SQLite는 단일 서버 인스턴스 배포 전제다. 여러 서버 인스턴스는 공유
     PostgreSQL과 Blob 저장소를 사용한다. SQLite는 모든 쿼리를 한 줄로 직렬화하며,
