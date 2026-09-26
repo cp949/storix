@@ -19,6 +19,7 @@ export type ConditionalMutation =
       readonly destinationSegments: string[];
       readonly sourceRevision: string;
       readonly destinationAbsent: true;
+      readonly destinationResolution?: 'exact';
     };
 
 const resolver = new PathResolver();
@@ -94,11 +95,21 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
     }
     case 'move':
     case 'copy': {
-      requireKeys(record, ['kind', 'source', 'destination', 'sourceRevision', 'destinationAbsent']);
+      requireKeys(record, [
+        'kind',
+        'source',
+        'destination',
+        'sourceRevision',
+        'destinationAbsent',
+        'destinationResolution',
+      ]);
       const source = pathOf(record.source, false);
       const destination = pathOf(record.destination, true);
       const sourceRevision = requiredRevision(record, 'sourceRevision');
       requireTrue(record, 'destinationAbsent');
+      if ('destinationResolution' in record && record.destinationResolution !== 'exact') {
+        throw new VfsInvalidMutationRequestError();
+      }
       return {
         kind: record.kind,
         source: source.canonical,
@@ -107,6 +118,7 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
         destinationSegments: destination.segments,
         sourceRevision,
         destinationAbsent: true,
+        ...(record.destinationResolution === 'exact' ? { destinationResolution: 'exact' as const } : {}),
       };
     }
     default:

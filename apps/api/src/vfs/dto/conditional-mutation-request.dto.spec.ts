@@ -31,6 +31,38 @@ describe('conditional mutation request', () => {
     });
   });
 
+  it.each(['move', 'copy'] as const)('accepts exact %s and preserves the omitted command shape', (kind) => {
+    const body = { kind, source: '/a', destination: '/b', sourceRevision: revision, destinationAbsent: true };
+    const legacy = parseConditionalMutation(body);
+    expect(Object.keys(legacy)).not.toContain('destinationResolution');
+    expect(parseConditionalMutation({ ...body, destinationResolution: 'exact' })).toEqual({
+      ...legacy,
+      destinationResolution: 'exact',
+    });
+    expect(() =>
+      parseConditionalMutation({
+        kind,
+        source: '/a',
+        destination: '/b',
+        sourceRevision: revision,
+        destinationResolution: 'exact',
+      }),
+    ).toThrow(VfsPreconditionRequiredError);
+  });
+
+  it.each(['placement', false, null])('rejects unsupported destinationResolution %j', (value) => {
+    expect(() =>
+      parseConditionalMutation({
+        kind: 'copy',
+        source: '/a',
+        destination: '/b',
+        sourceRevision: revision,
+        destinationAbsent: true,
+        destinationResolution: value,
+      }),
+    ).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
   it.each([
     { kind: 'mkdir', path: '/a' },
     { kind: 'delete', path: '/a' },

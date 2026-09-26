@@ -613,6 +613,95 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       expect((await getRepo().getRoot(namespace.id))!.version).toBe(rootBefore.version);
     });
 
+    it.each(['move', 'copy'] as const)(
+      '%s exact destination rejects occupied paths and preserves state',
+      async (kind) => {
+        const namespace = await createNamespace(`exact-${kind}-${randomUUID()}`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await createFile(namespace.id, root.id, 'source');
+        await createFile(namespace.id, root.id, 'file');
+        await getRepo().ensureDirectory(namespace.id, root.id, ['directory'], false);
+        const source = (await getRepo().resolvePath(namespace.id, root.id, ['source']))!;
+        for (const path of ['/', '/file', '/directory']) {
+          const segments = path.split('/').filter(Boolean);
+          const occupied = segments.length
+            ? (await getRepo().resolvePath(namespace.id, root.id, segments))!
+            : (await getRepo().getRoot(namespace.id))!;
+          const before = await captureState(namespace.id);
+          await expect(
+            getRepo().withMutation(namespace.id, root.id, (tx) =>
+              getRepo().applyConditionalMutation(tx, {
+                kind,
+                source: '/source',
+                sourceSegments: ['source'],
+                destination: path,
+                destinationSegments: segments,
+                sourceRevision: encodeRevision(source),
+                destinationAbsent: true,
+                destinationResolution: 'exact',
+              }),
+            ),
+          ).rejects.toMatchObject({
+            status: 412,
+            path,
+            current: toPreconditionCurrent(occupied, path),
+          });
+          expect(await captureState(namespace.id)).toEqual(before);
+        }
+        const beforeMissingParent = await captureState(namespace.id);
+        await expect(
+          getRepo().withMutation(namespace.id, root.id, (tx) =>
+            getRepo().applyConditionalMutation(tx, {
+              kind,
+              source: '/source',
+              sourceSegments: ['source'],
+              destination: '/missing/leaf',
+              destinationSegments: ['missing', 'leaf'],
+              sourceRevision: encodeRevision(source),
+              destinationAbsent: true,
+              destinationResolution: 'exact',
+            }),
+          ),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(await captureState(namespace.id)).toEqual(beforeMissingParent);
+        const beforeSuccess = await captureState(namespace.id);
+        expect(beforeSuccess.nodes.some((node) => node.name === 'leaf')).toBe(false);
+        const created = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind,
+            source: '/source',
+            sourceSegments: ['source'],
+            destination: '/directory/leaf',
+            destinationSegments: ['directory', 'leaf'],
+            sourceRevision: encodeRevision(source),
+            destinationAbsent: true,
+            destinationResolution: 'exact',
+          }),
+        );
+        expect(created.value.resource?.path).toBe('/directory/leaf');
+      },
+    );
+
+    it.each(['move', 'copy'] as const)('%s omitted selector retains directory placement', async (kind) => {
+      const namespace = await createNamespace(`legacy-${kind}-${randomUUID()}`);
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await createFile(namespace.id, root.id, 'source');
+      await getRepo().ensureDirectory(namespace.id, root.id, ['directory'], false);
+      const source = (await getRepo().resolvePath(namespace.id, root.id, ['source']))!;
+      const result = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().applyConditionalMutation(tx, {
+          kind,
+          source: '/source',
+          sourceSegments: ['source'],
+          destination: '/directory',
+          destinationSegments: ['directory'],
+          sourceRevision: encodeRevision(source),
+          destinationAbsent: true,
+        }),
+      );
+      expect(result.value.resource?.path).toBe('/directory/source');
+    });
+
     it('rejects a stale revision after delete and recreate of the same path', async () => {
       const namespace = await createNamespace('conditional-recreate-ns');
       const root = (await getRepo().getRoot(namespace.id))!;

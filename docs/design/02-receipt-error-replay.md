@@ -75,6 +75,10 @@ claim이 `owner`인 요청의 보류된 입력 오류(restore/delete의 snapshot
   완료 시점부터 30일이 지나 만료된 receipt는 claim 시 삭제되고 새로 평가한다.
 - 다른 fingerprint(경로·조건·본문·`sourceRevision`이 다른 요청)는 409 `MUTATION_KEY_REUSED`다. 오류 뒤 경로를 고친 요청도
   같은 key에서는 이 응답을 받는다.
+- 조건부 move/copy의 선택 필드 `destinationResolution: "exact"`는 정규화 command와 fingerprint에 포함된다. 필드를 생략하면
+  command에 키를 만들지 않아 기존 fingerprint shape를 유지한다. 같은 key에서 selector를 추가·제거하면
+  `MUTATION_KEY_REUSED`다. exact 대상(`/`·FILE·DIRECTORY)이 이미 있으면 같은 mutation 트랜잭션에서 대상
+  `current`를 읽어 412를 만들고, 이후 대상이 바뀌어도 최초 body와 `X-Request-Id`를 재생한다.
 
 ### 3.2 저장하지 않는다(재시도가 다시 평가한다)
 

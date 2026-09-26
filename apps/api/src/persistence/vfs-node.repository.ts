@@ -553,6 +553,7 @@ export class VfsNodeRepository {
           command.destinationSegments,
           false,
           tx,
+          command.destinationResolution,
         );
         return { status: 200, resource: toNodeResponse(result.node, result.finalPath) };
       }
@@ -568,6 +569,7 @@ export class VfsNodeRepository {
         false,
         max,
         tx,
+        command.destinationResolution,
       );
       return { status: 201, resource: toNodeResponse(result.node, result.finalPath) };
     } catch (error) {
@@ -1118,6 +1120,7 @@ export class VfsNodeRepository {
     destinationParents: boolean,
     tx?: MutationTx,
     markSourceAncestors = true,
+    destinationResolution?: 'exact',
   ): Promise<{
     sourceNode: VfsNodeEntity;
     finalParentId: string;
@@ -1176,7 +1179,13 @@ export class VfsNodeRepository {
       ? await this.lockTargetNode(manager, namespaceId, destinationParentId, destinationName)
       : null;
 
-    const nestUnderDirectory = destinationSegments.length === 0 || destinationTarget?.type === 'DIRECTORY';
+    if (destinationResolution === 'exact' && (destinationSegments.length === 0 || destinationTarget)) {
+      throw new VfsAlreadyExistsError(joinSegments(destinationSegments));
+    }
+
+    const nestUnderDirectory =
+      destinationResolution !== 'exact' &&
+      (destinationSegments.length === 0 || destinationTarget?.type === 'DIRECTORY');
     const sourceBasename = sourceSegments[sourceSegments.length - 1];
 
     const finalParentId = nestUnderDirectory
@@ -1222,11 +1231,20 @@ export class VfsNodeRepository {
     destinationSegments: string[],
     destinationParents: boolean,
     tx?: MutationTx,
+    destinationResolution?: 'exact',
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
     if (!tx) {
       return (
         await this.withMutation(namespaceId, rootId, (inner) =>
-          this.moveNode(namespaceId, rootId, sourceSegments, destinationSegments, destinationParents, inner),
+          this.moveNode(
+            namespaceId,
+            rootId,
+            sourceSegments,
+            destinationSegments,
+            destinationParents,
+            inner,
+            destinationResolution,
+          ),
         )
       ).value;
     }
@@ -1239,6 +1257,8 @@ export class VfsNodeRepository {
       destinationSegments,
       destinationParents,
       tx,
+      true,
+      destinationResolution,
     );
 
     if (sourceNode.version >= MAX_VFS_VERSION) {
@@ -1408,6 +1428,7 @@ export class VfsNodeRepository {
     destinationParents: boolean,
     maxSyncCopyNodes: number,
     tx?: MutationTx,
+    destinationResolution?: 'exact',
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
     if (!tx) {
       return (
@@ -1420,6 +1441,7 @@ export class VfsNodeRepository {
             destinationParents,
             maxSyncCopyNodes,
             inner,
+            destinationResolution,
           ),
         )
       ).value;
@@ -1437,6 +1459,7 @@ export class VfsNodeRepository {
       destinationParents,
       tx,
       false,
+      destinationResolution,
     );
 
     if (sourceNode.type === 'FILE') {

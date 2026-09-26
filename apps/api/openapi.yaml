@@ -286,6 +286,10 @@ paths:
                     destination: { type: string }
                     sourceRevision: { type: string, pattern: '^r1\.' }
                     destinationAbsent: { type: boolean, enum: [true] }
+                    destinationResolution:
+                      type: string
+                      enum: [exact]
+                      description: 생략하면 기존 directory 아래 basename 배치, exact이면 지정 경로 자체가 없어야 한다.
       responses:
         '200':
           description: 변경 또는 동일 요청의 최초 응답 재생
@@ -321,7 +325,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '412':
-          description: revision 불일치 또는 목적지 존재. body의 `current`는 충돌 시점 metadata이며 receipt로 재생된다.
+          description: revision 불일치 또는 목적지 존재(exact에서는 `/` 포함 지정 경로 자체). body의 `current`는 충돌 시점 metadata이며 receipt로 재생된다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }

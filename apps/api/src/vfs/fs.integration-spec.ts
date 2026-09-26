@@ -1679,6 +1679,135 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional mutation receipts', () => {
+    it.each(['move', 'copy'] as const)(
+      '%s exact target conflicts, replay, and legacy placement',
+      async (kind) => {
+        const namespaceId = await createNamespace(`exact-http-${kind}-${randomUUID()}`);
+        const base = `/api/v2/namespaces/${namespaceId}/fs`;
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path: '/source' })
+          .set('Content-Type', 'text/plain')
+          .send('source')
+          .expect(201);
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path: '/file' })
+          .set('Content-Type', 'text/plain')
+          .send('occupied')
+          .expect(201);
+        await request(httpServer).post(`${base}/mkdir`).send({ path: '/directory' }).expect(201);
+        const revision = async (path: string) =>
+          (await request(httpServer).get(`${base}/revision`).query({ path }).expect(200)).body
+            .revision as string;
+        const sourceRevision = await revision('/source');
+        const mutate = (body: Record<string, unknown>, key = randomUUID()) =>
+          request(httpServer)
+            .post(`${base}/mutations`)
+            .set('Idempotency-Key', key)
+            .set('X-Mutation-Scope', 'exact-target')
+            .send(body);
+        const command = {
+          kind,
+          source: '/source',
+          destination: '/file',
+          sourceRevision,
+          destinationAbsent: true,
+          destinationResolution: 'exact',
+        };
+        for (const path of ['/', '/file', '/directory']) {
+          const stat = (await request(httpServer).get(`${base}/stat`).query({ path }).expect(200)).body;
+          const currentRevision = await revision(path);
+          const failed = await mutate({ ...command, destination: path }).expect(412);
+          expect(failed.body).toMatchObject({
+            code: 'VFS_PRECONDITION_FAILED',
+            path,
+            current: { id: stat.id, path, revision: currentRevision },
+          });
+        }
+        const key = randomUUID();
+        const failed = await mutate(command, key).expect(412);
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path: '/file', force: true })
+          .set('Content-Type', 'text/plain')
+          .send('changed')
+          .expect(200);
+        const replay = await mutate(command, key).expect(412);
+        expect(replay.body).toEqual(failed.body);
+        expect(replay.headers['x-request-id']).toBe(failed.headers['x-request-id']);
+        expect(
+          (await mutate({ ...command, destinationResolution: undefined }, key).expect(409)).body.code,
+        ).toBe('MUTATION_KEY_REUSED');
+        for (const value of ['placement', false, null]) {
+          expect((await mutate({ ...command, destinationResolution: value }).expect(400)).body.code).toBe(
+            'VFS_INVALID_MUTATION_REQUEST',
+          );
+        }
+        const stale = await mutate({
+          ...command,
+          sourceRevision: encodeRevision({ id: randomUUID(), version: 1 }),
+        }).expect(412);
+        expect(stale.body.path).toBe('/source');
+        expect(stale.body.current.revision).toBe(sourceRevision);
+        const exact = await mutate({ ...command, destination: '/directory/leaf' }).expect(
+          kind === 'move' ? 200 : 201,
+        );
+        expect(exact.body.resource.path).toBe('/directory/leaf');
+        if (kind === 'move') {
+          await request(httpServer)
+            .post(`${base}/content`)
+            .query({ path: '/legacy-source' })
+            .set('Content-Type', 'text/plain')
+            .send('legacy')
+            .expect(201);
+        }
+        const legacySource = kind === 'move' ? '/legacy-source' : '/source';
+        const legacy = await mutate({
+          ...command,
+          source: legacySource,
+          sourceRevision: await revision(legacySource),
+          destination: '/directory',
+          destinationResolution: undefined,
+        }).expect(kind === 'move' ? 200 : 201);
+        expect(legacy.body.resource.path).toBe(`/directory/${legacySource.slice(1)}`);
+      },
+    );
+
+    it('serializes two exact copies to one absent target', async () => {
+      const namespaceId = await createNamespace(`exact-race-${randomUUID()}`);
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      for (const path of ['/one', '/two']) {
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path })
+          .set('Content-Type', 'text/plain')
+          .send(path)
+          .expect(201);
+      }
+      const copy = async (source: string) =>
+        request(httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', randomUUID())
+          .set('X-Mutation-Scope', 'exact-race')
+          .send({
+            kind: 'copy',
+            source,
+            destination: '/target',
+            sourceRevision: (
+              await request(httpServer).get(`${base}/revision`).query({ path: source }).expect(200)
+            ).body.revision,
+            destinationAbsent: true,
+            destinationResolution: 'exact',
+          });
+      const responses = await Promise.all([copy('/one'), copy('/two')]);
+      expect(responses.map((response) => response.status).sort()).toEqual([201, 412]);
+      expect(
+        (await request(httpServer).get(`${base}/stat`).query({ path: '/target' }).expect(200)).body.path,
+      ).toBe('/target');
+      const listing = await request(httpServer).get(`${base}/ls`).query({ path: '/' }).expect(200);
+      expect(listing.body.items.filter((item: { name: string }) => item.name === 'target')).toHaveLength(1);
+    });
     it('NFD path 거부를 receipt로 재생하고 같은 key의 NFC 요청은 key 재사용으로 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-nfd-retry-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs/mutations`;

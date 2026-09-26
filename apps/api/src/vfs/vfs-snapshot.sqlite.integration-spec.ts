@@ -97,6 +97,96 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
 
   treeSnapshotContract(() => app);
 
+  it('replays exact directory collision across SQLite app and DataSource restart', async () => {
+    const http = () => request(app.getHttpServer());
+    const namespace = await http()
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: `exact-restart-${randomUUID()}` })
+      .expect(201);
+    const base = `/api/v2/namespaces/${namespace.body.id}/fs`;
+    await http()
+      .post(`${base}/content`)
+      .query({ path: '/source' })
+      .set('Content-Type', 'text/plain')
+      .send('source')
+      .expect(201);
+    await http().post(`${base}/mkdir`).send({ path: '/directory' }).expect(201);
+    const sourceRevision = (await http().get(`${base}/revision`).query({ path: '/source' }).expect(200)).body
+      .revision;
+    const key = randomUUID();
+    const body = {
+      kind: 'copy',
+      source: '/source',
+      destination: '/directory',
+      sourceRevision,
+      destinationAbsent: true,
+      destinationResolution: 'exact',
+    };
+    const mutate = (command: Record<string, unknown>) =>
+      http()
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'exact-restart')
+        .send(command);
+    const failed = await mutate(body).expect(412);
+    expect(failed.body).toMatchObject({
+      code: 'VFS_PRECONDITION_FAILED',
+      path: '/directory',
+      current: { path: '/directory' },
+    });
+    await http().post(`${base}/mkdir`).send({ path: '/directory/changed' }).expect(201);
+    const oldDataSource = app.get(DataSource);
+    await app.close();
+    expect(oldDataSource.isInitialized).toBe(false);
+    app = await bootstrap();
+    const replay = await mutate(body).expect(412);
+    expect(replay.body).toEqual(failed.body);
+    expect(replay.headers['x-request-id']).toBe(failed.headers['x-request-id']);
+    expect((await mutate({ ...body, destinationResolution: undefined }).expect(409)).body.code).toBe(
+      'MUTATION_KEY_REUSED',
+    );
+  });
+
+  it('serializes SQLite exact copies to one target creation and one 412', async () => {
+    const http = () => request(app.getHttpServer());
+    const namespace = await http()
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: `exact-race-${randomUUID()}` })
+      .expect(201);
+    const base = `/api/v2/namespaces/${namespace.body.id}/fs`;
+    for (const path of ['/one', '/two']) {
+      await http()
+        .post(`${base}/content`)
+        .query({ path })
+        .set('Content-Type', 'text/plain')
+        .send(path)
+        .expect(201);
+    }
+    const copy = async (source: string) =>
+      http()
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'exact-race')
+        .send({
+          kind: 'copy',
+          source,
+          destination: '/target',
+          sourceRevision: (await http().get(`${base}/revision`).query({ path: source }).expect(200)).body
+            .revision,
+          destinationAbsent: true,
+          destinationResolution: 'exact',
+        });
+    const responses = await Promise.all([copy('/one'), copy('/two')]);
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 412]);
+    expect((await http().get(`${base}/stat`).query({ path: '/target' }).expect(200)).body.path).toBe(
+      '/target',
+    );
+    const listing = await http().get(`${base}/ls`).query({ path: '/' }).expect(200);
+    expect(listing.body.items.filter((item: { name: string }) => item.name === 'target')).toHaveLength(1);
+  });
+
   it('실제 SQLite gated transaction 대기 초과는 503 DB_BUSY이고 같은 key 재시도로 한 번만 변경한다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()

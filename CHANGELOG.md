@@ -10,6 +10,8 @@
 
 ### Added
 
+- 조건부 move/copy에 선택 필드 `destinationResolution: "exact"`를 추가했다. 지정 경로(`/` 포함)가 이미 있으면 대상 metadata를 담은 412를 재생 가능 receipt로 저장하고, 없으면 정확한 경로에 이동·복사한다. 필드를 생략하면 기존 목적지 배치 규칙을 유지한다.
+
 - 식별된 DB·Blob 일시 장애는 503 `STORAGE_UNAVAILABLE`, 영구 저장 오류는 안전한 500 `STORAGE_FAILURE`로 구분한다. 분류되지 않은 서버 오류는 500 `INTERNAL_ERROR`를 반환하며 내부 오류 메시지와 비밀을 노출하지 않는다. `DB_BUSY`는 기존 503 계약을 유지한다. 두 저장 장애 코드의 원본 DB·Blob 오류(SQLSTATE·SDK 코드 등)는 응답 대신 서버 로그에 `Caused by:`로 남는다(`STORAGE_FAILURE`는 error, `STORAGE_UNAVAILABLE`은 warn).
 
 - namespace 응답(생성·목록·상세 조회·quota 변경)에 적용 단일 파일 상한 `limits.maxFileSizeBytes`(바이트 단위 10진 문자열)를 추가했다.
