@@ -22,7 +22,7 @@ import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
-import { resolveEffectiveLimit } from '../common/resource-limit.js';
+import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
 import {
@@ -82,7 +82,7 @@ export class ContentService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = parsePositiveInt(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'), 5368709120);
+    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
     this.presignedUrlExpirySeconds = parsePositiveInt(
       config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'),
       300,
@@ -146,10 +146,7 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
-    const maxFileSizeBytes = resolveEffectiveLimit(
-      limits.maxFileSizeBytes === null ? null : Number(limits.maxFileSizeBytes),
-      this.maxFileSizeBytes,
-    );
+    const maxFileSizeBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.maxFileSizeBytes);
 
     const contentLength = options.contentLength !== undefined ? Number(options.contentLength) : undefined;
     if (contentLength !== undefined && contentLength > maxFileSizeBytes) {

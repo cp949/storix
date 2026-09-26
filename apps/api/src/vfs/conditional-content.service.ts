@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
-import { resolveEffectiveLimit } from '../common/resource-limit.js';
+import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { EncryptingPutTarget } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import {
@@ -70,7 +70,7 @@ export class ConditionalContentService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = parsePositiveInt(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'), 5368709120);
+    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
     this.maxUploadDurationMs =
       parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
   }
@@ -89,10 +89,7 @@ export class ConditionalContentService {
   ): Promise<MutationHttpResult> {
     const identity = identityOf(namespaceId, scope, key);
     const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
-    const maxBytes = resolveEffectiveLimit(
-      limits.maxFileSizeBytes === null ? null : Number(limits.maxFileSizeBytes),
-      this.maxFileSizeBytes,
-    );
+    const maxBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.maxFileSizeBytes);
     const mimeType = normalizeMimeType(contentType);
     let path = rawPath;
     let segments: string[] = [];

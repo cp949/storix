@@ -4,8 +4,7 @@ import {
   NamespaceEntity,
   NamespaceStatus,
 } from '../../persistence/entities/namespace.entity.js';
-import { parsePositiveInt } from '../../common/env-parsing.js';
-import { resolveEffectiveLimit } from '../../common/resource-limit.js';
+import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../../common/resource-limit.js';
 import { resolveNamespaceQuota, resolveTotalLogicalBytes } from '../../vfs/namespace-quota.js';
 
 export interface NamespaceResponseDto {
@@ -34,9 +33,9 @@ export function toNamespaceResponse(
     updatedAt: entity.updatedAt.toISOString(),
     limits: {
       maxFileSizeBytes: String(
-        resolveEffectiveLimit(
-          entity.maxFileSizeBytes === null ? null : Number(entity.maxFileSizeBytes),
-          parsePositiveInt(process.env.STORIX_MAX_FILE_SIZE_BYTES, 5368709120),
+        resolveMaxFileSizeBytes(
+          entity.maxFileSizeBytes,
+          resolveGlobalMaxFileSizeBytes(process.env.STORIX_MAX_FILE_SIZE_BYTES),
         ),
       ),
     },
