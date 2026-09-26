@@ -143,11 +143,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '413':
-          description: quota 초과 또는 전역 상한 초과
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
   /api/v1/namespaces/{namespaceId}/fs/mutations:
     post:
