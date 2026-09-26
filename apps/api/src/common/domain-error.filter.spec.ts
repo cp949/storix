@@ -1,6 +1,7 @@
 import { ArgumentsHost, Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DomainError } from './domain-error.js';
+import { StorageFailureError, StorageUnavailableError } from './storage-failure.errors.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 import { SqliteGateTimeoutError } from '../persistence/sqlite-gate.errors.js';
@@ -72,6 +73,31 @@ const CURRENT: VfsPreconditionCurrentDto = {
 
 describe('DomainErrorFilter', () => {
   const filter = new DomainErrorFilter();
+
+  it('명시적 STORAGE_FAILURE만 안전한 500 code와 고정 메시지를 낸다', () => {
+    const { host, json, status, setHeader } = createHost();
+    filter.catch(new StorageFailureError('private object key'), host);
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      code: 'STORAGE_FAILURE',
+      message: 'Storage failure',
+      requestId: 'req-1',
+    });
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it('명시적 STORAGE_UNAVAILABLE은 503이며 대기 시간이 없으면 Retry-After를 보내지 않는다', () => {
+    const { host, json, status, setHeader } = createHost();
+    filter.catch(new StorageUnavailableError('private endpoint'), host);
+    expect(status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith({
+      code: 'STORAGE_UNAVAILABLE',
+      message: 'Storage temporarily unavailable',
+      path: undefined,
+      requestId: 'req-1',
+    });
+    expect(setHeader).not.toHaveBeenCalled();
+  });
 
   it('retryAfterSeconds를 가진 오류는 Retry-After 헤더를 붙여 응답한다', () => {
     const { host, json, status, setHeader } = createHost('req-busy');

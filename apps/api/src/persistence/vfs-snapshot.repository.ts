@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { classifyPersistenceOperation } from './persistence-failure.js';
 import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
@@ -105,6 +106,7 @@ export class VfsSnapshotRepository {
     return blob.sha256;
   }
 
+  @classifyPersistenceOperation
   async capture(tx: MutationTx, input: SnapshotCaptureInput): Promise<SnapshotMetadata> {
     const namespace = await tx.manager.findOneBy(NamespaceEntity, { id: tx.namespaceId });
     if (!namespace) throw new VfsNamespaceNotFoundError(tx.namespaceId);
@@ -202,6 +204,7 @@ export class VfsSnapshotRepository {
     return metadata(snapshot, await this.fileSha256(tx.manager, snapshot));
   }
 
+  @classifyPersistenceOperation
   async findForUpdate(
     tx: MutationTx,
     namespaceId: string,
@@ -216,6 +219,7 @@ export class VfsSnapshotRepository {
     return result ? { ...result, logicalBytes: String(result.logicalBytes) } : null;
   }
 
+  @classifyPersistenceOperation
   async getEntry(tx: MutationTx, snapshotId: string, relativePath: string): Promise<SnapshotEntry | null> {
     const result = await tx.manager.findOneBy(VfsSnapshotEntryEntity, {
       namespaceId: tx.namespaceId,
@@ -225,6 +229,7 @@ export class VfsSnapshotRepository {
     return result ? entry(result) : null;
   }
 
+  @classifyPersistenceOperation
   async getFileEntry(tx: MutationTx, snapshotId: string): Promise<SnapshotEntry | null> {
     const snapshot = await tx.manager.findOneBy(VfsSnapshotEntity, {
       id: snapshotId,
@@ -241,6 +246,7 @@ export class VfsSnapshotRepository {
     return result ? entry(result) : null;
   }
 
+  @classifyPersistenceOperation
   async get(namespaceId: string, snapshotId: string): Promise<SnapshotMetadata | null> {
     const work = async (manager: EntityManager): Promise<SnapshotMetadata | null> => {
       const result = await manager.findOneBy(VfsSnapshotEntity, { id: snapshotId, namespaceId });
@@ -251,6 +257,7 @@ export class VfsSnapshotRepository {
       : this.dataSource.transaction('REPEATABLE READ', work);
   }
 
+  @classifyPersistenceOperation
   async listFileSnapshots(
     namespaceId: string,
     rootNodeId: string,
@@ -296,6 +303,7 @@ export class VfsSnapshotRepository {
     };
   }
 
+  @classifyPersistenceOperation
   async listEntries(
     namespaceId: string,
     snapshotId: string,
@@ -316,6 +324,7 @@ export class VfsSnapshotRepository {
     return { entries, nextPathKey: rows.length > limit ? entries[entries.length - 1].pathKey : null };
   }
 
+  @classifyPersistenceOperation
   async remove(tx: MutationTx, snapshot: LockedSnapshot): Promise<void> {
     if (snapshot.namespaceId !== tx.namespaceId) throw new VfsInvalidOperationError(snapshot.sourcePath);
     // 같은 locked value로 재호출해도 예산과 참조를 두 번 해제하지 않는다.

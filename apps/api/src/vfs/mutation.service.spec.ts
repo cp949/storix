@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository, type MutationTx } from '../persistence/vfs-node.repository.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
+import { StorageUnavailableError } from '../common/storage-failure.errors.js';
 import type { ArgumentsHost } from '@nestjs/common';
 import type { VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
 import { errorResponse } from './mutation-receipt.js';
@@ -13,6 +14,7 @@ describe('MutationService 오류 receipt', () => {
   const namespaceId = randomUUID();
   const rootId = randomUUID();
   const tx = {} as MutationTx;
+  const claim = jest.fn<VfsMutationReceiptRepository['claim']>();
   const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
   const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
   const release = jest.fn<(...args: unknown[]) => Promise<void>>();
@@ -22,6 +24,7 @@ describe('MutationService 오류 receipt', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    claim.mockResolvedValue({ kind: 'owner', generation: 4 });
     complete.mockResolvedValue(undefined);
     completeAfterRollback.mockResolvedValue(undefined);
     release.mockResolvedValue(undefined);
@@ -38,7 +41,7 @@ describe('MutationService 오류 receipt', () => {
         applyConditionalMutation,
       } as unknown as VfsNodeRepository,
       {
-        claim: async () => ({ kind: 'owner', generation: 4 }),
+        claim,
         complete,
         completeAfterRollback,
         release,
@@ -48,6 +51,18 @@ describe('MutationService 오류 receipt', () => {
 
   const run = (body: string, requestId = 'req-1') =>
     service.executeJson(namespaceId, 'scope', randomUUID(), 'POST', Buffer.from(body), requestId);
+
+  it('receipt claim의 STORAGE_UNAVAILABLE은 owner 없이 전파하고 작업·완료·해제를 하지 않는다', async () => {
+    const error = new StorageUnavailableError('private database endpoint');
+    claim.mockRejectedValueOnce(error);
+
+    await expect(run('{"kind":"mkdir","path":"/a","ifAbsent":true}')).rejects.toBe(error);
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(applyConditionalMutation).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
 
   it('NFD path의 400을 트랜잭션 없이 오류 receipt로 저장하고 claim을 유지한다', async () => {
     const result = await run('{"kind":"mkdir","path":"/e\\u0301","ifAbsent":true}');
@@ -97,6 +112,17 @@ describe('MutationService 오류 receipt', () => {
     expect(release).toHaveBeenCalledWith(expect.objectContaining({ namespaceId }), 4);
   });
 
+  it('work의 STORAGE_UNAVAILABLE은 rollback receipt 없이 claim을 한 번 해제하고 원형 전파한다', async () => {
+    const error = new StorageUnavailableError('private database endpoint');
+    applyConditionalMutation.mockRejectedValueOnce(error);
+
+    await expect(run('{"kind":"mkdir","path":"/a","ifAbsent":true}')).rejects.toBe(error);
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(expect.objectContaining({ namespaceId }), 4);
+  });
+
   it('오류 receipt fencing 실패는 claim 해제 뒤 claim lost 오류를 전파한다', async () => {
     applyConditionalMutation.mockRejectedValueOnce(new VfsNodeNotFoundError('/a'));
     completeAfterRollback.mockRejectedValueOnce(new Error('VFS mutation claim lost'));
@@ -116,6 +142,30 @@ describe('MutationService 오류 receipt', () => {
     );
     expect(completeAfterRollback).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('성공 receipt 완료의 STORAGE_UNAVAILABLE은 rollback receipt 없이 claim을 한 번 해제한다', async () => {
+    const error = new StorageUnavailableError('private database endpoint');
+    applyConditionalMutation.mockResolvedValueOnce({ status: 201, resource: null });
+    complete.mockRejectedValueOnce(error);
+
+    await expect(run('{"kind":"mkdir","path":"/a","ifAbsent":true}')).rejects.toBe(error);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(expect.objectContaining({ namespaceId }), 4);
+  });
+
+  it('결정적 4xx의 rollback receipt 완료에 STORAGE_UNAVAILABLE이 나면 4xx 대신 저장 오류를 전파한다', async () => {
+    const error = new StorageUnavailableError('private database endpoint');
+    applyConditionalMutation.mockRejectedValueOnce(new VfsNodeNotFoundError('/a'));
+    completeAfterRollback.mockRejectedValueOnce(error);
+
+    await expect(run('{"kind":"mkdir","path":"/a","ifAbsent":true}')).rejects.toBe(error);
+    expect(complete).not.toHaveBeenCalled();
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(expect.objectContaining({ namespaceId }), 4);
   });
 });
 

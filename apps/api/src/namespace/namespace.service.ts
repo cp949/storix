@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { classifyPersistenceFailure } from '../persistence/persistence-failure.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryDeepPartialEntity, Repository } from 'typeorm';
@@ -24,10 +25,12 @@ function isUniqueViolation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const candidate = error as { code?: unknown; driverError?: { code?: unknown }; message?: unknown };
   const code = candidate.code ?? candidate.driverError?.code;
-  return code === '23505' ||
+  return (
+    code === '23505' ||
     code === 'SQLITE_CONSTRAINT_UNIQUE' ||
     code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
-    (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message));
+    (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message))
+  );
 }
 export interface CreateNamespaceResult {
   readonly status: number;
@@ -40,7 +43,8 @@ export class NamespaceService {
 
   constructor(
     @InjectRepository(NamespaceEntity) private readonly namespaceRepo: Repository<NamespaceEntity>,
-    @InjectRepository(IdempotencyKeyEntity) private readonly idempotencyRepo: Repository<IdempotencyKeyEntity>,
+    @InjectRepository(IdempotencyKeyEntity)
+    private readonly idempotencyRepo: Repository<IdempotencyKeyEntity>,
     private readonly provisioningRepo: NamespaceProvisioningRepository,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
@@ -84,7 +88,10 @@ export class NamespaceService {
         // 빠진다 — 원래 도메인 오류를 다시 던져 항상 필터를 통과하게 한다.
         throw new NamespaceAlreadyExistsError(name);
       }
-      return { status: existing.responseStatus, body: existing.responseBody as CreateNamespaceResult['body'] };
+      return {
+        status: existing.responseStatus,
+        body: existing.responseBody as CreateNamespaceResult['body'],
+      };
     }
 
     try {
@@ -116,7 +123,10 @@ export class NamespaceService {
           throw new IdempotencyKeyReusedError(idempotencyKey);
         }
         if (winner.responseStatus === 201) {
-          return { status: winner.responseStatus, body: winner.responseBody as CreateNamespaceResult['body'] };
+          return {
+            status: winner.responseStatus,
+            body: winner.responseBody as CreateNamespaceResult['body'],
+          };
         }
         if (winner.responseStatus === 409) {
           throw new NamespaceAlreadyExistsError(name);
@@ -139,7 +149,12 @@ export class NamespaceService {
       throw new NamespaceNotFoundError(id);
     }
 
-    const namespace = await this.namespaceRepo.findOneBy({ id });
+    let namespace: NamespaceEntity | null;
+    try {
+      namespace = await this.namespaceRepo.findOneBy({ id });
+    } catch (error) {
+      throw classifyPersistenceFailure(error) ?? error;
+    }
     if (!namespace) {
       throw new NamespaceNotFoundError(id);
     }

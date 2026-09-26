@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { DomainError } from './domain-error.js';
+import { StorageFailureError, StorageUnavailableError } from './storage-failure.errors.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 import { ERROR_REPORTER } from '../observability/observability.constants.js';
 
@@ -49,6 +50,7 @@ export function resolveErrorMessage(exception: unknown, status: number): string 
   if (status === 500) {
     return INTERNAL_ERROR_MESSAGE;
   }
+  if (exception instanceof StorageUnavailableError) return 'Storage temporarily unavailable';
   return exception instanceof Error ? exception.message : INTERNAL_ERROR_MESSAGE;
 }
 
@@ -89,8 +91,8 @@ export class DomainErrorFilter implements ExceptionFilter {
 
     if (status === 500) {
       response.status(500).json({
-        code: 'INTERNAL_ERROR',
-        message: INTERNAL_ERROR_MESSAGE,
+        code: exception instanceof StorageFailureError ? exception.code : 'INTERNAL_ERROR',
+        message: exception instanceof StorageFailureError ? 'Storage failure' : INTERNAL_ERROR_MESSAGE,
         requestId: request.requestId,
       });
       return;

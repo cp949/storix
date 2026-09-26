@@ -2,8 +2,10 @@ import { jest } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
 import { InvalidApiKeyError } from '../auth/auth.errors.js';
 import { DomainError } from '../common/domain-error.js';
+import { StorageFailureError, StorageUnavailableError } from '../common/storage-failure.errors.js';
 import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
+import { SqliteGateTimeoutError } from '../persistence/sqlite-gate.errors.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import {
   busyResponse,
@@ -68,6 +70,9 @@ describe('isReplayableMutationError', () => {
     ['401 인증 실패', new InvalidApiKeyError()],
     ['500 DomainError', new CodedError('BROKEN', 500)],
     ['503 DomainError', new CodedError('UNAVAILABLE', 503)],
+    ['503 DB_BUSY SQLite 대기 시간 초과', new SqliteGateTimeoutError(30_000)],
+    ['503 STORAGE_UNAVAILABLE', new StorageUnavailableError()],
+    ['500 STORAGE_FAILURE', new StorageFailureError()],
     ['399 경계', new CodedError('EDGE_399', 399)],
     ['MUTATION_IN_PROGRESS', new CodedError('MUTATION_IN_PROGRESS', 409)],
     ['MUTATION_KEY_REUSED', new CodedError('MUTATION_KEY_REUSED', 409)],
@@ -131,6 +136,14 @@ describe('storeErrorReceipt', () => {
   it('저장 대상이 아닌 오류는 receipt를 완료하지 않고 그대로 다시 던진다', async () => {
     const { repository, completeAfterRollback } = receipts();
     const error = new Error('database unavailable');
+
+    await expect(storeErrorReceipt(repository, owner, error, 'req-1')).rejects.toBe(error);
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+  });
+
+  it('STORAGE_UNAVAILABLE은 rollback receipt를 완료하지 않고 원형으로 전파한다', async () => {
+    const { repository, completeAfterRollback } = receipts();
+    const error = new StorageUnavailableError('private database endpoint');
 
     await expect(storeErrorReceipt(repository, owner, error, 'req-1')).rejects.toBe(error);
     expect(completeAfterRollback).not.toHaveBeenCalled();

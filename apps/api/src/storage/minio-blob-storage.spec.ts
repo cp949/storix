@@ -1,10 +1,70 @@
 import { jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import type { Client } from 'minio';
+import { S3Error } from 'minio';
 import { MinioBlobStorage } from './minio-blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 
 describe('MinioBlobStorage', () => {
+  it('SDK get 실패와 반환 stream 실패를 저장 장애로 분류한다', async () => {
+    const sdkError = Object.assign(new S3Error('private key'), { code: 'NoSuchKey' });
+    const getObject = jest
+      .fn<() => Promise<Readable>>()
+      .mockRejectedValueOnce(sdkError)
+      .mockResolvedValueOnce(
+        Readable.from(
+          (async function* () {
+            throw Object.assign(new Error('private endpoint'), { code: 'ECONNRESET' });
+          })(),
+        ),
+      );
+    const storage = new MinioBlobStorage({ getObject } as unknown as Client, 'bucket', null);
+    await expect(storage.get('key')).rejects.toMatchObject({ code: 'STORAGE_FAILURE', status: 500 });
+    const result = await storage.get('key');
+    await expect(async () => {
+      for await (const _chunk of result) {
+        /* drain */
+      }
+    }).rejects.toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  it('upload source의 ECONNRESET은 SDK 저장 장애로 재분류하지 않는다', async () => {
+    const sourceError = Object.assign(new Error('client disconnected'), { code: 'ECONNRESET' });
+    const source = Readable.from(
+      (async function* () {
+        yield Buffer.from('first');
+        throw sourceError;
+      })(),
+    );
+    const putObject = jest.fn<(...args: unknown[]) => Promise<void>>(async (_bucket, _key, body) => {
+      for await (const _chunk of body as AsyncIterable<Buffer>) {
+        /* consume */
+      }
+    });
+    const storage = new MinioBlobStorage({ putObject } as unknown as Client, 'bucket', null);
+    await expect(storage.put('key', source)).rejects.toBe(sourceError);
+  });
+
+  it('SDK put/delete/presign 오류를 분류하고 미확인 오류는 원형 보존한다', async () => {
+    const reset = Object.assign(new Error('private endpoint'), { code: 'ECONNREFUSED' });
+    const unknown = new Error('unknown');
+    const putObject = jest.fn<(...args: unknown[]) => Promise<void>>().mockRejectedValue(reset);
+    const removeObject = jest.fn<(...args: unknown[]) => Promise<void>>().mockRejectedValue(unknown);
+    const presignedGetObject = jest
+      .fn<(...args: unknown[]) => Promise<string>>()
+      .mockRejectedValue(Object.assign(new S3Error('private'), { code: 'AccessDenied' }));
+    const storage = new MinioBlobStorage({ putObject, removeObject } as unknown as Client, 'bucket', {
+      presignedGetObject,
+    } as unknown as Client);
+    await expect(storage.put('key', Readable.from(Buffer.from('a')))).rejects.toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+    });
+    await expect(storage.delete('key')).rejects.toBe(unknown);
+    await expect(storage.getPresignedUrl('key', 60)).rejects.toMatchObject({ code: 'STORAGE_FAILURE' });
+  });
   it('range.end가 range.start보다 작으면 거부한다', async () => {
     const client = {} as Client;
     const storage = new MinioBlobStorage(client, 'bucket', null);

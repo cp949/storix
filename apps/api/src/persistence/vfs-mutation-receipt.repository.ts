@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { classifyPersistenceOperation } from './persistence-failure.js';
 import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
@@ -47,6 +48,7 @@ export class VfsMutationReceiptRepository {
     return this.dataSource.getRepository(VfsMutationReceiptEntity);
   }
 
+  @classifyPersistenceOperation
   async claim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim> {
     const sqlite = isSqliteDataSource(this.dataSource.options);
     const leaseMs = mutationLeaseSeconds() * 1000;
@@ -108,6 +110,7 @@ export class VfsMutationReceiptRepository {
     return { kind: 'busy', retryAfterSeconds };
   }
 
+  @classifyPersistenceOperation
   async renew(identity: ReceiptIdentity, generation: number, now: Date): Promise<boolean> {
     const leaseMs = mutationLeaseSeconds() * 1000;
     const result = await this.repo
@@ -123,6 +126,7 @@ export class VfsMutationReceiptRepository {
     return result.affected === 1;
   }
 
+  @classifyPersistenceOperation
   async complete(
     tx: MutationTx,
     identity: ReceiptIdentity,
@@ -146,6 +150,7 @@ export class VfsMutationReceiptRepository {
   // 작업 트랜잭션이 롤백된 뒤 오류 응답을 확정하는 경로다. 롤백된(PostgreSQL에서는
   // abort된) 트랜잭션을 재사용할 수 없으므로 새 짧은 트랜잭션을 연다. fencing 조건과
   // 저장 필드는 complete와 같다.
+  @classifyPersistenceOperation
   async completeAfterRollback(
     identity: ReceiptIdentity,
     generation: number,
@@ -159,10 +164,9 @@ export class VfsMutationReceiptRepository {
     );
   }
 
+  @classifyPersistenceOperation
   async namespaceExists(namespaceId: string): Promise<boolean> {
-    return (
-      (await this.dataSource.getRepository(NamespaceEntity).findOneBy({ id: namespaceId })) !== null
-    );
+    return (await this.dataSource.getRepository(NamespaceEntity).findOneBy({ id: namespaceId })) !== null;
   }
 
   // 보존 기한은 claim 시점이 아니라 완료 시점부터 RECEIPT_DAYS다.
@@ -202,10 +206,12 @@ export class VfsMutationReceiptRepository {
     if (result.affected !== 1) throw new Error('VFS mutation claim lost');
   }
 
+  @classifyPersistenceOperation
   async release(identity: ReceiptIdentity, generation: number): Promise<void> {
     await this.repo.delete({ ...keyOf(identity), state: 'RESERVED', generation });
   }
 
+  @classifyPersistenceOperation
   async pruneExpired(now: Date): Promise<number> {
     const expired = await this.repo
       .createQueryBuilder('r')

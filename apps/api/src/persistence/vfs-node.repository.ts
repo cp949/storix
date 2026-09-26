@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { classifyPersistenceFailure, classifyPersistenceOperation } from './persistence-failure.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +10,7 @@ import { parsePositiveInt } from '../common/env-parsing.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { decodeRevision } from '../vfs/revision.js';
-import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
+import type { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
 import { assertConditionalSegments, assertPathSegments } from '../vfs/path-resolver.js';
 import {
   toConditionalContentResponse,
@@ -276,7 +277,9 @@ export class VfsNodeRepository {
     private readonly blobRepository: BlobRepository,
     config: ConfigService,
   ) {
-    this.maxTotalLogicalBytes = resolveGlobalTotalLogicalByteLimit(config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES'));
+    this.maxTotalLogicalBytes = resolveGlobalTotalLogicalByteLimit(
+      config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES'),
+    );
   }
 
   private get isSqlite(): boolean {
@@ -292,31 +295,50 @@ export class VfsNodeRepository {
       result: { value: T; affectedRevisions: AffectedRevision[] },
     ) => Promise<void>,
   ): Promise<{ value: T; affectedRevisions: AffectedRevision[] }> {
-    return this.dataSource.transaction(async (manager) => {
-      const root = await this.applyRowLockIfSupported(
-        manager
-          .createQueryBuilder(VfsNodeEntity, 'n')
-          .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
-      ).getOne();
-      if (!root || root.type !== 'DIRECTORY') {
-        throw new VfsNodeNotFoundError('/');
-      }
-      const tx: MutationTx = {
-        manager,
-        namespaceId,
-        rootId,
-        changed: new Map(),
-        liveFileByteDelta: 0n,
-        logicalByteDelta: 0n,
-      };
-      const value = await work(tx);
-      await this.applyLogicalByteQuota(tx);
-      const affectedRevisions = await this.bumpAndReadChangedNodes(tx);
-      if (afterBump) {
-        await afterBump(tx, { value, affectedRevisions });
-      }
-      return { value, affectedRevisions };
-    });
+    let callbackError: unknown;
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const root = await this.applyRowLockIfSupported(
+          manager
+            .createQueryBuilder(VfsNodeEntity, 'n')
+            .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
+        ).getOne();
+        if (!root || root.type !== 'DIRECTORY') {
+          throw new VfsNodeNotFoundError('/');
+        }
+        const tx: MutationTx = {
+          manager,
+          namespaceId,
+          rootId,
+          changed: new Map(),
+          liveFileByteDelta: 0n,
+          logicalByteDelta: 0n,
+        };
+        let value: T;
+        try {
+          value = await work(tx);
+        } catch (error) {
+          callbackError = error;
+          throw error;
+        }
+        await this.applyLogicalByteQuota(tx);
+        const affectedRevisions = await this.bumpAndReadChangedNodes(tx);
+        if (afterBump) {
+          try {
+            await afterBump(tx, { value, affectedRevisions });
+          } catch (error) {
+            callbackError = error;
+            throw error;
+          }
+        }
+        return { value, affectedRevisions };
+      });
+    } catch (error) {
+      // work/afterBump may consume a client upload stream. A raw transport code
+      // from that callback has no proven DB provenance.
+      if (error === callbackError && !(error as { driverError?: unknown })?.driverError) throw error;
+      throw classifyPersistenceFailure(error) ?? error;
+    }
   }
 
   private recordLiveByteDelta(tx: MutationTx, delta: bigint): void {
@@ -417,6 +439,7 @@ export class VfsNodeRepository {
 
   // ORDER BY 없는 LIMIT으로 PostgreSQL recursive CTE의 평가도 maxNodes + 1에서
   // 멈춘다. SQLite는 recursive term 내부 LIMIT으로 큐의 확장까지 제한한다.
+  @classifyPersistenceOperation
   async captureSnapshotRows(
     tx: MutationTx,
     segments: string[],
@@ -479,6 +502,7 @@ export class VfsNodeRepository {
     return node ? toPreconditionCurrent(toRecord(node), path) : null;
   }
 
+  @classifyPersistenceOperation
   async applyConditionalMutation(
     tx: MutationTx,
     command: ConditionalMutation,
@@ -559,6 +583,7 @@ export class VfsNodeRepository {
     }
   }
 
+  @classifyPersistenceOperation
   async putConditionalContent(
     tx: MutationTx,
     segments: string[],
@@ -590,6 +615,7 @@ export class VfsNodeRepository {
     };
   }
 
+  @classifyPersistenceOperation
   async restoreBlob(
     tx: MutationTx,
     segments: string[],
@@ -650,6 +676,7 @@ export class VfsNodeRepository {
     return { kind: 'created', node: toRecord(created) };
   }
 
+  @classifyPersistenceOperation
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
     const namespace = await this.namespaceRepo.findOneBy({ id: namespaceId });
     if (!namespace) {
@@ -660,6 +687,7 @@ export class VfsNodeRepository {
     return root ? toRecord(root) : null;
   }
 
+  @classifyPersistenceOperation
   async getRootWithLimits(
     namespaceId: string,
   ): Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null> {
@@ -689,6 +717,7 @@ export class VfsNodeRepository {
     };
   }
 
+  @classifyPersistenceOperation
   async resolvePath(namespaceId: string, rootId: string, segments: string[]): Promise<VfsNodeRecord | null> {
     let parentId = rootId;
     let parentType: VfsNodeType = 'DIRECTORY';
@@ -732,6 +761,7 @@ export class VfsNodeRepository {
     return node;
   }
 
+  @classifyPersistenceOperation
   async readRevision(namespaceId: string, rootId: string, segments: string[]): Promise<VfsNodeRecord | null> {
     return this.readSnapshot(async (manager) => {
       const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
@@ -739,6 +769,7 @@ export class VfsNodeRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async readStat(
     namespaceId: string,
     rootId: string,
@@ -748,6 +779,7 @@ export class VfsNodeRepository {
     return read ? { node: read.node, sha256: read.blob?.sha256 ?? null } : null;
   }
 
+  @classifyPersistenceOperation
   async readContentFile(
     namespaceId: string,
     rootId: string,
@@ -767,6 +799,7 @@ export class VfsNodeRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async listRevisionChildren(
     namespaceId: string,
     rootId: string,
@@ -806,6 +839,7 @@ export class VfsNodeRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async listChildren(
     namespaceId: string,
     parentId: string,
@@ -831,6 +865,7 @@ export class VfsNodeRepository {
     return rows.map(toRecord);
   }
 
+  @classifyPersistenceOperation
   async findRecursive(
     namespaceId: string,
     startId: string,
@@ -879,6 +914,7 @@ export class VfsNodeRepository {
     return rows.map(toMatch);
   }
 
+  @classifyPersistenceOperation
   async ensureDirectory(
     namespaceId: string,
     rootId: string,
@@ -938,6 +974,7 @@ export class VfsNodeRepository {
     return { node: toRecord(current as VfsNodeEntity), created };
   }
 
+  @classifyPersistenceOperation
   async touchFile(
     namespaceId: string,
     rootId: string,
@@ -995,6 +1032,7 @@ export class VfsNodeRepository {
     return { kind: 'created', node: toRecord(created) };
   }
 
+  @classifyPersistenceOperation
   async putFileContent(
     namespaceId: string,
     rootId: string,
@@ -1176,6 +1214,7 @@ export class VfsNodeRepository {
     return { sourceNode, finalParentId, finalName, finalSegments };
   }
 
+  @classifyPersistenceOperation
   async moveNode(
     namespaceId: string,
     rootId: string,
@@ -1225,6 +1264,7 @@ export class VfsNodeRepository {
     return { node: toRecord(saved), finalPath: joinSegments(finalSegments) };
   }
 
+  @classifyPersistenceOperation
   async removeEmptyDirectory(
     namespaceId: string,
     rootId: string,
@@ -1262,6 +1302,7 @@ export class VfsNodeRepository {
     await manager.getRepository(VfsNodeEntity).remove(target);
   }
 
+  @classifyPersistenceOperation
   async removeNode(
     namespaceId: string,
     rootId: string,
@@ -1358,6 +1399,7 @@ export class VfsNodeRepository {
     }
   }
 
+  @classifyPersistenceOperation
   async copyNode(
     namespaceId: string,
     rootId: string,
@@ -1527,6 +1569,7 @@ export class VfsNodeRepository {
     return { node: toRecord(newRoot), finalPath: joinSegments(finalSegments) };
   }
 
+  @classifyPersistenceOperation
   async getBlobStorageInfo(
     namespaceId: string,
     blobId: string,
