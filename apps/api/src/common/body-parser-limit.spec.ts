@@ -13,7 +13,7 @@ class ProbeController {
   }
 }
 
-@Controller('api/v1/namespaces/:namespaceId/fs/snapshots')
+@Controller('api/v2/namespaces/:namespaceId/fs/snapshots')
 class SnapshotMutationProbeController {
   @Post(':snapshotId/delete')
   echoRaw(@Req() req: Request) {
@@ -64,7 +64,7 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
     const body = '{"different":true}';
 
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces/abc/fs/snapshots/not-a-uuid/delete')
+      .post('/api/v2/namespaces/abc/fs/snapshots/not-a-uuid/delete')
       .set('Content-Type', 'application/json')
       .send(body)
       .expect(201, { isBuffer: true, body });

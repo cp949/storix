@@ -137,7 +137,7 @@ describe('대용량 스트리밍', () => {
 
   async function createNamespace(name: string): Promise<string> {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
@@ -160,7 +160,7 @@ describe('대용량 스트리밍', () => {
 
     const result = await postStreaming(
       serverPort,
-      `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/large.bin')}`,
+      `/api/v2/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent('/large.bin')}`,
       LARGE_FILE_CHUNKS,
       CHUNK_SIZE,
     );
@@ -181,7 +181,7 @@ describe('대용량 스트리밍', () => {
 
     await postStreaming(
       serverPort,
-      `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodedPath}`,
+      `/api/v2/namespaces/${namespaceId}/fs/content?path=${encodedPath}`,
       chunkCount,
       CHUNK_SIZE,
     );
@@ -195,7 +195,7 @@ describe('대용량 스트리밍', () => {
 
     const downloaded = await getStreamingHash(
       serverPort,
-      `/api/v1/namespaces/${namespaceId}/fs/content?path=${encodedPath}`,
+      `/api/v2/namespaces/${namespaceId}/fs/content?path=${encodedPath}`,
     );
 
     expect(downloaded.status).toBe(200);

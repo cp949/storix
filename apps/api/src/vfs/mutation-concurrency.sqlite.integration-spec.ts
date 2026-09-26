@@ -109,7 +109,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
 
   async function createNamespace(name: string): Promise<string> {
     const ns = await http()
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID())
       .send({ name })
       .expect(201);
@@ -126,7 +126,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
   }
 
   it('서로 다른 경로를 동시에 mkdir하면 전부 성공하고 전부 저장된다', async () => {
-    const base = `/api/v1/namespaces/${await createNamespace('concurrent-distinct')}/fs`;
+    const base = `/api/v2/namespaces/${await createNamespace('concurrent-distinct')}/fs`;
     const paths = Array.from({ length: 24 }, (_, i) => `/d${i}`);
 
     const results = await Promise.all(paths.map((path) => mkdir(base, 'distinct', randomUUID(), path)));
@@ -138,7 +138,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
   });
 
   it('같은 경로를 동시에 mkdir하면 정확히 하나만 201이고 나머지는 결정적 4xx이며 다른 요청의 쓰기를 지우지 않는다', async () => {
-    const base = `/api/v1/namespaces/${await createNamespace('concurrent-conflict')}/fs`;
+    const base = `/api/v2/namespaces/${await createNamespace('concurrent-conflict')}/fs`;
     const paths = ['/same', '/x0', '/x1', '/x2'];
     const requests = [
       ...Array.from({ length: 6 }, () => mkdir(base, 'conflict', randomUUID(), '/same')),
@@ -156,7 +156,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
   });
 
   it('같은 Idempotency-Key를 동시에 보내도 하나만 실행되고 응답이 같다', async () => {
-    const base = `/api/v1/namespaces/${await createNamespace('concurrent-replay')}/fs`;
+    const base = `/api/v2/namespaces/${await createNamespace('concurrent-replay')}/fs`;
     const key = randomUUID();
 
     const results = await Promise.all(Array.from({ length: 8 }, () => mkdir(base, 'replay', key, '/once')));
@@ -190,7 +190,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
 
     try {
       const responsePromise = http()
-        .post(`/api/v1/namespaces/${namespaceId}/fs/content/conditional`)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content/conditional`)
         .query({ path: '/file' })
         .set('Content-Type', 'application/octet-stream')
         .set('Idempotency-Key', randomUUID())
@@ -214,7 +214,7 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
   });
 
   it('스냅샷 본문 조회가 트랜잭션 안에서 스토리지를 기다리다 실패해도 그동안 들어온 mkdir 요청이 유실되지 않는다', async () => {
-    const base = `/api/v1/namespaces/${await createNamespace('concurrent-snapshot-read')}/fs`;
+    const base = `/api/v2/namespaces/${await createNamespace('concurrent-snapshot-read')}/fs`;
     const put = (path: string, body: string) =>
       http()
         .post(`${base}/content`)

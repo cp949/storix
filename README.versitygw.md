@@ -102,20 +102,20 @@ AUTH="Authorization: Bearer ${STORIX_API_KEY}"
 until curl -sf http://localhost:3000/health/ready > /dev/null; do sleep 2; done
 
 # namespace 생성 (Idempotency-Key 헤더 필수)
-NS=$(curl -sf -X POST http://localhost:3000/api/v1/namespaces \
+NS=$(curl -sf -X POST http://localhost:3000/api/v2/namespaces \
   -H "$AUTH" -H "Idempotency-Key: readme-$(date +%s)" \
   -H 'Content-Type: application/json' \
   -d '{"name":"readme-check","encryptionPolicy":"NONE"}' | jq -r '.id')
 
 # 업로드 (parents=true: 중간 디렉터리 자동 생성)
-curl -sf -X PUT "http://localhost:3000/api/v1/namespaces/${NS}/fs/content?path=docs/hello.txt&parents=true" \
+curl -sf -X POST "http://localhost:3000/api/v2/namespaces/${NS}/fs/content?path=/docs/hello.txt&parents=true" \
   -H "$AUTH" -H 'Content-Type: text/plain' --data-binary 'hello versitygw'
 
 # 다운로드
-curl -sf "http://localhost:3000/api/v1/namespaces/${NS}/fs/content?path=docs/hello.txt" -H "$AUTH"
+curl -sf "http://localhost:3000/api/v2/namespaces/${NS}/fs/content?path=/docs/hello.txt" -H "$AUTH"
 
 # 디렉터리 목록
-curl -sf "http://localhost:3000/api/v1/namespaces/${NS}/fs/ls?path=docs" -H "$AUTH"
+curl -sf "http://localhost:3000/api/v2/namespaces/${NS}/fs/ls?path=/docs" -H "$AUTH"
 ```
 
 VersityGW는 posix 백엔드라 버킷이 디렉터리, 오브젝트가 파일로 보인다.
@@ -152,7 +152,7 @@ STORIX_STORAGE_REGION=us-east-1
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml \
   -f docker-compose.override.yml up -d
-curl -sf "http://localhost:3000/api/v1/namespaces/${NS}/fs/presigned-download?path=docs/hello.txt" \
+curl -sf "http://localhost:3000/api/v2/namespaces/${NS}/fs/presigned-download?path=/docs/hello.txt" \
   -H "$AUTH" | jq -r '.url' | xargs curl -sf
 ```
 

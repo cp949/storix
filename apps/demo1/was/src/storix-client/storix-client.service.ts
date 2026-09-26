@@ -51,7 +51,7 @@ export class StorixClient implements StorixClientPort {
   async list(path: string, cursor?: string): Promise<EntryPage> {
     return this.http.requestJson<EntryPage>({
       method: 'GET',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/ls`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/ls`,
       query: { path, cursor },
     });
   }
@@ -59,7 +59,7 @@ export class StorixClient implements StorixClientPort {
   async createDirectory(path: string): Promise<void> {
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/mkdir`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/mkdir`,
       json: { path, parents: true },
     });
   }
@@ -67,7 +67,7 @@ export class StorixClient implements StorixClientPort {
   async move(source: string, destination: string): Promise<void> {
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/mv`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/mv`,
       json: { source, destination, destinationParents: true },
     });
   }
@@ -75,7 +75,7 @@ export class StorixClient implements StorixClientPort {
   async copy(source: string, destination: string): Promise<void> {
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/cp`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/cp`,
       json: { source, destination, destinationParents: true },
     });
   }
@@ -83,7 +83,7 @@ export class StorixClient implements StorixClientPort {
   async remove(path: string, recursive: boolean): Promise<void> {
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/rm`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/rm`,
       query: { path, recursive: String(recursive) },
     });
   }
@@ -91,7 +91,7 @@ export class StorixClient implements StorixClientPort {
   async find(path: string, name: string, cursor?: string): Promise<EntryPage> {
     return this.http.requestJson<EntryPage>({
       method: 'GET',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/find`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/find`,
       query: { path, name, cursor },
     });
   }
@@ -107,7 +107,7 @@ export class StorixClient implements StorixClientPort {
 
     return this.http.requestJson<FileEntry>({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
       query: { path, parents: 'true' },
       headers,
       body,
@@ -118,7 +118,7 @@ export class StorixClient implements StorixClientPort {
   async createDownload(path: string): Promise<PresignedDownload> {
     return this.http.requestJson<PresignedDownload>({
       method: 'GET',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/presigned-download`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/presigned-download`,
       query: { path },
     });
   }
@@ -126,7 +126,7 @@ export class StorixClient implements StorixClientPort {
   async publish(path: string): Promise<PublicLink> {
     const source = await this.http.request({
       method: 'GET',
-      path: `/api/v1/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
+      path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/content`,
       query: { path },
     });
 
@@ -135,14 +135,14 @@ export class StorixClient implements StorixClientPort {
 
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/content`,
+      path: `/api/v2/namespaces/${this.requirePublicNamespaceId()}/fs/content`,
       query: { path: publicPath, parents: 'true', force: 'true' },
       headers: mimeType ? { 'content-type': mimeType } : {},
       body: source.body as ReadableStream,
       duplex: 'half',
     });
 
-    const url = new URL(`/api/v1/public/${this.requirePublicNamespaceId()}/fs/download`, this.config.publicUrlBase);
+    const url = new URL(`/api/v2/public/${this.requirePublicNamespaceId()}/fs/download`, this.config.publicUrlBase);
     url.searchParams.set('path', publicPath);
 
     return { url: url.toString(), publicPath };
@@ -151,7 +151,7 @@ export class StorixClient implements StorixClientPort {
   async unpublish(path: string): Promise<void> {
     await this.http.request({
       method: 'POST',
-      path: `/api/v1/namespaces/${this.requirePublicNamespaceId()}/fs/rm`,
+      path: `/api/v2/namespaces/${this.requirePublicNamespaceId()}/fs/rm`,
       query: { path: derivePublicPath(path) },
     });
   }
@@ -163,7 +163,7 @@ export class StorixClient implements StorixClientPort {
   ): Promise<string> {
     const response = await this.http.requestJson<NamespaceCreateResponse>({
       method: 'POST',
-      path: '/api/v1/namespaces',
+      path: '/api/v2/namespaces',
       headers: { 'idempotency-key': idempotencyKey },
       json: { name, encryptionPolicy: 'NONE', accessPolicy },
     });

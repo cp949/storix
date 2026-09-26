@@ -201,7 +201,7 @@ export class VfsSnapshotService {
         mimeType: entry.mimeType,
         contentPath:
           entry.type === 'FILE'
-            ? `/api/v1/namespaces/${namespaceId}/fs/snapshots/${id}/content?path=${encodeURIComponent(entry.relativePath)}`
+            ? `/api/v2/namespaces/${namespaceId}/fs/snapshots/${id}/content?path=${encodeURIComponent(entry.relativePath)}`
             : null,
       })),
       nextCursor:

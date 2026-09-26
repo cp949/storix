@@ -86,7 +86,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
     const body = { name: 'namespace-sqlite-concurrent-same-body' };
     const responses = await Promise.all(
       [0, 1].map(() =>
-        request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body),
+        request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body),
       ),
     );
 
@@ -103,7 +103,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
       { name: 'namespace-sqlite-concurrent-different-body-b' },
     ];
     const responses = await Promise.all(
-      bodies.map((body) => request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body)),
+      bodies.map((body) => request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body)),
     );
 
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 422]);
@@ -117,13 +117,13 @@ describe('Namespace HTTP contract (SQLite)', () => {
   it('다른 key·같은 name 충돌은 NAMESPACE_ALREADY_EXISTS 409이며 두 번째 namespace/root를 만들지 않는다', async () => {
     const name = 'namespace-sqlite-name-collision';
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'namespace-sqlite-name-owner')
       .send({ name })
       .expect(201);
 
     const collision = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'namespace-sqlite-name-contender')
       .send({ name })
       .expect(409);
@@ -140,7 +140,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
     jest.spyOn(receiptWriter, 'save').mockRejectedValueOnce(new Error('injected receipt write failure'));
 
     const failed = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', key)
       .send(body);
     const beforeRestart = await namespaceCounts(body.name);
@@ -149,7 +149,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
     await app.close();
     app = await bootstrap();
 
-    const retry = await request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body);
+    const retry = await request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body);
     expect({
       failedStatus: failed.status,
       beforeRestart,

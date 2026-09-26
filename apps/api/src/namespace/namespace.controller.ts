@@ -6,7 +6,7 @@ import { parseCreateNamespaceRequest } from './dto/create-namespace.dto.js';
 import { IdempotencyKeyRequiredError } from './namespace.errors.js';
 import { NamespaceService } from './namespace.service.js';
 
-@Controller('api/v1/namespaces')
+@Controller('api/v2/namespaces')
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class NamespaceController {

@@ -620,7 +620,7 @@ describe('VfsSnapshotService immutable entry pages', () => {
       sourceRevision: 'captured-revision',
       size: '7',
       mimeType: 'application/octet-stream',
-      contentPath: `/api/v1/namespaces/${namespaceId}/fs/snapshots/${snapshotId}/content?path=a%2F%ED%95%9C`,
+      contentPath: `/api/v2/namespaces/${namespaceId}/fs/snapshots/${snapshotId}/content?path=a%2F%ED%95%9C`,
     });
     expect(JSON.parse(Buffer.from(page.nextCursor!.slice(4), 'base64url').toString('utf8'))).toEqual({
       snapshotId,

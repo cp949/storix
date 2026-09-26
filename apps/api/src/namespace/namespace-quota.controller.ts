@@ -19,7 +19,7 @@ import { NamespaceQuotaService } from './namespace-quota.service.js';
 import { parseUpdateNamespaceQuotaRequest } from './dto/update-namespace-quota.dto.js';
 
 @Public()
-@Controller('api/v1/admin/namespaces')
+@Controller('api/v2/admin/namespaces')
 @UseGuards(AdminApiKeyGuard)
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)

@@ -17,7 +17,7 @@ import { sendContent } from './content-response.js';
 import { VfsSnapshotService } from './vfs-snapshot.service.js';
 import { VfsInvalidMutationRequestError } from './vfs.errors.js';
 
-@Controller('api/v1/namespaces/:namespaceId/fs/snapshots')
+@Controller('api/v2/namespaces/:namespaceId/fs/snapshots')
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class VfsSnapshotController {

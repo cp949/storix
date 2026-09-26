@@ -88,7 +88,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
         >
       >;
     };
-    const base = '/api/v1/namespaces/{namespaceId}/fs';
+    const base = '/api/v2/namespaces/{namespaceId}/fs';
     for (const suffix of ['/mutations', '/content/conditional']) {
       const operation = spec.paths[`${base}${suffix}`].post;
       expect(operation.parameters).toEqual(
@@ -117,7 +117,7 @@ it('snapshot mutation과 content의 계약을 명시한다', () => {
     paths: Record<string, Record<string, { parameters: unknown[]; responses: Record<string, unknown> }>>;
     components: { schemas: Record<string, { required: string[] }> };
   };
-  const base = '/api/v1/namespaces/{namespaceId}/fs/snapshots';
+  const base = '/api/v2/namespaces/{namespaceId}/fs/snapshots';
   for (const path of [base, `${base}/{snapshotId}/delete`]) {
     expect(spec.paths[path].post.parameters).toEqual(
       expect.arrayContaining([
@@ -147,7 +147,7 @@ it('snapshot mutation과 content의 계약을 명시한다', () => {
 
 it('FILE restore는 조건과 생성/교체/충돌 응답을 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
-  const operation = spec.paths['/api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/restore']?.post;
+  const operation = spec.paths['/api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/restore']?.post;
   expect(operation).toBeDefined();
   expect(Object.keys(operation.responses)).toEqual(
     expect.arrayContaining(['200', '201', '400', '404', '409', '412', '428']),
@@ -157,7 +157,7 @@ it('FILE restore는 조건과 생성/교체/충돌 응답을 명시한다', () =
 
 it('TREE entries는 snapshot cursor와 공개 manifest page를 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
-  const base = '/api/v1/namespaces/{namespaceId}/fs/snapshots';
+  const base = '/api/v2/namespaces/{namespaceId}/fs/snapshots';
   const entries = spec.paths[`${base}/{snapshotId}/entries`]?.get;
   expect(entries).toBeDefined();
   expect(entries.parameters).toEqual(
@@ -178,7 +178,7 @@ it('TREE entries는 snapshot cursor와 공개 manifest page를 명시한다', ()
 
 it('412 응답은 current를 포함하는 전용 스키마를 참조한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
-  const base = '/api/v1/namespaces/{namespaceId}/fs';
+  const base = '/api/v2/namespaces/{namespaceId}/fs';
   const operations = [
     spec.paths[`${base}/mutations`].post,
     spec.paths[`${base}/content/conditional`].post,
@@ -227,7 +227,7 @@ it('412 current 스키마는 VfsNode 필드에 revision을 더하고 null을 허
 
 it('FILE snapshot 생성은 선택 sourceRevision을 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
-  const create = spec.paths['/api/v1/namespaces/{namespaceId}/fs/snapshots'].post;
+  const create = spec.paths['/api/v2/namespaces/{namespaceId}/fs/snapshots'].post;
   const body = create.requestBody.content['application/json'].schema;
   expect(body.required).toEqual(['kind', 'path']);
   expect(body.properties.sourceRevision).toEqual(

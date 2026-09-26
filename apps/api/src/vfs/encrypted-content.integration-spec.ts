@@ -85,7 +85,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
 
   async function createEncryptedNamespace(name: string): Promise<string> {
     const response = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name, encryptionPolicy: 'ENCRYPTED' })
       .expect(201);
@@ -120,7 +120,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = '0123456789'.repeat(10);
 
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/secret.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)
@@ -139,7 +139,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = Buffer.from('encrypted conditional content');
     const send = () =>
       request(httpServer)
-        .post(`/api/v1/namespaces/${namespaceId}/fs/content/conditional`)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content/conditional`)
         .query({ path: '/secret.bin' })
         .set('Idempotency-Key', key)
         .set('X-Mutation-Scope', 'caller-a')
@@ -155,7 +155,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     expect(
       (
         await request(httpServer)
-          .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+          .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
           .query({ path: '/secret.bin' })
           .expect(200)
       ).body,
@@ -167,14 +167,14 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = 'a'.repeat(5000);
 
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/full.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/full.txt' })
       .expect(200);
 
@@ -186,14 +186,14 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     const plaintext = Array.from({ length: 5000 }, (_, i) => String(i % 10)).join('');
 
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/range.txt' })
       .set('Content-Type', 'text/plain')
       .send(plaintext)
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/range.txt' })
       .set('Range', 'bytes=10-4009')
       .expect(206);

@@ -109,7 +109,7 @@ describe('감사 로그 end-to-end', () => {
   it('namespace 생성 요청을 감사 로그에 기록한다', async () => {
     const name = `audit-e2e-${randomUUID()}`;
     const response = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
@@ -127,19 +127,19 @@ describe('감사 로그 end-to-end', () => {
   it('X-Caller-Id 헤더를 caller로 기록하고, 없으면 NULL로 기록한다', async () => {
     const name = `audit-caller-${randomUUID()}`;
     const createResponse = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
     const namespaceId = createResponse.body.id as string;
 
     const withCaller = await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/mkdir`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/mkdir`)
       .set('X-Caller-Id', 'billing-service')
       .send({ path: '/dir-a' })
       .expect(201);
     const withoutCaller = await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/mkdir`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/mkdir`)
       .send({ path: '/dir-b' })
       .expect(201);
 
@@ -159,18 +159,18 @@ describe('감사 로그 end-to-end', () => {
   it('mv 요청은 source/destination을 detail에 기록한다', async () => {
     const name = `audit-mv-${randomUUID()}`;
     const createResponse = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
     const namespaceId = createResponse.body.id as string;
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/touch`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/touch`)
       .send({ path: '/from.txt' })
       .expect(201);
 
     const mvResponse = await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/mv`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/mv`)
       .send({ source: '/from.txt', destination: '/to.txt' })
       .expect(200);
 

@@ -89,7 +89,7 @@ describe('presigned-download HTTP 계약', () => {
 
   async function createNamespace(name: string): Promise<string> {
     const response = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
@@ -98,7 +98,7 @@ describe('presigned-download HTTP 계약', () => {
 
   async function createEncryptedNamespace(name: string): Promise<string> {
     const response = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name, encryptionPolicy: 'ENCRYPTED' })
       .expect(201);
@@ -110,14 +110,14 @@ describe('presigned-download HTTP 계약', () => {
     const content = 'hello presigned world';
 
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send(content)
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/report.txt' })
       .expect(200);
 
@@ -134,7 +134,7 @@ describe('presigned-download HTTP 계약', () => {
     const namespaceId = await createNamespace(`presigned-404-${randomUUID()}`);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/missing.txt' })
       .expect(404);
 
@@ -144,12 +144,12 @@ describe('presigned-download HTTP 계약', () => {
   it('디렉터리 대상은 409를 반환한다', async () => {
     const namespaceId = await createNamespace(`presigned-dir-${randomUUID()}`);
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/mkdir`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/mkdir`)
       .send({ path: '/dir' })
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/dir' })
       .expect(409);
 
@@ -159,14 +159,14 @@ describe('presigned-download HTTP 계약', () => {
   it('ENCRYPTED namespace의 파일은 409로 거부된다', async () => {
     const namespaceId = await createEncryptedNamespace(`presigned-enc-${randomUUID()}`);
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/secret.txt' })
       .set('Content-Type', 'text/plain')
       .send('top secret')
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/secret.txt' })
       .expect(409);
 

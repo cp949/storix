@@ -34,11 +34,11 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
     async function fixture(encrypted = false) {
       const app = getApp();
       const ns = await request(app.getHttpServer())
-        .post('/api/v1/namespaces')
+        .post('/api/v2/namespaces')
         .set('Idempotency-Key', randomUUID())
         .send({ name: randomUUID(), ...(encrypted ? { encryptionPolicy: 'ENCRYPTED' } : {}) })
         .expect(201);
-      const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+      const base = `/api/v2/namespaces/${ns.body.id}/fs`;
       const http = () => request(app.getHttpServer());
       const upload = (path: string, bytes: Buffer) =>
         http()
@@ -147,6 +147,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       expect(items).toEqual(initial.items);
       expect((await http().get(`${base}/snapshots/${id}`).expect(200)).body).toEqual(captured.body);
       const file = items.find((item) => item.relativePath === 'a/b');
+      expect(file.contentPath).toContain('/api/v2/namespaces/');
       expect((await http().get(file.contentPath).expect(200)).body).toEqual(bytes);
       expect(
         (await http().get(`${base}/snapshots/${id}/entries`).query({ cursor: 'bad' }).expect(400)).body.code,

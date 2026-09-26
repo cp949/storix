@@ -81,7 +81,7 @@ describe('Namespace HTTP contract', () => {
     const body = { name: 'namespace-concurrent-same-body' };
     const responses = await Promise.all(
       [0, 1].map(() =>
-        request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body),
+        request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body),
       ),
     );
 
@@ -95,7 +95,7 @@ describe('Namespace HTTP contract', () => {
     const key = 'namespace-concurrent-different-body';
     const bodies = [{ name: 'namespace-concurrent-different-body-a' }, { name: 'namespace-concurrent-different-body-b' }];
     const responses = await Promise.all(
-      bodies.map((body) => request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body)),
+      bodies.map((body) => request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body)),
     );
 
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 422]);
@@ -113,7 +113,7 @@ describe('Namespace HTTP contract', () => {
     jest.spyOn(receiptWriter, 'save').mockRejectedValueOnce(new Error('injected receipt write failure'));
 
     const failed = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', key)
       .send(body);
     const beforeRestart = await namespaceCounts(body.name);
@@ -126,7 +126,7 @@ describe('Namespace HTTP contract', () => {
     app = moduleRef.createNestApplication();
     await app.init();
 
-    const retry = await request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body);
+    const retry = await request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body);
     expect({
       failedStatus: failed.status,
       beforeRestart,
@@ -148,14 +148,14 @@ describe('Namespace HTTP contract', () => {
 
   it('Idempotency-Key 헤더가 없으면 400을 반환한다', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .send({ name: 'no-key-ns' })
       .expect(400);
   });
 
   it('name만으로 namespace를 생성하면 201과 함께 NONE/ACTIVE 상태를 반환한다', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-1')
       .send({ name: 'acme' })
       .expect(201);
@@ -172,23 +172,23 @@ describe('Namespace HTTP contract', () => {
 
   it('namespace 생성 시 더 낮은 logical quota를 지정하고 응답·조회에 노출한다', async () => {
     const created = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-quota')
       .send({ name: 'quota-create', maxTotalLogicalBytes: '1024' })
       .expect(201);
 
     expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
-    const fetched = await request(app.getHttpServer()).get(`/api/v1/namespaces/${created.body.id}`).expect(200);
+    const fetched = await request(app.getHttpServer()).get(`/api/v2/namespaces/${created.body.id}`).expect(200);
     expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
   });
 
   it('quota 관리자 경로는 전용 키를 요구하고 변경 receipt를 재생한다', async () => {
     const created = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-admin-quota')
       .send({ name: 'quota-admin-update' })
       .expect(201);
-    const path = `/api/v1/admin/namespaces/${created.body.id}/quota`;
+    const path = `/api/v2/admin/namespaces/${created.body.id}/quota`;
 
     await request(app.getHttpServer()).patch(path).send({ maxTotalLogicalBytes: '2048' }).expect(401);
     const first = await request(app.getHttpServer())
@@ -210,13 +210,13 @@ describe('Namespace HTTP contract', () => {
 
   it('같은 key와 같은 body로 재시도하면 새로 만들지 않고 같은 결과를 재생한다', async () => {
     const first = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-retry')
       .send({ name: 'retry-ns' })
       .expect(201);
 
     const second = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-retry')
       .send({ name: 'retry-ns' })
       .expect(201);
@@ -226,13 +226,13 @@ describe('Namespace HTTP contract', () => {
 
   it('같은 key에 다른 body가 오면 422 IDEMPOTENCY_KEY_REUSED를 반환한다', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'reused-key')
       .send({ name: 'first-body' })
       .expect(201);
 
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'reused-key')
       .send({ name: 'different-body' })
       .expect(422);
@@ -246,13 +246,13 @@ describe('Namespace HTTP contract', () => {
 
   it('다른 key로 이미 활성화된 name을 생성하면 409 NAMESPACE_ALREADY_EXISTS를 반환한다', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'owner-key')
       .send({ name: 'conflict-ns' })
       .expect(201);
 
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'other-key')
       .send({ name: 'conflict-ns' })
       .expect(409);
@@ -269,19 +269,19 @@ describe('Namespace HTTP contract', () => {
 
   it('같은 key로 409 응답을 재시도해도 재생 응답에 requestId가 포함된다', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'owner-key-2')
       .send({ name: 'conflict-ns-2' })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'retry-key')
       .send({ name: 'conflict-ns-2' })
       .expect(409);
 
     const replay = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'retry-key')
       .send({ name: 'conflict-ns-2' })
       .expect(409);
@@ -295,13 +295,13 @@ describe('Namespace HTTP contract', () => {
 
   it('생성한 namespace를 단건 조회할 수 있다', async () => {
     const created = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'get-one-key')
       .send({ name: 'get-one-ns' })
       .expect(201);
 
     const response = await request(app.getHttpServer())
-      .get(`/api/v1/namespaces/${created.body.id}`)
+      .get(`/api/v2/namespaces/${created.body.id}`)
       .expect(200);
 
     expect(response.body).toEqual(created.body);
@@ -309,25 +309,25 @@ describe('Namespace HTTP contract', () => {
 
   it('존재하지 않는 id를 단건 조회하면 404를 반환한다', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/namespaces/11111111-1111-1111-1111-111111111111')
+      .get('/api/v2/namespaces/11111111-1111-1111-1111-111111111111')
       .expect(404);
   });
 
   it('생성한 namespace가 목록 조회에 포함된다', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'list-key')
       .send({ name: 'list-ns' })
       .expect(201);
 
-    const response = await request(app.getHttpServer()).get('/api/v1/namespaces').expect(200);
+    const response = await request(app.getHttpServer()).get('/api/v2/namespaces').expect(200);
 
     expect(response.body).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'list-ns' })]));
   });
 
   it('encryptionPolicy를 ENCRYPTED로 생성할 수 있다', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'ns-encrypted-create')
       .send({ name: 'encrypted-ns', encryptionPolicy: 'ENCRYPTED' })
       .expect(201);
@@ -337,7 +337,7 @@ describe('Namespace HTTP contract', () => {
 
   it('accessPolicy를 PUBLIC으로 생성할 수 있다', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-public')
       .send({ name: 'public-ns', accessPolicy: 'PUBLIC' })
       .expect(201);
@@ -347,7 +347,7 @@ describe('Namespace HTTP contract', () => {
 
   it('ENCRYPTED와 PUBLIC을 함께 지정하면 400을 반환한다', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-conflict')
       .send({ name: 'conflict-ns', encryptionPolicy: 'ENCRYPTED', accessPolicy: 'PUBLIC' })
       .expect(400);
@@ -357,7 +357,7 @@ describe('Namespace HTTP contract', () => {
 
   it('accessPolicy가 유효하지 않으면 400을 반환한다', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'create-invalid-access')
       .send({ name: 'invalid-access-ns', accessPolicy: 'OPEN' })
       .expect(400);

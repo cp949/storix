@@ -21,7 +21,7 @@ info:
   license:
     name: UNLICENSED
 paths:
-  /api/v1/namespaces:
+  /api/v2/namespaces:
     post:
       operationId: createNamespace
       summary: Namespace 생성
@@ -80,7 +80,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{id}:
+  /api/v2/namespaces/{id}:
     get:
       operationId: getNamespace
       summary: Namespace 단건 조회
@@ -104,7 +104,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/admin/namespaces/{namespaceId}/quota:
+  /api/v2/admin/namespaces/{namespaceId}/quota:
     patch:
       operationId: updateNamespaceQuota
       summary: Namespace 논리 사용량 상한 변경
@@ -144,7 +144,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
-  /api/v1/namespaces/{namespaceId}/fs/mutations:
+  /api/v2/namespaces/{namespaceId}/fs/mutations:
     post:
       operationId: conditionalMutation
       summary: 조건부 VFS 변경
@@ -274,7 +274,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
-  /api/v1/namespaces/{namespaceId}/fs/mkdir:
+  /api/v2/namespaces/{namespaceId}/fs/mkdir:
     post:
       operationId: mkdir
       summary: 디렉터리 생성
@@ -310,7 +310,7 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/touch:
+  /api/v2/namespaces/{namespaceId}/fs/touch:
     post:
       operationId: touch
       summary: 빈 파일 생성(이미 존재하면 내용은 바꾸지 않음)
@@ -346,7 +346,7 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/mv:
+  /api/v2/namespaces/{namespaceId}/fs/mv:
     post:
       operationId: move
       summary: 파일/디렉터리 이동
@@ -376,7 +376,7 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/cp:
+  /api/v2/namespaces/{namespaceId}/fs/cp:
     post:
       operationId: copy
       summary: 파일/디렉터리 복사(Blob-level Copy-on-Write, `apps/api/docs/adr/0003-file-copy-blob-level-cow.md`)
@@ -412,7 +412,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/rmdir:
+  /api/v2/namespaces/{namespaceId}/fs/rmdir:
     post:
       operationId: rmdir
       summary: 빈 디렉터리 삭제
@@ -441,7 +441,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/rm:
+  /api/v2/namespaces/{namespaceId}/fs/rm:
     post:
       operationId: rm
       summary: 파일/디렉터리 삭제
@@ -479,7 +479,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/content/conditional:
+  /api/v2/namespaces/{namespaceId}/fs/content/conditional:
     post:
       operationId: putConditionalContent
       summary: 조건부 파일 콘텐츠 업로드(raw stream)
@@ -605,7 +605,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
-  /api/v1/namespaces/{namespaceId}/fs/content:
+  /api/v2/namespaces/{namespaceId}/fs/content:
     post:
       operationId: putContent
       summary: 파일 콘텐츠 업로드(raw stream만 지원, `apps/api/docs/adr/0004-raw-stream-upload-only.md`)
@@ -739,7 +739,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/download:
+  /api/v2/namespaces/{namespaceId}/fs/download:
     get:
       operationId: download
       summary: '파일 콘텐츠 다운로드(Range 지원, `Content-Disposition: attachment`)'
@@ -790,7 +790,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/presigned-download:
+  /api/v2/namespaces/{namespaceId}/fs/presigned-download:
     get:
       operationId: getPresignedDownloadUrl
       summary: Presigned 다운로드 URL 발급(`STORAGE-02`)
@@ -824,7 +824,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/public/{namespaceId}/fs/content:
+  /api/v2/public/{namespaceId}/fs/content:
     get:
       operationId: getPublicContent
       summary: PUBLIC namespace 파일 콘텐츠 조회(무인증, Range 지원, 인라인)
@@ -872,7 +872,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/public/{namespaceId}/fs/download:
+  /api/v2/public/{namespaceId}/fs/download:
     get:
       operationId: publicDownload
       summary: 'PUBLIC namespace 파일 다운로드(무인증, Range 지원, `Content-Disposition: attachment`)'
@@ -923,7 +923,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/revision:
+  /api/v2/namespaces/{namespaceId}/fs/revision:
     get:
       operationId: getRevision
       summary: 파일 또는 디렉터리의 opaque revision 조회
@@ -947,7 +947,7 @@ paths:
                   revision: { type: string, pattern: '^r1\.' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
-  /api/v1/namespaces/{namespaceId}/fs/ls:
+  /api/v2/namespaces/{namespaceId}/fs/ls:
     get:
       operationId: ls
       summary: 디렉터리 자식 목록 조회(1단계, cursor 페이지네이션)
@@ -1000,7 +1000,7 @@ paths:
                 $ref: '#/components/schemas/PreconditionFailedResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/stat:
+  /api/v2/namespaces/{namespaceId}/fs/stat:
     get:
       operationId: stat
       summary: 파일/디렉터리 메타데이터 조회
@@ -1028,7 +1028,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/exists:
+  /api/v2/namespaces/{namespaceId}/fs/exists:
     get:
       operationId: exists
       summary: 경로 존재 여부 조회
@@ -1060,7 +1060,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/find:
+  /api/v2/namespaces/{namespaceId}/fs/find:
     get:
       operationId: find
       summary: 하위 트리 재귀 검색(cursor 페이지네이션)
@@ -1117,7 +1117,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/snapshots:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots:
     post:
       operationId: createSnapshot
       tags: [Snapshots]
@@ -1219,7 +1219,7 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}:
     get:
       operationId: getSnapshot
       tags: [Snapshots]
@@ -1240,7 +1240,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/entries:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/entries:
     get:
       operationId: listSnapshotEntries
       tags: [Snapshots]
@@ -1280,7 +1280,7 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/content:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/content:
     get:
       operationId: getSnapshotContent
       tags: [Snapshots]
@@ -1335,7 +1335,7 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/restore:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/restore:
     post:
       operationId: restoreSnapshot
       tags: [Snapshots]
@@ -1442,7 +1442,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /api/v1/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/delete:
+  /api/v2/namespaces/{namespaceId}/fs/snapshots/{snapshotId}/delete:
     post:
       operationId: deleteSnapshot
       tags: [Snapshots]

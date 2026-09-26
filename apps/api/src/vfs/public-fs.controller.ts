@@ -10,7 +10,7 @@ import { ContentService } from './content.service.js';
 // 목록 조회(ls/find)와 쓰기 작업이 공개 표면에 존재하지 않게 한다. 노출 범위가
 // 이 파일 하나에 전부 드러나므로 nginx에서도 이 prefix만 공개 listener에 둔다.
 @Public()
-@Controller('api/v1/public/:namespaceId/fs')
+@Controller('api/v2/public/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class PublicFsController {

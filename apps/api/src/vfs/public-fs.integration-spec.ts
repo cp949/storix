@@ -30,7 +30,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   async function createNamespace(name: string, accessPolicy: 'PRIVATE' | 'PUBLIC'): Promise<string> {
     const response = await request(app.getHttpServer())
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Authorization', `Bearer ${API_KEY}`)
       .set('Idempotency-Key', randomUUID())
       .send({ name, accessPolicy })
@@ -41,7 +41,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   async function putFile(namespaceId: string, path: string): Promise<void> {
     await request(app.getHttpServer())
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent(path)}&parents=true`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent(path)}&parents=true`)
       .set('Authorization', `Bearer ${API_KEY}`)
       .set('Content-Type', 'text/plain')
       .send(FILE_BODY)
@@ -107,7 +107,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('PUBLIC namespace의 파일을 인증 없이 다운로드한다', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/v1/public/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(200);
 
     expect(response.text).toBe(FILE_BODY);
@@ -119,7 +119,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('content는 Content-Disposition을 설정하지 않는다', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/v1/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(200);
 
     expect(response.text).toBe(FILE_BODY);
@@ -129,7 +129,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
   });
 
   it('공개 파일 읽기도 정규 경로 alias를 해석하고 NFD를 거부한다', async () => {
-    const base = `/api/v1/public/${publicNamespaceId}/fs/content`;
+    const base = `/api/v2/public/${publicNamespaceId}/fs/content`;
     const alias = await request(app.getHttpServer())
       .get(base)
       .query({ path: '/docs//./hello.txt/' })
@@ -142,7 +142,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('Range 요청에 206과 Content-Range를 반환한다', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/v1/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
       .set('Range', 'bytes=0-5')
       .expect(206);
 
@@ -152,7 +152,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('PRIVATE namespace를 공개 경로로 요청하면 404를 반환한다', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/v1/public/${privateNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${privateNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
 
     expect(response.body).toMatchObject({ code: 'NAMESPACE_NOT_FOUND' });
@@ -160,7 +160,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('존재하지 않는 namespace를 공개 경로로 요청하면 404를 반환한다', async () => {
     await request(app.getHttpServer())
-      .get(`/api/v1/public/${randomUUID()}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${randomUUID()}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
   });
 
@@ -168,11 +168,11 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     const missingNamespaceId = randomUUID();
 
     const privateResponse = await request(app.getHttpServer())
-      .get(`/api/v1/public/${privateNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${privateNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
 
     const missingResponse = await request(app.getHttpServer())
-      .get(`/api/v1/public/${missingNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(`/api/v2/public/${missingNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
 
     // DomainErrorFilter가 채우는 필드는 code/message/path/requestId. requestId는
@@ -198,14 +198,20 @@ describe('public namespace 다운로드 HTTP 계약', () => {
   it('PUBLIC namespace라도 기존 인증 경로는 API key가 없으면 401을 반환한다', async () => {
     await request(app.getHttpServer())
       .get(
-        `/api/v1/namespaces/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`,
+        `/api/v2/namespaces/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`,
       )
       .expect(401);
   });
 
   it('공개 경로에는 목록 조회 라우트가 없어 404를 반환한다', async () => {
     await request(app.getHttpServer())
-      .get(`/api/v1/public/${publicNamespaceId}/fs/ls?path=/docs`)
+      .get(`/api/v2/public/${publicNamespaceId}/fs/ls?path=/docs`)
+      .expect(404);
+  });
+
+  it('v1 공개 경로는 제공하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
       .expect(404);
   });
 });

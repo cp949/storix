@@ -99,11 +99,11 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   it('snapshot ID 형식 오류 receipt를 앱 재시작 뒤 재생하고 다른 body의 같은 key를 거절한다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'invalid-snapshot-id-receipt' })
       .expect(201);
-    const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
     const key = randomUUID();
     const suffix = '/not-a-uuid/delete';
     const first = await snapshotPost(app, base, suffix, {}, key).expect(404);
@@ -126,11 +126,11 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   it('앱과 DB 연결을 재생성해도 metadata/pages/bytes/restore 및 세 mutation receipt가 보존된다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'restart-encrypted', encryptionPolicy: 'ENCRYPTED' })
       .expect(201);
-    const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
     await http().post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
     const bytes = Buffer.from([0, 255, 128, 65]);
     await http()
@@ -226,11 +226,11 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   it('조건부 mutation·content 오류 receipt를 앱과 DB 연결 재생성 뒤 최초 body와 X-Request-Id로 재생한다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'error-receipt-restart' })
       .expect(201);
-    const base = `/api/v1/namespaces/${ns.body.id}/fs`;
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
     await http()
       .post(`${base}/content`)
       .query({ path: '/doc' })
@@ -317,12 +317,12 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   it('FILE sourceRevision 일치는 snapshot을 만들고 불일치 412는 행을 남기지 않으며 둘 다 재시작 뒤 재생한다', async () => {
     const http = () => request(app.getHttpServer());
     const ns = await http()
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'source-revision-restart' })
       .expect(201);
     const namespaceId = ns.body.id as string;
-    const base = `/api/v1/namespaces/${namespaceId}/fs`;
+    const base = `/api/v2/namespaces/${namespaceId}/fs`;
     const write = (bytes: Buffer, force = false) =>
       http()
         .post(`${base}/content`)

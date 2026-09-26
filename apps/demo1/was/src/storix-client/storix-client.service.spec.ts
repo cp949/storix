@@ -39,7 +39,7 @@ describe('StorixClient — namespace 부트스트랩', () => {
 
     expect(id).toBe('ns-private-id');
     const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).toBe('http://storix.test/api/v1/namespaces');
+    expect(url.toString()).toBe('http://storix.test/api/v2/namespaces');
     const headers = init.headers as Headers;
     expect(headers.get('idempotency-key')).toBe('demo-was:namespace:private');
     expect(JSON.parse(init.body as string)).toEqual({
@@ -102,7 +102,7 @@ describe('StorixClient — VFS 조작', () => {
     await expect(client.list('/docs', 'cursor-1')).resolves.toEqual(page);
 
     const [url] = spy.mock.calls[0] as [URL];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/ls');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/ls');
     expect(url.searchParams.get('path')).toBe('/docs');
     expect(url.searchParams.get('cursor')).toBe('cursor-1');
   });
@@ -112,7 +112,7 @@ describe('StorixClient — VFS 조작', () => {
     await client.createDirectory('/docs/new');
 
     const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/mkdir');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/mkdir');
     expect(JSON.parse(init.body as string)).toEqual({ path: '/docs/new', parents: true });
   });
 
@@ -121,7 +121,7 @@ describe('StorixClient — VFS 조작', () => {
     await client.move('/a.txt', '/b.txt');
 
     const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/mv');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/mv');
     expect(JSON.parse(init.body as string)).toEqual({
       source: '/a.txt',
       destination: '/b.txt',
@@ -134,7 +134,7 @@ describe('StorixClient — VFS 조작', () => {
     await client.copy('/a.txt', '/copy/a.txt');
 
     const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/cp');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/cp');
     expect(JSON.parse(init.body as string)).toEqual({
       source: '/a.txt',
       destination: '/copy/a.txt',
@@ -147,7 +147,7 @@ describe('StorixClient — VFS 조작', () => {
     await client.remove('/dir', true);
 
     const [url] = spy.mock.calls[0] as [URL];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/rm');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/rm');
     expect(url.searchParams.get('path')).toBe('/dir');
     expect(url.searchParams.get('recursive')).toBe('true');
   });
@@ -158,7 +158,7 @@ describe('StorixClient — VFS 조작', () => {
     await expect(client.find('/docs', 'report', 'cursor-2')).resolves.toEqual(page);
 
     const [url] = spy.mock.calls[0] as [URL];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/find');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/find');
     expect(url.searchParams.get('name')).toBe('report');
     expect(url.searchParams.get('cursor')).toBe('cursor-2');
   });
@@ -173,7 +173,7 @@ describe('StorixClient — VFS 조작', () => {
     ).resolves.toEqual(entry);
 
     const [url, init] = spy.mock.calls[0] as [URL, RequestInit];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/content');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/content');
     expect(url.searchParams.get('parents')).toBe('true');
     const headers = init.headers as Headers;
     expect(headers.get('content-type')).toBe('text/plain');
@@ -222,7 +222,7 @@ describe('StorixClient — 다운로드/공개 발행', () => {
     await expect(client.createDownload('/a.txt')).resolves.toEqual(payload);
 
     const [url] = spy.mock.calls[0] as [URL];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/presigned-download');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/presigned-download');
     expect(url.searchParams.get('path')).toBe('/a.txt');
   });
 
@@ -244,15 +244,15 @@ describe('StorixClient — 다운로드/공개 발행', () => {
     const expectedPublicPath = derivePublicPath('/documents/alice/a.txt');
 
     expect(link).toEqual({
-      url: `http://public.test/api/v1/public/ns-public-id/fs/download?path=${encodeURIComponent(expectedPublicPath)}`,
+      url: `http://public.test/api/v2/public/ns-public-id/fs/download?path=${encodeURIComponent(expectedPublicPath)}`,
       publicPath: expectedPublicPath,
     });
 
     const [getUrl] = getSpy.mock.calls[0] as [URL];
-    expect(getUrl.pathname).toBe('/api/v1/namespaces/ns-private-id/fs/content');
+    expect(getUrl.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/content');
 
     const [putUrl, putInit] = putSpy.mock.calls[1] as [URL, RequestInit];
-    expect(putUrl.pathname).toBe('/api/v1/namespaces/ns-public-id/fs/content');
+    expect(putUrl.pathname).toBe('/api/v2/namespaces/ns-public-id/fs/content');
     expect(putUrl.searchParams.get('path')).toBe(expectedPublicPath);
     expect(putUrl.searchParams.get('force')).toBe('true');
     expect((putInit.headers as Headers).get('content-type')).toBe('text/plain');
@@ -263,7 +263,7 @@ describe('StorixClient — 다운로드/공개 발행', () => {
     await client.unpublish('/documents/alice/a.txt');
 
     const [url] = spy.mock.calls[0] as [URL];
-    expect(url.pathname).toBe('/api/v1/namespaces/ns-public-id/fs/rm');
+    expect(url.pathname).toBe('/api/v2/namespaces/ns-public-id/fs/rm');
     expect(url.searchParams.get('path')).toBe(derivePublicPath('/documents/alice/a.txt'));
   });
 });

@@ -13,12 +13,12 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 - `mkdir`, `touch`, `mv`, `cp`, `rmdir`, `rm` — 디렉터리/파일 조작
 - `POST`/`GET content`, `GET download` — 콘텐츠 업로드/다운로드(Range 지원)
 - `ls`, `stat`, `exists`, `find` — 조회, cursor 기반 페이지네이션
-- `GET /api/v1/public/{ns}/fs/download|content` — `accessPolicy=PUBLIC` namespace의
+- `GET /api/v2/public/{ns}/fs/download|content` — `accessPolicy=PUBLIC` namespace의
   무인증 다운로드(Range 지원). 다운로드 2개 라우트만 존재하며 목록 조회·쓰기는 없다.
   `accessPolicy`는 namespace 생성 시 결정되고 변경할 수 없다. `ENCRYPTED` namespace는
   `PUBLIC`으로 만들 수 없다.
 
-전체 엔드포인트는 `api/v1/namespaces/:namespaceId/fs/*` 아래에 있다
+전체 엔드포인트는 `api/v2/namespaces/:namespaceId/fs/*` 아래에 있다
 (`src/vfs/fs.controller.ts`). 호출 서버가 로컬 파일시스템을 다루듯 Storix를
 다룰 수 있게 하는 것이 설계 목표다. API 계약 전체는 `apps/api/openapi.yaml`
 참고(초안 — `docs/ROADMAP.md` API-01).
@@ -191,7 +191,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_PUBLISH_PORT` | 선택 | `3000` | compose | `app` 컨테이너를 호스트에 노출하는 포트 |
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
 | `STORIX_MAX_TOTAL_LOGICAL_BYTES` | 선택 | `53687091200` | app | Namespace 논리 사용량 전역 상한(50 GiB). namespace별 override는 이 값 이하여야 한다 |
-| `STORIX_ADMIN_API_KEY` | 선택 | — | app | `/api/v1/admin/*` 전용 관리자 Bearer key. 비우면 관리자 API는 모두 401 |
+| `STORIX_ADMIN_API_KEY` | 선택 | — | app | `/api/v2/admin/*` 전용 관리자 Bearer key. 비우면 관리자 API는 모두 401 |
 | `STORIX_ADMIN_API_KEY_PREVIOUS` | 선택 | — | app | 관리자 키 교체 기간에만 허용하는 이전 Bearer key |
 | `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제이며 compose에서는 `docker-compose.sqlite.yml`을 겹친다 — 상세는 `README.sqlite.md` |
 | `STORIX_DB_SQLITE_PATH` | 조건부 | — | 모두 | `STORIX_DB_DRIVER=sqlite`일 때 필수. sqlite 파일 경로 |
@@ -236,7 +236,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 
 ### 불변 VFS snapshot
 
-`/api/v1/namespaces/{namespaceId}/fs/snapshots`에서 현재 파일(FILE)이나
+`/api/v2/namespaces/{namespaceId}/fs/snapshots`에서 현재 파일(FILE)이나
 디렉터리 하위 트리(TREE)의 불변 manifest를 만든다. FILE은 고정된 binary bytes와
 MIME 조회 및 revision 조건부 파일 복원을 지원한다. TREE는 manifest 목록과
 파일별 내용 조회를 지원한다. TREE 전체 복원은 제공하지 않는다. snapshot ID는

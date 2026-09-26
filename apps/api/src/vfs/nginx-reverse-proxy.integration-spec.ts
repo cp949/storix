@@ -187,7 +187,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
 
   async function createNamespace(name: string): Promise<string> {
     const response = await request(httpServer)
-      .post('/api/v1/namespaces')
+      .post('/api/v2/namespaces')
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
@@ -199,14 +199,14 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     const content = 'hello through nginx';
 
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send(content)
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/report.txt' })
       .expect(200);
 
@@ -221,14 +221,14 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
   it('GET 이외 메서드는 nginx가 403으로 차단한다', async () => {
     const namespaceId = await createNamespace(`nginx-proxy-method-${randomUUID()}`);
     await request(httpServer)
-      .post(`/api/v1/namespaces/${namespaceId}/fs/content`)
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/report.txt' })
       .set('Content-Type', 'text/plain')
       .send('irrelevant')
       .expect(201);
 
     const response = await request(httpServer)
-      .get(`/api/v1/namespaces/${namespaceId}/fs/presigned-download`)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/presigned-download`)
       .query({ path: '/report.txt' })
       .expect(200);
 

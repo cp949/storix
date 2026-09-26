@@ -25,7 +25,7 @@ Browser
 Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> Storix(app:3000) ─> PostgreSQL
   │                                                    │
   ├──/storix-demo/(서명된 GET만)─────────────────────> VersityGW(:7070)
-  └──/api/v1/public/(무인증 GET만)────────────────────> Storix(app:3000)
+  └──/api/v2/public/(무인증 GET만)────────────────────> Storix(app:3000)
 ```
 
 ## 포함 파일
@@ -33,7 +33,7 @@ Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> St
 - [`nginx/Dockerfile`](nginx/Dockerfile): React(`@storix/demo1-web`) production
   build + nginx:1.29-alpine 런타임
 - [`nginx/default.conf`](nginx/default.conf): `= /health`, `/`, `/demo-api/`,
-  `/storix-demo/`, `/api/v1/public/` 5개 location
+  `/storix-demo/`, `/api/v2/public/` 5개 location
 - [`nginx/00-log-formats.conf`](nginx/00-log-formats.conf): presigned query
   string을 기록하지 않는 로그 형식
 - [`compose.demo.yml`](compose.demo.yml): base + versitygw + postgres 위에

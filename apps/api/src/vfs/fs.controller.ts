@@ -25,7 +25,7 @@ import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
 
-@Controller('api/v1/namespaces/:namespaceId/fs')
+@Controller('api/v2/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class FsController {
