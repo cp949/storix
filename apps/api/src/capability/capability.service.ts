@@ -48,6 +48,10 @@ export class CapabilityService {
     return definition.dependencies.every((dependency) => this.isEnabled(namespaceId, dependency));
   }
 
+  listEnabled(namespaceId: string): readonly CapabilityId[] {
+    return [...this.definitions.keys()].filter((id) => this.isEnabled(namespaceId, id)).sort();
+  }
+
   requireEnabled(namespaceId: string, capabilityId: CapabilityId): void {
     if (!this.isEnabled(namespaceId, capabilityId)) throw new VfsFeatureDisabledError(capabilityId);
   }

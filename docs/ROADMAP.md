@@ -205,14 +205,17 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       전역 상한·namespace 명시적 허용, 기본 비활성, 의존성 검증, 409
       `VFS_FEATURE_DISABLED`와 조건부 receipt 재생 경계를 구현했다. 기존 파일 API는
       계속 활성이고 저장 데이터의 조회·내보내기·복구·삭제 경계는 선택 기능 추가 시
-      지켜야 한다. 현재 production registry에 선택 capability가 없으므로 실제 기능의
-      비활성화 후 데이터 접근은 아직 검증할 수 없다. 활성 capability 조회 계약·구현도
-      없어 VFS-06 전체와 RQ-027은 미완료다. 현재 설계는
+      지켜야 한다. 활성 capability 조회 계약·구현은 VFS-07에서 완료했다. 현재
+      production registry에 선택 capability가 없으므로 실제 기능의 비활성화 후 데이터
+      접근은 아직 검증할 수 없어 VFS-06 전체와 RQ-027은 미완료다. 현재 설계는
       [06-vfs-capabilities.md](./design/06-vfs-capabilities.md)에 기록한다.
-- [ ] VFS-07: **활성 capability 조회** — 소비자가 namespace별 실제 활성 capability를
-      조회하는 공개 API의 경로, 인증·응답 schema, 전역·namespace·의존성 적용 결과,
-      registry 비어 있을 때의 응답과 오류를 확정하고 구현한다. VFS-06의 설정 기반과
-      별개로 계약·구현을 검증한다.
+- [x] VFS-07: **활성 capability 조회** — `GET /api/v2/namespaces/{id}/capabilities`를
+      전역 서비스 Bearer key로 보호하고 ACTIVE namespace에서 실제 활성 선택 ID를
+      사전순으로 반환한다. 전역·namespace 허용과 의존성 결과를 기존 활성 판정에 따라
+      반영하고, 기본 파일 API는 제외한다. Production registry가 비어 있으면
+      `200 { "capabilities": [] }`이며 `Cache-Control: no-store`다. 잘못된 UUID·없는
+      namespace·비활성 상태는 404다. OpenAPI와 route coverage가 같은 계약을 확인한다.
+      실제 선택 기능 및 해당 데이터의 비활성화 후 접근 가능성 검증은 포함하지 않는다.
 
 ## 3. 운영 성숙도
 

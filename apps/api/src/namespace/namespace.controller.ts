@@ -2,15 +2,19 @@ import { Body, Controller, Get, Headers, Param, Post, Res, UseFilters, UseInterc
 import type { Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
+import { CapabilityService } from '../capability/capability.service.js';
 import { parseCreateNamespaceRequest } from './dto/create-namespace.dto.js';
-import { IdempotencyKeyRequiredError } from './namespace.errors.js';
+import { IdempotencyKeyRequiredError, NamespaceNotFoundError } from './namespace.errors.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Controller('api/v2/namespaces')
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class NamespaceController {
-  constructor(private readonly namespaceService: NamespaceService) {}
+  constructor(
+    private readonly namespaceService: NamespaceService,
+    private readonly capabilityService: CapabilityService,
+  ) {}
 
   @Post()
   async create(
@@ -38,6 +42,15 @@ export class NamespaceController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.namespaceService.findById(id);
+  }
+
+  @Get(':id/capabilities')
+  async findCapabilities(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {
+    const namespace = await this.namespaceService.findById(id);
+    if (namespace.status !== 'ACTIVE') throw new NamespaceNotFoundError(id);
+
+    res.setHeader('Cache-Control', 'no-store');
+    return { capabilities: this.capabilityService.listEnabled(id) };
   }
 
   @Get()

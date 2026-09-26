@@ -10,7 +10,7 @@
 
 ### Added
 
-- 선택 VFS capability의 시작 JSON 설정 기반과 409 `VFS_FEATURE_DISABLED` 오류를 추가했다. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 비어 있으면 선택 기능은 모두 비활성이고, 지정한 파일의 읽기·schema·namespace·registry 검증 실패는 시작 오류다. 현재 등록된 선택 기능과 활성 상태 조회 API는 없다.
+- 선택 VFS capability의 시작 JSON 설정 기반과 409 `VFS_FEATURE_DISABLED` 오류를 추가했다. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 비어 있으면 선택 기능은 모두 비활성이고, 지정한 파일의 읽기·schema·namespace·registry 검증 실패는 시작 오류다. 현재 등록된 선택 기능은 없으며 활성 상태 조회는 아래 endpoint를 제공한다.
 
 - OpenAPI에 namespace 사전 조건과 파일 생성·조회·조건부 교체·FILE snapshot 복원까지의 curl 예시를 추가했다. revision, 전체 바이트 SHA-256, 실행 중 한도 확인, receipt의 30일 재생 범위도 설명한다.
 
@@ -65,6 +65,8 @@
   프록시 경로를 함께 바꿔야 한다.
 
 ### Added
+
+- `GET /api/v2/namespaces/{id}/capabilities`로 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다. 서비스 Bearer 인증을 적용하고 ID는 사전순으로 반환하며, 활성 의존 ID를 포함하고 빈 production registry에서는 빈 배열을 반환한다.
 
 - 조건부 파일 생성·교체 결과의 `resource.id`·`resource.revision`, `GET /fs/stat`의 노드 ID·revision·FILE SHA-256, 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256` 헤더를 공개한다. FILE snapshot 생성·ID 조회에는 보존 바이트의 `sha256`을 추가하고 `rootNodeId`를 원본 파일 ID로 명시한다. TREE의 `sha256`은 `null`이다.
 

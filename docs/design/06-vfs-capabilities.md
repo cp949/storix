@@ -1,6 +1,6 @@
 # VFS 선택 capability
 
-기존 VFS-01 파일 API는 항상 활성이다. 이후 추가하는 선택 기능은 소비자 사용 사례를 완성하는 연산 묶음을 하나의 capability로 등록한다. 선택 capability의 기본 상태는 비활성이다. 현재 production registry는 비어 있으며 등록된 선택 기능이나 capability 조회 API는 없다.
+기존 VFS-01 파일 API는 항상 활성이다. 이후 추가하는 선택 기능은 소비자 사용 사례를 완성하는 연산 묶음을 하나의 capability로 등록한다. 선택 capability의 기본 상태는 비활성이다. 현재 production registry는 비어 있고 등록된 선택 기능은 없다. 인증된 `GET /api/v2/namespaces/{id}/capabilities`는 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다.
 
 ## 시작 설정
 
@@ -27,4 +27,10 @@ capability가 활성인 조건은 registry 등록, 전역 허용 목록 포함, 
 
 기능을 비활성화해도 이미 저장한 데이터는 삭제하거나 숨기지 않는다. 해당 데이터의 안전한 조회·내보내기·복구·삭제 경로는 계속 사용할 수 있어야 한다. 기존 파일 API에는 capability 전역 차단을 적용하지 않는다. 각 선택 기능을 추가할 때 이 경계를 함께 설계한다. 소비자별 인증·ACL과 DB schema 변경은 이 설정 계층의 책임이 아니다.
 
-활성 capability를 소비자가 조회하는 공개 계약과 endpoint는 [VFS-07](../ROADMAP.md)에 남아 있다. Registry의 `discoveryVisibility: effective-state`는 향후 조회 정책의 메타데이터이며 현재 조회 API의 존재를 뜻하지 않는다.
+## 활성 capability 조회
+
+조회 API는 전역 서비스 Bearer key로 인증한다. 서비스 key는 namespace별 ACL을 제공하지 않으므로 key 보유자는 모든 ACTIVE namespace를 조회할 수 있다. 잘못된 UUID, 없는 namespace, `DELETING`·`DELETED` namespace는 모두 404 `NAMESPACE_NOT_FOUND`다. 기존 namespace 단건 조회의 상태 정책은 이 endpoint 때문에 바뀌지 않는다.
+
+응답은 `{ "capabilities": string[] }`이며 등록 ID 중 기존 `isEnabled()` 판정이 참인 선택 capability만 사전순으로 포함한다. 전역·namespace 허용과 의존성 판정을 그대로 적용하고, 실제 활성 의존 ID도 목록에 들어간다. 기본 파일 API는 포함하지 않는다. Production registry가 비어 있거나 namespace에 활성 ID가 없으면 `200 { "capabilities": [] }`이고 `Cache-Control: no-store`를 반환한다.
+
+활성 ID는 프로세스 시작 때 읽은 설정 snapshot에 대한 결과다. 설정 변경은 기존과 같이 재시작 이후 적용되며 조회 시점에 설정을 다시 읽지 않는다. 상세 공개 계약은 [VFS-07](../ROADMAP.md) 및 OpenAPI를 따른다.

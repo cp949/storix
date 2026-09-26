@@ -40,6 +40,22 @@ describe('CapabilityService', () => {
     expect(service.isEnabled(OTHER_NS, 'content-search')).toBe(false);
   });
 
+  it('활성 ID 목록은 설정 누락, 전역 허용만, namespace 허용만이면 비어 있다', () => {
+    expect(new CapabilityService(config(), [search]).listEnabled(NS)).toEqual([]);
+    expect(new CapabilityService(config(['content-search']), [search]).listEnabled(NS)).toEqual([]);
+    expect(new CapabilityService(config([], { [NS]: ['content-search'] }), [search]).listEnabled(NS)).toEqual([]);
+  });
+
+  it('활성 ID 목록은 의존 기능을 포함해 사전순으로 반환한다', () => {
+    const service = new CapabilityService(
+      config(['content-search', 'file-preview'], { [NS]: ['content-search', 'file-preview'] }),
+      [preview, search],
+    );
+
+    expect(service.listEnabled(NS)).toEqual(['content-search', 'file-preview']);
+    expect(service.listEnabled(OTHER_NS)).toEqual([]);
+  });
+
   it('미등록 ID가 전역 또는 namespace 설정에 있으면 시작 시 거부한다', () => {
     expect(() => new CapabilityService(config(['missing-feature']), [search])).toThrow(/unknown|unregistered|미등록/i);
     expect(() => new CapabilityService(config([], { [NS]: ['missing-feature'] }), [search])).toThrow(/unknown|unregistered|미등록/i);

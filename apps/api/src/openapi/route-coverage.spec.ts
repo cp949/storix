@@ -239,3 +239,48 @@ it('FILE snapshot 생성은 선택 sourceRevision을 명시한다', () => {
     expect.arrayContaining(['201', '400', '404', '409', '412', '413']),
   );
 });
+
+it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const operation = spec.paths['/api/v2/namespaces/{id}/capabilities']?.get;
+  expect(operation).toBeDefined();
+  expect(operation.security).toEqual([{ ApiKeyAuth: [] }]);
+  expect(operation.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'id', in: 'path', required: true }),
+    ]),
+  );
+  expect(operation.responses['200']).toEqual(
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        'Cache-Control': expect.objectContaining({
+          schema: expect.objectContaining({ enum: ['no-store'] }),
+        }),
+      }),
+      content: {
+        'application/json': {
+          schema: expect.objectContaining({
+            type: 'object',
+            required: ['capabilities'],
+            properties: {
+              capabilities: expect.objectContaining({
+                type: 'array',
+                minItems: 0,
+                items: expect.objectContaining({ type: 'string' }),
+              }),
+            },
+          }),
+        },
+      },
+    }),
+  );
+  expect(operation.responses['200'].description).toMatch(/사전순/);
+  expect(operation.responses['200'].description).toMatch(/의존/);
+  expect(Object.keys(operation.responses)).toEqual(expect.arrayContaining(['401', '404', '500']));
+  expect(operation.responses['401']).toEqual({ $ref: '#/components/responses/Unauthorized' });
+  expect(operation.responses['404'].description).toMatch(/UUID 형식 오류.*namespace 부재.*ACTIVE/);
+  expect(operation.responses['404'].content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/ErrorResponse',
+  });
+  expect(operation.responses['500']).toEqual({ $ref: '#/components/responses/InternalError' });
+});

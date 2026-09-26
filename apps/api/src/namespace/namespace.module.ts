@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
+import { CapabilityModule } from '../capability/capability.module.js';
 import { EncryptionModule } from '../encryption/encryption.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { NamespaceController } from './namespace.controller.js';
@@ -9,7 +10,7 @@ import { NamespaceQuotaService } from './namespace-quota.service.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Module({
-  imports: [PersistenceModule, EncryptionModule],
+  imports: [PersistenceModule, EncryptionModule, CapabilityModule],
   controllers: [NamespaceController, NamespaceQuotaController],
   providers: [NamespaceService, NamespaceQuotaService, AdminApiKeyGuard],
 })
