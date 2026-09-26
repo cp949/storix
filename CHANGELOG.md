@@ -10,6 +10,8 @@
 
 ### Changed
 
+- snapshot 자체가 없거나 snapshot ID 형식이 잘못된 경우 404 `VFS_SNAPSHOT_NOT_FOUND`를 반환한다. 파일 경로·snapshot 내부 entry 부재는 404 `VFS_NODE_NOT_FOUND`를 유지한다. 복원 대상 snapshot 종류가 FILE이 아니면 409 `VFS_INVALID_OPERATION`을 반환한다.
+
 - namespace 생성과 idempotency 결과를 원자적으로 저장한다. 같은 `Idempotency-Key`와 같은 본문의 동시 요청 또는 재시도는 최초 201 응답으로 수렴하고, 같은 키에 다른 본문을 보내면 422를 반환한다.
 
 - 조건부 오류 receipt를 확정하는 중 claim을 잃었고 namespace가 이미 삭제됐다면 500 대신 404 `NAMESPACE_NOT_FOUND`를 반환한다. receipt는 저장되지 않는다.

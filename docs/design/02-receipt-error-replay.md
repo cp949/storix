@@ -20,7 +20,7 @@
 요청 처리 순서와 receipt 저장 위치는 다음과 같다.
 
 1. snapshot restore·delete는 유효한 UUID `snapshotId`를 소문자 canonical form으로 만든다. UUID 형식이 아니면 404
-   `VFS_NODE_NOT_FOUND`를 보류하고 원래 route 값을 fingerprint에 사용한다. 유효한 identity와 namespace root가 있을 때
+   `VFS_SNAPSHOT_NOT_FOUND`를 보류하고 원래 route 값을 fingerprint에 사용한다. 유효한 identity와 namespace root가 있을 때
    claim까지 진행해 이 오류도 receipt로 저장한다. identity 검증이나 namespace root 확인이 실패하면 경로 404를 그대로
    반환하고 receipt는 남기지 않아 기존 오류 우선순위를 유지한다.
 2. 헤더 검증(`identityOf`), namespace root 확인, 요청 파싱. 파싱 오류는 던지지 않고 보류한다. mutation·snapshot은 이어서
@@ -65,7 +65,7 @@ claim이 `owner`인 요청의 보류된 입력 오류(restore/delete의 snapshot
 | 종류                    | 예                                                                                                                         |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | 요청 형식·경로 오류 400 | `VFS_INVALID_PATH`(NFC 아닌 경로 포함), `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`                             |
-| 대상 부재 404           | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 부재, 유효한 identity·namespace가 있는 restore/delete의 잘못된 snapshot UUID 형식) |
+| 대상 부재 404           | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 내부 entry 부재), `VFS_SNAPSHOT_NOT_FOUND`(snapshot 부재 또는 잘못된 snapshot UUID 형식) |
 | 상태 충돌 409           | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등   |
 | 조건 불일치 412         | `VFS_PRECONDITION_FAILED`(`current` 포함)                                                                                  |
 | 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                                      |

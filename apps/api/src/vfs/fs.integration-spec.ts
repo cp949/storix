@@ -1353,7 +1353,7 @@ describe('Fs HTTP contract', () => {
       for (const target of [id, randomUUID()]) {
         const key = randomUUID();
         const first = await snapshotPost(base, `/${target}/delete`, key, '{}').expect(404);
-        expect(first.body.code).toBe('VFS_NODE_NOT_FOUND');
+        expect(first.body.code).toBe('VFS_SNAPSHOT_NOT_FOUND');
         expect(
           await migrationDataSource
             .getRepository(VfsMutationReceiptEntity)

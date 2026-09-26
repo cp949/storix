@@ -102,7 +102,7 @@ describe('VfsSnapshotService receipts', () => {
 
       const first = await run('req-first');
       expect(first.status).toBe(404);
-      expect(first.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', requestId: 'req-first' });
+      expect(first.body).toMatchObject({ code: 'VFS_SNAPSHOT_NOT_FOUND', requestId: 'req-first' });
       expect(completeAfterRollback).toHaveBeenCalledWith(
         expect.objectContaining({ namespaceId }),
         1,
@@ -159,7 +159,7 @@ describe('VfsSnapshotService receipts', () => {
     );
 
     expect(result.status).toBe(404);
-    expect(result.body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', requestId: 'req' });
+    expect(result.body).toMatchObject({ code: 'VFS_SNAPSHOT_NOT_FOUND', requestId: 'req' });
     expect(claim).not.toHaveBeenCalled();
     expect(completeAfterRollback).not.toHaveBeenCalled();
   });

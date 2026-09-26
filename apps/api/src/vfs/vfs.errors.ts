@@ -87,6 +87,15 @@ export class VfsNodeNotFoundError extends DomainError {
   }
 }
 
+export class VfsSnapshotNotFoundError extends DomainError {
+  readonly code = 'VFS_SNAPSHOT_NOT_FOUND';
+  readonly status = 404;
+
+  constructor(readonly snapshotId: string) {
+    super(`존재하지 않는 snapshot: ${snapshotId}`);
+  }
+}
+
 export class VfsNotDirectoryError extends DomainError {
   readonly code = 'VFS_NOT_DIRECTORY';
   readonly status = 409;

@@ -49,6 +49,7 @@ import {
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
   VfsPreconditionFailedError,
+  VfsSnapshotNotFoundError,
 } from './vfs.errors.js';
 
 export interface SnapshotMetadata {
@@ -102,12 +103,12 @@ function toMetadata(snapshot: StoredSnapshot): SnapshotMetadata {
 }
 
 function canonicalSnapshotId(id: string): string {
-  if (!isUuid(id)) throw new VfsNodeNotFoundError(id);
+  if (!isUuid(id)) throw new VfsSnapshotNotFoundError(id);
   return id.toLowerCase();
 }
 
 function mutationSnapshotId(id: string): { id: string; error: DomainError | undefined } {
-  if (!isUuid(id)) return { id, error: new VfsNodeNotFoundError(id) };
+  if (!isUuid(id)) return { id, error: new VfsSnapshotNotFoundError(id) };
   return { id: id.toLowerCase(), error: undefined };
 }
 
@@ -171,7 +172,7 @@ export class VfsSnapshotService {
   async get(namespaceId: string, snapshotId: string): Promise<SnapshotMetadata> {
     await requireRoot(this.nodes, namespaceId);
     const snapshot = await this.snapshots.get(namespaceId, canonicalSnapshotId(snapshotId));
-    if (!snapshot) throw new VfsNodeNotFoundError(snapshotId);
+    if (!snapshot) throw new VfsSnapshotNotFoundError(snapshotId);
     return toMetadata(snapshot);
   }
 
@@ -184,14 +185,14 @@ export class VfsSnapshotService {
     await requireRoot(this.nodes, namespaceId);
     const id = canonicalSnapshotId(snapshotId);
     const snapshot = await this.snapshots.get(namespaceId, id);
-    if (!snapshot) throw new VfsNodeNotFoundError(id);
+    if (!snapshot) throw new VfsSnapshotNotFoundError(id);
     if (snapshot.kind !== 'TREE') throw new VfsInvalidOperationError(id);
     const after = cursor === undefined ? null : decodeSnapshotCursor(cursor, id).pathKey;
     const page = await this.snapshots.listEntries(namespaceId, id, after, resolveLimit(limit));
     // 삭제는 전체 manifest를 원자적으로 없앤다. 두 조회 사이 삭제됐다면
     // 존재할 수 없는 빈 TREE manifest를 성공 응답으로 반환하지 않는다.
     if (page.entries.length === 0 && !(await this.snapshots.get(namespaceId, id))) {
-      throw new VfsNodeNotFoundError(id);
+      throw new VfsSnapshotNotFoundError(id);
     }
     return {
       items: page.entries.map((entry) => ({
@@ -225,7 +226,7 @@ export class VfsSnapshotService {
     try {
       const result = await this.nodes.withMutation(namespaceId, root.id, async (tx) => {
         const snapshot = await this.snapshots.findForUpdate(tx, namespaceId, id);
-        if (!snapshot) throw new VfsNodeNotFoundError(id);
+        if (!snapshot) throw new VfsSnapshotNotFoundError(id);
         if (
           (snapshot.kind === 'FILE' && relativePath !== undefined) ||
           (snapshot.kind === 'TREE' && relativePath === undefined)
@@ -304,7 +305,8 @@ export class VfsSnapshotService {
       async (tx, command) => {
         // withMutation이 root를 잠근 뒤 snapshot을 먼저 확인한다. target은 그 다음이다.
         const snapshot = await this.snapshots.findForUpdate(tx, namespaceId, id);
-        if (!snapshot || snapshot.kind !== 'FILE') throw new VfsNodeNotFoundError(id);
+        if (!snapshot) throw new VfsSnapshotNotFoundError(id);
+        if (snapshot.kind !== 'FILE') throw new VfsInvalidOperationError(id);
         const entry = await this.snapshots.getFileEntry(tx, id);
         if (!entry?.blobId || entry.size === null || entry.mimeType === null)
           throw new VfsNodeNotFoundError(id);
@@ -369,7 +371,7 @@ export class VfsSnapshotService {
       },
       async (tx) => {
         const snapshot = await this.snapshots.findForUpdate(tx, namespaceId, id);
-        if (!snapshot) throw new VfsNodeNotFoundError(id);
+        if (!snapshot) throw new VfsSnapshotNotFoundError(id);
         await this.snapshots.remove(tx, snapshot);
         return {
           status: 200,
