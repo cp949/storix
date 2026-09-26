@@ -16,6 +16,7 @@ import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsSnapshotEntity } from '../persistence/entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from '../persistence/entities/vfs-snapshot-entry.entity.js';
+import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { MinioBlobStorage } from '../storage/minio-blob-storage.js';
@@ -95,6 +96,56 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   });
 
   treeSnapshotContract(() => app);
+
+  it('실제 SQLite gated transaction 대기 초과는 503 DB_BUSY이고 같은 key 재시도로 한 번만 변경한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const ns = await http()
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: `sqlite-gate-${randomUUID()}` })
+      .expect(201);
+    const namespaceId = ns.body.id as string;
+    const key = randomUUID();
+    const body = '{"kind":"mkdir","path":"/after-busy","ifAbsent":true}';
+    const mutate = () =>
+      http()
+        .post(`/api/v2/namespaces/${namespaceId}/fs/mutations`)
+        .set('Content-Type', 'application/json')
+        .set('Idempotency-Key', key)
+        .set('X-Mutation-Scope', 'sqlite-gate')
+        .send(body);
+    const ds = app.get(DataSource);
+    const holder = ds.createQueryRunner();
+    try {
+      await holder.connect();
+      await holder.startTransaction();
+      await holder.query('SELECT 1');
+      const busy = await mutate().expect(503);
+      expect(busy.body.code).toBe('DB_BUSY');
+      expect(busy.headers['retry-after']).toBe('1');
+    } finally {
+      try {
+        if (holder.isTransactionActive) await holder.rollbackTransaction();
+      } finally {
+        await holder.release();
+      }
+    }
+    const receiptRepo = ds.getRepository(VfsMutationReceiptEntity);
+    const where = { namespaceId, scope: 'sqlite-gate', idempotencyKey: key };
+    expect(await receiptRepo.countBy(where)).toBe(0);
+
+    const created = await mutate().expect(201);
+    expect(created.body.resource.path).toBe('/after-busy');
+    const replay = await mutate().expect(201);
+    expect(replay.body).toEqual(created.body);
+    expect(await receiptRepo.countBy(where)).toBe(1);
+    expect(await receiptRepo.findOneBy(where)).toMatchObject({ state: 'COMPLETE' });
+    const stat = await http()
+      .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+      .query({ path: '/after-busy' })
+      .expect(200);
+    expect(stat.body.id).toBe(created.body.resource.id);
+  }, 120000);
 
   it('목록 API에서 SQLite FILE 페이지와 node cursor를 조회한다', async () => {
     const http = () => request(app.getHttpServer());

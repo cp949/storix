@@ -213,15 +213,15 @@ describe('Namespace HTTP contract', () => {
       securedApp = moduleRef.createNestApplication();
       await securedApp.init();
       const url = '/api/v2/namespaces/11111111-1111-1111-1111-111111111111';
-      await request(securedApp.getHttpServer()).get(url).expect(401);
-      await request(securedApp.getHttpServer())
+      expect((await request(securedApp.getHttpServer()).get(url).expect(401)).body.code).toBe('UNAUTHORIZED');
+      expect((await request(securedApp.getHttpServer())
         .get(url)
         .set('Authorization', 'Bearer wrong-key')
-        .expect(401);
-      await request(securedApp.getHttpServer())
+        .expect(401)).body.code).toBe('UNAUTHORIZED');
+      expect((await request(securedApp.getHttpServer())
         .get(url)
         .set('Authorization', 'Bearer namespace-details-key')
-        .expect(404);
+        .expect(404)).body.code).toBe('NAMESPACE_NOT_FOUND');
     } finally {
       await securedApp?.close();
       if (previous === undefined) delete process.env.STORIX_API_KEY;
@@ -355,9 +355,26 @@ describe('Namespace HTTP contract', () => {
   });
 
   it('존재하지 않는 id를 단건 조회하면 404를 반환한다', async () => {
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .get('/api/v2/namespaces/11111111-1111-1111-1111-111111111111')
       .expect(404);
+    expect(response.body.code).toBe('NAMESPACE_NOT_FOUND');
+  });
+
+  it('namespace 단건 DB 조회의 확인된 일시 오류는 안전한 503 STORAGE_UNAVAILABLE이다', async () => {
+    const repo = app.get(DataSource).getRepository(NamespaceEntity);
+    const spy = jest.spyOn(repo, 'findOneBy').mockRejectedValueOnce({
+      driverError: { code: '08006', message: 'private postgres endpoint' },
+    });
+    try {
+      const response = await request(app.getHttpServer())
+        .get('/api/v2/namespaces/11111111-1111-1111-1111-111111111111')
+        .expect(503);
+      expect(response.body.code).toBe('STORAGE_UNAVAILABLE');
+      expect(JSON.stringify(response.body)).not.toContain('private postgres endpoint');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('생성한 namespace가 목록 조회에 포함된다', async () => {

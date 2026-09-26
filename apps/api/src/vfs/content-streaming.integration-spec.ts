@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
+import { Readable } from 'node:stream';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { jest } from '@jest/globals';
 import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { Client as MinioClient, S3Error } from 'minio';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
@@ -16,6 +18,7 @@ import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.en
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
+import { STORAGE_CLIENT } from '../storage/storage.constants.js';
 import { VfsModule } from './vfs.module.js';
 
 const CHUNK_SIZE = 1024 * 1024;
@@ -66,6 +69,46 @@ function getStreamingHash(port: number, path: string): Promise<{ status: number;
       });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, sha256: hash.digest('hex'), size }));
       res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function getInterruptedDownload(
+  port: number,
+  path: string,
+  onFirstData: () => void,
+): Promise<{ status: number; headers: IncomingHttpHeaders; aborted: boolean; complete: boolean; size: number; sha256: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
+      const hash = createHash('sha256');
+      let size = 0;
+      let settled = false;
+      let firstDataSeen = false;
+      const finish = (aborted: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: res.headers,
+          aborted,
+          complete: res.complete,
+          size,
+          sha256: hash.digest('hex'),
+        });
+      };
+      res.on('data', (chunk: Buffer) => {
+        hash.update(chunk);
+        size += chunk.length;
+        if (!firstDataSeen) {
+          firstDataSeen = true;
+          onFirstData();
+        }
+      });
+      res.on('aborted', () => finish(true));
+      res.on('end', () => finish(false));
+      res.on('error', () => finish(true));
     });
     req.on('error', reject);
     req.end();
@@ -201,5 +244,77 @@ describe('대용량 스트리밍', () => {
     expect(downloaded.status).toBe(200);
     expect(downloaded.size).toBe(expectedSize);
     expect(downloaded.sha256).toBe(expectedHash.digest('hex'));
+  });
+
+  it('MinIO 객체를 열기 전 일시·영구 실패는 안전한 JSON 코드로 응답한다', async () => {
+    const namespaceId = await createNamespace('streaming-open-failure');
+    const path = '/open.bin';
+    await request(app.getHttpServer())
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+      .query({ path })
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('complete file'))
+      .expect(201);
+
+    const client = app.get<MinioClient>(STORAGE_CLIENT);
+    const spy = jest.spyOn(client, 'getObject')
+      .mockRejectedValueOnce(Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }))
+      .mockRejectedValueOnce(Object.assign(new S3Error('private object key'), { code: 'AccessDenied' }));
+    try {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path })
+        .expect(503);
+      expect(response.body.code).toBe('STORAGE_UNAVAILABLE');
+      expect(JSON.stringify(response.body)).not.toContain('private blob endpoint');
+      const permanent = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path })
+        .expect(500);
+      expect(permanent.body.code).toBe('STORAGE_FAILURE');
+      expect(JSON.stringify(permanent.body)).not.toContain('private object key');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('헤더와 일부 바이트 뒤 Blob stream 실패는 연결을 끊어 길이와 해시로 불완전을 판별한다', async () => {
+    const namespaceId = await createNamespace('streaming-mid-response-failure');
+    const path = '/interrupted.bin';
+    const fullBytes = Buffer.alloc(16 * 1024, 7);
+    const fullHash = createHash('sha256').update(fullBytes).digest('hex');
+    await request(app.getHttpServer())
+      .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+      .query({ path })
+      .set('Content-Type', 'application/octet-stream')
+      .send(fullBytes)
+      .expect(201);
+
+    const client = app.get<MinioClient>(STORAGE_CLIENT);
+    let signalFirstData!: () => void;
+    const firstDataObserved = new Promise<void>((resolve) => { signalFirstData = resolve; });
+    const source = Readable.from((async function* () {
+      yield fullBytes.subarray(0, 4096);
+      await firstDataObserved;
+      throw Object.assign(new Error('private stream failure'), { code: 'ECONNRESET' });
+    })());
+    const spy = jest.spyOn(client, 'getObject').mockResolvedValueOnce(source);
+    try {
+      const downloaded = await getInterruptedDownload(
+        serverPort,
+        `/api/v2/namespaces/${namespaceId}/fs/content?path=${encodeURIComponent(path)}`,
+        signalFirstData,
+      );
+      expect(downloaded.status).toBe(200);
+      expect(downloaded.aborted).toBe(true);
+      expect(downloaded.complete).toBe(false);
+      expect(downloaded.headers['content-length']).toBe(String(fullBytes.length));
+      expect(downloaded.headers['x-storix-sha256']).toBe(fullHash);
+      expect(downloaded.size).toBeGreaterThan(0);
+      expect(downloaded.size).toBeLessThan(Number(downloaded.headers['content-length']));
+      expect(downloaded.sha256).not.toBe(downloaded.headers['x-storix-sha256']);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

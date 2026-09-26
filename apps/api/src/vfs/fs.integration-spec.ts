@@ -11,7 +11,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { Client as MinioClient, S3Error } from 'minio';
 import request from 'supertest';
 import { DataSource, EntityManager, IsNull } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
@@ -26,7 +26,7 @@ import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsSnapshotRepository } from '../persistence/vfs-snapshot.repository.js';
-import { BLOB_STORAGE } from '../storage/storage.constants.js';
+import { BLOB_STORAGE, STORAGE_CLIENT } from '../storage/storage.constants.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { VfsModule } from './vfs.module.js';
 import { decodeRevision, encodeRevision } from './revision.js';
@@ -353,6 +353,55 @@ describe('Fs HTTP contract', () => {
         .set('X-Mutation-Scope', scope)
         .send(body);
     }
+
+    it('snapshot 생성의 분류된 DB 일시·영구 실패는 HTTP 코드와 receipt 비저장 계약을 지킨다', async () => {
+      const namespaceId = await createNamespace('snapshot-storage-failure-http');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/source' })
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('snapshot source'))
+        .expect(201);
+      const repository = app.get(VfsSnapshotRepository);
+      const receipts = migrationDataSource.getRepository(VfsMutationReceiptEntity);
+      const snapshots = app.get(DataSource).getRepository(VfsSnapshotEntity);
+      const body = '{"kind":"file","path":"/source"}';
+      const transientKey = randomUUID();
+      const transientSpy = jest.spyOn(repository, 'capture').mockRejectedValueOnce({
+        driverError: { code: '08006', message: 'private database endpoint' },
+      });
+      try {
+        const unavailable = await snapshotPost(base, '', transientKey, body).expect(503);
+        expect(unavailable.body.code).toBe('STORAGE_UNAVAILABLE');
+        expect(JSON.stringify(unavailable.body)).not.toContain('private database endpoint');
+        expect(await receipts.findOneBy({ namespaceId, scope, idempotencyKey: transientKey })).toBeNull();
+        expect(await snapshots.countBy({ namespaceId })).toBe(0);
+      } finally {
+        transientSpy.mockRestore();
+      }
+
+      const created = await snapshotPost(base, '', transientKey, body).expect(201);
+      const replay = await snapshotPost(base, '', transientKey, body).expect(201);
+      expect(replay.body).toEqual(created.body);
+      expect(await receipts.findOneBy({ namespaceId, scope, idempotencyKey: transientKey }))
+        .toMatchObject({ state: 'COMPLETE' });
+      expect(await snapshots.countBy({ namespaceId })).toBe(1);
+
+      const permanentKey = randomUUID();
+      const permanentSpy = jest.spyOn(repository, 'capture').mockRejectedValueOnce({
+        driverError: { code: '53100', message: 'private disk path' },
+      });
+      try {
+        const failure = await snapshotPost(base, '', permanentKey, body).expect(500);
+        expect(failure.body.code).toBe('STORAGE_FAILURE');
+        expect(JSON.stringify(failure.body)).not.toContain('private disk path');
+        expect(await receipts.findOneBy({ namespaceId, scope, idempotencyKey: permanentKey })).toBeNull();
+        expect(await snapshots.countBy({ namespaceId })).toBe(1);
+      } finally {
+        permanentSpy.mockRestore();
+      }
+    });
 
     it('파일별 목록은 node ID에 묶이고 cursor를 검증한다', async () => {
       const ns = await createNamespace('file-snapshot-list');
@@ -2570,7 +2619,7 @@ describe('Fs HTTP contract', () => {
         .getRepository(VfsMutationReceiptEntity)
         .findOneBy({ namespaceId, scope, idempotencyKey: key });
 
-    it('5xx DomainError와 일반 Error는 저장하지 않고 같은 key 재시도에서 재평가한다', async () => {
+    it('미분류·분류된 DB 5xx는 receipt 없이 같은 key에서 재평가하고 한 번만 변경한다', async () => {
       const namespaceId = await createNamespace('error-receipt-transient');
       const nodes = app.get(VfsNodeRepository);
       const jsonKey = randomUUID();
@@ -2578,16 +2627,26 @@ describe('Fs HTTP contract', () => {
       const jsonSpy = jest
         .spyOn(nodes, 'applyConditionalMutation')
         .mockRejectedValueOnce(new Error('injected database failure'))
-        .mockRejectedValueOnce(new InjectedUnavailableError());
+        .mockRejectedValueOnce(new InjectedUnavailableError())
+        .mockRejectedValueOnce({ driverError: { code: '08006', message: 'private database endpoint' } });
       try {
-        await mutate(namespaceId, jsonKey, jsonBody).expect(500);
+        expect((await mutate(namespaceId, jsonKey, jsonBody).expect(500)).body.code).toBe('INTERNAL_ERROR');
         expect(await receiptOf(namespaceId, jsonKey)).toBeNull();
         await mutate(namespaceId, jsonKey, jsonBody).expect(503);
+        expect(await receiptOf(namespaceId, jsonKey)).toBeNull();
+        const unavailable = await mutate(namespaceId, jsonKey, jsonBody).expect(503);
+        expect(unavailable.body).toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+        expect(JSON.stringify(unavailable.body)).not.toContain('private database endpoint');
         expect(await receiptOf(namespaceId, jsonKey)).toBeNull();
       } finally {
         jsonSpy.mockRestore();
       }
-      expect((await mutate(namespaceId, jsonKey, jsonBody).expect(201)).body.resource.path).toBe('/a');
+      const created = await mutate(namespaceId, jsonKey, jsonBody).expect(201);
+      expect(created.body.resource.path).toBe('/a');
+      const replay = await mutate(namespaceId, jsonKey, jsonBody).expect(201);
+      expect(replay.body).toEqual(created.body);
+      expect(await receiptOf(namespaceId, jsonKey)).toMatchObject({ state: 'COMPLETE' });
+      expect(await migrationDataSource.getRepository(VfsNodeEntity).countBy({ namespaceId, name: 'a' })).toBe(1);
 
       const uploadKey = randomUUID();
       const contentSpy = jest
@@ -2604,6 +2663,45 @@ describe('Fs HTTP contract', () => {
         (await upload(namespaceId, uploadKey, '/a/file', { 'X-If-Absent': 'true' }).expect(201)).body.resource
           .path,
       ).toBe('/a/file');
+    });
+
+    it('MinIO SDK 일시·영구 실패는 안전한 코드로 응답하고 일시 실패는 같은 key로 성공한다', async () => {
+      const namespaceId = await createNamespace('error-receipt-blob-sdk');
+      const client = app.get<MinioClient>(STORAGE_CLIENT);
+      const putSpy = jest.spyOn(client, 'putObject');
+      const transientKey = randomUUID();
+      const permanentKey = randomUUID();
+      try {
+        putSpy.mockRejectedValueOnce(Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }));
+        const transient = await upload(namespaceId, transientKey, '/transient', { 'X-If-Absent': 'true' }).expect(503);
+        expect(transient.body).toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+        expect(JSON.stringify(transient.body)).not.toContain('private blob endpoint');
+        expect(await receiptOf(namespaceId, transientKey)).toBeNull();
+        expect(await migrationDataSource.getRepository(BlobEntity).countBy({ namespaceId })).toBe(0);
+        putSpy.mockRestore();
+
+        const created = await upload(namespaceId, transientKey, '/transient', { 'X-If-Absent': 'true' }).expect(201);
+        expect(created.body.resource.path).toBe('/transient');
+        expect((await upload(namespaceId, transientKey, '/transient', { 'X-If-Absent': 'true' }).expect(201)).body)
+          .toEqual(created.body);
+        expect(await receiptOf(namespaceId, transientKey)).toMatchObject({ state: 'COMPLETE' });
+        expect(await migrationDataSource.getRepository(VfsNodeEntity).countBy({ namespaceId, name: 'transient' }))
+          .toBe(1);
+
+        const permanentSpy = jest.spyOn(client, 'putObject').mockRejectedValueOnce(
+          Object.assign(new S3Error('private object key'), { code: 'AccessDenied' }),
+        );
+        try {
+          const permanent = await upload(namespaceId, permanentKey, '/permanent', { 'X-If-Absent': 'true' }).expect(500);
+          expect(permanent.body).toMatchObject({ code: 'STORAGE_FAILURE' });
+          expect(JSON.stringify(permanent.body)).not.toContain('private object key');
+          expect(await receiptOf(namespaceId, permanentKey)).toBeNull();
+        } finally {
+          permanentSpy.mockRestore();
+        }
+      } finally {
+        putSpy.mockRestore();
+      }
     });
 
     it('진행 중 claim은 응답을 저장하지 않고 lease 만료 뒤 같은 key로 처리한다', async () => {
