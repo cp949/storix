@@ -38,9 +38,13 @@
   기존 receipt와 조건이 유효한 content receipt는 영향이 없다. 예외로, 변경 전 빌드에서 `sourceRevision` 키를
   담아 허용되지 않은 키 400으로 저장된 snapshot 생성 receipt는 그 요청이 이제 유효하게 파싱되면 fingerprint가
   달라 같은 재시도가 `MUTATION_KEY_REUSED`를 받는다(해당 endpoint 미릴리즈).
-- 조건부 VFS 변경과 콘텐츠 업로드는 각 경로 segment에 NFC 형식을 요구한다.
-  분해된 Unicode 경로는 정규화 없이 400 `VFS_INVALID_PATH`로 거부하며,
-  기존 비조건부 경로 API의 입력 규칙은 유지한다.
+- 모든 파일·snapshot 경로 입력에 공통 계약을 적용한다. 절대경로와 NFC 이름을 요구하고,
+  중복 `/`·`.`·끝 `/`는 정규화한다. `..`·백슬래시·제어 문자·Bidi_Control·고립
+  surrogate와 NFC가 아닌 이름은 400 `VFS_INVALID_PATH`로 거부한다. 이름은 UTF-8
+  최대 255바이트, 정규 절대경로는 최대 4096바이트이며 이동·복사 결과와 하위 경로에도
+  적용한다. 부모 자동 생성은 명시적 옵션에서만 허용한다.
+- 공개 API를 `/api/v2`로 전체 교체했다. `/api/v1`은 병행 제공하지 않으므로 호출자와
+  프록시 경로를 함께 바꿔야 한다.
 
 ### Added
 
@@ -60,7 +64,7 @@
   조회하고, FILE을 revision 조건으로 복원하며, 명시적으로 삭제할 수 있다.
   namespace별 snapshot 보존 한도와 Blob GC 참조를 관리한다.
 - VFS `POST /fs/mutations` 조건부 디렉터리·트리 변경과 30일 재시도 영수증.
-  기존 `/api/v1` 변경 경로의 요청·응답 형식은 유지하면서 조상 revision을 갱신한다.
+  기존 변경 경로의 요청·응답 형식은 유지하면서 조상 revision을 갱신한다.
 - `POST /fs/content/conditional` raw stream 업로드에 revision 조건과 30일 영수증 재생을 추가했다.
 - `GET /fs/revision`과 `GET /fs/ls?consistency=revision`을 추가했다. 새 목록 cursor는
   디렉터리 revision이 바뀌면 412를 반환한다.
@@ -74,7 +78,7 @@
   `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로 표현(`API-03`,
   `docs/adr/0007`, `apps/api/docs/adr/0020`)
 - namespace `accessPolicy`(`PRIVATE`/`PUBLIC`) 도입. 생성 시 결정되며 변경할 수 없다.
-- `GET /api/v1/public/{ns}/fs/download`, `GET /api/v1/public/{ns}/fs/content` 무인증
+- `GET /api/v2/public/{ns}/fs/download`, `GET /api/v2/public/{ns}/fs/content` 무인증
   다운로드 엔드포인트 추가. `PUBLIC`이 아닌 namespace는 404로 응답한다.
 - `ENCRYPTED` namespace를 `PUBLIC`으로 생성하는 요청을 400으로 거부한다.
 

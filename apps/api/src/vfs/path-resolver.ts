@@ -29,7 +29,10 @@ export function assertPathSegments(segments: readonly string[]): void {
 export const assertConditionalSegments = assertPathSegments;
 
 export class PathResolver {
-  resolve(rawPath: string): ResolvedPath {
+  resolve(rawPath: unknown): ResolvedPath {
+    if (typeof rawPath !== 'string') {
+      throw new VfsInvalidPathError('');
+    }
     if (!rawPath.startsWith('/')) {
       throw new VfsInvalidPathError(rawPath);
     }

@@ -14,6 +14,20 @@ info:
     이 스펙은 `namespace`/`fs` 컨트롤러만 다룬다. `/health/*`(인증 예외 대상)와
     `/metrics`(운영 관측용)는 외부 API 계약이 아니라서 포함하지 않는다.
 
+    **파일·스냅샷 경로 계약.** 공개 경로 입력은 `/`로 시작하는 절대경로다. TREE snapshot
+    content의 `path`만 상대경로이며 `.`은 TREE 루트다. 중복 `/`, `.` 구간, 끝 `/`는
+    제거해 같은 정규 경로로 식별한다. `..`, 백슬래시, C0·C1·DEL 제어 문자,
+    Unicode Bidi_Control, 고립 surrogate 및 NFC가 아닌 이름은 정규화하지 않고
+    400 `VFS_INVALID_PATH`로 거부한다. 이름은 대소문자를 구별하며 각각 UTF-8
+    최대 255바이트다. 정규 절대경로는 앞 `/`를 포함해 UTF-8 최대 4096바이트이고,
+    TREE 상대경로도 앞에 `/`를 붙인 길이로 검사한다. 이동·복사로 만들어질 최종
+    경로와 모든 하위 경로에도 같은 한도를 적용한다. 경로 오류로 실패하면 파일
+    트리·본문·snapshot은 변경되지 않는다. 조건부 변경의 오류 receipt는 해당
+    endpoint의 재생 계약을 따른다. 부모 디렉터리는 기본적으로 생성하지 않으며
+    `parents` 또는 `destinationParents`가 있는 작업에서 명시적으로 `true`로
+    지정할 때만 생성한다. `/`는 조회·목록·TREE snapshot 원본과 이동·복사의
+    디렉터리 목적지로 사용할 수 있다. 루트 자체를 파일로 쓰거나 이동·삭제할 수는 없다.
+
     SQLite는 단일 서버 인스턴스 배포 전제다. 여러 서버 인스턴스는 공유
     PostgreSQL과 Blob 저장소를 사용한다. SQLite는 모든 쿼리를 한 줄로 직렬화하며,
     앞선 트랜잭션이 30초를 넘게 끝나지 않으면 대기 중인 요청은 503 `DB_BUSY`와
@@ -179,9 +193,7 @@ paths:
 
         412 body는 `current`(충돌 시점의 대상 노드 metadata, 없으면 null)를 포함하며
         재생 시에도 최초 값이다. 진행 중인 key는 409와 Retry-After를 반환한다.
-        이 조건부 endpoint의 모든 경로(path, source, destination)는 각 segment가
-        NFC 형식이어야 한다. 분해된 Unicode 경로는 정규화하지 않고 400
-        VFS_INVALID_PATH로 거부한다. 기존 비조건부 경로 endpoint에는 이 규칙을 적용하지 않는다.
+        path, source, destination은 상단의 공통 경로 계약을 따른다.
         400 VFS_INVALID_PATH도 receipt로 저장되므로 경로를 고쳐 같은 key로 재시도하면
         409 MUTATION_KEY_REUSED이며 새 key가 필요하다.
       parameters:
@@ -241,7 +253,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
         '400':
-          description: 요청 형식 오류 또는 비 NFC 경로(`VFS_INVALID_PATH`)
+          description: 요청 형식 오류 또는 유효하지 않은 경로(`VFS_INVALID_PATH`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -522,9 +534,7 @@ paths:
 
         412 body는 `current`(충돌 시점의 대상 노드 metadata)를 포함하며 재생 시에도 최초 값이다.
         `X-If-Absent`와 `X-If-Revision`은 정확히 하나만 지정한다.
-        이 조건부 endpoint의 path는 각 segment가 NFC 형식이어야 한다.
-        분해된 Unicode 경로는 정규화하지 않고 400 VFS_INVALID_PATH로 거부한다.
-        기존 비조건부 content 경로에는 이 규칙을 적용하지 않는다.
+        path는 상단의 공통 경로 계약을 따른다.
         400 VFS_INVALID_PATH도 receipt로 저장되므로 경로를 고쳐 같은 key로 재시도하면
         409 MUTATION_KEY_REUSED이며 새 key가 필요하다.
       parameters:
@@ -532,7 +542,7 @@ paths:
         - name: path
           in: query
           required: true
-          description: 각 segment가 NFC 형식이어야 하는 조건부 파일 경로.
+          description: 공통 경로 계약을 따르는 절대 파일 경로.
           schema: { type: string }
         - name: Idempotency-Key
           in: header
@@ -572,7 +582,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
         '400':
-          description: 요청 형식 오류 또는 비 NFC 경로(`VFS_INVALID_PATH`)
+          description: 요청 형식 오류 또는 유효하지 않은 경로(`VFS_INVALID_PATH`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1179,7 +1189,7 @@ paths:
                 kind: { type: string, enum: [file, tree] }
                 path:
                   type: string
-                  description: FILE은 절대 파일 경로, TREE는 절대 디렉터리 경로(/ 허용). 중복 slash와 dot 구간은 제거하며 .., backslash, 제어 문자는 거부한다.
+                  description: FILE은 절대 파일 경로, TREE는 절대 디렉터리 경로(`/` 허용). 상단의 공통 경로 계약을 따른다.
                 sourceRevision:
                   type: string
                   pattern: '^r1\.'
@@ -1288,7 +1298,8 @@ paths:
       description: |
         FILE에는 path query를 생략하고 TREE에는 relative path를 필수로 지정한다.
         HTTP query parser가 한 번 decode하며 추가 URL decode나 Unicode 정규화는 하지 않는다.
-        선행 /, .. 구간, backslash, 제어 문자를 거부한다. 빈 구간과 dot 구간은 제거한 뒤
+        상단의 공통 경로 계약에 따라 선행 /, .. 구간, backslash, 제어 문자,
+        NFC가 아닌 이름과 UTF-8 한도 초과를 거부한다. 빈 구간과 dot 구간은 제거한 뒤
         manifest의 경로와 정확히 비교한다. 빈 값 또는 .은 root directory이므로 409
         VFS_IS_DIRECTORY이다. 디렉터리는 409, 없는 entry는 404 VFS_NODE_NOT_FOUND다.
         %2F는 한 번 decode한 /이며 %252F는 literal %2F다. 배열·object path는 400이다.

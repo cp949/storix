@@ -2650,6 +2650,14 @@ describe('Fs HTTP contract', () => {
       });
     });
 
+    it('복수 query path를 500 대신 400 VFS_INVALID_PATH로 거부한다', async () => {
+      const namespaceId = await createNamespace('invalid-query-path-ns');
+      const response = await request(httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat?path=%2Fa&path=%2Fb`)
+        .expect(400);
+      expect(response.body.code).toBe('VFS_INVALID_PATH');
+    });
+
     it('일반 파일 경로도 alias를 정규화하고 NFD·길이 초과를 무변경으로 거부한다', async () => {
       const namespaceId = await createNamespace('global-path-contract-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;

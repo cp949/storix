@@ -42,6 +42,13 @@ describe('PathResolver', () => {
     expect(() => resolver.resolve('a/b')).toThrow(VfsInvalidPathError);
   });
 
+  it.each([['/a', '/b'], { path: '/a' }, 1, null])(
+    '문자열이 아닌 query path를 경로 오류로 거부한다: %j',
+    (raw) => {
+      expect(() => resolver.resolve(raw)).toThrow(VfsInvalidPathError);
+    },
+  );
+
   it('세그먼트에 \\ 문자가 포함되면 거부한다', () => {
     expect(() => resolver.resolve('/a/b\\c')).toThrow(VfsInvalidPathError);
   });

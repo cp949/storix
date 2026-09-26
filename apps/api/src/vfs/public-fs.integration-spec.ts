@@ -140,6 +140,13 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     ).toBe('VFS_INVALID_PATH');
   });
 
+  it('공개 파일 읽기의 복수 query path를 400 경로 오류로 거부한다', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=%2Fa&path=%2Fb`)
+      .expect(400);
+    expect(response.body.code).toBe('VFS_INVALID_PATH');
+  });
+
   it('Range 요청에 206과 Content-Range를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
