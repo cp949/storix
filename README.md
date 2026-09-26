@@ -31,7 +31,8 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 작은 값이다. 전역 설정이 없으면 `5368709120`(5 GiB)을 사용한다. 같은 응답의
 `quota.limitBytes`는 namespace의 적용 논리 저장량 상한, `quota.usedBytes`는
 live FILE과 보존 snapshot FILE entry의 논리 크기 합계다. 두 quota 값도 바이트
-단위 10진 문자열이다.
+단위 10진 문자열이다. namespace 생성·목록·quota 변경 응답도 같은 `limits`·`quota`
+필드를 포함한다.
 
 ### Blob-level Copy-on-Write
 
