@@ -67,6 +67,7 @@ describe('MutationService 오류 receipt', () => {
 
   it('work의 412를 롤백 뒤 current를 담은 body 그대로 저장한다', async () => {
     const current: VfsPreconditionCurrentDto = {
+      id: randomUUID(),
       path: '/a',
       name: 'a',
       type: 'DIRECTORY',
@@ -120,6 +121,7 @@ describe('MutationService 오류 receipt', () => {
 
 describe('errorResponse', () => {
   const current: VfsPreconditionCurrentDto = {
+    id: randomUUID(),
     path: '/a',
     name: 'a',
     type: 'FILE',

@@ -1,5 +1,5 @@
 import { VfsNodeRecord } from '../../persistence/vfs-node.repository.js';
-import { toNodeResponse, toPreconditionCurrent } from './node-response.dto.js';
+import { toConditionalContentResponse, toNodeResponse, toPreconditionCurrent } from './node-response.dto.js';
 import { encodeRevision } from '../revision.js';
 
 function makeRecord(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {
@@ -22,6 +22,7 @@ describe('toNodeResponse', () => {
     const result = toNodeResponse(makeRecord(), '/a');
 
     expect(result).toEqual({
+      id: 'node-1',
       path: '/a',
       name: 'a',
       type: 'DIRECTORY',
@@ -64,5 +65,16 @@ describe('toPreconditionCurrent', () => {
 
   it('toNodeResponse 결과에는 revision을 넣지 않는다', () => {
     expect(Object.keys(toNodeResponse(makeRecord({ id }), '/a'))).not.toContain('revision');
+  });
+});
+
+describe('toConditionalContentResponse', () => {
+  it('성공한 FILE 노드의 ID와 해당 version의 revision을 함께 반환한다', () => {
+    const record = makeRecord({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab', type: 'FILE', version: 3 });
+    expect(toConditionalContentResponse(record, '/a')).toMatchObject({
+      id: record.id,
+      revision: encodeRevision(record),
+      path: '/a',
+    });
   });
 });

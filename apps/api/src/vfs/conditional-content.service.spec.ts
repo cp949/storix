@@ -8,7 +8,7 @@ import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receip
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { ConditionalContentService } from './conditional-content.service.js';
-import type { VfsNodeResponseDto, VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
+import type { VfsConditionalContentResourceDto, VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
 import { errorResponse } from './mutation-receipt.js';
 import { hashParts } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
@@ -140,6 +140,7 @@ describe('ConditionalContentService 오류 receipt', () => {
 
   it('work의 412는 current를 담은 body로 저장되고 업로드 object는 삭제된다', async () => {
     const current: VfsPreconditionCurrentDto = {
+      id: randomUUID(),
       path: '/valid',
       name: 'valid',
       type: 'FILE',
@@ -193,7 +194,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     async (_title, ifAbsent, ifRevision, conditionJson) => {
       putConditionalContent.mockResolvedValueOnce({
         status: 201,
-        resource: { path: '/x' } as VfsNodeResponseDto,
+        resource: { path: '/x', revision: 'r1.test' } as VfsConditionalContentResourceDto,
       });
 
       const result = await upload('/x', ifAbsent, ifRevision);

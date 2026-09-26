@@ -11,8 +11,10 @@ import { decodeRevision } from '../vfs/revision.js';
 import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
 import { assertConditionalSegments, assertPathSegments } from '../vfs/path-resolver.js';
 import {
+  toConditionalContentResponse,
   toNodeResponse,
   toPreconditionCurrent,
+  VfsConditionalContentResourceDto,
   VfsNodeResponseDto,
   VfsPreconditionCurrentDto,
 } from '../vfs/dto/node-response.dto.js';
@@ -548,7 +550,7 @@ export class VfsNodeRepository {
     segments: string[],
     condition: ContentPrecondition,
     blob: BlobData,
-  ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto }> {
+  ): Promise<{ status: 200 | 201; resource: VfsConditionalContentResourceDto }> {
     assertConditionalSegments(segments);
     const path = joinSegments(segments);
     const existing = await this.resolvePathInTx(tx, segments);
@@ -570,7 +572,7 @@ export class VfsNodeRepository {
     );
     return {
       status: outcome.kind === 'created' ? 201 : 200,
-      resource: toNodeResponse(outcome.node, path),
+      resource: toConditionalContentResponse(outcome.node, path),
     };
   }
 
@@ -720,6 +722,44 @@ export class VfsNodeRepository {
     return this.readSnapshot(async (manager) => {
       const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
       return node ? toRecord(node) : null;
+    });
+  }
+
+  async readStat(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+  ): Promise<{ node: VfsNodeRecord; sha256: string | null } | null> {
+    return this.readSnapshot(async (manager) => {
+      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      if (!node) return null;
+      if (node.type === 'DIRECTORY') return { node: toRecord(node), sha256: null };
+      if (!node.blobId) throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
+      const blob = await manager.getRepository(BlobEntity).findOneBy({ id: node.blobId, namespaceId });
+      if (!blob) throw new Error('FILE node가 참조하는 Blob이 없음 — 데이터 일관성 위반');
+      return { node: toRecord(node), sha256: blob.sha256 };
+    });
+  }
+
+  async readContentFile(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+  ): Promise<{
+    node: VfsNodeRecord;
+    blob: { storageKey: string; encryptionIv: Buffer | null; sha256: string } | null;
+  } | null> {
+    return this.readSnapshot(async (manager) => {
+      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      if (!node) return null;
+      if (node.type === 'DIRECTORY') return { node: toRecord(node), blob: null };
+      if (!node.blobId) throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
+      const blob = await manager.getRepository(BlobEntity).findOneBy({ id: node.blobId, namespaceId });
+      if (!blob) throw new Error('FILE node가 참조하는 Blob이 없음 — 데이터 일관성 위반');
+      return {
+        node: toRecord(node),
+        blob: { storageKey: blob.storageKey, encryptionIv: blob.encryptionIv, sha256: blob.sha256 },
+      };
     });
   }
 

@@ -22,6 +22,11 @@ export async function sendContent(res: Response, payload: ContentPayload, downlo
   if (payload.contentRange) {
     res.setHeader('Content-Range', payload.contentRange);
   }
+  if (payload.status === 200 && payload.identity && !download) {
+    res.setHeader('X-Storix-File-Id', payload.identity.fileId);
+    res.setHeader('X-Storix-Revision', payload.identity.revision);
+    res.setHeader('X-Storix-Sha256', payload.identity.sha256);
+  }
   if (download) {
     res.setHeader('Content-Disposition', buildContentDisposition(payload.name));
   }

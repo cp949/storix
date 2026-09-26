@@ -45,6 +45,11 @@ export interface RevisionPageResult {
   readonly directoryRevision: string;
 }
 
+export interface VfsStatResponseDto extends VfsNodeResponseDto {
+  readonly revision: string;
+  readonly sha256: string | null;
+}
+
 function isNameFilterMode(value: string | undefined): value is NameFilterMode {
   return NAME_FILTER_MODES.includes(value as NameFilterMode);
 }
@@ -220,16 +225,16 @@ export class VfsService {
     return { path: canonical, revision: encodeRevision(node) };
   }
 
-  async stat(namespaceId: string, rawPath: string): Promise<VfsNodeResponseDto> {
+  async stat(namespaceId: string, rawPath: string): Promise<VfsStatResponseDto> {
     const root = await requireRoot(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
-    const target = await this.resolveTarget(namespaceId, root, segments);
+    const target = await this.repo.readStat(namespaceId, root.id, segments);
 
     if (!target) {
       throw new VfsNodeNotFoundError(canonical);
     }
 
-    return toNodeResponse(target, canonical);
+    return { ...toNodeResponse(target.node, canonical), revision: encodeRevision(target.node), sha256: target.sha256 };
   }
 
   async exists(namespaceId: string, rawPath: string): Promise<{ exists: boolean }> {

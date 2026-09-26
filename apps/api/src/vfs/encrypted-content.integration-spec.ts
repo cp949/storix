@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -179,6 +179,14 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       .expect(200);
 
     expect(response.text).toBe(plaintext);
+    const stat = await request(httpServer)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+      .query({ path: '/full.txt' })
+      .expect(200);
+    expect(response.headers['x-storix-file-id']).toBe(stat.body.id);
+    expect(response.headers['x-storix-revision']).toBe(stat.body.revision);
+    expect(response.headers['x-storix-sha256']).toBe(createHash('sha256').update(plaintext).digest('hex'));
+    expect(response.headers['x-storix-sha256']).toBe(stat.body.sha256);
   });
 
   it('블록 경계에 정렬되지 않은 Range 요청도 올바른 구간을 복호화해 반환한다', async () => {
@@ -200,6 +208,9 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
 
     expect(response.headers['content-range']).toBe('bytes 10-4009/5000');
     expect(response.text).toBe(plaintext.slice(10, 4010));
+    expect(response.headers['x-storix-file-id']).toBeUndefined();
+    expect(response.headers['x-storix-revision']).toBeUndefined();
+    expect(response.headers['x-storix-sha256']).toBeUndefined();
   });
 
   // EncryptionBootGuard 단위 테스트는 가드를 직접 new 해서 검증하므로, 가드가

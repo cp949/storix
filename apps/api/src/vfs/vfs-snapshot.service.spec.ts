@@ -415,6 +415,7 @@ describe('VfsSnapshotService FILE sourceRevision', () => {
     expect(result).toEqual(
       errorResponse(
         new VfsPreconditionFailedError('/a.txt', {
+          id: sourceRow('FILE').id,
           path: '/a.txt',
           name: 'a.txt',
           type: 'FILE',

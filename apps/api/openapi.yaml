@@ -573,14 +573,14 @@ paths:
             X-Request-Id: { schema: { type: string } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+              schema: { $ref: '#/components/schemas/ConditionalContentResult' }
         '201':
           description: 생성 또는 동일 요청의 최초 응답 재생
           headers:
             X-Request-Id: { schema: { type: string } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ConditionalMutationResult' }
+              schema: { $ref: '#/components/schemas/ConditionalContentResult' }
         '400':
           description: 요청 형식 오류 또는 유효하지 않은 경로(`VFS_INVALID_PATH`)
           content:
@@ -714,6 +714,15 @@ paths:
               schema: { type: integer }
             Accept-Ranges:
               schema: { type: string, enum: [bytes] }
+            X-Storix-File-Id:
+              description: 반환한 파일의 안정적인 VFS 노드 UUID. 같은 경로를 삭제 후 재생성하면 새 ID다.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 파일 상태의 불투명 revision 토큰.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
+            X-Storix-Sha256:
+              description: 반환한 전체 원본 바이트의 SHA-256 소문자 hex. ENCRYPTED 파일은 복호화된 바이트 기준이다.
+              schema: { type: string, pattern: '^[0-9a-f]{64}$' }
           content:
             application/octet-stream:
               schema:
@@ -1029,7 +1038,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VfsNode'
+                $ref: '#/components/schemas/VfsStat'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1704,7 +1713,7 @@ components:
     PreconditionFailedResponse:
       description: |
         412 `VFS_PRECONDITION_FAILED` 응답. `current`는 충돌 시점에 트랜잭션 안에서 읽은
-        대상 노드 metadata(`GET /fs/stat` 응답 필드)와 그 시점의 `revision`이며 노드가 없으면
+        대상 노드의 공통 metadata(`VfsNode` 필드)와 그 시점의 `revision`이며 노드가 없으면
         null이다. 소비자는 `current.revision`으로 충돌 시점 ETag를 만들 수 있다.
         receipt로 저장되는 endpoint에서는 재생 응답도 최초 `current`(`revision` 포함)를
         반환하고 이후 파일 변경을 반영하지 않는다. 다른 오류 코드의 body에는 `current`가 없다.
@@ -1720,11 +1729,14 @@ components:
       nullable: true
       description: |
         412 `current`의 노드 shape. `VfsNode`의 모든 필드에 충돌 시점의 `revision`을 더한다.
-        `GET /fs/stat` 등 다른 응답의 `VfsNode`에는 `revision`이 없다. 노드가 없으면 `null`이다.
+        `GET /fs/stat`은 별도 `VfsStat`으로 SHA-256까지 반환한다. 노드가 없으면 `null`이다.
         OpenAPI 3.0.3에서 `nullable`은 같은 스키마 객체에 `type`이 있을 때만 유효하므로
         `VfsNode`를 `allOf`로 재사용하지 않고 필드를 직접 나열한다.
-      required: [path, name, type, size, mimeType, createdAt, updatedAt, version, revision]
+      required: [id, path, name, type, size, mimeType, createdAt, updatedAt, version, revision]
       properties:
+        id:
+          type: string
+          format: uuid
         path:
           type: string
         name:
@@ -1814,8 +1826,12 @@ components:
     VfsNode:
       type: object
       description: Namespace 안의 파일 또는 디렉터리 하나(`apps/api/CONTEXT.md`의 VFS Node).
-      required: [path, name, type, size, mimeType, createdAt, updatedAt, version]
+      required: [id, path, name, type, size, mimeType, createdAt, updatedAt, version]
       properties:
+        id:
+          type: string
+          format: uuid
+          description: 안정적인 VFS 노드 ID. 이동·이름 변경·내용 교체 후 유지되고 삭제 뒤 재생성되면 달라진다.
         path:
           type: string
           description: 사용자가 보는 경로 문자열. 식별자가 아니다(이동/이름변경으로 바뀔 수 있음).
@@ -1841,6 +1857,22 @@ components:
         version:
           type: integer
           description: 낙관적 동시성 제어용. `PUT content`의 `If-Match`에 사용한다.
+    VfsStat:
+      description: 같은 읽기 시점의 노드와 참조 Blob 메타데이터.
+      allOf:
+        - $ref: '#/components/schemas/VfsNode'
+        - type: object
+          required: [revision, sha256]
+          properties:
+            revision:
+              type: string
+              pattern: '^r1\.'
+              description: 이 응답의 노드 상태를 식별하는 불투명 revision 토큰.
+            sha256:
+              type: string
+              nullable: true
+              pattern: '^[0-9a-f]{64}$'
+              description: FILE은 복호화한 원본 전체 바이트의 SHA-256, DIRECTORY는 null. 빈 파일도 64자리 해시를 반환한다.
     ConditionalMutationResult:
       type: object
       required: [resource, affectedRevisions]
@@ -1849,6 +1881,28 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/VfsNode'
+        affectedRevisions:
+          type: array
+          items:
+            type: object
+            required: [path, revision]
+            properties:
+              path: { type: string }
+              revision: { type: string, pattern: '^r1\.' }
+    ConditionalContentResult:
+      type: object
+      required: [resource, affectedRevisions]
+      properties:
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/VfsNode'
+            - type: object
+              required: [revision]
+              properties:
+                revision:
+                  type: string
+                  pattern: '^r1\.'
+                  description: 성공한 생성 또는 교체 상태의 revision. receipt 재생에서도 동일하다.
         affectedRevisions:
           type: array
           items:

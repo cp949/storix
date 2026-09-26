@@ -707,6 +707,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
         ),
       );
       expect(error.current).toEqual({
+        id: existing.id,
         path: '/a',
         name: 'a',
         type: 'DIRECTORY',

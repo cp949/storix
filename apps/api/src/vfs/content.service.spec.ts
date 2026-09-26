@@ -1,11 +1,15 @@
 import { jest } from '@jest/globals';
-import { createCipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import {
+  NamespaceResourceLimits,
+  VfsNodeRecord,
+  VfsNodeRepository,
+} from '../persistence/vfs-node.repository.js';
 import { ContentService } from './content.service.js';
 import { PathResolver } from './path-resolver.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from './vfs.errors.js';
@@ -22,7 +26,7 @@ const NONE_LIMITS = {
 
 function makeNode(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {
   return {
-    id: 'node-1',
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     name: 'a.txt',
     type: 'FILE',
     blobId: 'blob-1',
@@ -41,11 +45,19 @@ function makeRoot(): VfsNodeRecord {
 
 describe('ContentService', () => {
   let repo: {
-    getRootWithLimits: jest.Mock<() => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>>;
+    getRootWithLimits: jest.Mock<
+      () => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>
+    >;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
     touchFile: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
     putFileContent: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
     getBlobStorageInfo: jest.Mock<() => Promise<{ storageKey: string; encryptionIv: Buffer | null } | null>>;
+    readContentFile: jest.Mock<
+      () => Promise<{
+        node: VfsNodeRecord;
+        blob: { storageKey: string; encryptionIv: Buffer | null; sha256: string } | null;
+      } | null>
+    >;
   };
   let blobStorage: {
     put: jest.Mock<() => Promise<void>>;
@@ -75,6 +87,7 @@ describe('ContentService', () => {
       touchFile: jest.fn(),
       putFileContent: jest.fn(),
       getBlobStorageInfo: jest.fn(),
+      readContentFile: jest.fn(),
     };
     blobStorage = {
       put: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -336,9 +349,40 @@ describe('ContentService', () => {
   });
 
   describe('getContent', () => {
+    it('전체 조회는 한 상태에서 읽은 파일 식별 정보와 Blob 바이트를 결합한다', async () => {
+      const bytes = Buffer.from('new bytes');
+      const node = makeNode({
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        version: 2,
+        size: String(bytes.length),
+      });
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      repo.readContentFile.mockResolvedValue({
+        node,
+        blob: {
+          storageKey: 'new-key',
+          encryptionIv: null,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        },
+      });
+      blobStorage.get.mockResolvedValue(Readable.from(bytes));
+
+      const result = await service.getContent(NAMESPACE_ID, '/a.txt', undefined);
+      const chunks: Buffer[] = [];
+      for await (const chunk of result.stream) chunks.push(chunk as Buffer);
+
+      expect(Buffer.concat(chunks)).toEqual(bytes);
+      expect(result.identity).toEqual({
+        fileId: node.id,
+        revision: 'r1.qqqqqqqqSqqKqqqqqqqqqgAAAAAAAAAC',
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      });
+      expect(blobStorage.get).toHaveBeenCalledWith('new-key');
+    });
+
     it('대상이 없으면 VfsNodeNotFoundError를 던진다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
-      repo.resolvePath.mockResolvedValue(null);
+      repo.readContentFile.mockResolvedValue(null);
 
       await expect(service.getContent(NAMESPACE_ID, '/missing', undefined)).rejects.toThrow(
         VfsNodeNotFoundError,
@@ -347,17 +391,20 @@ describe('ContentService', () => {
 
     it('대상이 directory면 VfsIsDirectoryError를 던진다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
-      repo.resolvePath.mockResolvedValue(
-        makeNode({ type: 'DIRECTORY', blobId: null, size: null, mimeType: null }),
-      );
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode({ type: 'DIRECTORY', blobId: null, size: null, mimeType: null }),
+        blob: null,
+      });
 
       await expect(service.getContent(NAMESPACE_ID, '/a', undefined)).rejects.toThrow(VfsIsDirectoryError);
     });
 
     it('range 없이 조회하면 200과 전체 size를 반환한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
-      repo.resolvePath.mockResolvedValue(makeNode({ size: '10', mimeType: 'text/plain', blobId: 'blob-1' }));
-      repo.getBlobStorageInfo.mockResolvedValue({ storageKey: 'blobs/00/key', encryptionIv: null });
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode({ size: '10', mimeType: 'text/plain', blobId: 'blob-1' }),
+        blob: { storageKey: 'blobs/00/key', encryptionIv: null, sha256: 'hash' },
+      });
       blobStorage.get.mockResolvedValue(Readable.from(Buffer.from('0123456789')));
 
       const result = await service.getContent(NAMESPACE_ID, '/a.txt', undefined);
@@ -368,13 +415,16 @@ describe('ContentService', () => {
 
     it('유효한 range는 206과 Content-Range 정보를 반환한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
-      repo.resolvePath.mockResolvedValue(makeNode({ size: '10', mimeType: 'text/plain', blobId: 'blob-1' }));
-      repo.getBlobStorageInfo.mockResolvedValue({ storageKey: 'blobs/00/key', encryptionIv: null });
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode({ size: '10', mimeType: 'text/plain', blobId: 'blob-1' }),
+        blob: { storageKey: 'blobs/00/key', encryptionIv: null, sha256: 'hash' },
+      });
       blobStorage.get.mockResolvedValue(Readable.from(Buffer.from('234')));
 
       const result = await service.getContent(NAMESPACE_ID, '/a.txt', 'bytes=2-4');
 
       expect(result).toMatchObject({ status: 206, contentLength: 3, contentRange: 'bytes 2-4/10' });
+      expect(result.identity).toBeUndefined();
       expect(blobStorage.get).toHaveBeenCalledWith('blobs/00/key', { start: 2, end: 4 });
     });
 
@@ -389,8 +439,19 @@ describe('ContentService', () => {
         root: makeRoot(),
         limits: { ...NONE_LIMITS, encryptionPolicy: 'ENCRYPTED' },
       });
-      repo.resolvePath.mockResolvedValue(makeNode({ size: '5', mimeType: 'text/plain', blobId: 'blob-1' }));
-      repo.getBlobStorageInfo.mockResolvedValue({ storageKey: 'blobs/00/key', encryptionIv: iv });
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode({
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          size: '5',
+          mimeType: 'text/plain',
+          blobId: 'blob-1',
+        }),
+        blob: {
+          storageKey: 'blobs/00/key',
+          encryptionIv: iv,
+          sha256: createHash('sha256').update('hello').digest('hex'),
+        },
+      });
       blobStorage.get.mockResolvedValue(Readable.from(ciphertext));
 
       const result = await service.getContent(NAMESPACE_ID, '/a.txt', undefined);
@@ -409,13 +470,16 @@ describe('ContentService', () => {
         root: makeRoot(),
         limits: { ...NONE_LIMITS, accessPolicy: 'PUBLIC' },
       });
-      repo.resolvePath.mockResolvedValue(makeNode());
-      repo.getBlobStorageInfo.mockResolvedValue({ storageKey: 'key-1', encryptionIv: null });
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode(),
+        blob: { storageKey: 'key-1', encryptionIv: null, sha256: 'hash' },
+      });
       blobStorage.get.mockResolvedValue(Readable.from(Buffer.from('hello')));
 
       const payload = await service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined);
 
       expect(payload).toMatchObject({ name: 'a.txt', status: 200, contentLength: 5 });
+      expect(payload.identity).toBeUndefined();
     });
 
     it('PRIVATE namespace면 VfsNamespaceNotFoundError를 던진다', async () => {
@@ -424,7 +488,7 @@ describe('ContentService', () => {
       await expect(service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined)).rejects.toThrow(
         VfsNamespaceNotFoundError,
       );
-      expect(repo.resolvePath).not.toHaveBeenCalled();
+      expect(repo.readContentFile).not.toHaveBeenCalled();
     });
 
     it('ENCRYPTED namespace면 PUBLIC이어도 VfsNamespaceNotFoundError를 던진다', async () => {
@@ -436,7 +500,7 @@ describe('ContentService', () => {
       await expect(service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined)).rejects.toThrow(
         VfsNamespaceNotFoundError,
       );
-      expect(repo.resolvePath).not.toHaveBeenCalled();
+      expect(repo.readContentFile).not.toHaveBeenCalled();
     });
   });
 });

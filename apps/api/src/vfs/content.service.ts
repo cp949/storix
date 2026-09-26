@@ -12,13 +12,18 @@ import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { uploadStream } from '../storage/stream-upload.js';
-import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import {
+  NamespaceResourceLimits,
+  VfsNodeRecord,
+  VfsNodeRepository,
+} from '../persistence/vfs-node.repository.js';
 import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { requireRootWithLimits } from './require-root.js';
+import { encodeRevision } from './revision.js';
 import {
   VfsIsDirectoryError,
   VfsNamespaceNotFoundError,
@@ -43,6 +48,7 @@ export interface ContentPayload {
   readonly contentLength: number;
   readonly contentRange?: string;
   readonly stream: Readable;
+  readonly identity?: { readonly fileId: string; readonly revision: string; readonly sha256: string };
 }
 
 export interface PresignedDownloadPayload {
@@ -76,9 +82,14 @@ export class ContentService {
     config: ConfigService,
   ) {
     this.maxFileSizeBytes = parsePositiveInt(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'), 5368709120);
-    this.presignedUrlExpirySeconds = parsePositiveInt(config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'), 300);
+    this.presignedUrlExpirySeconds = parsePositiveInt(
+      config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'),
+      300,
+    );
     if (this.presignedUrlExpirySeconds > 604800) {
-      throw new Error(`STORIX_PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`);
+      throw new Error(
+        `STORIX_PRESIGNED_URL_EXPIRY_SECONDS는 604800(7일)을 초과할 수 없음: ${this.presignedUrlExpirySeconds}`,
+      );
     }
   }
 
@@ -175,7 +186,7 @@ export class ContentService {
     rangeHeader: string | undefined,
   ): Promise<ContentPayload> {
     const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
-    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader);
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, true);
   }
 
   async getPublicContent(
@@ -197,7 +208,7 @@ export class ContentService {
       throw new VfsNamespaceNotFoundError(namespaceId);
     }
 
-    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader);
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, false);
   }
 
   private async readContent(
@@ -206,9 +217,11 @@ export class ContentService {
     limits: NamespaceResourceLimits,
     rawPath: string,
     rangeHeader: string | undefined,
+    authenticated: boolean,
   ): Promise<ContentPayload> {
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
-    const target = segments.length === 0 ? root : await this.repo.resolvePath(namespaceId, root.id, segments);
+    const read = await this.repo.readContentFile(namespaceId, root.id, segments);
+    const target = read?.node;
 
     if (!target) {
       throw new VfsNodeNotFoundError(canonical);
@@ -217,8 +230,11 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
-    const blobInfo = await this.repo.getBlobStorageInfo(namespaceId, target.blobId as string);
-    const { storageKey, encryptionIv } = blobInfo as { storageKey: string; encryptionIv: Buffer | null };
+    const { storageKey, encryptionIv, sha256 } = read.blob as {
+      storageKey: string;
+      encryptionIv: Buffer | null;
+      sha256: string;
+    };
     const totalSize = Number(target.size);
     const mimeType = target.mimeType ?? 'application/octet-stream';
 
@@ -227,13 +243,28 @@ export class ContentService {
         limits.encryptionPolicy === 'ENCRYPTED'
           ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey())
           : await this.blobStorage.get(storageKey);
-      return { name: target.name, mimeType, status: 200, contentLength: totalSize, stream };
+      return {
+        name: target.name,
+        mimeType,
+        status: 200,
+        contentLength: totalSize,
+        stream,
+        ...(authenticated
+          ? { identity: { fileId: target.id, revision: encodeRevision(target), sha256 } }
+          : {}),
+      };
     }
 
     const range = parseRange(rangeHeader, totalSize);
     const stream =
       limits.encryptionPolicy === 'ENCRYPTED'
-        ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey(), range)
+        ? await getEncrypted(
+            this.blobStorage,
+            storageKey,
+            encryptionIv as Buffer,
+            this.requireMasterKey(),
+            range,
+          )
         : await this.blobStorage.get(storageKey, range);
 
     return {
@@ -293,7 +324,9 @@ export class ContentService {
 
   private requireMasterKey(): Buffer {
     if (!this.masterKey) {
-      throw new Error('ENCRYPTED namespace인데 STORIX_ENCRYPTION_MASTER_KEY가 설정되지 않음 — 데이터 일관성 위반');
+      throw new Error(
+        'ENCRYPTED namespace인데 STORIX_ENCRYPTION_MASTER_KEY가 설정되지 않음 — 데이터 일관성 위반',
+      );
     }
     return this.masterKey;
   }

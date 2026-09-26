@@ -58,6 +58,7 @@ class ForcedReportClientError extends DomainError {
 }
 
 const CURRENT: VfsPreconditionCurrentDto = {
+  id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab',
   path: '/a',
   name: 'a',
   type: 'FILE',

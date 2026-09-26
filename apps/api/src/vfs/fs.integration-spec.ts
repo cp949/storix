@@ -2,7 +2,7 @@ import { snapshotPost as treePost, treeSnapshotContract } from './vfs-snapshot-t
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { VfsSnapshotEntity } from '../persistence/entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from '../persistence/entities/vfs-snapshot-entry.entity.js';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { jest } from '@jest/globals';
 import { once } from 'node:events';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
@@ -31,6 +31,12 @@ import { VfsModule } from './vfs.module.js';
 import { encodeRevision } from './revision.js';
 
 const MAX_FILE_SIZE_BYTES = 1048576;
+
+function withoutStatHash(stat: Record<string, unknown>): Record<string, unknown> {
+  const current = { ...stat };
+  delete current.sha256;
+  return current;
+}
 
 // 저장하지 않는 5xx DomainError를 주입하기 위한 테스트 전용 오류
 class InjectedUnavailableError extends DomainError {
@@ -464,9 +470,21 @@ describe('Fs HTTP contract', () => {
         randomUUID(),
         '{"path":"/after-restart","ifAbsent":true}',
       ).expect(201);
-      expect(
-        (await request(httpServer).get(`${base}/content`).query({ path: '/after-restart' }).expect(200)).body,
-      ).toEqual(bytes);
+      const restartedContent = await request(httpServer)
+        .get(`${base}/content`)
+        .query({ path: '/after-restart' })
+        .expect(200);
+      const restartedStat = await request(httpServer)
+        .get(`${base}/stat`)
+        .query({ path: '/after-restart' })
+        .expect(200);
+      expect(restartedContent.body).toEqual(bytes);
+      expect(restartedContent.headers['x-storix-file-id']).toBe(restartedStat.body.id);
+      expect(restartedContent.headers['x-storix-revision']).toBe(restartedStat.body.revision);
+      expect(restartedContent.headers['x-storix-sha256']).toBe(restartedStat.body.sha256);
+      expect(restartedContent.headers['x-storix-sha256']).toBe(
+        createHash('sha256').update(bytes).digest('hex'),
+      );
       await request(httpServer).get(`${base}/snapshots/${disposable.body.snapshotId}`).expect(404);
     });
 
@@ -690,7 +708,7 @@ describe('Fs HTTP contract', () => {
         expect(failed.body).toMatchObject({
           code: 'VFS_PRECONDITION_FAILED',
           path: '/doc',
-          current: { ...currentStat, revision: currentRevision },
+          current: { ...withoutStatHash(currentStat), revision: currentRevision },
         });
         expect(await rowCounts(ns)).toEqual(before);
       });
@@ -775,7 +793,7 @@ describe('Fs HTTP contract', () => {
             expect(afterRevision).not.toBe(oldRevision);
             expect(snapshot.body).toMatchObject({
               code: 'VFS_PRECONDITION_FAILED',
-              current: { ...after, revision: afterRevision },
+              current: { ...withoutStatHash(after), revision: afterRevision },
             });
             // writer가 Blob을 교체하므로 ref는 새 Blob의 노드 참조 1개만 남아야 한다(snapshot ref 없음).
             const after412 = await rowCounts(ns);
@@ -826,7 +844,7 @@ describe('Fs HTTP contract', () => {
         const key = randomUUID();
         const raw = fileBody(stale);
         const first = await snapshotPost(base, '', key, raw).expect(412);
-        expect(first.body.current).toEqual({ ...statAtConflict, revision: revisionAtConflict });
+        expect(first.body.current).toEqual(withoutStatHash(statAtConflict));
         await overwrite(Buffer.from([6, 6, 6])).expect(200);
         // 원본이 다시 바뀌어 현재 revision은 충돌 시점과 다르다.
         expect(await revision()).not.toBe(revisionAtConflict);
@@ -849,7 +867,7 @@ describe('Fs HTTP contract', () => {
         const fresh = await snapshotPost(base, '', randomUUID(), raw).expect(412);
         expect(fresh.body.current.revision).toBe(latestRevision);
         expect(fresh.body.current.revision).not.toBe(revisionAtConflict);
-        expect(fresh.body.current).toEqual({ ...(await stat()), revision: latestRevision });
+        expect(fresh.body.current).toEqual(withoutStatHash(await stat()));
       });
 
       it('성공한 snapshot 응답도 앱 재시작 뒤 같은 ID로 재생한다', async () => {
@@ -1112,7 +1130,7 @@ describe('Fs HTTP contract', () => {
       expect(first.body).toMatchObject({
         code: 'VFS_PRECONDITION_FAILED',
         path: '/source',
-        current: { ...stat, revision: revisionAtConflict },
+        current: { ...withoutStatHash(stat), revision: revisionAtConflict },
       });
       await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
       const replay = await snapshotPost(base, `/${id}/restore`, key, raw).expect(412);
@@ -1764,7 +1782,7 @@ describe('Fs HTTP contract', () => {
       expect(failed.body).toMatchObject({
         code: 'VFS_PRECONDITION_FAILED',
         path: '/a',
-        current: { ...statAt412, revision: revisionAt412 },
+        current: { ...withoutStatHash(statAt412), revision: revisionAt412 },
       });
       await request(httpServer).post(`${base}/mkdir`).send({ path: '/a/later' }).expect(201);
       const statLater = (await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200))
@@ -1833,6 +1851,106 @@ describe('Fs HTTP contract', () => {
   });
 
   describe('conditional content upload', () => {
+    it('경쟁 생성의 승자 ID와 revision을 receipt·stat에 보존하고 교체·이동·재생성의 ID 경계를 지킨다', async () => {
+      const namespaceId = await createNamespace('conditional-stable-id');
+      const otherNamespaceId = await createNamespace('conditional-stable-id-other');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const upload = (key: string, bytes: Buffer, condition: Record<string, string>, path = '/doc') => {
+        let call = request(httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'stable-id')
+          .set('Content-Type', 'application/octet-stream');
+        for (const [name, value] of Object.entries(condition)) call = call.set(name, value);
+        return call.send(bytes);
+      };
+      const firstKey = randomUUID();
+      const secondKey = randomUUID();
+      const [first, second] = await Promise.all([
+        upload(firstKey, Buffer.from('first'), { 'X-If-Absent': 'true' }),
+        upload(secondKey, Buffer.from('second'), { 'X-If-Absent': 'true' }),
+      ]);
+      expect([first.status, second.status].sort()).toEqual([201, 412]);
+      const winner = first.status === 201 ? first : second;
+      const winnerKey = first.status === 201 ? firstKey : secondKey;
+      const winnerBytes = first.status === 201 ? Buffer.from('first') : Buffer.from('second');
+      const stat = async (path: string) =>
+        (await request(httpServer).get(`${base}/stat`).query({ path }).expect(200)).body;
+      const original = await stat('/doc');
+      expect(winner.body.resource).toMatchObject({ id: original.id, revision: original.revision });
+      expect(original).toMatchObject({
+        path: '/doc',
+        type: 'FILE',
+        size: winnerBytes.length,
+        mimeType: 'application/octet-stream',
+      });
+      expect(original.sha256).toBe(createHash('sha256').update(winnerBytes).digest('hex'));
+      expect((await upload(winnerKey, winnerBytes, { 'X-If-Absent': 'true' }).expect(201)).body).toEqual(
+        winner.body,
+      );
+
+      const empty = await upload(randomUUID(), Buffer.alloc(0), {
+        'X-If-Revision': original.revision,
+      }).expect(200);
+      const replaced = await stat('/doc');
+      expect(empty.body.resource).toMatchObject({ id: original.id, revision: replaced.revision });
+      expect(replaced).toMatchObject({
+        id: original.id,
+        size: 0,
+        sha256: createHash('sha256').update(Buffer.alloc(0)).digest('hex'),
+      });
+      expect(replaced.revision).not.toBe(original.revision);
+
+      const moved = await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'stable-id')
+        .send({
+          kind: 'move',
+          source: '/doc',
+          destination: '/renamed',
+          sourceRevision: replaced.revision,
+          destinationAbsent: true,
+        })
+        .expect(200);
+      const movedStat = await stat('/renamed');
+      expect(moved.body.resource).toMatchObject({ id: original.id, path: '/renamed' });
+      expect(moved.body.affectedRevisions).toContainEqual({ path: '/renamed', revision: movedStat.revision });
+      expect(movedStat.id).toBe(original.id);
+      await request(httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'stable-id')
+        .send({ kind: 'delete', path: '/renamed', ifRevision: movedStat.revision })
+        .expect(200);
+      await request(httpServer).get(`${base}/stat`).query({ path: '/renamed' }).expect(404);
+      await request(httpServer)
+        .get(`/api/v2/namespaces/${otherNamespaceId}/fs/stat`)
+        .query({ path: '/renamed' })
+        .expect(404);
+      const recreatedBytes = Buffer.from('recreated');
+      const recreated = await upload(
+        randomUUID(),
+        recreatedBytes,
+        { 'X-If-Absent': 'true' },
+        '/renamed',
+      ).expect(201);
+      const recreatedStat = await stat('/renamed');
+      expect(recreated.body.resource).toMatchObject({
+        id: recreatedStat.id,
+        revision: recreatedStat.revision,
+      });
+      expect(recreatedStat).toMatchObject({
+        type: 'FILE',
+        size: recreatedBytes.length,
+        sha256: createHash('sha256').update(recreatedBytes).digest('hex'),
+      });
+      expect(recreatedStat.id).not.toBe(original.id);
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
+      expect(await stat('/dir')).toMatchObject({ type: 'DIRECTORY', sha256: null });
+    });
+
     it('NFD path 거부를 receipt로 재생하고 같은 key의 NFC upload는 key 재사용으로 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-content-nfd-retry-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs/content/conditional`;
@@ -2427,7 +2545,7 @@ describe('Fs HTTP contract', () => {
       const revisionAtConflict = (
         await request(httpServer).get(`${base}/revision`).query({ path: '/doc' }).expect(200)
       ).body.revision as string;
-      const expectedCurrent = { ...statAtConflict, revision: revisionAtConflict };
+      const expectedCurrent = { ...withoutStatHash(statAtConflict), revision: revisionAtConflict };
       const jsonKey = randomUUID();
       const jsonBody = JSON.stringify({ kind: 'delete', path: '/doc', ifRevision: staleRevision });
       const jsonFailed = await mutate(namespaceId, jsonKey, jsonBody).expect(412);
@@ -3019,6 +3137,107 @@ describe('Fs HTTP contract', () => {
 
       expect(getResponse.text).toBe('hello storix');
       expect(getResponse.headers['content-type']).toBe('text/plain');
+      const stat = await request(httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/a.txt' })
+        .expect(200);
+      expect(getResponse.headers['x-storix-file-id']).toBe(stat.body.id);
+      expect(getResponse.headers['x-storix-revision']).toBe(stat.body.revision);
+      expect(getResponse.headers['x-storix-sha256']).toBe(
+        createHash('sha256').update(getResponse.text).digest('hex'),
+      );
+      expect(getResponse.headers['x-storix-sha256']).toBe(stat.body.sha256);
+
+      const range = await request(httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .set('Range', 'bytes=0-4')
+        .expect(206);
+      expect(range.headers['x-storix-file-id']).toBeUndefined();
+      expect(range.headers['x-storix-revision']).toBeUndefined();
+      expect(range.headers['x-storix-sha256']).toBeUndefined();
+
+      const download = await request(httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/download`)
+        .query({ path: '/a.txt' })
+        .expect(200);
+      expect(download.text).toBe('hello storix');
+      expect(download.headers['x-storix-file-id']).toBeUndefined();
+      expect(download.headers['x-storix-revision']).toBeUndefined();
+      expect(download.headers['x-storix-sha256']).toBeUndefined();
+    });
+
+    it('조회가 노드와 Blob을 읽은 뒤 교체되어도 이전 헤더와 이전 바이트를 함께 보낸다', async () => {
+      const namespaceId = await createNamespace('content-read-replace-race');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const path = '/race.txt';
+      const oldBytes = 'first content';
+      const newBytes = 'replacement content';
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path })
+        .set('Content-Type', 'text/plain')
+        .send(oldBytes)
+        .expect(201);
+      const oldStat = (await request(httpServer).get(`${base}/stat`).query({ path }).expect(200)).body;
+
+      const repo = app.get(VfsNodeRepository);
+      const originalRead = repo.readContentFile.bind(repo);
+      let signalCaptured!: () => void;
+      let releaseRead!: () => void;
+      const captured = new Promise<void>((resolve) => {
+        signalCaptured = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+      let pauseOnce = true;
+      const readSpy = jest
+        .spyOn(repo, 'readContentFile')
+        .mockImplementation(async (readNamespaceId, rootId, segments) => {
+          const result = await originalRead(readNamespaceId, rootId, segments);
+          if (pauseOnce && readNamespaceId === namespaceId && segments.join('/') === 'race.txt') {
+            pauseOnce = false;
+            signalCaptured();
+            await held;
+          }
+          return result;
+        });
+
+      const pendingGet = request(httpServer)
+        .get(`${base}/content`)
+        .query({ path })
+        .then((response) => response);
+      try {
+        await captured;
+        await request(httpServer)
+          .post(`${base}/content`)
+          .query({ path, force: 'true' })
+          .set('Content-Type', 'text/plain')
+          .send(newBytes)
+          .expect(200);
+      } finally {
+        releaseRead();
+        readSpy.mockRestore();
+      }
+
+      const raced = await pendingGet;
+      expect(raced.status).toBe(200);
+      expect(raced.text).toBe(oldBytes);
+      expect(raced.headers['x-storix-file-id']).toBe(oldStat.id);
+      expect(raced.headers['x-storix-revision']).toBe(oldStat.revision);
+      expect(raced.headers['x-storix-sha256']).toBe(createHash('sha256').update(oldBytes).digest('hex'));
+      expect(raced.headers['x-storix-sha256']).toBe(oldStat.sha256);
+
+      const currentStat = (await request(httpServer).get(`${base}/stat`).query({ path }).expect(200)).body;
+      const current = await request(httpServer).get(`${base}/content`).query({ path }).expect(200);
+      expect(current.text).toBe(newBytes);
+      expect(current.headers['x-storix-file-id']).toBe(oldStat.id);
+      expect(current.headers['x-storix-file-id']).toBe(currentStat.id);
+      expect(current.headers['x-storix-revision']).toBe(currentStat.revision);
+      expect(current.headers['x-storix-revision']).not.toBe(oldStat.revision);
+      expect(current.headers['x-storix-sha256']).toBe(createHash('sha256').update(newBytes).digest('hex'));
+      expect(current.headers['x-storix-sha256']).toBe(currentStat.sha256);
     });
 
     it('GET content 응답에 nosniff와 CSP 헤더가 포함된다', async () => {
@@ -3128,6 +3347,13 @@ describe('Fs HTTP contract', () => {
         .expect(200);
 
       expect(getResponse.text).toBe('version 2 content');
+      const stat = await request(httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/a.txt' })
+        .expect(200);
+      expect(getResponse.headers['x-storix-file-id']).toBe(created.body.id);
+      expect(getResponse.headers['x-storix-revision']).toBe(stat.body.revision);
+      expect(getResponse.headers['x-storix-sha256']).toBe(stat.body.sha256);
     });
 
     it('force=true면 If-Match 없이도 덮어쓴다', async () => {

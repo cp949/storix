@@ -17,6 +17,7 @@ import {
   VfsNotDirectoryError,
 } from './vfs.errors.js';
 import { VfsService } from './vfs.service.js';
+import { encodeRevision } from './revision.js';
 
 const NAMESPACE_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -44,6 +45,7 @@ describe('VfsService', () => {
     getRoot: jest.Mock<() => Promise<VfsNodeRecord | null>>;
     getRootWithLimits: jest.Mock<() => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>>;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
+    readStat: jest.Mock<() => Promise<{ node: VfsNodeRecord; sha256: string | null } | null>>;
     listChildren: jest.Mock<() => Promise<VfsNodeRecord[]>>;
     findRecursive: jest.Mock<() => Promise<VfsNodeMatch[]>>;
     ensureDirectory: jest.Mock<() => Promise<{ node: VfsNodeRecord; created: boolean }>>;
@@ -64,6 +66,7 @@ describe('VfsService', () => {
       getRoot: jest.fn(),
       getRootWithLimits: jest.fn(),
       resolvePath: jest.fn(),
+      readStat: jest.fn(),
       listChildren: jest.fn(),
       findRecursive: jest.fn(),
       ensureDirectory: jest.fn(),
@@ -175,13 +178,23 @@ describe('VfsService', () => {
   });
 
   describe('stat', () => {
-    it('존재하는 경로를 응답 DTO로 반환한다', async () => {
+    it('FILE 노드와 Blob 해시를 같은 읽기 상태의 DTO로 반환한다', async () => {
       repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
-      repo.resolvePath.mockResolvedValue(makeNode({ id: 'n1', name: 'a', type: 'DIRECTORY' }));
+      const node = makeNode({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab', name: 'a', type: 'FILE', blobId: 'blob-1', size: '0', mimeType: 'text/plain' });
+      repo.readStat.mockResolvedValue({ node, sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' });
 
       const result = await service.stat(NAMESPACE_ID, '/a');
 
-      expect(result).toMatchObject({ path: '/a', name: 'a', type: 'DIRECTORY' });
+      expect(repo.readStat).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a']);
+      expect(result).toMatchObject({ id: node.id, path: '/a', name: 'a', type: 'FILE', size: 0, mimeType: 'text/plain', updatedAt: node.updatedAt.toISOString(), revision: encodeRevision(node), sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' });
+    });
+
+    it('디렉터리에는 해시가 없고 존재하지 않는 경로는 404로 처리한다', async () => {
+      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      const directory = makeNode({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ac', name: 'dir' });
+      repo.readStat.mockResolvedValueOnce({ node: directory, sha256: null }).mockResolvedValueOnce(null);
+      await expect(service.stat(NAMESPACE_ID, '/dir')).resolves.toMatchObject({ id: directory.id, revision: encodeRevision(directory), sha256: null });
+      await expect(service.stat(NAMESPACE_ID, '/missing')).rejects.toThrow(VfsNodeNotFoundError);
     });
   });
 
