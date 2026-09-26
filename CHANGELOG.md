@@ -20,6 +20,8 @@
 
 ### Changed
 
+- 인증 키 거부도 request ID, HTTP 작업, 경로, 401 결과로 비동기 best-effort 감사 기록한다. 감사 행에 snapshot ID를 보존해 snapshot 생성과 개별 ID 작업을 연결한다. 파일 본문과 인증 키 원문은 기록하지 않는다.
+
 - snapshot 자체가 없거나 snapshot ID 형식이 잘못된 경우 404 `VFS_SNAPSHOT_NOT_FOUND`를 반환한다. 파일 경로·snapshot 내부 entry 부재는 404 `VFS_NODE_NOT_FOUND`를 유지한다. 복원 대상 snapshot 종류가 FILE이 아니면 409 `VFS_INVALID_OPERATION`을 반환한다.
 
 - namespace 생성과 idempotency 결과를 원자적으로 저장한다. 같은 `Idempotency-Key`와 같은 본문의 동시 요청 또는 재시도는 최초 201 응답으로 수렴하고, 같은 키에 다른 본문을 보내면 422를 반환한다.

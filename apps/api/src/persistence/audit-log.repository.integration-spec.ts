@@ -41,6 +41,7 @@ describe('AuditLogRepository', () => {
     await repository.record({
       requestId: 'req-record-full',
       namespaceId,
+      snapshotId: null,
       operation: 'FsController.mv',
       path: '/a.txt',
       detail: { source: '/a.txt', destination: '/b.txt' },
@@ -65,6 +66,7 @@ describe('AuditLogRepository', () => {
     await repository.record({
       requestId: 'req-record-minimal',
       namespaceId: null,
+      snapshotId: null,
       operation: 'NamespaceController.findAll',
       path: null,
       detail: null,
@@ -81,5 +83,24 @@ describe('AuditLogRepository', () => {
     expect(rows[0].path).toBeNull();
     expect(rows[0].detail).toBeNull();
     expect(rows[0].caller).toBeNull();
+  });
+
+  it('snapshot ID와 null을 선택 필드로 저장한다', async () => {
+    const snapshotId = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
+    await repository.record({
+      requestId: 'req-record-snapshot', namespaceId, operation: 'SnapshotController.get',
+      path: null, detail: null, caller: null, status: 200, snapshotId,
+    });
+    await repository.record({
+      requestId: 'req-record-no-snapshot', namespaceId, operation: 'NamespaceController.findAll',
+      path: null, detail: null, caller: null, status: 200, snapshotId: null,
+    });
+    const rows = await dataSource.getRepository(AuditLogEntity).findBy([
+      { requestId: 'req-record-snapshot' }, { requestId: 'req-record-no-snapshot' },
+    ]);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: 'req-record-snapshot', snapshotId }),
+      expect.objectContaining({ requestId: 'req-record-no-snapshot', snapshotId: null }),
+    ]));
   });
 });

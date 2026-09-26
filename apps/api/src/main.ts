@@ -5,6 +5,7 @@ import { configureBodyParsers } from './common/body-parser.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
+import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
 
 // AppModule은 정적 import하면 안 된다 — 엔티티의 드라이버 중립 컬럼 타입
 // 상수(dialect-column-types.ts)가 모듈 로드 시점에 process.env.STORIX_DB_DRIVER를
@@ -14,7 +15,9 @@ import { ERROR_REPORTER } from './observability/observability.constants.js';
 async function bootstrap() {
   const { AppModule } = await bootstrapWithEnv(() => import('./app.module.js'));
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.useGlobalFilters(new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER)));
+  app.useGlobalFilters(
+    new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER), app.get(AUDIT_LOG_REPOSITORY)),
+  );
   configureBodyParsers(app);
   await app.listen(process.env.STORIX_PORT ?? 3000);
 }

@@ -9,6 +9,7 @@ import { AuditLogEntity } from './entities/audit-log.entity.js';
 import { AddBlobZeroSince1788800000000 } from './migrations/1788800000000-AddBlobZeroSince.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { AddVfsSnapshotListIndex1791500000000 } from './migrations/1791500000000-AddVfsSnapshotListIndex.js';
+import { AddAuditLogSnapshotId1791600000000 } from './migrations/1791600000000-AddAuditLogSnapshotId.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -49,6 +50,23 @@ describe('Migration: InitSchema', () => {
     expect(present).toEqual(
       expect.arrayContaining([expect.objectContaining({ indexname: 'IDX_vfs_snapshot_file_list' })]),
     );
+    await runner.release();
+  });
+
+  it('감사 snapshot_id 컬럼은 기존 행을 허용하고 nullable이며 up/down이 가역이다', async () => {
+    const migration = new AddAuditLogSnapshotId1791600000000();
+    const runner = dataSource.createQueryRunner();
+    await dataSource.query(`INSERT INTO audit_log (request_id, operation, status)
+      VALUES ('before-snapshot-id-migration', 'migration.test', 200)`);
+    await migration.down(runner);
+    await migration.up(runner);
+    const columns: { column_name: string; is_nullable: string; data_type: string }[] =
+      await dataSource.query(`SELECT column_name, is_nullable, data_type FROM information_schema.columns
+        WHERE table_name = 'audit_log' AND column_name = 'snapshot_id'`);
+    expect(columns).toEqual([{ column_name: 'snapshot_id', is_nullable: 'YES', data_type: 'uuid' }]);
+    const priorRows = await dataSource.query(`SELECT snapshot_id FROM audit_log
+      WHERE request_id = 'before-snapshot-id-migration'`);
+    expect(priorRows).toEqual([{ snapshot_id: null }]);
     await runner.release();
   });
 

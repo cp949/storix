@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { Reflector } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
+import { jest } from '@jest/globals';
 import type { Request } from 'express';
 import { ApiKeyGuard } from './api-key.guard.js';
 import { InvalidApiKeyError } from './auth.errors.js';
@@ -48,6 +50,14 @@ describe('ApiKeyGuard', () => {
 
   it('키가 일치하지 않으면 InvalidApiKeyError를 던진다', () => {
     expect(() => guard.canActivate(createContext('Bearer wrong-key'))).toThrow(InvalidApiKeyError);
+  });
+
+  it('인증 실패 구조화 로그에 API key 원문을 넣지 않는다', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(() => guard.canActivate(createContext('Bearer raw-secret-key'))).toThrow(InvalidApiKeyError);
+    expect(warn).toHaveBeenCalled();
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('raw-secret-key');
+    warn.mockRestore();
   });
 
   it('후보 키가 유효 키와 문자열 길이는 같지만 바이트 길이가 다르면 크래시 없이 InvalidApiKeyError를 던진다', () => {

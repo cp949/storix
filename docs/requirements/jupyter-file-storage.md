@@ -156,8 +156,10 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-019 감사에 필요한 호출 정보
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** 감사 기록은 있으나 인증 거부는 가드에서 인터셉터보다 먼저 끝나 해당 기록에 포함되지 않는다. 스냅샷 ID도 별도 감사 대상 필드로 저장하지 않는다.
+- [x] **진행 상태:** 로컬 코드·자동 검증 완료
+- **판정 근거:** 성공 요청은 기존 `AuditLogInterceptor`가 request ID, caller, namespace, operation, 대상 경로, HTTP 결과를 기록한다. `InvalidApiKeyError`는 공통 예외 필터에서 `request_id`, HTTP method와 request path로 구성한 128자 operation, 전체 request path, 401 결과를 best-effort 기록하며 caller·namespace는 null로 둔다. 감사 행은 nullable `snapshot_id`를 가지며 생성 결과와 개별 ID 경로를 기록하고 목록은 null을 유지한다. snapshot 감사 ID는 PostgreSQL/SQLite migration과 저장 테스트로 확인했다. 단위·PostgreSQL 통합 검증은 키 원문과 본문 미기록 및 저장 실패 시 401 응답 보존을 확인한다.
+- **자동 검증 근거:** `pnpm test` 79 suites/768 tests, PostgreSQL/MinIO L2 27 suites/437 tests, SQLite L2 13 suites/228 tests 통과. `pnpm typecheck`, `pnpm lint`, `pnpm build` 통과. PostgreSQL 감사 E2E 6 tests는 HTTP 인증 거부와 snapshot ID별 생성·조회·entries·content·restore·delete 및 목록 미기록을 확인했다.
+- **검증 경계:** 로컬 자동 테스트의 disposable PostgreSQL/SQLite만 확인했다. 운영 DB migration 적용, 운영 로그 조회·보존, 외부 호출 서버의 요청 ID 연결은 검증하지 않았다. 공개 경로 및 API key 거부 이외의 새 4xx 감사 경로는 포함하지 않는다.
 - Storix는 읽기·변경 요청에 대해 요청 ID, 호출 서버 식별, namespace, 대상 파일 또는 스냅샷, 작업 유형, 결과를 추적할 수 있어야 한다. WAS가 제공한 최종 사용자 식별값은 자기신고 값으로 취급하고 Storix의 권한 판단 근거로 사용하지 않아야 한다.
 - **수용 조건:** WAS의 요청 ID로 Storix의 성공·거부 기록을 연결할 수 있고, 파일 본문과 인증 비밀은 기록에 포함되지 않는다.
 

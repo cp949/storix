@@ -54,6 +54,7 @@ export class VfsSnapshotController {
       req.body as Buffer | undefined,
       req.requestId,
     );
+    req.auditSnapshotId = (result.body as { snapshotId: string }).snapshotId;
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
     return result.body;

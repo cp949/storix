@@ -6,6 +6,8 @@ import { DomainErrorFilter } from './domain-error.filter.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
 import { SqliteGateTimeoutError } from '../persistence/sqlite-gate.errors.js';
 import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../vfs/vfs.errors.js';
+import { InvalidApiKeyError } from '../auth/auth.errors.js';
+import type { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import type { VfsPreconditionCurrentDto } from '../vfs/dto/node-response.dto.js';
 
 function createHost(requestId = 'req-1') {
@@ -221,6 +223,55 @@ describe('DomainErrorFilter', () => {
     filter.catch(new FooError('foo happened'), host);
 
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-xyz' }));
+  });
+
+  it('API key 거부를 null 주체와 request path로 best-effort 기록하고 401 응답을 유지한다', async () => {
+    const audit = { record: jest.fn<AuditLogRepository['record']>().mockResolvedValue(undefined) };
+    const request = { requestId: 'req-denied', method: 'GET', path: '/api/v2/namespaces', headers: { 'x-caller-id': 'self-claim' } };
+    const json = jest.fn();
+    const status = jest.fn(() => ({ json }));
+    const host = { switchToHttp: () => ({ getResponse: () => ({ status }), getRequest: () => request }) } as unknown as ArgumentsHost;
+    const filter = new DomainErrorFilter(undefined, audit as unknown as AuditLogRepository);
+
+    filter.catch(new InvalidApiKeyError(), host);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(audit.record).toHaveBeenCalledWith({
+      requestId: 'req-denied', namespaceId: null, snapshotId: null,
+      operation: 'GET /api/v2/namespaces', path: '/api/v2/namespaces',
+      detail: null, caller: null, status: 401,
+    });
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UNAUTHORIZED', requestId: 'req-denied' }));
+  });
+
+  it('API key 거부 감사 저장이 실패해도 응답은 401이다', async () => {
+    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const audit = { record: jest.fn<AuditLogRepository['record']>().mockRejectedValue(new Error('db down')) };
+    const filter = new DomainErrorFilter(undefined, audit as unknown as AuditLogRepository);
+    const { host, json, status } = createHost();
+    filter.catch(new InvalidApiKeyError(), host);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UNAUTHORIZED' }));
+    expect(loggerErrorSpy).toHaveBeenCalled();
+    loggerErrorSpy.mockRestore();
+  });
+
+  it('긴 request path도 audit operation 컬럼 길이에 맞추고 전체 path는 보존한다', async () => {
+    const audit = { record: jest.fn<AuditLogRepository['record']>().mockResolvedValue(undefined) };
+    const path = `/api/v2/namespaces/${'x'.repeat(180)}`;
+    const json = jest.fn();
+    const status = jest.fn(() => ({ json }));
+    const host = { switchToHttp: () => ({
+      getResponse: () => ({ status }),
+      getRequest: () => ({ requestId: 'req-long-path', method: 'GET', path, headers: {} }),
+    }) } as unknown as ArgumentsHost;
+    new DomainErrorFilter(undefined, audit as unknown as AuditLogRepository).catch(new InvalidApiKeyError(), host);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      operation: `GET ${path}`.slice(0, 128), path,
+    }));
   });
 
   it('exception에 code가 있어도 500 응답에서는 INTERNAL_ERROR로 대체한다', () => {

@@ -2,7 +2,9 @@ import { Controller, Get, INestApplication, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import type { NextFunction, Request, Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
+import { RequestContextMiddleware } from '../common/request-context.middleware.js';
 import { ApiKeyGuard } from './api-key.guard.js';
 import { VALID_API_KEYS } from './auth.constants.js';
 import { Public } from './public.decorator.js';
@@ -36,6 +38,8 @@ describe('서비스 간 인증 파이프라인 (ApiKeyGuard 전역 적용)', () 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [ProbeModule] }).compile();
     app = moduleRef.createNestApplication();
+    const requestContext = new RequestContextMiddleware();
+    app.use((req: Request, res: Response, next: NextFunction) => requestContext.use(req, res, next));
     app.useGlobalFilters(new DomainErrorFilter());
     await app.init();
   });
@@ -49,8 +53,9 @@ describe('서비스 간 인증 파이프라인 (ApiKeyGuard 전역 적용)', () 
   });
 
   it('Authorization 헤더 없이 보호된 라우트에 접근하면 401을 반환한다', async () => {
-    const response = await request(app.getHttpServer()).get('/probe/protected').expect(401);
-    expect(response.body).toMatchObject({ code: 'UNAUTHORIZED' });
+    const response = await request(app.getHttpServer()).get('/probe/protected').set('X-Request-Id', 'missing-key-request').expect(401);
+    expect(response.body).toMatchObject({ code: 'UNAUTHORIZED', requestId: 'missing-key-request' });
+    expect(response.headers['x-request-id']).toBe('missing-key-request');
   });
 
   it('현재 키로 보호된 라우트에 접근하면 통과한다', async () => {
@@ -71,6 +76,8 @@ describe('서비스 간 인증 파이프라인 (ApiKeyGuard 전역 적용)', () 
     await request(app.getHttpServer())
       .get('/probe/protected')
       .set('Authorization', 'Bearer wrong-key')
-      .expect(401);
+      .set('X-Request-Id', 'wrong-key-request')
+      .expect(401)
+      .expect(({ body }) => expect(body).toMatchObject({ code: 'UNAUTHORIZED', requestId: 'wrong-key-request' }));
   });
 });

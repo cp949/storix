@@ -5,6 +5,7 @@ import { AuditLogEntity } from './entities/audit-log.entity.js';
 export interface AuditLogEntry {
   readonly requestId: string;
   readonly namespaceId: string | null;
+  readonly snapshotId: string | null;
   readonly operation: string;
   readonly path: string | null;
   readonly detail: Record<string, unknown> | null;

@@ -12,6 +12,7 @@ function createContext(
     query?: Record<string, unknown>;
     body?: Record<string, unknown>;
     headers?: Record<string, string>;
+    auditSnapshotId?: string;
   } = {},
 ) {
   const request = {
@@ -19,6 +20,7 @@ function createContext(
     params,
     query: options.query ?? {},
     body: options.body,
+    auditSnapshotId: options.auditSnapshotId,
     headers: options.headers ?? {},
   };
   const response = Object.assign(new EventEmitter(), { statusCode: 200 });
@@ -107,6 +109,7 @@ describe('AuditLogInterceptor', () => {
           path: '/a.txt',
           detail: null,
           caller: null,
+          snapshotId: null,
           status: 200,
         });
         done();
@@ -216,5 +219,26 @@ describe('AuditLogInterceptor', () => {
         expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({ status: 204 });
         done();
       });
+  });
+
+  it('snapshotId 파라미터와 생성용 명시 문맥만 기록하고 목록에는 기록하지 않는다', (done) => {
+    const { context, response } = createContext({ namespaceId: '11111111-1111-1111-1111-111111111111', snapshotId: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab' });
+    createInterceptor().intercept(context, { handle: () => of({}) }).subscribe(() => {
+      response.emit('close');
+      const { context: createContextValue, response: createResponse } = createContext({}, { auditSnapshotId: '0195f6a0-7c1b-7d3e-8a4f-1234567890ac' });
+      createInterceptor().intercept(createContextValue, { handle: () => of({}) }).subscribe(() => {
+        createResponse.emit('close');
+        const { context: listContext, response: listResponse } = createContext({ namespaceId: '11111111-1111-1111-1111-111111111111' });
+        createInterceptor().intercept(listContext, { handle: () => of({}) }).subscribe(() => {
+          listResponse.emit('close');
+          expect(auditLogRepository.record.mock.calls.map(([entry]) => entry.snapshotId)).toEqual([
+            '0195f6a0-7c1b-7d3e-8a4f-1234567890ab',
+            '0195f6a0-7c1b-7d3e-8a4f-1234567890ac',
+            null,
+          ]);
+          done();
+        });
+      });
+    });
   });
 });

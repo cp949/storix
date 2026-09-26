@@ -7,6 +7,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { AddVfsSnapshotListIndex1791500000000 } from './migrations/1791500000000-AddVfsSnapshotListIndex.js';
+import { AddAuditLogSnapshotId1791600000000 } from './migrations/1791600000000-AddAuditLogSnapshotId.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -36,7 +37,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('9개 마이그레이션이 전부 적용된다', async () => {
+  it('10개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -48,7 +49,24 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddVfsSnapshots1790400000000',
       'AddNamespaceLogicalQuota1791400000000',
       'AddVfsSnapshotListIndex1791500000000',
+      'AddAuditLogSnapshotId1791600000000',
     ]);
+  });
+
+  it('감사 snapshot_id 컬럼은 nullable이며 up/down이 가역이다', async () => {
+    const migration = new AddAuditLogSnapshotId1791600000000();
+    const runner = dataSource.createQueryRunner();
+    await dataSource.query(`INSERT INTO audit_log (request_id, operation, status)
+      VALUES ('before-snapshot-id-migration', 'migration.test', 200)`);
+    await migration.down(runner);
+    await migration.up(runner);
+    const columns = await dataSource.query("PRAGMA table_info('audit_log')");
+    expect(columns).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'snapshot_id', notnull: 0, type: 'varchar(36)' }),
+    ]));
+    expect(await dataSource.query(`SELECT snapshot_id FROM audit_log
+      WHERE request_id = 'before-snapshot-id-migration'`)).toEqual([{ snapshot_id: null }]);
+    await runner.release();
   });
 
   it('snapshot 목록 인덱스 migration은 up/down이 가역이다', async () => {

@@ -60,6 +60,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         .record({
           requestId: request.requestId,
           namespaceId: this.resolveNamespaceId(request),
+          snapshotId: this.resolveSnapshotId(request),
           operation,
           path: this.resolvePath(request),
           detail: this.resolveDetail(request),
@@ -72,6 +73,11 @@ export class AuditLogInterceptor implements NestInterceptor {
     });
 
     return next.handle();
+  }
+
+  private resolveSnapshotId(request: Request): string | null {
+    const value = request.params.snapshotId ?? request.auditSnapshotId;
+    return typeof value === 'string' && isUuid(value) ? value : null;
   }
 
   // params.id는 현재 NamespaceController(:id)만 쓰고 그 값은 항상 namespace id이므로 이 heuristic이

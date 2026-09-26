@@ -14,6 +14,7 @@ import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity
 import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
 import { AuditLogRepository } from './audit-log.repository.js';
+import { AUDIT_LOG_REPOSITORY } from './audit-log.tokens.js';
 import { BlobRepository } from './blob.repository.js';
 import { NamespaceProvisioningRepository } from './namespace-provisioning.repository.js';
 import { NamespaceCreationReceiptWriter } from './namespace-creation-receipt.writer.js';
@@ -90,6 +91,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsNodeRepository,
     BlobRepository,
     AuditLogRepository,
+    { provide: AUDIT_LOG_REPOSITORY, useExisting: AuditLogRepository },
     BackupRepository,
     VfsMutationReceiptRepository,
     VfsSnapshotRepository,
@@ -102,6 +104,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsNodeRepository,
     BlobRepository,
     AuditLogRepository,
+    AUDIT_LOG_REPOSITORY,
     BackupRepository,
     VfsMutationReceiptRepository,
     VfsSnapshotRepository,
