@@ -110,8 +110,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-013 파일별 스냅샷 목록
 
-- [ ] **진행 상태:** 미착수
-- **판정 근거:** 스냅샷 ID별 조회와 TREE entry 목록은 있으나 파일 ID별 스냅샷 목록 조회 계약은 없다.
+- [x] **진행 상태:** 로컬 코드·통합 검증 완료
+- **판정 근거:** API v2에 namespace와 immutable `rootNodeId`로 FILE snapshot을 keyset 조회하는 endpoint와 DB 복합 인덱스를 추가했다. PostgreSQL repository L1 20/20, SQLite repository L1 41/41, SQLite HTTP L1 11/11 통과. PostgreSQL HTTP L1 첫 실행은 stale 오류 기대 2건과 lease-renewal timing assertion 1건으로 141/143, stale 기대를 갱신한 재실행은 142/143이었다. 승인된 단일 timing 실패 재실행 1/1 통과 후 L2 PostgreSQL 전체 27 suites/416 tests와 SQLite 전체 12 suites/217 tests가 통과했다. L2에는 PostgreSQL/SQLite repository, HTTP, migration 검증이 포함된다. 실 Jupyter/WAS 연동은 검증하지 않았다.
 - 호출자는 파일 ID를 기준으로 해당 파일의 스냅샷을 페이지 단위로 나열할 수 있어야 한다. 각 항목은 스냅샷 ID, 생성 시각, 원본 revision, 크기, 해시를 포함해야 한다. 파일의 경로 변경은 해당 목록의 소속을 바꾸지 않으며, 삭제 후 같은 경로에 새로 만든 파일의 목록과 섞이지 않아야 한다.
 - **수용 조건:** 스냅샷 여러 건을 누락·중복 없이 조회하고, 파일 이동·동일 경로 재생성 후에도 소속이 유지된다.
 

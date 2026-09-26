@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/v2/namespaces/{namespaceId}/fs/snapshots`로 immutable 파일 ID별 FILE snapshot의 생성 시각·revision·크기·SHA-256을 cursor 페이지 조회한다.
+
 ### Changed
 
 - snapshot 자체가 없거나 snapshot ID 형식이 잘못된 경우 404 `VFS_SNAPSHOT_NOT_FOUND`를 반환한다. 파일 경로·snapshot 내부 entry 부재는 404 `VFS_NODE_NOT_FOUND`를 유지한다. 복원 대상 snapshot 종류가 FILE이 아니면 409 `VFS_INVALID_OPERATION`을 반환한다.
