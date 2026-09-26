@@ -18,6 +18,7 @@ import {
   VfsAlreadyExistsError,
   VfsCopyLimitExceededError,
   VfsDeleteLimitExceededError,
+  VfsFeatureDisabledError,
   VfsInvalidMutationRequestError,
   VfsInvalidPathError,
   VfsInvalidRevisionError,
@@ -49,6 +50,7 @@ describe('isReplayableMutationError', () => {
     ['409 VFS_IS_DIRECTORY', new VfsIsDirectoryError('/a')],
     ['409 VFS_ALREADY_EXISTS', new VfsAlreadyExistsError('/a')],
     ['409 VFS_REVISION_EXHAUSTED', new VfsRevisionExhaustedError()],
+    ['409 VFS_FEATURE_DISABLED', new VfsFeatureDisabledError('content-search')],
     ['412 VFS_PRECONDITION_FAILED', new VfsPreconditionFailedError('/a', null)],
     ['413 VFS_DELETE_LIMIT_EXCEEDED', new VfsDeleteLimitExceededError(5)],
     ['413 VFS_COPY_LIMIT_EXCEEDED', new VfsCopyLimitExceededError(5)],
@@ -131,6 +133,38 @@ describe('storeErrorReceipt', () => {
       result,
       12,
     );
+  });
+
+  it('비활성 오류의 code, message, 최초 request ID를 receipt에 고정해 재생한다', async () => {
+    let saved: VfsMutationReceiptEntity | undefined;
+    const completeAfterRollback = jest.fn(async (
+      _identity: ErrorReceiptOwner['identity'],
+      _generation: number,
+      fingerprint: string,
+      method: string,
+      response: Awaited<ReturnType<typeof storeErrorReceipt>>,
+    ) => {
+      saved = new VfsMutationReceiptEntity();
+      saved.method = method;
+      saved.fingerprint = fingerprint;
+      saved.responseStatus = response.status;
+      saved.responseBody = JSON.stringify(response.body);
+      saved.responseHeaders = JSON.stringify(response.headers);
+    });
+    const repository = { completeAfterRollback } as unknown as VfsMutationReceiptRepository;
+
+    await storeErrorReceipt(repository, owner, new VfsFeatureDisabledError('content-search'), 'req-original');
+
+    expect(saved).toBeDefined();
+    expect(replayReceipt(saved!, owner.method, owner.fingerprint, 'req-retry')).toEqual({
+      status: 409,
+      body: {
+        code: 'VFS_FEATURE_DISABLED',
+        message: 'Capability disabled: content-search',
+        requestId: 'req-original',
+      },
+      headers: { 'x-request-id': 'req-original' },
+    });
   });
 
   it('저장 대상이 아닌 오류는 receipt를 완료하지 않고 그대로 다시 던진다', async () => {

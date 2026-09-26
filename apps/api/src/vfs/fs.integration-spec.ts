@@ -128,6 +128,7 @@ function startHeldUpload(
 }
 
 describe('Fs HTTP contract', () => {
+  const previousCapabilityConfigPath = process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
   let postgresContainer: StartedPostgreSqlContainer;
   let minioContainer: StartedMinioContainer;
   let migrationDataSource: DataSource;
@@ -152,6 +153,7 @@ describe('Fs HTTP contract', () => {
   }
 
   beforeAll(async () => {
+    delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
 
@@ -197,6 +199,8 @@ describe('Fs HTTP contract', () => {
     await migrationDataSource.destroy();
     await postgresContainer.stop();
     await minioContainer.stop();
+    if (previousCapabilityConfigPath === undefined) delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
+    else process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH = previousCapabilityConfigPath;
   });
 
   async function createNamespace(name: string): Promise<string> {
@@ -237,6 +241,25 @@ describe('Fs HTTP contract', () => {
   }
 
   treeSnapshotContract(() => app);
+
+  it('capability 설정 경로가 없어도 기존 파일 저장, 조회, 내보내기, 삭제를 사용할 수 있다', async () => {
+    expect(process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH).toBeUndefined();
+    const namespaceId = await createNamespace('capability-empty-existing-file-api');
+    const base = `/api/v2/namespaces/${namespaceId}/fs`;
+    const path = '/still-available.txt';
+
+    await request(httpServer)
+      .post(`${base}/content`)
+      .query({ path })
+      .set('Content-Type', 'text/plain')
+      .send('retained data')
+      .expect(201);
+    expect((await request(httpServer).get(`${base}/content`).query({ path }).expect(200)).text).toBe('retained data');
+    expect((await request(httpServer).get(`${base}/download`).query({ path }).expect(200)).text).toBe('retained data');
+
+    await request(httpServer).post(`${base}/rm`).query({ path }).expect(204);
+    expect((await request(httpServer).get(`${base}/exists`).query({ path }).expect(200)).body.exists).toBe(false);
+  });
 
   it('긴 유효 경로의 TREE manifest를 저장하고 끝 항목까지 조회한다', async () => {
     const ns = await createNamespace('snapshot-long-path');

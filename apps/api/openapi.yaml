@@ -170,7 +170,7 @@ info:
     | `UNAUTHORIZED` | 401 | 인증을 갱신한 뒤 가능; receipt 없음 | 인증 문제를 고친 뒤 같은 key 가능 | 없음 |
     | `NAMESPACE_NOT_FOUND`, `VFS_NODE_NOT_FOUND`, `VFS_SNAPSHOT_NOT_FOUND` | 404 | 같은 상태에서는 재평가; 조건부 receipt가 있으면 최초 결과 재생 | 새 key | 없음 |
     | `VFS_INVALID_PATH`, `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`, `VFS_INVALID_CURSOR`, `IDEMPOTENCY_KEY_REQUIRED`, `NAMESPACE_INVALID_NAME`, `NAMESPACE_INVALID_ENCRYPTION_POLICY`, `NAMESPACE_INVALID_ACCESS_POLICY`, `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`, `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, `NAMESPACE_ENCRYPTION_NOT_CONFIGURED` | 400 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
-    | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_ALREADY_EXISTS`, `VFS_VERSION_CONFLICT`, `VFS_INVALID_OPERATION`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_REVISION_EXHAUSTED`, `VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED` | 409 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
+    | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_ALREADY_EXISTS`, `VFS_VERSION_CONFLICT`, `VFS_INVALID_OPERATION`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_REVISION_EXHAUSTED`, `VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`, `VFS_FEATURE_DISABLED` | 409 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
     | `NAMESPACE_ALREADY_EXISTS` | 409 | namespace idempotency receipt가 저장한 409를 같은 key에서 반환 | name/body를 고치려면 새 key | 없음 |
     | `MUTATION_IN_PROGRESS` | 409 | 같은 key로 재시도 | 해당 없음 | 있으면 대기 |
     | `MUTATION_KEY_REUSED` | 409 | 기존 mutation receipt와 fingerprint가 다름; 기존 receipt를 변경하지 않음 | 새 key | 없음 |
