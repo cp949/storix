@@ -1,4 +1,4 @@
-import { PathResolver, type ResolvedPath } from './path-resolver.js';
+import { assertPathSegments, PathResolver, type ResolvedPath } from './path-resolver.js';
 import { VfsInvalidPathError } from './vfs.errors.js';
 
 const resolver = new PathResolver();
@@ -18,11 +18,7 @@ export function resolveSnapshotRestorePath(rawPath: string): ResolvedPath {
 export function resolveSnapshotRelativePath(rawPath: string): ResolvedPath {
   if (rawPath.startsWith('/')) throw new VfsInvalidPathError(rawPath);
   const segments = rawPath.split('/').filter((segment) => segment.length > 0 && segment !== '.');
-  for (const segment of segments) {
-    if (segment === '..' || segment.includes('\\') || /[\x00-\x1f\x7f]/.test(segment)) {
-      throw new VfsInvalidPathError(rawPath);
-    }
-  }
+  assertPathSegments(segments);
   return { canonical: segments.length === 0 ? '.' : segments.join('/'), segments };
 }
 

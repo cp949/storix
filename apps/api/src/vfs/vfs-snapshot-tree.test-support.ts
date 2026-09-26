@@ -71,7 +71,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       const { app, http, base, upload } = await fixture();
       await http().post(`${base}/mkdir`).send({ path: '/tree/a', parents: true }).expect(201);
       const bytes = Buffer.from([0, 255, 128, 32, 65]);
-      for (const path of ['A', 'a-', 'a/b', 'a0', 'e\u0301', '\u00e9', '한', '😀']) {
+      for (const path of ['A', 'a-', 'a/b', 'a0', 'e-', '\u00e9', '한', '😀']) {
         await upload(`/tree/${path}`, bytes).expect(201);
       }
       const source = (await http().get(`${base}/revision`).query({ path: '/tree' }).expect(200)).body;
@@ -96,7 +96,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
         'a-',
         'a/b',
         'a0',
-        'e\u0301',
+        'e-',
         '\u00e9',
         '한',
         '😀',
@@ -224,8 +224,12 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
         await http().get(`${url}?path=%2e%2e%2fb`).expect(400);
         await http().get(`${url}?path=a&path=b`).expect(400);
         await http().get(`${url}?path[x]=a`).expect(400);
-        for (const path of ['missing', 'e\u0301'])
-          expect((await http().get(url).query({ path }).expect(404)).body.code).toBe('VFS_NODE_NOT_FOUND');
+        expect((await http().get(url).query({ path: 'missing' }).expect(404)).body.code).toBe(
+          'VFS_NODE_NOT_FOUND',
+        );
+        expect((await http().get(url).query({ path: 'e\u0301' }).expect(400)).body.code).toBe(
+          'VFS_INVALID_PATH',
+        );
       },
     );
 

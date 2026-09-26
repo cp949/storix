@@ -6,23 +6,27 @@ export interface ResolvedPath {
 }
 
 function invalidSegment(segment: string): boolean {
-  return segment === '..' || segment.includes('\\') || /[\x00-\x1f\x7f]/.test(segment);
+  return (
+    segment === '..' ||
+    segment.includes('\\') ||
+    /[\u0000-\u001f\u007f-\u009f]|\p{Bidi_Control}/u.test(segment) ||
+    /[\uD800-\uDFFF]/u.test(segment) ||
+    segment.normalize('NFC') !== segment ||
+    Buffer.byteLength(segment, 'utf8') > 255
+  );
 }
 
-export function assertConditionalSegments(segments: readonly string[]): void {
+export function assertPathSegments(segments: readonly string[]): void {
   const path = segments.length === 0 ? '/' : `/${segments.join('/')}`;
+  if (Buffer.byteLength(path, 'utf8') > 4096) throw new VfsInvalidPathError(path);
   for (const segment of segments) {
-    if (
-      segment.length === 0 ||
-      segment === '.' ||
-      segment.includes('/') ||
-      invalidSegment(segment) ||
-      segment.normalize('NFC') !== segment
-    ) {
+    if (segment.length === 0 || segment === '.' || segment.includes('/') || invalidSegment(segment)) {
       throw new VfsInvalidPathError(path);
     }
   }
 }
+
+export const assertConditionalSegments = assertPathSegments;
 
 export class PathResolver {
   resolve(rawPath: string): ResolvedPath {
@@ -32,21 +36,14 @@ export class PathResolver {
 
     const segments = rawPath.split('/').filter((segment) => segment.length > 0 && segment !== '.');
 
-    for (const segment of segments) {
-      if (invalidSegment(segment)) {
-        throw new VfsInvalidPathError(rawPath);
-      }
-    }
-
     const canonical = segments.length === 0 ? '/' : `/${segments.join('/')}`;
+    assertPathSegments(segments);
 
     return { canonical, segments };
   }
 
   resolveConditional(rawPath: string): ResolvedPath {
-    const path = this.resolve(rawPath);
-    assertConditionalSegments(path.segments);
-    return path;
+    return this.resolve(rawPath);
   }
 }
 

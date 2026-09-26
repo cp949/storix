@@ -1,4 +1,4 @@
-import { joinChildPath, PathResolver } from './path-resolver.js';
+import { assertPathSegments, joinChildPath, PathResolver } from './path-resolver.js';
 import { VfsInvalidPathError } from './vfs.errors.js';
 
 describe('PathResolver', () => {
@@ -54,8 +54,8 @@ describe('PathResolver', () => {
     expect(() => resolver.resolve('/a/b\u0001c')).toThrow(VfsInvalidPathError);
   });
 
-  it('일반 경로는 NFD segment를 변경하지 않고 허용한다', () => {
-    expect(resolver.resolve('/e\u0301')).toEqual({ canonical: '/e\u0301', segments: ['e\u0301'] });
+  it('모든 경로에서 NFD segment를 거부한다', () => {
+    expect(() => resolver.resolve('/e\u0301')).toThrow(VfsInvalidPathError);
   });
 
   it('조건부 경로는 NFC segment를 허용한다', () => {
@@ -73,6 +73,30 @@ describe('PathResolver', () => {
 
   it.each(['/a/../b', '/a/b\\c', '/a/b\u0001c'])('조건부 경로도 기존 금지 segment를 거부한다: %j', (raw) => {
     expect(() => resolver.resolveConditional(raw)).toThrow(VfsInvalidPathError);
+  });
+
+  it('이름과 정규 경로의 UTF-8 바이트 경계를 적용한다', () => {
+    expect(resolver.resolve(`/${'a'.repeat(255)}`).canonical).toBe(`/${'a'.repeat(255)}`);
+    expect(() => resolver.resolve(`/${'a'.repeat(256)}`)).toThrow(VfsInvalidPathError);
+    expect(resolver.resolve(`/${'가'.repeat(85)}`).segments[0]).toBe('가'.repeat(85));
+    expect(() => resolver.resolve(`/${'가'.repeat(86)}`)).toThrow(VfsInvalidPathError);
+
+    const max = `/${Array(16).fill('a'.repeat(255)).join('/')}`;
+    const over = `/${[...Array(15).fill('a'.repeat(255)), 'a'.repeat(254), 'a'].join('/')}`;
+    expect(Buffer.byteLength(max, 'utf8')).toBe(4096);
+    expect(Buffer.byteLength(over, 'utf8')).toBe(4097);
+    expect(resolver.resolve(max).canonical).toBe(max);
+    expect(() => resolver.resolve(over)).toThrow(VfsInvalidPathError);
+  });
+
+  it.each(['/a\u0085', '/a\u202e', '/a\ud800', '/a\udc00'])(
+    '제어 문자·Bidi_Control·고립 surrogate를 거부한다: %j',
+    (raw) => expect(() => resolver.resolve(raw)).toThrow(VfsInvalidPathError),
+  );
+
+  it('결과 세그먼트에도 같은 경로 한도를 적용한다', () => {
+    expect(() => assertPathSegments(['a'.repeat(256)])).toThrow(VfsInvalidPathError);
+    expect(() => assertPathSegments(['e\u0301'])).toThrow(VfsInvalidPathError);
   });
 });
 

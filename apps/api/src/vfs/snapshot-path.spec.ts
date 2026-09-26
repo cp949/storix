@@ -42,13 +42,19 @@ describe('snapshot paths', () => {
     expect(resolveSnapshotRelativePath('%2e%2e')).toEqual({ canonical: '%2e%2e', segments: ['%2e%2e'] });
   });
 
-  it('preserves distinct Unicode forms and encodes their UTF-8 bytes as lowercase hex', () => {
-    expect(resolveSnapshotSourcePath('/e\u0301').canonical).toBe('/e\u0301');
-    expect(resolveSnapshotRestorePath('/e\u0301').canonical).toBe('/e\u0301');
+  it('rejects NFD in absolute and relative paths and encodes NFC as lowercase hex', () => {
+    expect(() => resolveSnapshotSourcePath('/e\u0301')).toThrow(VfsInvalidPathError);
+    expect(() => resolveSnapshotRestorePath('/e\u0301')).toThrow(VfsInvalidPathError);
     expect(resolveSnapshotRelativePath('\u00e9').canonical).toBe('\u00e9');
-    expect(resolveSnapshotRelativePath('e\u0301').canonical).toBe('e\u0301');
+    expect(() => resolveSnapshotRelativePath('e\u0301')).toThrow(VfsInvalidPathError);
     expect(snapshotPathKey('\u00e9')).toBe('c3a9');
-    expect(snapshotPathKey('e\u0301')).toBe('65cc81');
     expect(snapshotPathKey('.')).toBe('2e');
+  });
+
+  it('relative path also obeys the absolute equivalent byte limit', () => {
+    const max = Array(16).fill('a'.repeat(255)).join('/');
+    const over = [...Array(15).fill('a'.repeat(255)), 'a'.repeat(254), 'a'].join('/');
+    expect(resolveSnapshotRelativePath(max).canonical).toBe(max);
+    expect(() => resolveSnapshotRelativePath(over)).toThrow(VfsInvalidPathError);
   });
 });

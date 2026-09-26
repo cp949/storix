@@ -2649,6 +2649,25 @@ describe('Fs HTTP contract', () => {
         requestId: expect.any(String),
       });
     });
+
+    it('일반 파일 경로도 alias를 정규화하고 NFD·길이 초과를 무변경으로 거부한다', async () => {
+      const namespaceId = await createNamespace('global-path-contract-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      await request(httpServer).post(`${base}/mkdir`).send({ path: '/a//./b/', parents: true }).expect(201);
+      await request(httpServer).get(`${base}/stat`).query({ path: '/a/b' }).expect(200);
+
+      for (const path of ['/e\u0301', `/${'가'.repeat(86)}`, '/a\u0085', '/a\u202e']) {
+        expect(
+          (await request(httpServer).post(`${base}/mkdir`).send({ path, parents: true }).expect(400)).body
+            .code,
+        ).toBe('VFS_INVALID_PATH');
+      }
+      expect(
+        (await request(httpServer).get(`${base}/ls`).query({ path: '/' }).expect(200)).body.items.map(
+          (x: { name: string }) => x.name,
+        ),
+      ).toEqual(['a']);
+    });
   });
 
   describe('mkdir', () => {

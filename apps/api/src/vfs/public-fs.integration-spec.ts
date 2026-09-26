@@ -128,6 +128,18 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
   });
 
+  it('공개 파일 읽기도 정규 경로 alias를 해석하고 NFD를 거부한다', async () => {
+    const base = `/api/v1/public/${publicNamespaceId}/fs/content`;
+    const alias = await request(app.getHttpServer())
+      .get(base)
+      .query({ path: '/docs//./hello.txt/' })
+      .expect(200);
+    expect(alias.text).toBe(FILE_BODY);
+    expect(
+      (await request(app.getHttpServer()).get(base).query({ path: '/e\u0301' }).expect(400)).body.code,
+    ).toBe('VFS_INVALID_PATH');
+  });
+
   it('Range 요청에 206과 Content-Range를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v1/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
@@ -185,7 +197,9 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   it('PUBLIC namespace라도 기존 인증 경로는 API key가 없으면 401을 반환한다', async () => {
     await request(app.getHttpServer())
-      .get(`/api/v1/namespaces/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .get(
+        `/api/v1/namespaces/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`,
+      )
       .expect(401);
   });
 
