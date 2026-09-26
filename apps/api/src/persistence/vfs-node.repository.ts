@@ -1179,7 +1179,9 @@ export class VfsNodeRepository {
       ? await this.lockTargetNode(manager, namespaceId, destinationParentId, destinationName)
       : null;
 
-    if (destinationResolution === 'exact' && (destinationSegments.length === 0 || destinationTarget)) {
+    // exact는 `/`를 항상 존재하는 목적지로 본다. 기존 FILE·DIRECTORY 충돌은 아래 non-nest 분기가
+    // subtree 검사(409) 뒤에 판정해 기존 placement와 같은 오류 우선순위를 유지한다.
+    if (destinationResolution === 'exact' && destinationSegments.length === 0) {
       throw new VfsAlreadyExistsError(joinSegments(destinationSegments));
     }
 

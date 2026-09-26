@@ -17,7 +17,7 @@
 
 `/`는 조회·목록·TREE snapshot 원본과 이동·복사의 디렉터리 목적지로 사용할 수 있다. 파일 본문 저장·FILE snapshot 복원·루트 자체 이동·삭제의 대상은 될 수 없다. 그 경우 각 endpoint의 기존 루트 오류를 따른다.
 
-조건부 move/copy는 `destinationAbsent: true`가 필수다. `destinationResolution`을 생략하면 기존 placement 규칙을 따른다. 목적지가 `/` 또는 기존 DIRECTORY면 원본 basename을 그 아래 붙이고, 기존 FILE이면 412를 반환한다. `destinationResolution: "exact"`는 정규화한 `destination` 경로 자체를 대상으로 한다. `/` 또는 기존 FILE·DIRECTORY는 412 `VFS_PRECONDITION_FAILED`이며 `path`는 지정 경로, `current`는 충돌 노드의 metadata다. 없는 leaf는 지정 경로에 생성·이동한다. 조건부 작업은 부모를 자동 생성하지 않으므로 부모가 없으면 404다.
+조건부 move/copy는 `destinationAbsent: true`가 필수다. `destinationResolution`을 생략하면 기존 placement 규칙을 따른다. 목적지가 `/` 또는 기존 DIRECTORY면 원본 basename을 그 아래 붙이고, 기존 FILE이면 412를 반환한다. `destinationResolution: "exact"`는 정규화한 `destination` 경로 자체를 대상으로 한다. `/` 또는 기존 FILE·DIRECTORY는 412 `VFS_PRECONDITION_FAILED`이며 `path`는 지정 경로, `current`는 충돌 노드의 metadata다. 단 DIRECTORY source를 자기 자신이나 자기 subtree로 지정하면 대상 존재 여부와 무관하게 기존 placement와 같이 409 `VFS_INVALID_OPERATION`이 우선한다. 없는 leaf는 지정 경로에 생성·이동한다. 조건부 작업은 부모를 자동 생성하지 않으므로 부모가 없으면 404다.
 
 부모 디렉터리는 기본적으로 만들지 않는다. 부모가 없으면 404 `VFS_NODE_NOT_FOUND`다. `parents` 또는 `destinationParents` 옵션이 있는 작업에서 `true`로 지정할 때만 만든다. 해당 옵션이 없는 조건부 작업의 부모는 호출자가 먼저 만든다.
 

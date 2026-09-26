@@ -702,6 +702,35 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       expect(result.value.resource?.path).toBe('/directory/source');
     });
 
+    it.each(['move', 'copy'] as const)(
+      '%s exact 목적지가 자기 subtree면 412보다 409 VFS_INVALID_OPERATION이 우선한다',
+      async (kind) => {
+        const namespace = await createNamespace(`exact-subtree-${kind}-${randomUUID()}`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'b'], true);
+        const source = (await getRepo().resolvePath(namespace.id, root.id, ['a']))!;
+        // 자기 자신과 이미 있는 하위 노드 모두 subtree 이동이므로 기존 placement와 같은 409다.
+        for (const segments of [['a'], ['a', 'b']]) {
+          const before = await captureState(namespace.id);
+          await expect(
+            getRepo().withMutation(namespace.id, root.id, (tx) =>
+              getRepo().applyConditionalMutation(tx, {
+                kind,
+                source: '/a',
+                sourceSegments: ['a'],
+                destination: `/${segments.join('/')}`,
+                destinationSegments: segments,
+                sourceRevision: encodeRevision(source),
+                destinationAbsent: true,
+                destinationResolution: 'exact',
+              }),
+            ),
+          ).rejects.toMatchObject({ status: 409, code: 'VFS_INVALID_OPERATION' });
+          expect(await captureState(namespace.id)).toEqual(before);
+        }
+      },
+    );
+
     it('rejects a stale revision after delete and recreate of the same path', async () => {
       const namespace = await createNamespace('conditional-recreate-ns');
       const root = (await getRepo().getRoot(namespace.id))!;
