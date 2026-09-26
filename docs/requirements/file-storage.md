@@ -1,20 +1,21 @@
-# Jupyter Notebook 파일 IO를 위한 Storix 저장 요구사항
+# Storix 범용 파일 저장 요구사항
 
 ## 목적과 범위
 
-WAS는 최종 사용자를 인증하고, 프로젝트·사용자별 접근 권한과 허용 경로를 판단한 뒤 Storix에 파일 입출력을 요청한다. Storix는 호출 서버가 지정한 namespace 안에서 파일 바이트, 메타데이터, 버전, 스냅샷을 관리한다. 이 문서는 Jupyter Notebook 파일 입출력에 필요한 **범용 저장 계약**을 정의한다. HTTP 경로, DB 구조, 오브젝트 저장 방식 같은 구현 방식은 지정하지 않는다.
+Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리, 바이트, 메타데이터, revision, snapshot을 관리한다. 이 문서는 특정 편집기·언어·파일 형식에 종속되지 않는 **범용 저장 계약**과 그 수용 조건을 정의한다. Jupyter Notebook은 소비자 사례 중 하나다. HTTP 경로, DB 구조, 오브젝트 저장 방식 같은 구현 방식은 요구사항이 지정하지 않는 한 제한하지 않는다.
 
-WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한, Jupyter 응답 형식을 담당한다. Storix는 허용된 파일 바이트를 재해석하거나 정규화하지 않는다. JSON 파싱 오류와 형식 오류는 WAS가 구분하며, Storix는 바이트 저장·무결성·조건부 변경 오류를 구분한다.
+호출 서버 또는 소비자 어댑터는 최종 사용자 인증, 소비자별 접근 권한, 파일 형식 파싱·검증, 소비자 고유 응답 형식을 담당한다. Storix는 허용된 파일 바이트를 재해석하거나 정규화하지 않는다. Jupyter 어댑터라면 노트북 JSON·`nbformat` 정책과 Jupyter Contents API 응답을 담당한다.
 
 ## 용어와 진행 상태
 
-- **namespace**: Storix가 관리하는 독립 파일 공간. WAS는 권한 판단 후 대상 namespace를 선택한다.
+- **namespace**: Storix가 관리하는 독립 파일 공간. 호출 서버는 자체 권한 판단 후 대상 namespace를 선택한다.
 - **파일 ID**: 이름·경로가 바뀌어도 같은 파일을 구분하는 식별자. 삭제 후 같은 경로에 만든 파일에는 새 ID를 부여한다.
 - **revision**: 파일 상태의 변경을 구분하는 불투명한 식별자. 호출자는 내용이나 숫자 순서를 해석하지 않고 동등성 비교에만 쓴다.
 - **콘텐츠 해시**: 읽기에서 반환되는 파일 바이트 전체에 대한 SHA-256 값. revision과 용도가 다르다.
-- **스냅샷**: 생성 시점의 파일 바이트와 그 메타데이터를 보존하는 불변 저장 기록. WAS는 이를 노트북 체크포인트로 사용할 수 있다.
-- **진행 상태**: `미착수` / `진행 중` / `검증 완료` / `보류`. 각 항목의 판정 근거는 Storix 코드·공개 계약과 해당 수용 조건에 대한 로컬 검증을 가리킨다.
-- `[x]`는 이 문서의 수용 조건을 Storix 범위에서 확인한 항목이다. `[ ]`는 구현 일부가 있어도 남은 조건이 있는 항목이다. 배포 환경과 특정 WAS 연동은 별도로 검증한다.
+- **스냅샷**: 생성 시점의 파일 바이트와 그 메타데이터를 보존하는 불변 저장 기록. 소비자는 이를 체크포인트·복구 지점으로 사용할 수 있다.
+- **capability**: 하나의 소비자 사용 사례를 완성하는 선택 기능 묶음. 관련 연산은 일부만 활성화되어 사용할 수 없는 상태가 되지 않도록 함께 설정한다.
+- **진행 상태**: `미착수` / `진행 중` / `검증 완료` / `보류`. 판정 근거는 공개 계약, 코드, 자동 검증, 배포·소비자 검증을 구분한다. 공개 계약만 대조했거나 수용 조건을 만족하지 않는 부분이 남으면 `검증 완료`로 표시하지 않는다.
+- `[x]`는 이 문서의 수용 조건이 공개 계약·코드와 자동 검증 근거로 확인된 항목이다. `[ ]`는 갭 또는 필요한 검증이 남은 항목이다. 배포 환경과 특정 소비자 연동은 별도로 검증한다.
 - 요구사항이나 구현이 바뀌면 같은 변경에서 해당 RQ의 상태와 판정 근거를 갱신한다. `RQ-NNN`은 요구사항 ID이며 [ROADMAP](../ROADMAP.md)의 실행 항목 ID와 구분한다.
 
 ## 1. 호출과 격리
@@ -24,7 +25,7 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 - [x] **진행 상태:** 검증 완료
 - **판정 근거:** 전역 API 키 가드와 인증 단위 테스트에서 유효·누락·오류 자격을 확인했다.
 - Storix는 보호 대상 읽기·쓰기 요청에서 호출 서버의 자격을 검증하고, 자격이 없거나 유효하지 않으면 파일 존재 여부나 본문을 노출하지 않고 거부해야 한다.
-- 최종 사용자 인증 결과를 Storix가 직접 판단할 필요는 없다. WAS가 보낸 사용자 식별값은 감사 정보일 수 있으나, 그 값만으로 권한을 부여해서는 안 된다.
+- 최종 사용자 인증 결과를 Storix가 직접 판단할 필요는 없다. 호출자가 보낸 최종 사용자 식별값은 감사 정보일 수 있으나, 그 값만으로 권한을 부여해서는 안 된다.
 - **수용 조건:** 같은 요청에 대해 유효한 서비스 자격은 허용되고, 누락·오류 자격은 거부된다.
 
 ### RQ-002 namespace 격리
@@ -47,8 +48,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 - [x] **진행 상태:** 검증 완료
 - **판정 근거:** 원시 바이트 스트림 저장·조회와 바이너리 왕복 검증으로 본문 변환이 없음을 확인했다.
-- Storix는 전달받은 파일 바이트를 보존하고 전체 조회에서 동일한 바이트를 반환해야 한다. JSON의 공백·키 순서·문자열/배열 표현, 알려지지 않은 필드, 셀·출력·첨부 데이터·MIME 데이터는 Storix가 해석하거나 변경하지 않는다.
-- **수용 조건:** 서로 다른 유효한 노트북 바이트 표현을 각각 저장·조회했을 때 입력과 출력의 바이트 및 SHA-256이 일치한다.
+- Storix는 파일 형식과 무관하게 전달받은 바이트를 보존하고 전체 조회에서 동일하게 반환해야 한다. JSON, 노트북, 이미지나 임의 바이너리 등 콘텐츠 의미를 해석하거나 정규화하지 않는다.
+- **수용 조건:** 서로 다른 바이트열을 각각 저장·조회했을 때 입력과 출력의 바이트 및 전체 SHA-256이 일치한다.
 
 ### RQ-005 존재하지 않는 파일의 조건부 생성
 
@@ -150,9 +151,9 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 - [x] **진행 상태:** 완료
 - **판정 근거:** 오류 계약은 `apps/api/openapi.yaml`에 공개했다. 인증/namespace·node·snapshot 부재는 401/404 코드, 입력·유형·revision·key·상한 거부는 기존 4xx 코드, `DB_BUSY`는 503, 식별된 transient DB/Blob 장애는 503 `STORAGE_UNAVAILABLE`, 식별된 permanent 저장 장애는 500 `STORAGE_FAILURE`, 미분류 예외는 500 `INTERNAL_ERROR`다. 분류할 수 없는 500은 안전한 고정 메시지를 반환하고 내부 예외·저장소 정보·파일 바이트·비밀을 노출하지 않는다. 같은 key 자동 재시도 가능 코드는 `DB_BUSY`, `STORAGE_UNAVAILABLE`, `MUTATION_IN_PROGRESS`이며 `Retry-After`가 있으면 먼저 기다린다. 결정적 4xx 오류 receipt는 최초 응답을 재생하므로 상태·입력을 고친 요청은 새 key를 사용한다. `STORAGE_FAILURE`와 `INTERNAL_ERROR`는 자동 재시도를 약속하지 않고 원인 조사를 요구한다.
 - **자동 검증 근거:** 단위 `pnpm test`는 API 79 suites/752 tests 통과, `route-coverage.spec.ts` 포함. 표적 PostgreSQL/MinIO L1: `fs.integration-spec.ts` 146/146, `content-streaming.integration-spec.ts` 4/4, `namespace.integration-spec.ts` 21/21. SQLite L1 `vfs-snapshot.sqlite.integration-spec.ts` 12/12. 최종 L2 `pnpm test:integration --filter='!@storix/demo1-was'` 27 suites/424 tests, `pnpm --filter @storix/api test:integration:sqlite` 12 suites/218 tests 통과. root L0 typecheck/lint/test/build도 통과했다. 리뷰에서 제기된 plan의 전 연산별 장애 주입 확장은 사용자 결정으로 수행하지 않았고, 확정 DELTA-03 브리프의 HTTP/receipt/stream 경계를 검증했다.
-- **검증 경계:** 오류 주입은 repository·MinIO SDK seam 및 실제 SQLite gate를 사용한 자동 테스트다. WAS/Jupyter 소비자의 자동 재시도 동작, 실행 중인 외부 DB/MinIO의 실장애와 복구, production 배포는 검증하지 않았다. 응답 중단은 raw HTTP client 수준에서만 확인했다.
+- **검증 경계:** 오류 주입은 repository·MinIO SDK seam 및 실제 SQLite gate를 사용한 자동 테스트다. 소비자 어댑터의 자동 재시도 동작, 실행 중인 외부 DB/MinIO의 실장애와 복구, production 배포는 검증하지 않았다. 응답 중단은 raw HTTP client 수준에서만 확인했다.
 - Storix는 최소한 호출 인증 실패, namespace 없음, 경로 오류, 파일 없음, 파일 유형 오류, revision 충돌, 멱등성 키 재사용, 스냅샷 없음, 크기·저장량 초과, 저장 장애를 기계적으로 구분할 수 있는 오류 코드를 제공해야 한다. 재시도 가능한 일시적 오류와 확정된 거부도 구분해야 한다.
-- **수용 조건:** WAS가 오류 메시지 문자열을 파싱하지 않고 코드만으로 각 경우를 처리할 수 있다.
+- **수용 조건:** 호출 서버가 오류 메시지 문자열을 파싱하지 않고 코드만으로 각 경우를 처리할 수 있다.
 
 ### RQ-019 감사에 필요한 호출 정보
 
@@ -160,8 +161,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 - **판정 근거:** 성공 요청은 기존 `AuditLogInterceptor`가 request ID, caller, namespace, operation, 대상 경로, HTTP 결과를 기록한다. `InvalidApiKeyError`는 공통 예외 필터에서 `request_id`, HTTP method와 request path로 구성한 128자 operation, 전체 request path, 401 결과를 best-effort 기록하며 caller·namespace는 null로 둔다. 감사 행은 nullable `snapshot_id`를 가지며 생성 결과와 개별 ID 경로를 기록하고 목록은 null을 유지한다. snapshot 감사 ID는 PostgreSQL/SQLite migration과 저장 테스트로 확인했다. 단위·PostgreSQL 통합 검증은 키 원문과 본문 미기록 및 저장 실패 시 401 응답 보존을 확인한다.
 - **자동 검증 근거:** `pnpm test` 79 suites/768 tests, PostgreSQL/MinIO L2 27 suites/437 tests, SQLite L2 13 suites/228 tests 통과. `pnpm typecheck`, `pnpm lint`, `pnpm build` 통과. PostgreSQL 감사 E2E 6 tests는 HTTP 인증 거부와 snapshot ID별 생성·조회·entries·content·restore·delete 및 목록 미기록을 확인했다.
 - **검증 경계:** 로컬 자동 테스트의 disposable PostgreSQL/SQLite만 확인했다. 운영 DB migration 적용, 운영 로그 조회·보존, 외부 호출 서버의 요청 ID 연결은 검증하지 않았다. 공개 경로 및 API key 거부 이외의 새 4xx 감사 경로는 포함하지 않는다.
-- Storix는 읽기·변경 요청에 대해 요청 ID, 호출 서버 식별, namespace, 대상 파일 또는 스냅샷, 작업 유형, 결과를 추적할 수 있어야 한다. WAS가 제공한 최종 사용자 식별값은 자기신고 값으로 취급하고 Storix의 권한 판단 근거로 사용하지 않아야 한다.
-- **수용 조건:** WAS의 요청 ID로 Storix의 성공·거부 기록을 연결할 수 있고, 파일 본문과 인증 비밀은 기록에 포함되지 않는다.
+- Storix는 읽기·변경 요청에 대해 요청 ID, 호출 서버 식별, namespace, 대상 파일 또는 스냅샷, 작업 유형, 결과를 추적할 수 있어야 한다. 호출자가 제공한 최종 사용자 식별값은 자기신고 값으로 취급하고 Storix의 권한 판단 근거로 사용하지 않아야 한다.
+- **수용 조건:** 호출 서버의 요청 ID로 Storix의 성공·거부 기록을 연결할 수 있고, 파일 본문과 인증 비밀은 기록에 포함되지 않는다.
 
 ### RQ-020 호출 계약 공개
 
@@ -169,14 +170,71 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 - **판정 근거:** `apps/api/openapi.yaml`에 namespace 조회를 통한 실행 중 단일 파일 상한·논리 사용량 확인, 인증된 파일 생성·조회·조건부 교체·FILE snapshot 생성/조회/콘텐츠/복원 curl 흐름을 추가했다. 응답의 파일 ID·불투명 revision·전체 바이트 SHA-256 의미, 조건부 오류, namespace/scope/key receipt identity와 완료 후 30일 재생 및 만료 후 재평가 가능성을 함께 설명한다. 적용 경로·요청 필드·응답 필드는 현재 라우트·DTO 및 기존 통합 테스트와 정적으로 대조했다. YAML 구문 검사 결과는 작업 DELTA에 기록한다.
 - **검증 경계:** 로컬 문서·코드 계약 대조만 수행한다. 예시를 배포된 서버나 외부 WAS에서 실행하지 않았고, namespace 운영 설정·실제 저장소·운영 receipt 보존/GC를 검증하지 않았다. TREE snapshot은 전체 OpenAPI 계약에 남아 있으나 이 요구사항의 필수 노트북 예시에는 포함하지 않는다.
 - Storix는 요청 조건, 성공 응답 필드, revision·해시의 의미, 오류 코드, 경로 규칙, 멱등성 키의 범위·보존 기간, 크기·저장량 한도를 호출 서버가 확인할 수 있도록 문서화해야 한다. 배포 시 설정에 따라 달라지는 값은 실행 중 확인 방법을 제공해야 한다.
-- **수용 조건:** WAS 구현자가 Storix 내부 코드나 DB를 읽지 않고도 생성→조회→조건부 교체→스냅샷→복원 흐름을 구현할 수 있다.
+- **수용 조건:** 소비자 어댑터 구현자가 Storix 내부 코드나 DB를 읽지 않고도 생성→조회→조건부 교체→스냅샷→복원 흐름을 구현할 수 있다.
 
-## WAS 책임과 범위 제외
+### RQ-021 Range 부분 콘텐츠 조회
 
-- 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 WAS 책임이다.
-- 노트북 JSON 파싱, `nbformat` 지원 범위, 필수 필드·스키마 검증, 입력 정규화 여부, 사용자에게 보여줄 오류 문구는 WAS 책임이다. Storix는 JSON이 아닌 파일도 저장할 수 있어야 한다.
-- Jupyter Contents API의 경로·상태 코드·응답 모양, 체크포인트 응답 변환과 WAS 자체 응답의 재생은 WAS의 어댑터 책임이다.
-- 셀 실행, 커널 관리, 렌더링, 셀 단위 병합, 노트북 신뢰 서명은 범위에서 제외한다.
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 인증·PUBLIC 파일 콘텐츠 및 snapshot 콘텐츠 조회의 Range 요청과 `200`/`206`/`416` 응답을 선언한다. 파일 `206` 응답의 파일 ID·revision 식별 헤더, 단일 범위 지원 및 반환 구간의 의미는 공개 계약에서 완결되게 확인되지 않는다. 이 항목은 요구사항과 현재 계약의 갭을 기록하며 API 계약 변경이나 runtime 검증을 뜻하지 않는다.
+- 호출자는 전체 파일을 받지 않고 byte range로 콘텐츠 일부를 조회할 수 있어야 한다. 부분 응답은 해당 바이트가 속한 안정 파일 ID와 revision을 식별할 수 있어야 한다. 전체 파일 SHA-256은 부분 응답의 검증값으로 사용하지 않는다.
+- **수용 조건:** 단일 byte range의 시작-끝, 열린 끝, suffix 요청은 지정 구간의 바이트와 길이, `Content-Range`를 일치시켜 반환한다. 범위를 처리할 수 없는 요청은 `416`으로 거부한다. 파일 `206`에는 파일 ID와 revision이 포함되며, 전체 SHA-256 헤더의 의미를 부분 바이트 해시로 바꾸지 않는다.
+- **관련 계약:** `GET /api/v2/namespaces/{namespaceId}/fs/content`, `/fs/download`, 공개 콘텐츠·다운로드 경로, snapshot 콘텐츠 경로의 `Range` / `206` / `416` 응답.
+
+### RQ-022 디렉터리 자식 목록과 cursor 일관성
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 `GET /api/v2/namespaces/{namespaceId}/fs/ls`의 cursor pagination과 `consistency=revision`을 공개한다. 디렉터리 변경 후 기존 revision-bound cursor를 어떻게 거부하는지는 공개 계약에 명시되지 않았다. 이 항목은 해당 갭을 기록하며 runtime 동작 검증은 아니다.
+- 호출자는 디렉터리의 직계 자식을 cursor 페이지로 열거할 수 있어야 한다. `consistency=revision`을 선택한 열거는 한 디렉터리 revision에 일관되어야 한다.
+- **수용 조건:** cursor가 묶인 디렉터리 revision이 더 이상 현재 revision과 다르면 다음 페이지는 `400 VFS_INVALID_CURSOR`로 거부한다. 호출자는 첫 페이지부터 다시 열거하며, 서로 다른 디렉터리 상태의 페이지를 조용히 이어 붙이지 않는다.
+- **관련 계약:** `GET /api/v2/namespaces/{namespaceId}/fs/ls`, `cursor`, `consistency=revision`, `rc1.` cursor 및 `directoryRevision`.
+
+### RQ-023 디렉터리 생성
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 `/fs/mkdir`에서 이미 존재하는 디렉터리를 멱등 성공으로 응답하고, 조건부 `/fs/mutations`의 mkdir은 부재 조건을 사용한다. 부모 자동 생성은 공통 경로 계약상 명시적 옵션에 달려 있다. 이 RQ는 두 공개 계약의 동작을 추적하며 자동 검증 상태를 새로 주장하지 않는다.
+- 호출자는 기존 디렉터리를 중복 생성하지 않고 필요한 경로에 디렉터리를 만들 수 있어야 한다. 없는 부모를 자동 생성할지는 요청에서 명시해야 한다.
+- **수용 조건:** 기존 디렉터리 생성 재요청은 기존 디렉터리 ID와 상태를 보존하는 멱등 성공이다. `parents` 또는 `destinationParents`를 생략하거나 false로 두면 부모 디렉터리를 암묵적으로 만들지 않는다. true인 경우 부모 생성과 대상 생성은 모두 적용되거나 모두 적용되지 않는다.
+- **관련 계약:** `POST /api/v2/namespaces/{namespaceId}/fs/mkdir`, `/fs/mutations`의 `kind: mkdir`, 공통 `parents` 규칙.
+
+### RQ-024 파일·디렉터리 삭제
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 조건부 mutation의 revision 기반 delete, `/fs/rm`의 recursive 옵션 및 삭제 Node 수 상한, `/fs/rmdir`의 빈 디렉터리 삭제를 공개한다. 아래 상태 보존 조건을 포함한 연산별 수용 조건과 기존 경로의 추적이 목적이며 새 runtime 검증은 아니다.
+- 호출자는 파일과 디렉터리를 삭제할 수 있어야 한다. 조건부 삭제는 현재 대상 revision을 확인해야 한다. 재귀 삭제는 subtree 전체를 한 연산으로 처리해야 한다. 삭제된 경로를 다시 생성한 파일은 이전 파일과 다른 ID를 가진다. snapshot은 원본 파일 삭제와 독립적으로 보존된다.
+- **수용 조건:** revision 불일치, 비재귀 삭제 대상 디렉터리의 자식 존재, 삭제 상한 초과는 저장 상태를 바꾸지 않는다. 재귀 삭제는 subtree 전체를 삭제하거나 아무것도 삭제하지 않는다. 같은 경로의 재생성은 새 파일 ID를 받고, 이미 생성한 snapshot은 명시적으로 삭제하기 전까지 읽을 수 있다.
+- **관련 계약:** `POST /api/v2/namespaces/{namespaceId}/fs/mutations`의 `kind: delete`, `/fs/rm`, `/fs/rmdir`, snapshot content/read/delete 경로.
+
+### RQ-025 파일·디렉터리 이동
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 조건부 `/fs/mutations` 및 `/fs/mv`를 공개하고 조건부 경로에는 source revision, destination 부재, 명시적 exact 해석을 표현한다. ID·revision 및 실패 시 subtree 보존 요구와 일부 목적지 의미는 추가로 정합화할 필요가 있다. runtime 동작은 이 항목에서 재검증하지 않는다.
+- 이동은 동일 노드와 subtree를 다른 경로에 배치하는 연산이다. 이동한 노드와 하위 노드의 ID는 유지하고 경로 및 영향받은 revision은 갱신한다. 목적지가 기존 디렉터리면 기본 동작은 그 아래 원본 basename을 배치한다. `exact`는 지정 경로 자체가 비어 있어야 한다는 뜻이다.
+- **수용 조건:** 자기 자신 또는 자기 subtree로 디렉터리를 옮길 수 없다. revision 불일치, 목적지 충돌, 경로 오류 또는 연산 실패 시 원본과 목적지 트리는 모두 변경되지 않는다. 성공하면 subtree 전체가 이동되고 안정 ID는 유지되며 affected revision은 새 상태를 가리킨다. 없는 부모는 `destinationParents: true`로 명시할 때만 함께 만든다.
+- **관련 계약:** `POST /api/v2/namespaces/{namespaceId}/fs/mutations`의 `kind: move`·`destinationResolution`, `/fs/mv`.
+
+### RQ-026 파일·디렉터리 복사
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** OpenAPI는 조건부 `/fs/mutations` 및 `/fs/cp`, destination 부재 조건, copy Node 수 상한을 공개한다. 새 정체성, 독립 변경 및 snapshot 이력 비복제는 요구사항으로 명시되지만 이 항목에서 구현 검증을 주장하지 않는다.
+- 복사는 현재 파일·디렉터리 subtree를 새 자원으로 만든다. 복사본은 새 ID와 revision을 가지며 원본의 현재 구조와 파일 바이트를 보존한다. 원본 snapshot 이력은 복제하지 않는다.
+- **수용 조건:** 목적지 충돌, 상한 초과, 경로 오류 또는 연산 실패 시 부분 subtree가 남지 않는다. 성공한 복사본의 경로·구조·바이트는 연산 시점 원본과 같고 Node ID는 새 값이다. 이후 원본과 복사본 각각의 콘텐츠 변경은 다른 쪽에 영향을 주지 않는다. 없는 부모는 `destinationParents: true`로 명시할 때만 함께 만든다.
+- **관련 계약:** `POST /api/v2/namespaces/{namespaceId}/fs/mutations`의 `kind: copy`, `/fs/cp`.
+
+### RQ-027 선택 capability의 설정과 검색
+
+- [ ] **진행 상태:** 진행 중
+- **판정 근거:** 현재 OpenAPI와 namespace/API 설정에는 capability별 활성화·검색 계약이 확인되지 않았다. 이는 새 선택 기능을 위한 확정 요구사항이며, 현재 API가 지원한다는 뜻이나 capability endpoint의 세부 계약 확정을 뜻하지 않는다.
+- 기존 파일 API는 기본 활성으로 유지하며 VFS-01에서 기존 연산을 끄는 설정은 도입하지 않는다. 이후 추가되는 선택 기능은 관련 endpoint를 완결된 capability 단위로 묶어 설정할 수 있어야 한다. 전역 설정은 상위 차단으로 작동하고 namespace 설정은 전역에서 허용한 기능만 제한하거나 허용한다. 전역 차단을 namespace 설정으로 다시 켤 수 없다. 새 선택 기능은 명시적으로 활성화하기 전까지 비활성이다.
+- 기능 비활성화는 그 기능이 이미 저장한 데이터를 삭제하거나 감추지 않는다. 기존 데이터의 안전한 조회·내보내기·복구·삭제는 계속 가능해야 한다. 비활성 기능 요청은 안정적인 `VFS_FEATURE_DISABLED` 오류로 거부하고 소비자가 활성 capability를 조회할 방법을 제공한다.
+- 설정은 우선 서비스 시작 시 적용한다. 각 capability 요구사항은 적용 범위, 기본값, 전역/namespace 우선순위, 의존성, 비활성 응답, 기존 데이터 처리, 조회 노출을 명시한다. 운영 중 설정 변경과 capability 검색 API의 구체 계약·구현은 별도 후속 작업에서 정한다.
+- **수용 조건:** 새 선택 기능이 capability 경계 밖으로 부분 활성화되지 않고, namespace 설정으로 전역 차단을 우회할 수 없다. 비활성화 뒤에도 기존 데이터 보존 조건을 지키며, 소비자는 안정된 오류 코드와 활성 상태 조회로 비활성 이유를 판별할 수 있다.
+
+## 소비자 어댑터 책임과 범위 제외
+
+- 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.
+- 소비자별 파일 파싱·검증, 입력 정규화 여부, 최종 사용자에게 보여줄 오류 문구는 소비자 어댑터 책임이다. Storix는 JSON이 아닌 파일도 저장할 수 있어야 한다.
+- Jupyter 어댑터에서는 `nbformat` 지원 범위, Jupyter Contents API 경로·상태 코드·응답 모양, 체크포인트 응답 변환과 WAS 자체 응답 재생을 어댑터가 책임진다.
+- 셀 실행, 커널 관리, 렌더링, 셀 단위 병합, 노트북 신뢰 서명은 Storix 범위에서 제외한다.
 
 ## 관련 문서
 

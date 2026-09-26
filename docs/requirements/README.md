@@ -4,4 +4,4 @@
 
 | 문서 | 내용 |
 | --- | --- |
-| [jupyter-file-storage.md](./jupyter-file-storage.md) | Jupyter Notebook 파일 IO에 필요한 범용 Storix 저장 계약, WAS 책임, RQ-001~020 수용 조건과 진행 상태 |
+| [file-storage.md](./file-storage.md) | 범용 Storix 파일 저장 계약, 소비자 어댑터 경계, RQ-001~027 수용 조건과 진행 상태 |
