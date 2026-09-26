@@ -2668,6 +2668,23 @@ describe('Fs HTTP contract', () => {
         ),
       ).toEqual(['a']);
     });
+
+    it('이동 결과 경로만 4096바이트를 넘으면 기존 파일을 보존한다', async () => {
+      const namespaceId = await createNamespace('result-path-http-ns');
+      const base = `/api/v1/namespaces/${namespaceId}/fs`;
+      const destination = `/${[...Array(15).fill('a'.repeat(255)), 'a'.repeat(254)].join('/')}`;
+      await request(httpServer).post(`${base}/mkdir`).send({ path: destination, parents: true }).expect(201);
+      await request(httpServer).post(`${base}/touch`).send({ path: '/a' }).expect(201);
+
+      expect(
+        (await request(httpServer).post(`${base}/mv`).send({ source: '/a', destination }).expect(400)).body
+          .code,
+      ).toBe('VFS_INVALID_PATH');
+      await request(httpServer).get(`${base}/stat`).query({ path: '/a' }).expect(200);
+      expect(
+        (await request(httpServer).get(`${base}/ls`).query({ path: destination }).expect(200)).body.items,
+      ).toEqual([]);
+    });
   });
 
   describe('mkdir', () => {

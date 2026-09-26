@@ -9,7 +9,7 @@ import { resolveEffectiveLimit } from '../common/resource-limit.js';
 import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { decodeRevision } from '../vfs/revision.js';
 import { ConditionalMutation } from '../vfs/dto/conditional-mutation-request.dto.js';
-import { assertConditionalSegments } from '../vfs/path-resolver.js';
+import { assertConditionalSegments, assertPathSegments } from '../vfs/path-resolver.js';
 import {
   toNodeResponse,
   toPreconditionCurrent,
@@ -137,6 +137,36 @@ interface CopySourceRow {
   readonly blob_id: string | null;
   readonly size: string | null;
   readonly mime_type: string | null;
+}
+
+interface NamedDescendant {
+  readonly id: string;
+  readonly parent_id: string | null;
+  readonly name: string;
+}
+
+function assertSubtreeDestinationPaths(
+  sourceId: string,
+  finalSegments: string[],
+  descendants: readonly NamedDescendant[],
+): void {
+  const children = new Map<string, NamedDescendant[]>();
+  for (const row of descendants) {
+    if (row.id === sourceId) continue;
+    if (row.parent_id === null) throw new Error('subtree descendant parent 누락');
+    const siblings = children.get(row.parent_id) ?? [];
+    siblings.push(row);
+    children.set(row.parent_id, siblings);
+  }
+
+  const queue: Array<{ id: string; segments: string[] }> = [{ id: sourceId, segments: finalSegments }];
+  for (let head = 0; head < queue.length; head += 1) {
+    const parent = queue[head];
+    assertPathSegments(parent.segments);
+    for (const child of children.get(parent.id) ?? []) {
+      queue.push({ id: child.id, segments: [...parent.segments, child.name] });
+    }
+  }
 }
 
 function toRecord(entity: VfsNodeEntity): VfsNodeRecord {
@@ -1074,6 +1104,7 @@ export class VfsNodeRepository {
       : destinationParentId;
     const finalName = nestUnderDirectory ? sourceBasename : (destinationName as string);
     const finalSegments = nestUnderDirectory ? [...destinationSegments, sourceBasename] : destinationSegments;
+    assertPathSegments(finalSegments);
 
     if (tx && nestUnderDirectory && destinationTarget) {
       this.markChanged(tx, destinationTarget.id, true);
@@ -1131,18 +1162,20 @@ export class VfsNodeRepository {
       throw new VfsRevisionExhaustedError();
     }
 
+    const ph = new DialectPlaceholders(this.isSqlite);
+    const descendants: NamedDescendant[] = await manager.query(
+      `WITH RECURSIVE subtree AS (
+           SELECT id, parent_id, name FROM vfs_node WHERE parent_id = ${ph.bind(sourceNode.id)}
+           UNION ALL SELECT n.id, n.parent_id, n.name FROM vfs_node n JOIN subtree s ON n.parent_id = s.id
+         ) SELECT id, parent_id, name FROM subtree`,
+      ph.params,
+    );
+    assertSubtreeDestinationPaths(sourceNode.id, finalSegments, descendants);
+
     sourceNode.parentId = finalParentId;
     sourceNode.name = finalName;
     const saved = await manager.getRepository(VfsNodeEntity).save(sourceNode);
     this.markChanged(tx, saved.id, false);
-    const ph = new DialectPlaceholders(this.isSqlite);
-    const descendants: { id: string }[] = await manager.query(
-      `WITH RECURSIVE subtree AS (
-           SELECT id FROM vfs_node WHERE parent_id = ${ph.bind(saved.id)}
-           UNION ALL SELECT n.id FROM vfs_node n JOIN subtree s ON n.parent_id = s.id
-         ) SELECT id FROM subtree`,
-      ph.params,
-    );
     for (const descendant of descendants) this.markChanged(tx, descendant.id, true);
 
     return { node: toRecord(saved), finalPath: joinSegments(finalSegments) };
@@ -1229,16 +1262,17 @@ export class VfsNodeRepository {
     // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
     // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
     const ph = new DialectPlaceholders(this.isSqlite);
-    const subtreeRows: { id: string; type: VfsNodeType; blob_id: string | null; size: string | null }[] = await manager.query(
-      `WITH RECURSIVE subtree AS (
+    const subtreeRows: { id: string; type: VfsNodeType; blob_id: string | null; size: string | null }[] =
+      await manager.query(
+        `WITH RECURSIVE subtree AS (
            SELECT id, namespace_id, type, blob_id, size FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
            UNION ALL
            SELECT vn.id, vn.namespace_id, vn.type, vn.blob_id, vn.size FROM vfs_node vn
            INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
          )
          SELECT id, type, blob_id, size FROM subtree`,
-      ph.params,
-    );
+        ph.params,
+      );
 
     if (subtreeRows.length > maxSyncDeleteNodes) {
       throw new VfsDeleteLimitExceededError(maxSyncDeleteNodes);
@@ -1364,6 +1398,7 @@ export class VfsNodeRepository {
     if (subtreeRows.length > maxSyncCopyNodes) {
       throw new VfsCopyLimitExceededError(maxSyncCopyNodes);
     }
+    assertSubtreeDestinationPaths(sourceNode.id, finalSegments, subtreeRows);
 
     const childrenByParent = new Map<string, CopySourceRow[]>();
     for (const row of subtreeRows) {

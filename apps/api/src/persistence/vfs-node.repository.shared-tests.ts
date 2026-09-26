@@ -15,6 +15,7 @@ import {
   VfsDirectoryNotEmptyError,
   VfsInvalidCursorError,
   VfsInvalidOperationError,
+  VfsInvalidPathError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
@@ -992,7 +993,12 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       ).rejects.toThrow(VfsQuotaExceededError);
       expect(await getRepo().resolvePath(namespace.id, root.id, ['too-large'])).toBeNull();
       expect(await getDs().getRepository(BlobEntity).countBy({ namespaceId: namespace.id })).toBe(0);
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('0');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('0');
 
       const created = await getRepo().putFileContent(
         namespace.id,
@@ -1017,20 +1023,43 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       ).rejects.toThrow(VfsQuotaExceededError);
       expect(String((await getRepo().resolvePath(namespace.id, root.id, ['file']))?.size)).toBe('3');
       expect((await getRepo().getRoot(namespace.id))!.version).toBe(revisionBeforeDeniedOverwrite);
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('3');
     });
 
     it('subtracts live bytes on delete and permits zero or negative deltas while over quota', async () => {
       const namespace = await createNamespace('logical-quota-delete-ns');
       await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '3' });
       const root = (await getRepo().getRoot(namespace.id))!;
-      await getRepo().putFileContent(namespace.id, root.id, ['file'], false, makeBlobData({ size: '3' }), null, false);
+      await getRepo().putFileContent(
+        namespace.id,
+        root.id,
+        ['file'],
+        false,
+        makeBlobData({ size: '3' }),
+        null,
+        false,
+      );
       await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '2' });
 
       await getRepo().touchFile(namespace.id, root.id, ['file'], false, makeBlobData());
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('3');
       await getRepo().removeNode(namespace.id, root.id, ['file'], false, 100);
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('0');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('0');
     });
 
     it('move keeps usage unchanged while COW copy adds logical bytes and is rolled back over limit', async () => {
@@ -1048,12 +1077,17 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       );
 
       await getRepo().moveNode(namespace.id, root.id, ['file'], ['moved'], false);
-      await expect(getRepo().copyNode(namespace.id, root.id, ['moved'], ['copy'], false, 100)).rejects.toThrow(
-        VfsQuotaExceededError,
-      );
+      await expect(
+        getRepo().copyNode(namespace.id, root.id, ['moved'], ['copy'], false, 100),
+      ).rejects.toThrow(VfsQuotaExceededError);
       expect(await getRepo().resolvePath(namespace.id, root.id, ['copy'])).toBeNull();
       expect((await getRepo().resolvePath(namespace.id, root.id, ['moved']))?.id).toBe(file.node.id);
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('3');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('3');
     });
 
     it('serializes concurrent positive deltas at the namespace root lock', async () => {
@@ -1061,14 +1095,27 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       await getDs().getRepository(NamespaceEntity).update(namespace.id, { maxTotalLogicalBytes: '5' });
       const root = (await getRepo().getRoot(namespace.id))!;
       const write = (name: string) =>
-        getRepo().putFileContent(namespace.id, root.id, [name], false, makeBlobData({ size: '4' }), null, false);
+        getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          [name],
+          false,
+          makeBlobData({ size: '4' }),
+          null,
+          false,
+        );
 
       const outcomes = await Promise.allSettled([write('first'), write('second')]);
       expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
       expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
       const error = outcomes.find((result) => result.status === 'rejected') as PromiseRejectedResult;
       expect(error.reason).toBeInstanceOf(VfsQuotaExceededError);
-      expect(String((await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).liveFileByteCount)).toBe('4');
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .liveFileByteCount,
+        ),
+      ).toBe('4');
     });
   });
 
@@ -2093,6 +2140,66 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       );
 
       expect(await getRepo().resolvePath(namespace.id, root!.id, ['copy'])).toBeNull();
+    });
+  });
+
+  describe('결과 경로 길이', () => {
+    it('기존 디렉터리에 basename을 붙인 이동 결과가 4096바이트를 넘으면 무변경이다', async () => {
+      const namespace = await createNamespace('move-result-path-limit-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const destination = [...Array(15).fill('a'.repeat(255)), 'a'.repeat(254)] as string[];
+      expect(Buffer.byteLength(`/${destination.join('/')}/a`, 'utf8')).toBe(4097);
+      await getRepo().ensureDirectory(namespace.id, root.id, destination, true);
+      await createFile(namespace.id, root.id, 'a');
+      const before = await captureState(namespace.id);
+
+      await expect(getRepo().moveNode(namespace.id, root.id, ['a'], destination, false)).rejects.toThrow(
+        VfsInvalidPathError,
+      );
+      expect(await captureState(namespace.id)).toEqual(before);
+    });
+
+    it('디렉터리 자식의 복사 결과만 한도를 넘고 부모를 자동 생성해도 전체가 무변경이다', async () => {
+      const namespace = await createNamespace('copy-child-path-limit-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const source = await getRepo().ensureDirectory(namespace.id, root.id, ['s'], false);
+      await createFile(namespace.id, source.node.id, 'x');
+      const destination = [...Array(15).fill('a'.repeat(255)), 'a'.repeat(253), 's'] as string[];
+      expect(Buffer.byteLength(`/${destination.join('/')}`, 'utf8')).toBe(4096);
+      expect(Buffer.byteLength(`/${destination.join('/')}/x`, 'utf8')).toBe(4098);
+      const before = await captureState(namespace.id);
+
+      await expect(getRepo().copyNode(namespace.id, root.id, ['s'], destination, true, 1000)).rejects.toThrow(
+        VfsInvalidPathError,
+      );
+      expect(await captureState(namespace.id)).toEqual(before);
+    });
+
+    it('디렉터리 이동에서 자식 경로만 초과해도 무변경이다', async () => {
+      const namespace = await createNamespace('move-child-path-limit-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const source = await getRepo().ensureDirectory(namespace.id, root.id, ['s'], false);
+      await createFile(namespace.id, source.node.id, 'x');
+      const destination = [...Array(15).fill('a'.repeat(255)), 'a'.repeat(253)] as string[];
+      await getRepo().ensureDirectory(namespace.id, root.id, destination, true);
+      const before = await captureState(namespace.id);
+
+      await expect(getRepo().moveNode(namespace.id, root.id, ['s'], destination, false)).rejects.toThrow(
+        VfsInvalidPathError,
+      );
+      expect(await captureState(namespace.id)).toEqual(before);
+    });
+
+    it('결과 경로가 정확히 4096바이트인 이동은 허용한다', async () => {
+      const namespace = await createNamespace('move-path-limit-boundary-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const destination = [...Array(15).fill('a'.repeat(255)), 'a'.repeat(253)] as string[];
+      await getRepo().ensureDirectory(namespace.id, root.id, destination, true);
+      await createFile(namespace.id, root.id, 'a');
+
+      const result = await getRepo().moveNode(namespace.id, root.id, ['a'], destination, false);
+      expect(Buffer.byteLength(result.finalPath, 'utf8')).toBe(4096);
+      expect(await getRepo().resolvePath(namespace.id, root.id, [...destination, 'a'])).not.toBeNull();
     });
   });
 
