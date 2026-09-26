@@ -10,6 +10,8 @@
 
 ### Added
 
+- 식별된 DB·Blob 일시 장애는 503 `STORAGE_UNAVAILABLE`, 영구 저장 오류는 안전한 500 `STORAGE_FAILURE`로 구분한다. 분류되지 않은 서버 오류는 500 `INTERNAL_ERROR`를 반환하며 내부 오류 메시지와 비밀을 노출하지 않는다. `DB_BUSY`는 기존 503 계약을 유지한다.
+
 - namespace 응답(생성·목록·상세 조회·quota 변경)에 적용 단일 파일 상한 `limits.maxFileSizeBytes`(바이트 단위 10진 문자열)를 추가했다.
 
 - `GET /api/v2/namespaces/{namespaceId}/fs/snapshots`로 immutable 파일 ID별 FILE snapshot의 생성 시각·revision·크기·SHA-256을 cursor 페이지 조회한다.

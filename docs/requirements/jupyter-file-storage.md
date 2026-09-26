@@ -147,8 +147,10 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-018 안정적인 오류 분류
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** snapshot ID 부재·형식 오류는 `VFS_SNAPSHOT_NOT_FOUND`, VFS 경로·entry 부재는 `VFS_NODE_NOT_FOUND`로 구분하도록 구현과 계약 문서를 갱신했다. 테스트와 전체 오류 분류 조건은 아직 실행 검증하지 않았다.
+- [x] **진행 상태:** 완료
+- **판정 근거:** 오류 계약은 `apps/api/openapi.yaml`에 공개했다. 인증/namespace·node·snapshot 부재는 401/404 코드, 입력·유형·revision·key·상한 거부는 기존 4xx 코드, `DB_BUSY`는 503, 식별된 transient DB/Blob 장애는 503 `STORAGE_UNAVAILABLE`, 식별된 permanent 저장 장애는 500 `STORAGE_FAILURE`, 미분류 예외는 500 `INTERNAL_ERROR`다. 분류할 수 없는 500은 안전한 고정 메시지를 반환하고 내부 예외·저장소 정보·파일 바이트·비밀을 노출하지 않는다. 같은 key 자동 재시도 가능 코드는 `DB_BUSY`, `STORAGE_UNAVAILABLE`, `MUTATION_IN_PROGRESS`이며 `Retry-After`가 있으면 먼저 기다린다. 결정적 4xx 오류 receipt는 최초 응답을 재생하므로 상태·입력을 고친 요청은 새 key를 사용한다. `STORAGE_FAILURE`와 `INTERNAL_ERROR`는 자동 재시도를 약속하지 않고 원인 조사를 요구한다.
+- **자동 검증 근거:** 단위 `pnpm test`는 API 79 suites/752 tests 통과, `route-coverage.spec.ts` 포함. 표적 PostgreSQL/MinIO L1: `fs.integration-spec.ts` 146/146, `content-streaming.integration-spec.ts` 4/4, `namespace.integration-spec.ts` 21/21. SQLite L1 `vfs-snapshot.sqlite.integration-spec.ts` 12/12. 최종 L2 `pnpm test:integration --filter='!@storix/demo1-was'` 27 suites/424 tests, `pnpm --filter @storix/api test:integration:sqlite` 12 suites/218 tests 통과. root L0 typecheck/lint/test/build도 통과했다. 리뷰에서 제기된 plan의 전 연산별 장애 주입 확장은 사용자 결정으로 수행하지 않았고, 확정 DELTA-03 브리프의 HTTP/receipt/stream 경계를 검증했다.
+- **검증 경계:** 오류 주입은 repository·MinIO SDK seam 및 실제 SQLite gate를 사용한 자동 테스트다. WAS/Jupyter 소비자의 자동 재시도 동작, 실행 중인 외부 DB/MinIO의 실장애와 복구, production 배포는 검증하지 않았다. 응답 중단은 raw HTTP client 수준에서만 확인했다.
 - Storix는 최소한 호출 인증 실패, namespace 없음, 경로 오류, 파일 없음, 파일 유형 오류, revision 충돌, 멱등성 키 재사용, 스냅샷 없음, 크기·저장량 초과, 저장 장애를 기계적으로 구분할 수 있는 오류 코드를 제공해야 한다. 재시도 가능한 일시적 오류와 확정된 거부도 구분해야 한다.
 - **수용 조건:** WAS가 오류 메시지 문자열을 파싱하지 않고 코드만으로 각 경우를 처리할 수 있다.
 
