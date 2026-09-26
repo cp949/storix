@@ -1154,6 +1154,60 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/snapshots:
+    get:
+      operationId: listFileSnapshots
+      tags: [Snapshots]
+      summary: 파일별 FILE snapshot 목록 조회
+      description: 불변 rootNodeId로 FILE snapshot을 `createdAt DESC, snapshotId ASC` 순서로 조회한다. 원본 파일의 이동·삭제와 무관하며 TREE snapshot은 포함하지 않는다. cursor는 namespace와 rootNodeId에 결속되고 DB timestamp 정밀도를 보존한다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: rootNodeId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: 이전 페이지의 opaque `sl1.` cursor. 다른 namespace/node 또는 비정규 cursor는 400이다.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: FILE snapshot 페이지
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [snapshotId, createdAt, sourceRevision, logicalBytes, sha256]
+                      properties:
+                        snapshotId: { type: string, format: uuid }
+                        createdAt: { type: string, format: date-time }
+                        sourceRevision: { type: string }
+                        logicalBytes: { type: string, pattern: '^\d+$' }
+                        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                  nextCursor: { type: string, nullable: true }
+        '400':
+          description: 잘못된 rootNodeId (`VFS_INVALID_MUTATION_REQUEST`) 또는 cursor (`VFS_INVALID_CURSOR`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
     post:
       operationId: createSnapshot
       tags: [Snapshots]

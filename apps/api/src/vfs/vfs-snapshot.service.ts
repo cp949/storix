@@ -33,6 +33,7 @@ import {
 } from './mutation-receipt.js';
 import { hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
 import { decodeSnapshotCursor, encodeSnapshotCursor } from './snapshot-cursor.js';
+import { decodeSnapshotListCursor, encodeSnapshotListCursor } from './snapshot-list-cursor.js';
 import { resolveLimit } from './pagination.js';
 import { parseRange } from './range.js';
 import { requireRoot } from './require-root.js';
@@ -74,6 +75,16 @@ export interface SnapshotEntryPage {
     readonly size: string | null;
     readonly mimeType: string | null;
     readonly contentPath: string | null;
+  }>;
+  readonly nextCursor: string | null;
+}
+export interface FileSnapshotListPage {
+  readonly items: Array<{
+    snapshotId: string;
+    createdAt: string;
+    sourceRevision: string;
+    logicalBytes: string;
+    sha256: string;
   }>;
   readonly nextCursor: string | null;
 }
@@ -174,6 +185,36 @@ export class VfsSnapshotService {
     const snapshot = await this.snapshots.get(namespaceId, canonicalSnapshotId(snapshotId));
     if (!snapshot) throw new VfsSnapshotNotFoundError(snapshotId);
     return toMetadata(snapshot);
+  }
+
+  async listFileSnapshots(
+    namespaceId: string,
+    rawRootNodeId: string,
+    cursor: string | undefined,
+    limit: string | undefined,
+  ): Promise<FileSnapshotListPage> {
+    if (!isUuid(rawRootNodeId)) throw new VfsInvalidMutationRequestError();
+    const rootNodeId = rawRootNodeId.toLowerCase();
+    await requireRoot(this.nodes, namespaceId);
+    const after = cursor === undefined ? null : decodeSnapshotListCursor(cursor, namespaceId, rootNodeId);
+    const page = await this.snapshots.listFileSnapshots(namespaceId, rootNodeId, after, resolveLimit(limit));
+    return {
+      items: page.items.map((item) => ({
+        snapshotId: item.snapshotId,
+        createdAt: item.createdAt.toISOString(),
+        sourceRevision: item.sourceRevision,
+        logicalBytes: item.logicalBytes,
+        sha256: item.sha256,
+      })),
+      nextCursor:
+        page.nextBoundary === null
+          ? null
+          : encodeSnapshotListCursor({
+              namespaceId,
+              rootNodeId,
+              ...page.nextBoundary,
+            }),
+    };
   }
 
   async listEntries(

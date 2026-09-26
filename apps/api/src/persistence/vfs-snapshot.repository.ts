@@ -27,6 +27,22 @@ export interface SnapshotEntryPage {
   readonly entries: SnapshotEntry[];
   readonly nextPathKey: string | null;
 }
+export interface FileSnapshotListBoundary {
+  readonly createdAtKey: string;
+  readonly snapshotId: string;
+}
+export interface FileSnapshotListRow {
+  readonly snapshotId: string;
+  readonly createdAt: Date;
+  readonly createdAtKey: string;
+  readonly sourceRevision: string;
+  readonly logicalBytes: string;
+  readonly sha256: string;
+}
+export interface FileSnapshotListPage {
+  readonly items: FileSnapshotListRow[];
+  readonly nextBoundary: FileSnapshotListBoundary | null;
+}
 export interface SnapshotLimits {
   readonly maxNodes: number;
   readonly maxBytes: bigint;
@@ -233,6 +249,51 @@ export class VfsSnapshotRepository {
     return isSqliteDataSource(this.dataSource.options)
       ? this.dataSource.transaction(work)
       : this.dataSource.transaction('REPEATABLE READ', work);
+  }
+
+  async listFileSnapshots(
+    namespaceId: string,
+    rootNodeId: string,
+    after: FileSnapshotListBoundary | null,
+    limit: number,
+  ): Promise<FileSnapshotListPage> {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('Invalid snapshot page limit');
+    const pg = !isSqliteDataSource(this.dataSource.options);
+    const timestamp = pg
+      ? `to_char(s.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+      : `strftime('%Y-%m-%dT%H:%M:%fZ', s.created_at)`;
+    const compare = pg
+      ? `(s.created_at < $3::timestamptz OR (s.created_at = $3::timestamptz AND s.id > $4::uuid))`
+      : `(strftime('%Y-%m-%dT%H:%M:%fZ', s.created_at) < ? OR (strftime('%Y-%m-%dT%H:%M:%fZ', s.created_at) = ? AND s.id > ?))`;
+    const sql = `SELECT s.id AS "snapshotId", s.created_at AS "createdAt", ${timestamp} AS "createdAtKey",
+      s.source_revision AS "sourceRevision", s.logical_bytes AS "logicalBytes", b.sha256 AS "sha256"
+      FROM vfs_snapshot s
+      JOIN vfs_snapshot_entry e ON e.namespace_id = s.namespace_id AND e.snapshot_id = s.id
+        AND e.relative_path = '.' AND e.type = 'FILE' AND e.source_node_id = s.root_node_id
+      JOIN blob b ON b.namespace_id = e.namespace_id AND b.id = e.blob_id
+      WHERE s.namespace_id = ${pg ? '$1' : '?'} AND s.root_node_id = ${pg ? '$2' : '?'} AND s.kind = 'FILE'
+        ${after ? `AND ${compare}` : ''}
+      ORDER BY s.created_at DESC, s.id ASC LIMIT ${pg ? `$${after ? 5 : 3}` : '?'} `;
+    const params = after
+      ? pg
+        ? [namespaceId, rootNodeId, after.createdAtKey, after.snapshotId, limit + 1]
+        : [namespaceId, rootNodeId, after.createdAtKey, after.createdAtKey, after.snapshotId, limit + 1]
+      : [namespaceId, rootNodeId, limit + 1];
+    const raw = (await this.dataSource.query(sql, params)) as Array<Record<string, unknown>>;
+    const items = raw.slice(0, limit).map((row) => ({
+      snapshotId: String(row.snapshotId),
+      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt)),
+      createdAtKey: String(row.createdAtKey),
+      sourceRevision: String(row.sourceRevision),
+      logicalBytes: String(row.logicalBytes),
+      sha256: String(row.sha256).trim(),
+    }));
+    const last = items.at(-1);
+    return {
+      items,
+      nextBoundary:
+        raw.length > limit && last ? { createdAtKey: last.createdAtKey, snapshotId: last.snapshotId } : null,
+    };
   }
 
   async listEntries(

@@ -23,6 +23,22 @@ import { VfsInvalidMutationRequestError } from './vfs.errors.js';
 export class VfsSnapshotController {
   constructor(private readonly snapshots: VfsSnapshotService) {}
 
+  @Get()
+  list(
+    @Param('namespaceId') namespaceId: string,
+    @Query('rootNodeId') rootNodeId: unknown,
+    @Query('cursor') cursor: unknown,
+    @Query('limit') limit: unknown,
+  ) {
+    if (
+      typeof rootNodeId !== 'string' ||
+      (cursor !== undefined && typeof cursor !== 'string') ||
+      (limit !== undefined && typeof limit !== 'string')
+    )
+      throw new VfsInvalidMutationRequestError();
+    return this.snapshots.listFileSnapshots(namespaceId, rootNodeId, cursor, limit);
+  }
+
   @Post()
   async create(
     @Param('namespaceId') namespaceId: string,

@@ -5,6 +5,7 @@ import { AddGcState1789300000000 } from './1789300000000-AddGcState.js';
 import { AddVfsMutationReceipt1789400000000 } from './1789400000000-AddVfsMutationReceipt.js';
 import { AddVfsSnapshots1790400000000 } from './1790400000000-AddVfsSnapshots.js';
 import { AddNamespaceLogicalQuota1791400000000 } from './1791400000000-AddNamespaceLogicalQuota.js';
+import { AddVfsSnapshotListIndex1791500000000 } from './1791500000000-AddVfsSnapshotListIndex.js';
 import { AddIdempotencyKey1788700000000 } from './1788700000000-AddIdempotencyKey.js';
 import { InitSchema1788637362016 } from './1788637362016-InitSchema.js';
 
@@ -25,4 +26,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddVfsMutationReceipt1789400000000,
   AddVfsSnapshots1790400000000,
   AddNamespaceLogicalQuota1791400000000,
+  AddVfsSnapshotListIndex1791500000000,
 ];
