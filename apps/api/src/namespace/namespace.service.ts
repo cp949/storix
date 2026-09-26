@@ -3,13 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryDeepPartialEntity, Repository } from 'typeorm';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
-import { resolveGlobalMaxFileSizeBytes } from '../common/resource-limit.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
+import { NamespaceGlobalLimits, readNamespaceGlobalLimits } from './namespace-global-limits.js';
 import {
   IdempotencyKeyReusedError,
   NamespaceAlreadyExistsError,
@@ -36,7 +36,7 @@ export interface CreateNamespaceResult {
 
 @Injectable()
 export class NamespaceService {
-  private readonly maxFileSizeBytes: number;
+  private readonly globalLimits: NamespaceGlobalLimits;
 
   constructor(
     @InjectRepository(NamespaceEntity) private readonly namespaceRepo: Repository<NamespaceEntity>,
@@ -45,7 +45,7 @@ export class NamespaceService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+    this.globalLimits = readNamespaceGlobalLimits(config);
   }
 
   async create(
@@ -62,7 +62,7 @@ export class NamespaceService {
     // accessPolicy를 해시에 포함하지 않으면 같은 Idempotency-Key로 정책만 바꾼
     // 재요청이 IdempotencyKeyReusedError 없이 캐시 응답을 돌려준다.
     try {
-      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes);
+      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
     } catch {
       throw new NamespaceQuotaLimitExceedsGlobalError();
     }
@@ -97,10 +97,10 @@ export class NamespaceService {
           key: idempotencyKey,
           requestHash,
           responseStatus: 201,
-          responseBody: (created) => ({ ...toNamespaceResponse(created, this.maxFileSizeBytes) }),
+          responseBody: (created) => ({ ...toNamespaceResponse(created, this.globalLimits) }),
         },
       );
-      const body = toNamespaceResponse(namespace, this.maxFileSizeBytes);
+      const body = toNamespaceResponse(namespace, this.globalLimits);
       return { status: 201, body };
     } catch (error) {
       // 동시 요청의 transaction이 먼저 커밋됐으면 그 receipt가 이 예외의 정답이다.
@@ -144,7 +144,7 @@ export class NamespaceService {
       throw new NamespaceNotFoundError(id);
     }
 
-    return toNamespaceResponse(namespace, this.maxFileSizeBytes);
+    return toNamespaceResponse(namespace, this.globalLimits);
   }
 
   async findAll(): Promise<NamespaceResponseDto[]> {
@@ -153,7 +153,7 @@ export class NamespaceService {
       order: { name: 'ASC', id: 'ASC' },
     });
 
-    return namespaces.map((namespace) => toNamespaceResponse(namespace, this.maxFileSizeBytes));
+    return namespaces.map((namespace) => toNamespaceResponse(namespace, this.globalLimits));
   }
 
   private async recordIdempotency(

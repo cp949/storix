@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
-import { resolveGlobalMaxFileSizeBytes } from '../common/resource-limit.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
 import { toNamespaceResponse } from './dto/namespace-response.dto.js';
+import { NamespaceGlobalLimits, readNamespaceGlobalLimits } from './namespace-global-limits.js';
 import {
   IdempotencyKeyReusedError,
   NamespaceNotFoundError,
@@ -16,13 +16,13 @@ import {
 
 @Injectable()
 export class NamespaceQuotaService {
-  private readonly maxFileSizeBytes: number;
+  private readonly globalLimits: NamespaceGlobalLimits;
 
   constructor(
     private readonly nodes: VfsNodeRepository,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+    this.globalLimits = readNamespaceGlobalLimits(config);
   }
 
   async update(
@@ -31,7 +31,7 @@ export class NamespaceQuotaService {
     maxTotalLogicalBytes: string | null,
   ): Promise<{ status: number; body: unknown }> {
     try {
-      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes);
+      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
     } catch {
       throw new NamespaceQuotaLimitExceedsGlobalError();
     }
@@ -57,7 +57,7 @@ export class NamespaceQuotaService {
 
       namespace.maxTotalLogicalBytes = maxTotalLogicalBytes;
       const saved = await namespaces.save(namespace);
-      const body = toNamespaceResponse(saved, this.maxFileSizeBytes);
+      const body = toNamespaceResponse(saved, this.globalLimits);
       await keys.insert({
         key: storageKey,
         requestHash,

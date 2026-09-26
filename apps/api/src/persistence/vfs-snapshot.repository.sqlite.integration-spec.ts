@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +43,7 @@ describe.each(['memory', 'file'])('VfsSnapshotRepository (SQLite %s)', (storage)
       dataSource.getRepository(BlobEntity),
       dataSource,
       blobs,
+      new ConfigService(),
     );
     snapshots = new VfsSnapshotRepository(dataSource, blobs);
   }, 120000);

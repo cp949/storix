@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
@@ -46,6 +47,7 @@ describe('VfsNodeRepository (SQLite)', () => {
       dataSource.getRepository(BlobEntity),
       dataSource,
       new BlobRepository(dataSource),
+      new ConfigService(),
     );
   }, 30000);
 

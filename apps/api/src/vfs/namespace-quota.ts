@@ -20,11 +20,8 @@ export function resolveGlobalTotalLogicalByteLimit(value: string | undefined): b
   return parsePositiveLimit(value);
 }
 
-export function resolveNamespaceQuota(
-  namespaceLimit: string | null,
-  globalLimit: string | undefined = process.env.STORIX_MAX_TOTAL_LOGICAL_BYTES,
-): bigint {
-  const globalBytes = resolveGlobalTotalLogicalByteLimit(globalLimit);
+// globalBytes는 호출자가 부팅 시 ConfigService 값을 resolveGlobalTotalLogicalByteLimit로 해석해 넘긴다
+export function resolveNamespaceQuota(namespaceLimit: string | null, globalBytes: bigint): bigint {
   if (namespaceLimit === null) return globalBytes;
   const namespaceBytes = parsePositiveLimit(namespaceLimit);
   return namespaceBytes < globalBytes ? namespaceBytes : globalBytes;
@@ -36,12 +33,9 @@ export function resolveTotalLogicalBytes(liveFileBytes: string, retainedSnapshot
   return total;
 }
 
-export function assertNamespaceQuotaWithinGlobalLimit(
-  namespaceLimit: string | null,
-  globalLimit: string | undefined = process.env.STORIX_MAX_TOTAL_LOGICAL_BYTES,
-): void {
+export function assertNamespaceQuotaWithinGlobalLimit(namespaceLimit: string | null, globalBytes: bigint): void {
   if (namespaceLimit === null) return;
-  if (parsePositiveLimit(namespaceLimit) > resolveGlobalTotalLogicalByteLimit(globalLimit)) {
+  if (parsePositiveLimit(namespaceLimit) > globalBytes) {
     throw new Error('Namespace total logical byte limit exceeds the global limit');
   }
 }

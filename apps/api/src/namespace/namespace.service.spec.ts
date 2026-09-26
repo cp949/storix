@@ -10,6 +10,7 @@ import {
   IdempotencyKeyReusedError,
   NamespaceAlreadyExistsError,
   NamespaceNotFoundError,
+  NamespaceQuotaLimitExceedsGlobalError,
 } from './namespace.errors.js';
 import { NamespaceService } from './namespace.service.js';
 
@@ -178,6 +179,23 @@ describe('NamespaceService', () => {
     });
   });
 
+  describe('create quota 검증', () => {
+    it('ConfigService 전역 quota보다 큰 namespace override는 생성 전에 거부한다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        null,
+        makeConfig({ STORIX_MAX_TOTAL_LOGICAL_BYTES: '100' }),
+      );
+
+      await expect(service.create('key-1', 'acme', 'NONE', 'PRIVATE', '101')).rejects.toThrow(
+        NamespaceQuotaLimitExceedsGlobalError,
+      );
+      expect(provisioningRepo.createWithRoot).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findById', () => {
     it('UUID 형식이 아니면 NamespaceNotFoundError를 던진다', async () => {
       await expect(service.findById('not-a-uuid')).rejects.toThrow(NamespaceNotFoundError);
@@ -216,6 +234,23 @@ describe('NamespaceService', () => {
       const result = await service.findById('11111111-1111-1111-1111-111111111111');
 
       expect(result.limits).toEqual({ maxFileSizeBytes: '4096' });
+    });
+
+    it('응답 quota 상한은 ConfigService의 STORIX_MAX_TOTAL_LOGICAL_BYTES를 사용한다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        null,
+        makeConfig({ STORIX_MAX_TOTAL_LOGICAL_BYTES: '2048' }),
+      );
+      namespaceRepo.findOneBy.mockResolvedValue(
+        makeNamespaceEntity({ id: '11111111-1111-1111-1111-111111111111', maxTotalLogicalBytes: null }),
+      );
+
+      const result = await service.findById('11111111-1111-1111-1111-111111111111');
+
+      expect(result.quota.limitBytes).toBe('2048');
     });
   });
 

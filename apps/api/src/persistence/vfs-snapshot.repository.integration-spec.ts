@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { DataSource } from 'typeorm';
 import { BlobRepository } from './blob.repository.js';
@@ -34,6 +35,7 @@ describe('VfsSnapshotRepository (PostgreSQL)', () => {
       dataSource.getRepository(BlobEntity),
       dataSource,
       blobs,
+      new ConfigService(),
     );
     snapshots = new VfsSnapshotRepository(dataSource, blobs);
   }, 120000);

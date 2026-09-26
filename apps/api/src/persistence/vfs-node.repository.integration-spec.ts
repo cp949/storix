@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { DataSource } from 'typeorm';
 import { BlobRepository } from './blob.repository.js';
@@ -32,6 +33,7 @@ describe('VfsNodeRepository (Postgres)', () => {
       dataSource.getRepository(BlobEntity),
       dataSource,
       new BlobRepository(dataSource),
+      new ConfigService(),
     );
   }, 120000);
 

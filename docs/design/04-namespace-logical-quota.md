@@ -6,6 +6,8 @@
 
 전역 `STORIX_MAX_TOTAL_LOGICAL_BYTES`는 양수 64-bit decimal byte 값이며 기본값은 `53687091200`(50 GiB)다. namespace는 이보다 작거나 같은 `maxTotalLogicalBytes` override를 둘 수 있고, 없으면 전역값을 상속한다. namespace 조회/생성 응답의 `quota.limitBytes`와 `quota.usedBytes`는 decimal string이다.
 
+전역 상한은 프로세스 시작 시 `ConfigService`에서 한 번 해석한다. mutation 강제(`VfsNodeRepository`), namespace 응답과 override 검증(`NamespaceService`·`NamespaceQuotaService`)은 모두 이 값을 쓰며 `process.env`를 요청 시점에 직접 읽지 않는다. 값을 바꾸면 API 프로세스를 재시작해야 한다.
+
 ## 원자성 및 오류
 
 모든 VFS mutation은 namespace root lock/transaction 안에서 기존 live 파일 합계와 변경 delta를 계산한다. snapshot 생성·삭제도 같은 transaction에 quota delta와 저장 수를 반영한다. 최종 사용량이 상한을 넘고 요청이 양의 delta를 만들면 mutation 전체를 rollback하고 413 `VFS_QUOTA_EXCEEDED`를 반환한다. 0 또는 음수 delta는 이미 상한 초과인 namespace에서도 허용된다. restore는 유지 중 snapshot bytes에 복원 후 live bytes를 더해 판단한다.

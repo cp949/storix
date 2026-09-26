@@ -17,7 +17,7 @@ describe('toNamespaceResponse', () => {
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
 
-    expect(toNamespaceResponse(entity, 5368709120, '30')).toEqual({
+    expect(toNamespaceResponse(entity, { maxFileSizeBytes: 5368709120, maxTotalLogicalBytes: 30n })).toEqual({
       id: 'ns-1',
       name: 'acme',
       encryptionPolicy: 'NONE',
@@ -44,7 +44,7 @@ describe('toNamespaceResponse', () => {
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
 
-    const response = toNamespaceResponse(entity, global, '30');
+    const response = toNamespaceResponse(entity, { maxFileSizeBytes: global, maxTotalLogicalBytes: 30n });
     expect(response.limits).toEqual({ maxFileSizeBytes: expected });
     expect(response.quota).toEqual({ limitBytes: '20', usedBytes: '17' });
   });
@@ -60,7 +60,7 @@ describe('toNamespaceResponse', () => {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
         updatedAt: new Date('2026-01-02T00:00:00.000Z'),
       } as NamespaceEntity;
-      expect(toNamespaceResponse(entity, 64).limits).toEqual({ maxFileSizeBytes: '64' });
+      expect(toNamespaceResponse(entity, { maxFileSizeBytes: 64, maxTotalLogicalBytes: 30n }).limits).toEqual({ maxFileSizeBytes: '64' });
     } finally {
       if (previous === undefined) delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
       else process.env.STORIX_MAX_FILE_SIZE_BYTES = previous;

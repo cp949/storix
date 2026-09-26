@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
@@ -34,7 +35,7 @@ import {
   VfsVersionConflictError,
   VfsQuotaExceededError,
 } from '../vfs/vfs.errors.js';
-import { resolveNamespaceQuota } from '../vfs/namespace-quota.js';
+import { resolveGlobalTotalLogicalByteLimit, resolveNamespaceQuota } from '../vfs/namespace-quota.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
@@ -265,13 +266,18 @@ function compareSegments(a: readonly string[], b: readonly string[]): number {
 
 @Injectable()
 export class VfsNodeRepository {
+  private readonly maxTotalLogicalBytes: bigint;
+
   constructor(
     @InjectRepository(NamespaceEntity) private readonly namespaceRepo: Repository<NamespaceEntity>,
     @InjectRepository(VfsNodeEntity) private readonly nodeRepo: Repository<VfsNodeEntity>,
     @InjectRepository(BlobEntity) private readonly blobRepo: Repository<BlobEntity>,
     private readonly dataSource: DataSource,
     private readonly blobRepository: BlobRepository,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.maxTotalLogicalBytes = resolveGlobalTotalLogicalByteLimit(config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES'));
+  }
 
   private get isSqlite(): boolean {
     return isSqliteDataSource(this.dataSource.options);
@@ -336,6 +342,7 @@ export class VfsNodeRepository {
     if (tx.logicalByteDelta > 0n) {
       const limit = resolveNamespaceQuota(
         namespace.maxTotalLogicalBytes === null ? null : String(namespace.maxTotalLogicalBytes),
+        this.maxTotalLogicalBytes,
       );
       if (totalBytes > limit) throw new VfsQuotaExceededError(limit.toString(), totalBytes.toString());
     }
