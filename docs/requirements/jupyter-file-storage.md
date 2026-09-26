@@ -140,8 +140,8 @@ WAS는 노트북 JSON 파싱, `nbformat`·스키마 정책, 사용자별 권한,
 
 ### RQ-017 크기 및 저장량 한도
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** 파일 크기·namespace 논리 저장량 제한과 사용량 조회는 있으나, 실행 중 적용되는 파일 크기 한도의 조회 계약은 없다.
+- [x] **진행 상태:** 완료
+- **판정 근거:** 인증된 `GET /api/v2/namespaces/{id}`가 적용 단일 파일 상한 `limits.maxFileSizeBytes`와 논리 quota의 `limitBytes`·`usedBytes`를 바이트 단위 10진 문자열로 반환한다. 파일 상한은 namespace 재정의와 `STORIX_MAX_FILE_SIZE_BYTES` 중 작은 값이고 전역 기본값은 `5368709120`이다. DTO/OpenAPI L0 2 suites/13 tests, namespace HTTP L1 20/20에서 값·quota 사용량·인증 거부를 확인했다. PostgreSQL/MinIO 전체 L2 27 suites/419 tests와 SQLite 전체 L2 12 suites/217 tests가 통과했다. 파일 HTTP L2에서 파일 크기 초과 업로드 413 `VFS_FILE_TOO_LARGE`, snapshot 생성 초과 413 `VFS_SNAPSHOT_LIMIT_EXCEEDED`, 복원 quota 초과 413 `VFS_QUOTA_EXCEEDED`를 확인하고 대상 파일·snapshot·Blob 참조·root revision·논리 사용량의 무변경을 해당 사례에 맞춰 단언했다. PostgreSQL repository L1은 노드 quota 114/114, snapshot 상한 20/20이 통과했다. `pnpm typecheck`와 `pnpm lint`도 최종 테스트 변경 후 exit 0이다. 실제 배포 설정, WAS/Jupyter 연동은 검증하지 않았다.
 - Storix는 파일 한 건의 최대 바이트 수와 namespace의 현재 파일·보존 스냅샷 사용량 상한을 적용할 수 있어야 한다. 호출자는 적용 한도와 사용량을 확인할 수 있어야 한다. 초과 요청은 기존 파일·스냅샷·revision을 변경하지 않고 한도 유형을 식별할 수 있는 오류를 반환해야 한다.
 - **수용 조건:** 업로드와 스냅샷 생성·복원 각각의 한도 초과에서 부분 변경이 없고 오류 유형이 구분된다.
 

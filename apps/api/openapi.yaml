@@ -1844,7 +1844,7 @@ components:
           description: 충돌 시점 노드의 revision. 이후 노드가 바뀌어도 이 값은 고정된다.
     Namespace:
       type: object
-      required: [id, name, encryptionPolicy, accessPolicy, status, quota, createdAt, updatedAt]
+      required: [id, name, encryptionPolicy, accessPolicy, status, limits, quota, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1865,6 +1865,14 @@ components:
         status:
           type: string
           enum: [ACTIVE, DELETING, DELETED]
+        limits:
+          type: object
+          required: [maxFileSizeBytes]
+          properties:
+            maxFileSizeBytes:
+              type: string
+              pattern: '^[0-9]+$'
+              description: namespace 재정의와 전역 파일 크기 상한 중 적용되는 작은 값(바이트). 전역 기본값은 5368709120이다.
         quota:
           type: object
           required: [limitBytes, usedBytes]

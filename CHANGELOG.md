@@ -10,6 +10,8 @@
 
 ### Added
 
+- 인증된 namespace 상세 조회 응답에 적용 단일 파일 상한 `limits.maxFileSizeBytes`(바이트 단위 10진 문자열)를 추가했다.
+
 - `GET /api/v2/namespaces/{namespaceId}/fs/snapshots`로 immutable 파일 ID별 FILE snapshot의 생성 시각·revision·크기·SHA-256을 cursor 페이지 조회한다.
 
 ### Changed

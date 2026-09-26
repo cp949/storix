@@ -1194,6 +1194,37 @@ describe('Fs HTTP contract', () => {
       await snapshotPost(base, `/${id}/restore`, key, raw).expect(201);
     });
 
+    it('restore가 namespace 논리 quota를 넘으면 파일·snapshot·Blob 참조·revision·사용량을 유지한다', async () => {
+      const { ns, base, id, blob } = await restoreFixture('snapshot-restore-quota');
+      await request(httpServer).post(`${base}/rm`).query({ path: '/source' }).expect(204);
+      await migrationDataSource.getRepository(NamespaceEntity).update(ns, { maxTotalLogicalBytes: '7' });
+      const root = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId: ns, parentId: IsNull() });
+      const namespaceBefore = await migrationDataSource.getRepository(NamespaceEntity).findOneByOrFail({ id: ns });
+      const snapshotDataSource = app.get(DataSource);
+      const snapshotBefore = await snapshotDataSource.getRepository(VfsSnapshotEntity).findOneByOrFail({ id });
+      const entryCountBefore = await snapshotDataSource.getRepository(VfsSnapshotEntryEntity).countBy({ snapshotId: id });
+      const blobBefore = await migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ id: blob.id });
+
+      const rejected = await snapshotPost(
+        base,
+        `/${id}/restore`,
+        randomUUID(),
+        '{"path":"/target","ifAbsent":true}',
+      ).expect(413);
+      expect(rejected.body.code).toBe('VFS_QUOTA_EXCEEDED');
+      expect(await migrationDataSource.getRepository(VfsNodeEntity).findOneBy({ namespaceId: ns, name: 'target' })).toBeNull();
+      expect((await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: root.id })).version).toBe(root.version);
+      const namespaceAfter = await migrationDataSource.getRepository(NamespaceEntity).findOneByOrFail({ id: ns });
+      expect(String(namespaceAfter.liveFileByteCount)).toBe(String(namespaceBefore.liveFileByteCount));
+      expect(String(namespaceAfter.retainedSnapshotByteCount)).toBe(String(namespaceBefore.retainedSnapshotByteCount));
+      expect(namespaceAfter.retainedSnapshotNodeCount).toBe(namespaceBefore.retainedSnapshotNodeCount);
+      expect(await snapshotDataSource.getRepository(VfsSnapshotEntity).findOneByOrFail({ id })).toEqual(snapshotBefore);
+      expect(await snapshotDataSource.getRepository(VfsSnapshotEntryEntity).countBy({ snapshotId: id })).toBe(entryCountBefore);
+      expect((await migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ id: blob.id })).referenceCount).toBe(blobBefore.referenceCount);
+    });
+
     it('restore 교체 rollback은 두 Blob 참조와 기존 bytes/revision 및 snapshot 예산을 보존한다', async () => {
       const { ns, base, id, blob } = await restoreFixture('snapshot-restore-replace-rollback');
       await request(httpServer)
@@ -1534,6 +1565,9 @@ describe('Fs HTTP contract', () => {
         .send(Buffer.from('ab'))
         .expect(201);
       await migrationDataSource.getRepository(NamespaceEntity).update(ns, { maxSnapshotBytes: '1' });
+      const root = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId: ns, parentId: IsNull() });
       const key = randomUUID();
       const raw = '{"kind":"file","path":"/a"}';
       const limited = await snapshotPost(base, '', key, raw).expect(413);
@@ -1543,6 +1577,10 @@ describe('Fs HTTP contract', () => {
         (await migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ namespaceId: ns }))
           .referenceCount,
       ).toBe(1);
+      expect((await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: root.id })).version).toBe(root.version);
+      expect(
+        String((await migrationDataSource.getRepository(NamespaceEntity).findOneByOrFail({ id: ns })).retainedSnapshotByteCount),
+      ).toBe('0');
       await migrationDataSource.getRepository(NamespaceEntity).update(ns, { maxSnapshotBytes: null });
       const replayed = await snapshotPost(base, '', key, raw).expect(413);
       expect(replayed.body).toEqual(limited.body);
@@ -3540,6 +3578,9 @@ describe('Fs HTTP contract', () => {
       await migrationDataSource
         .getRepository(NamespaceEntity)
         .update(namespaceId, { maxFileSizeBytes: String(namespaceLimit) });
+      const root = await migrationDataSource
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId, parentId: IsNull() });
 
       const response = await request(httpServer)
         .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
@@ -3549,6 +3590,10 @@ describe('Fs HTTP contract', () => {
         .expect(413);
 
       expect(response.body.code).toBe('VFS_FILE_TOO_LARGE');
+      expect(await migrationDataSource.getRepository(VfsNodeEntity).findOneBy({ namespaceId, name: 'ns-limited.bin' })).toBeNull();
+      expect(await migrationDataSource.getRepository(BlobEntity).countBy({ namespaceId })).toBe(0);
+      expect((await migrationDataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: root.id })).version).toBe(root.version);
+      expect(String((await migrationDataSource.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId })).liveFileByteCount)).toBe('0');
     });
 
     it('GET content 대상이 없으면 404 VFS_NODE_NOT_FOUND를 반환한다', async () => {

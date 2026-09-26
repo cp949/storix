@@ -5,6 +5,7 @@ import { jest } from '@jest/globals';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { AuthModule } from '../auth/auth.module.js';
 import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceCreationReceiptWriter } from '../persistence/namespace-creation-receipt.writer.js';
@@ -180,6 +181,52 @@ describe('Namespace HTTP contract', () => {
     expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
     const fetched = await request(app.getHttpServer()).get(`/api/v2/namespaces/${created.body.id}`).expect(200);
     expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
+  });
+
+  it('namespace 조회는 유효 파일 한도와 live·snapshot 논리 사용량을 문자열로 반환한다', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', 'create-file-limit-details')
+      .send({ name: 'file-limit-details', maxTotalLogicalBytes: '1024' })
+      .expect(201);
+    await migrationDataSource.getRepository(NamespaceEntity).update(created.body.id, {
+      maxFileSizeBytes: '512',
+      liveFileByteCount: '12',
+      retainedSnapshotByteCount: '5',
+    });
+
+    const fetched = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${created.body.id}`)
+      .expect(200);
+    expect(fetched.body.limits).toEqual({ maxFileSizeBytes: '512' });
+    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '17' });
+  });
+
+  it('namespace 조회는 인증 누락과 잘못된 키를 거부한다', async () => {
+    const previous = process.env.STORIX_API_KEY;
+    process.env.STORIX_API_KEY = 'namespace-details-key';
+    let securedApp: INestApplication | undefined;
+    try {
+      const moduleRef = await Test.createTestingModule({
+        imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule],
+      }).compile();
+      securedApp = moduleRef.createNestApplication();
+      await securedApp.init();
+      const url = '/api/v2/namespaces/11111111-1111-1111-1111-111111111111';
+      await request(securedApp.getHttpServer()).get(url).expect(401);
+      await request(securedApp.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer wrong-key')
+        .expect(401);
+      await request(securedApp.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer namespace-details-key')
+        .expect(404);
+    } finally {
+      await securedApp?.close();
+      if (previous === undefined) delete process.env.STORIX_API_KEY;
+      else process.env.STORIX_API_KEY = previous;
+    }
   });
 
   it('quota 관리자 경로는 전용 키를 요구하고 변경 receipt를 재생한다', async () => {

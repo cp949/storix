@@ -23,6 +23,16 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 다룰 수 있게 하는 것이 설계 목표다. API 계약 전체는 `apps/api/openapi.yaml`
 참고(초안 — `docs/ROADMAP.md` API-01).
 
+### namespace 한도 조회
+
+서비스 API key로 `GET /api/v2/namespaces/{namespaceId}`를 호출하면 현재 적용되는
+단일 파일 최대 크기를 `limits.maxFileSizeBytes`에서 확인할 수 있다. 값은 바이트 단위
+10진 문자열이며, namespace 재정의와 `STORIX_MAX_FILE_SIZE_BYTES` 전역 상한 중
+작은 값이다. 전역 설정이 없으면 `5368709120`(5 GiB)을 사용한다. 같은 응답의
+`quota.limitBytes`는 namespace의 적용 논리 저장량 상한, `quota.usedBytes`는
+live FILE과 보존 snapshot FILE entry의 논리 크기 합계다. 두 quota 값도 바이트
+단위 10진 문자열이다.
+
 ### Blob-level Copy-on-Write
 
 같은 namespace 안에서 `cp`는 파일 콘텐츠를 복사하지 않는다. 새 VFS Node가
