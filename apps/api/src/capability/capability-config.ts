@@ -1,13 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
 import { validate as isUuid } from 'uuid';
+import { CAPABILITY_ID_PATTERN } from './capability-registry.js';
 
 export interface CapabilityConfig {
   readonly globalAllowedCapabilities: readonly string[];
   readonly namespaceAllowedCapabilities: Readonly<Record<string, readonly string[]>>;
 }
 
-const CAPABILITY_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const CONFIG_KEYS = ['globalAllowedCapabilities', 'namespaceAllowedCapabilities'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -15,7 +15,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseCapabilityList(value: unknown, field: string): readonly string[] {
-  if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && CAPABILITY_ID.test(id))) {
+  if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))) {
     throw new Error(`Invalid capability configuration: ${field} must be a list of lowercase kebab-case identifiers`);
   }
   return value;

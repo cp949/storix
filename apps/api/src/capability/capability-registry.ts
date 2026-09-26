@@ -11,9 +11,11 @@ export interface CapabilityDefinition {
   readonly discoveryVisibility: 'effective-state';
 }
 
+// capability ID 형식. 시작 설정과 registry가 같은 규칙을 쓴다.
+export const CAPABILITY_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
 export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [];
 
-const ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const METADATA: Readonly<Record<Exclude<keyof CapabilityDefinition, 'id' | 'dependencies'>, string | boolean>> = {
   scope: 'namespace',
   defaultEnabled: false,
@@ -30,13 +32,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function validateCapabilityRegistry(registry: readonly unknown[]): void {
   const definitions = new Map<string, CapabilityDefinition>();
   for (const value of registry) {
-    if (!isRecord(value) || typeof value.id !== 'string' || !ID_PATTERN.test(value.id)) {
+    if (!isRecord(value) || typeof value.id !== 'string' || !CAPABILITY_ID_PATTERN.test(value.id)) {
       throw new Error('Invalid capability registry metadata: id');
     }
     for (const [key, expected] of Object.entries(METADATA)) {
       if (value[key] !== expected) throw new Error(`Invalid capability registry metadata: ${value.id}.${key}`);
     }
-    if (!Array.isArray(value.dependencies) || !value.dependencies.every((id) => typeof id === 'string' && ID_PATTERN.test(id))) {
+    if (!Array.isArray(value.dependencies) || !value.dependencies.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))) {
       throw new Error(`Invalid capability registry metadata: ${value.id}.dependencies`);
     }
     if (definitions.has(value.id)) throw new Error(`Duplicate capability registry ID: ${value.id}`);
