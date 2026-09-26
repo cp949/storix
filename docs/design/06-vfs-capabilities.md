@@ -4,7 +4,7 @@
 
 ## 시작 설정
 
-`apps/api`는 시작할 때 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 가리키는 UTF-8 JSON 파일을 한 번 읽는다. 환경 변수가 없거나 빈 문자열이면 `globalAllowedCapabilities: []`, `namespaceAllowedCapabilities: {}`를 적용한다. 경로가 지정되면 파일 읽기·JSON 파싱·schema 검증 실패로 시작을 거부한다. 운영 중 reload·설정 변경 API는 없다.
+`apps/api`는 시작할 때 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 가리키는 UTF-8 JSON 파일을 한 번 읽는다. 상대 경로는 프로세스 작업 디렉터리 기준으로 해석한다. 환경 변수가 없거나 빈 문자열이면 `globalAllowedCapabilities: []`, `namespaceAllowedCapabilities: {}`를 적용한다. 경로가 지정되면 파일 읽기·JSON 파싱·schema 검증 실패로 시작을 거부한다. 운영 중 reload·설정 변경 API는 없다.
 
 ```json
 {
