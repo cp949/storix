@@ -60,3 +60,21 @@
   멈출 수 있다. 복구: `ps aux | grep -E "conmon|minio server|postgres"`의
   PID를 `kill -9` → 남은 `podman system service`도 `kill -9` →
   `podman rm -af`. 통합 테스트 대량 실패는 먼저 이 가능성을 의심한다.
+
+## L2에서 실제 소비자 통합 suite 제외
+
+- L2 기본 게이트에서는 `@storix/demo1-was`를 제외한다. 이 패키지의 `test:integration`은 Testcontainers로 격리된 API 통합 테스트가 아니라 실제 Storix 인스턴스에 접속하는 vertical-slice 테스트다.
+- `apps/demo1/was/src/vertical-slice.integration-spec.ts`는
+  `DEMO_WAS_STORIX_BASE_URL`과 `DEMO_WAS_STORIX_API_KEY`가 없으면 테스트 assertion
+  전에 실패한다. 일반 L2 환경은 실제 인스턴스와 이 접속 정보를 준비하지 않으므로
+  필터 없이 전체 명령을 실행하면 기능 검증 전에 suite가 실패한다.
+- L2는 다음 명령으로 실행한다.
+
+  ```sh
+  pnpm test:integration --filter='!@storix/demo1-was'
+  pnpm --filter @storix/api test:integration:sqlite
+  ```
+
+- `@storix/demo1-was` suite는 해당 환경 변수가 설정되고 실제 Storix 인스턴스를 사용할
+  수 있을 때 별도로 실행한다. L2 계획에서 명시적으로 요구하지 않는 한 기본 게이트에
+  포함하지 않는다.

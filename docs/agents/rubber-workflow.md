@@ -110,7 +110,7 @@ DELTA 목록은 **확정이 아니다** — 작업 중 언제든 추가·분할�
 | --- | --- | --- |
 | L0 | 컨테이너 없는 검증: `pnpm typecheck`, `pnpm lint`, `pnpm test`(단위), `pnpm build` | 모든 변경. 에이전트가 스스로 돌린다 |
 | L1 | 변경 영역의 통합 spec 개별 실행(`pnpm --filter @storix/api test:integration`에 spec 경로 패턴을 준다). SQLite 영역이면 `test:integration:sqlite` | 영속 계층·API 동작을 바꾼 DELTA. 계획서에 spec·횟수를 적고 그 안에서 스스로 돌린다 |
-| L2 | 전체 `pnpm test:integration`(PostgreSQL 경로와 SQLite 경로 모두) | 마무리 시 병합 전 1회. DELTA마다 돌리지 않는다 |
+| L2 | `pnpm test:integration --filter='!@storix/demo1-was'`와 `pnpm --filter @storix/api test:integration:sqlite` | 마무리 시 병합 전 1회. DELTA마다 돌리지 않는다. `@storix/demo1-was` 제외 조건은 `docs/agents/local-verification.md` 참고 |
 | L3 | 이미지 빌드, compose 실기동, CI 스모크 | `Dockerfile`·의존성·compose 파일을 실제로 바꿨을 때만, 필요한 최소 횟수. 그 외에는 사용자 지시 때만 |
 
 - 트리 내용이 바뀌지 않았으면 재검증하지 않는다. fast-forward 병합 후에는 빌드·테스트를 다시 돌리지 않는다.
