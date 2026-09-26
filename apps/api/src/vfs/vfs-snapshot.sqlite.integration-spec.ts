@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
 import { Client as MinioClient } from 'minio';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -148,6 +148,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const treeKey = randomUUID();
     const treeBody = { kind: 'tree', path: '/dir' };
     const tree = await snapshotPost(app, base, '', treeBody, treeKey).expect(201);
+    expect(tree.body.sha256).toBeNull();
     const treeId = tree.body.snapshotId;
     const firstPage = (
       await http().get(`${base}/snapshots/${treeId}/entries`).query({ limit: 2 }).expect(200)
@@ -161,6 +162,8 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const fileKey = randomUUID();
     const fileBody = { kind: 'file', path: '/dir/a' };
     const file = await snapshotPost(app, base, '', fileBody, fileKey).expect(201);
+    const originalStat = (await http().get(`${base}/stat`).query({ path: '/dir/a' }).expect(200)).body;
+    expect(file.body).toMatchObject({ rootNodeId: originalStat.id, sha256: createHash('sha256').update(bytes).digest('hex') });
     const fileId = file.body.snapshotId;
     const restoreKey = randomUUID();
     const restoreBody = { path: '/restored', ifAbsent: true };
@@ -169,6 +172,9 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const deleteKey = randomUUID();
     const deleteSuffix = `/${deletedSnapshot.body.snapshotId}/delete`;
     const deleted = await snapshotPost(app, base, deleteSuffix, {}, deleteKey).expect(200);
+    await http().post(`${base}/mv`).send({ source: '/dir/a', destination: '/dir/renamed' }).expect(200);
+    expect((await http().get(`${base}/snapshots/${fileId}`).expect(200)).body).toEqual(file.body);
+    expect((await http().get(`${base}/snapshots/${fileId}/content`).expect(200)).body).toEqual(bytes);
     // SQLite가 지원하는 한 프로세스의 순차 writer로 원본을 제거한다.
     await http().post(`${base}/rm`).query({ path: '/dir', recursive: true }).expect(204);
     const oldDataSource = app.get(DataSource);
@@ -241,6 +247,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const revisionAtConflict = (await http().get(`${base}/revision`).query({ path: '/doc' }).expect(200)).body
       .revision as string;
     const currentAtConflict = { ...statAtConflict, revision: revisionAtConflict };
+    delete currentAtConflict.sha256;
     const mutate = (key: string, body: string) =>
       http()
         .post(`${base}/mutations`)
@@ -349,19 +356,25 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     const successBody = { kind: 'file', path: '/doc', sourceRevision: matching };
     const success = await snapshotPost(app, base, '', successBody, successKey).expect(201);
     expect(success.body.sourceRevision).toBe(matching);
+    expect(success.body.sha256).toBe(createHash('sha256').update(Buffer.from([1, 2, 3])).digest('hex'));
+    expect(success.body.rootNodeId).toBe((await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body.id);
     expect((await rowCounts()).snapshots).toBe(1);
 
     await write(Buffer.from([9, 9]), true).expect(200);
+    expect((await http().get(`${base}/snapshots/${success.body.snapshotId}`).expect(200)).body).toEqual(success.body);
+    expect((await http().get(`${base}/snapshots/${success.body.snapshotId}/content`).expect(200)).body).toEqual(Buffer.from([1, 2, 3]));
     const statAtConflict = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
     const revisionAtConflict = await revisionOf();
     expect(revisionAtConflict).not.toBe(matching);
+    const currentAtConflict = { ...statAtConflict, revision: revisionAtConflict };
+    delete currentAtConflict.sha256;
     const beforeFailure = await rowCounts();
     const staleKey = randomUUID();
     const stale = await snapshotPost(app, base, '', successBody, staleKey).expect(412);
     expect(stale.body).toMatchObject({
       code: 'VFS_PRECONDITION_FAILED',
       path: '/doc',
-      current: { ...statAtConflict, revision: revisionAtConflict },
+      current: currentAtConflict,
     });
     expect(await rowCounts()).toEqual(beforeFailure);
 

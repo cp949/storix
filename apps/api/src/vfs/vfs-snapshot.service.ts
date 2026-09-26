@@ -57,6 +57,7 @@ export interface SnapshotMetadata {
   readonly sourcePath: string;
   readonly sourceRevision: string;
   readonly rootNodeId: string;
+  readonly sha256: string | null;
   readonly rootType: 'FILE' | 'DIRECTORY';
   readonly nodeCount: number;
   readonly logicalBytes: string;
@@ -92,6 +93,7 @@ function toMetadata(snapshot: StoredSnapshot): SnapshotMetadata {
     sourcePath: snapshot.sourcePath,
     sourceRevision: snapshot.sourceRevision,
     rootNodeId: snapshot.rootNodeId,
+    sha256: snapshot.sha256,
     rootType: snapshot.rootType,
     nodeCount: snapshot.nodeCount,
     logicalBytes: String(snapshot.logicalBytes),

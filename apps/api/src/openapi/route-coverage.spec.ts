@@ -138,6 +138,8 @@ it('snapshot mutation과 content의 계약을 명시한다', () => {
       'kind',
       'sourcePath',
       'sourceRevision',
+      'rootNodeId',
+      'sha256',
       'nodeCount',
       'logicalBytes',
       'createdAt',

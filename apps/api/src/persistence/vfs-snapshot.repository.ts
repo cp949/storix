@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import {
@@ -9,13 +9,14 @@ import {
 } from '../vfs/vfs.errors.js';
 import { snapshotPathKey } from '../vfs/snapshot-path.js';
 import { BlobRepository } from './blob.repository.js';
+import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsSnapshotEntity, type VfsSnapshotKind } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
 import type { MutationTx, SnapshotSourceRow } from './vfs-node.repository.js';
 
-export type SnapshotMetadata = Readonly<VfsSnapshotEntity>;
-export type LockedSnapshot = SnapshotMetadata;
+export type SnapshotMetadata = Readonly<VfsSnapshotEntity> & { readonly sha256: string | null };
+export type LockedSnapshot = Readonly<VfsSnapshotEntity>;
 export type SnapshotEntry = Readonly<VfsSnapshotEntryEntity>;
 export interface SnapshotCaptureInput {
   readonly kind: VfsSnapshotKind;
@@ -55,8 +56,8 @@ export function resolveSnapshotLimits(namespace: NamespaceEntity): SnapshotLimit
   };
 }
 
-function metadata(entity: VfsSnapshotEntity): SnapshotMetadata {
-  return { ...entity, logicalBytes: String(entity.logicalBytes) };
+function metadata(entity: VfsSnapshotEntity, sha256: string | null): SnapshotMetadata {
+  return { ...entity, logicalBytes: String(entity.logicalBytes), sha256 };
 }
 function entry(entity: VfsSnapshotEntryEntity): SnapshotEntry {
   return { ...entity, size: entity.size === null ? null : String(entity.size) };
@@ -68,6 +69,24 @@ export class VfsSnapshotRepository {
     private readonly dataSource: DataSource,
     private readonly blobs: BlobRepository,
   ) {}
+
+  private async fileSha256(manager: EntityManager, snapshot: VfsSnapshotEntity): Promise<string | null> {
+    if (snapshot.kind === 'TREE') return null;
+    const root = await manager.findOneBy(VfsSnapshotEntryEntity, {
+      namespaceId: snapshot.namespaceId,
+      snapshotId: snapshot.id,
+      relativePath: '.',
+      type: 'FILE',
+      sourceNodeId: snapshot.rootNodeId,
+    });
+    if (!root?.blobId) throw new VfsInvalidOperationError(snapshot.sourcePath);
+    const blob = await manager.findOneBy(BlobEntity, {
+      id: root.blobId,
+      namespaceId: snapshot.namespaceId,
+    });
+    if (!blob) throw new VfsInvalidOperationError(snapshot.sourcePath);
+    return blob.sha256;
+  }
 
   async capture(tx: MutationTx, input: SnapshotCaptureInput): Promise<SnapshotMetadata> {
     const namespace = await tx.manager.findOneBy(NamespaceEntity, { id: tx.namespaceId });
@@ -163,7 +182,7 @@ export class VfsSnapshotRepository {
         })),
       );
     }
-    return metadata(snapshot);
+    return metadata(snapshot, await this.fileSha256(tx.manager, snapshot));
   }
 
   async findForUpdate(
@@ -177,7 +196,7 @@ export class VfsSnapshotRepository {
       .where('s.namespace_id = :namespaceId AND s.id = :snapshotId', { namespaceId, snapshotId });
     if (!isSqliteDataSource(this.dataSource.options)) query.setLock('pessimistic_write');
     const result = await query.getOne();
-    return result ? metadata(result) : null;
+    return result ? { ...result, logicalBytes: String(result.logicalBytes) } : null;
   }
 
   async getEntry(tx: MutationTx, snapshotId: string, relativePath: string): Promise<SnapshotEntry | null> {
@@ -206,11 +225,13 @@ export class VfsSnapshotRepository {
   }
 
   async get(namespaceId: string, snapshotId: string): Promise<SnapshotMetadata | null> {
-    const result = await this.dataSource.manager.findOneBy(VfsSnapshotEntity, {
-      id: snapshotId,
-      namespaceId,
-    });
-    return result ? metadata(result) : null;
+    const work = async (manager: EntityManager): Promise<SnapshotMetadata | null> => {
+      const result = await manager.findOneBy(VfsSnapshotEntity, { id: snapshotId, namespaceId });
+      return result ? metadata(result, await this.fileSha256(manager, result)) : null;
+    };
+    return isSqliteDataSource(this.dataSource.options)
+      ? this.dataSource.transaction(work)
+      : this.dataSource.transaction('REPEATABLE READ', work);
   }
 
   async listEntries(

@@ -385,6 +385,7 @@ describe('VfsSnapshotService FILE sourceRevision', () => {
       sourcePath: '/a.txt',
       sourceRevision: currentRevision,
       rootNodeId: nodeId,
+      sha256: 'a'.repeat(64),
       rootType: 'FILE',
       nodeCount: 1,
       logicalBytes: 3n,
@@ -395,6 +396,7 @@ describe('VfsSnapshotService FILE sourceRevision', () => {
   it('sourceRevision이 원본 현재 revision과 일치하면 capture를 호출하고 201을 반환한다', async () => {
     const result = await create({ kind: 'file', path: '/a.txt', sourceRevision: currentRevision });
     expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ rootNodeId: nodeId, sha256: 'a'.repeat(64) });
     expect(capture).toHaveBeenCalledTimes(1);
   });
 

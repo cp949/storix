@@ -1676,6 +1676,7 @@ components:
           sourcePath,
           sourceRevision,
           rootNodeId,
+          sha256,
           rootType,
           nodeCount,
           logicalBytes,
@@ -1686,7 +1687,15 @@ components:
         kind: { type: string, enum: [file, tree] }
         sourcePath: { type: string }
         sourceRevision: { type: string, description: 캡처 시점 r1. revision }
-        rootNodeId: { type: string, format: uuid }
+        rootNodeId:
+          { type: string, format: uuid, description: FILE에서는 캡처된 원본 파일의 안정적인 노드 ID. TREE에서는 원본 디렉터리 노드 ID. }
+        sha256:
+          {
+            type: string,
+            nullable: true,
+            pattern: '^[0-9a-f]{64}$',
+            description: FILE 보존 원본 바이트의 SHA-256. TREE에서는 null.,
+          }
         rootType: { type: string, enum: [FILE, DIRECTORY] }
         nodeCount: { type: integer, minimum: 1 }
         logicalBytes: { type: string, pattern: '^[0-9]+$' }

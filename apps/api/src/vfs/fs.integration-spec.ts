@@ -13,7 +13,7 @@ import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client as MinioClient } from 'minio';
 import request from 'supertest';
-import { DataSource, IsNull } from 'typeorm';
+import { DataSource, EntityManager, IsNull } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
 import { DomainError } from '../common/domain-error.js';
 import { NamespaceModule } from '../namespace/namespace.module.js';
@@ -25,10 +25,11 @@ import { VfsMutationReceiptEntity } from '../persistence/entities/vfs-mutation-r
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import { VfsSnapshotRepository } from '../persistence/vfs-snapshot.repository.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { VfsModule } from './vfs.module.js';
-import { encodeRevision } from './revision.js';
+import { decodeRevision, encodeRevision } from './revision.js';
 
 const MAX_FILE_SIZE_BYTES = 1048576;
 
@@ -542,6 +543,46 @@ describe('Fs HTTP contract', () => {
       ).toEqual(uploadBytes);
     });
 
+    it('FILE metadata 읽기 중 snapshot 삭제가 끝나도 캡처된 해시를 반환한다', async () => {
+      const ns = await createNamespace('snapshot-file-metadata-delete-race');
+      const base = `/api/v2/namespaces/${ns}/fs`;
+      const bytes = Buffer.from('metadata-race');
+      await request(httpServer)
+        .post(`${base}/content`)
+        .query({ path: '/source' })
+        .set('Content-Type', 'application/octet-stream')
+        .send(bytes)
+        .expect(201);
+      const captured = await snapshotPost(base, '', randomUUID(), '{"kind":"file","path":"/source"}').expect(201);
+      const repository = app.get(VfsSnapshotRepository);
+      type HashReader = (manager: EntityManager, snapshot: VfsSnapshotEntity) => Promise<string | null>;
+      const original = (Reflect.get(repository, 'fileSha256') as HashReader).bind(repository);
+      let entered!: () => void;
+      let release!: () => void;
+      const readEntered = new Promise<void>((resolve) => { entered = resolve; });
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const spy = jest.spyOn(repository as unknown as { fileSha256: HashReader }, 'fileSha256')
+        .mockImplementation(async (manager, snapshot) => {
+          entered();
+          await held;
+          return original(manager, snapshot);
+        });
+      const pending = repository.get(ns, captured.body.snapshotId as string);
+      try {
+        await readEntered;
+        await snapshotPost(base, `/${captured.body.snapshotId}/delete`, randomUUID(), '{}').expect(200);
+        release();
+        await expect(pending).resolves.toMatchObject({
+          id: captured.body.snapshotId,
+          rootNodeId: captured.body.rootNodeId,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        });
+      } finally {
+        release();
+        spy.mockRestore();
+      }
+    });
+
     it.each([
       { writer: 'overwrite', first: 'snapshot' },
       { writer: 'overwrite', first: 'writer' },
@@ -630,6 +671,8 @@ describe('Fs HTTP contract', () => {
         }
         expect(snapshot.status).toBe(201);
         const expectedBytes = writer === 'overwrite' && first === 'writer' ? newBytes : oldBytes;
+        expect(snapshot.body.sha256).toBe(createHash('sha256').update(expectedBytes).digest('hex'));
+        expect(snapshot.body.rootNodeId).toBe(decodeRevision(snapshot.body.sourceRevision).id);
         expect(
           (await request(httpServer).get(`${base}/snapshots/${snapshot.body.snapshotId}/content`).expect(200))
             .body,
