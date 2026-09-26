@@ -1,5 +1,15 @@
 import { DomainError } from '../common/domain-error.js';
+import type { CapabilityId } from '../capability/capability-registry.js';
 import type { VfsPreconditionCurrentDto } from './dto/node-response.dto.js';
+
+export class VfsFeatureDisabledError extends DomainError {
+  readonly code = 'VFS_FEATURE_DISABLED';
+  readonly status = 409;
+
+  constructor(capabilityId: CapabilityId) {
+    super(`Capability disabled: ${capabilityId}`);
+  }
+}
 
 export class VfsInvalidRevisionError extends DomainError {
   readonly code = 'VFS_INVALID_REVISION';

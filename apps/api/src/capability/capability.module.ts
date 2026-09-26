@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { type CapabilityConfig, loadCapabilityConfig } from './capability-config.js';
+import { CapabilityService } from './capability.service.js';
 
 export const CAPABILITY_CONFIG = Symbol('CAPABILITY_CONFIG');
 
@@ -24,7 +25,12 @@ export const CAPABILITY_CONFIG = Symbol('CAPABILITY_CONFIG');
       },
       inject: [ConfigService, DataSource],
     },
+    {
+      provide: CapabilityService,
+      useFactory: (config: CapabilityConfig): CapabilityService => new CapabilityService(config),
+      inject: [CAPABILITY_CONFIG],
+    },
   ],
-  exports: [CAPABILITY_CONFIG],
+  exports: [CAPABILITY_CONFIG, CapabilityService],
 })
 export class CapabilityModule {}
