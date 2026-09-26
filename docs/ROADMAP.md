@@ -214,7 +214,7 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       사전순으로 반환한다. 전역·namespace 허용과 의존성 결과를 기존 활성 판정에 따라
       반영하고, 기본 파일 API는 제외한다. Production registry가 비어 있으면
       `200 { "capabilities": [] }`이며 `Cache-Control: no-store`다. 잘못된 UUID·없는
-      namespace·비활성 상태는 404다. OpenAPI와 route coverage가 같은 계약을 확인한다.
+      namespace·ACTIVE가 아닌 namespace는 404다. OpenAPI와 route coverage가 같은 계약을 확인한다.
       실제 선택 기능 및 해당 데이터의 비활성화 후 접근 가능성 검증은 포함하지 않는다.
 
 ## 3. 운영 성숙도

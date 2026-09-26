@@ -16,4 +16,4 @@
 | [03-consumer-contracts.md](./03-consumer-contracts.md)           | 특정 소비자에서 시작한 요구의 재사용 가능성 평가, Storix 기능과 소비자 어댑터의 책임 경계, 검증 범위                                      |
 | [04-namespace-logical-quota.md](./04-namespace-logical-quota.md) | namespace live FILE 및 보존 snapshot FILE entry의 논리 사용량 상한, 동시성·오류·관리 API 계약                                             |
 | [05-vfs-path-contract.md](./05-vfs-path-contract.md)             | 파일·snapshot의 정규 경로, 허용 문자·UTF-8 길이, 부모·루트 동작과 이동·복사 결과 경로 불변식                                              |
-| [06-vfs-capabilities.md](./06-vfs-capabilities.md)                 | 선택 VFS capability의 시작 설정, 정적 registry, 활성 판정, 오류·데이터 보존 경계와 조회 API의 현 상태                                    |
+| [06-vfs-capabilities.md](./06-vfs-capabilities.md)                 | 선택 VFS capability의 시작 설정, 정적 registry, 활성 판정, 오류·데이터 보존 경계와 활성 조회 API                                        |

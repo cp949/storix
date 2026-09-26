@@ -31,6 +31,6 @@ capability가 활성인 조건은 registry 등록, 전역 허용 목록 포함, 
 
 조회 API는 전역 서비스 Bearer key로 인증한다. 서비스 key는 namespace별 ACL을 제공하지 않으므로 key 보유자는 모든 ACTIVE namespace를 조회할 수 있다. 잘못된 UUID, 없는 namespace, `DELETING`·`DELETED` namespace는 모두 404 `NAMESPACE_NOT_FOUND`다. 기존 namespace 단건 조회의 상태 정책은 이 endpoint 때문에 바뀌지 않는다.
 
-응답은 `{ "capabilities": string[] }`이며 등록 ID 중 기존 `isEnabled()` 판정이 참인 선택 capability만 사전순으로 포함한다. 전역·namespace 허용과 의존성 판정을 그대로 적용하고, 실제 활성 의존 ID도 목록에 들어간다. 기본 파일 API는 포함하지 않는다. Production registry가 비어 있거나 namespace에 활성 ID가 없으면 `200 { "capabilities": [] }`이고 `Cache-Control: no-store`를 반환한다.
+응답은 `{ "capabilities": string[] }`이며 등록 ID 중 기존 `isEnabled()` 판정이 참인 선택 capability만 사전순으로 포함한다. 전역·namespace 허용과 의존성 판정을 그대로 적용하고, 실제 활성 의존 ID도 목록에 들어간다. 기본 파일 API는 포함하지 않는다. 설정 원문(전역만 허용하거나 namespace에만 적은 ID)은 노출하지 않으며, registry의 `discoveryVisibility: effective-state`가 이 판정 결과만 노출하는 정책을 뜻한다. Production registry가 비어 있거나 namespace에 활성 ID가 없으면 `200 { "capabilities": [] }`이고 `Cache-Control: no-store`를 반환한다.
 
-활성 ID는 프로세스 시작 때 읽은 설정 snapshot에 대한 결과다. 설정 변경은 기존과 같이 재시작 이후 적용되며 조회 시점에 설정을 다시 읽지 않는다. 상세 공개 계약은 [VFS-07](../ROADMAP.md) 및 OpenAPI를 따른다.
+활성 ID는 프로세스 시작 때 읽은 설정 snapshot에 대한 결과다. 설정 변경은 기존과 같이 재시작 이후 적용되며 조회 시점에 설정을 다시 읽지 않는다. 상세 공개 계약은 `apps/api/openapi.yaml`을 따른다.
