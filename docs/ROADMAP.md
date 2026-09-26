@@ -6,6 +6,10 @@
 체크하고, 커밋/PR에서 `SEC-02` 같은 ID로 참조한다. 설정값·버전처럼 체크 대상이
 아닌 확정 사항은 일반 목록으로 둔다.
 
+Jupyter Notebook 파일 IO에 필요한 Storix 저장 계약은
+[요구사항 문서](./requirements/jupyter-file-storage.md)의 `RQ-001`~`RQ-020`에서
+관리한다. `RQ-NNN`은 수용 조건의 ID이며, 이 로드맵의 실행 항목 ID와는 구분한다.
+
 ## 목표
 
 Storix를 사내 전용 서버에서 **고객이 자기 인프라에 self-host하는 독립 제품**으로
