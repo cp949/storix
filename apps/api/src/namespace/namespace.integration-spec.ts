@@ -1,15 +1,19 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { jest } from '@jest/globals';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
+import { NamespaceCreationReceiptWriter } from '../persistence/namespace-creation-receipt.writer.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { NamespaceModule } from './namespace.module.js';
+
+type RowCount = { count: string };
 
 describe('Namespace HTTP contract', () => {
   let container: StartedPostgreSqlContainer;
@@ -49,6 +53,97 @@ describe('Namespace HTTP contract', () => {
     await app.close();
     await migrationDataSource.destroy();
     await container.stop();
+  });
+
+  async function namespaceCounts(name: string) {
+    const namespaces = (await migrationDataSource.query(
+      'SELECT COUNT(*)::text AS count FROM namespace WHERE name = $1',
+      [name],
+    )) as RowCount[];
+    const roots = (await migrationDataSource.query(
+      `SELECT COUNT(*)::text AS count FROM vfs_node n
+       INNER JOIN namespace ns ON ns.id = n.namespace_id
+       WHERE ns.name = $1 AND n.parent_id IS NULL AND n.type = 'DIRECTORY' AND n.name = ''`,
+      [name],
+    )) as RowCount[];
+    return { namespaces: Number(namespaces[0].count), roots: Number(roots[0].count) };
+  }
+
+  async function receiptCount(key: string): Promise<number> {
+    const rows = (await migrationDataSource.query('SELECT COUNT(*)::text AS count FROM idempotency_key WHERE key = $1', [
+      key,
+    ])) as RowCount[];
+    return Number(rows[0].count);
+  }
+
+  it('동일 key·동일 body 동시 요청은 최초 201 body와 namespace/root/receipt 하나를 반환한다', async () => {
+    const key = 'namespace-concurrent-same-body';
+    const body = { name: 'namespace-concurrent-same-body' };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body),
+      ),
+    );
+
+    expect(responses.map(({ status }) => status)).toEqual([201, 201]);
+    expect(responses[1].body).toEqual(responses[0].body);
+    expect(await namespaceCounts(body.name)).toEqual({ namespaces: 1, roots: 1 });
+    expect(await receiptCount(key)).toBe(1);
+  });
+
+  it('동일 key·상이 body 동시 요청은 하나의 201과 IDEMPOTENCY_KEY_REUSED 422를 반환한다', async () => {
+    const key = 'namespace-concurrent-different-body';
+    const bodies = [{ name: 'namespace-concurrent-different-body-a' }, { name: 'namespace-concurrent-different-body-b' }];
+    const responses = await Promise.all(
+      bodies.map((body) => request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body)),
+    );
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 422]);
+    expect(responses.find(({ status }) => status === 422)?.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    const namespaceNames = await Promise.all(bodies.map(({ name }) => namespaceCounts(name)));
+    expect(namespaceNames.reduce((count, rows) => count + rows.namespaces, 0)).toBe(1);
+    expect(namespaceNames.reduce((count, rows) => count + rows.roots, 0)).toBe(1);
+    expect(await receiptCount(key)).toBe(1);
+  });
+
+  it('receipt 저장 실패는 namespace/root도 롤백하고 앱 재시작 뒤 같은 key를 성공시킨다', async () => {
+    const key = 'namespace-receipt-failure-restart';
+    const body = { name: 'namespace-receipt-failure-restart' };
+    const receiptWriter = app.get(NamespaceCreationReceiptWriter);
+    jest.spyOn(receiptWriter, 'save').mockRejectedValueOnce(new Error('injected receipt write failure'));
+
+    const failed = await request(app.getHttpServer())
+      .post('/api/v1/namespaces')
+      .set('Idempotency-Key', key)
+      .send(body);
+    const beforeRestart = await namespaceCounts(body.name);
+    const receiptBeforeRestart = await receiptCount(key);
+
+    await app.close();
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), NamespaceModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+
+    const retry = await request(app.getHttpServer()).post('/api/v1/namespaces').set('Idempotency-Key', key).send(body);
+    expect({
+      failedStatus: failed.status,
+      beforeRestart,
+      receiptBeforeRestart,
+      retryStatus: retry.status,
+      retryName: retry.body.name,
+      afterRestart: await namespaceCounts(body.name),
+      receiptAfterRestart: await receiptCount(key),
+    }).toEqual({
+      failedStatus: 500,
+      beforeRestart: { namespaces: 0, roots: 0 },
+      receiptBeforeRestart: 0,
+      retryStatus: 201,
+      retryName: body.name,
+      afterRestart: { namespaces: 1, roots: 1 },
+      receiptAfterRestart: 1,
+    });
   });
 
   it('Idempotency-Key 헤더가 없으면 400을 반환한다', async () => {
@@ -167,6 +262,9 @@ describe('Namespace HTTP contract', () => {
       message: expect.any(String),
       requestId: expect.any(String),
     });
+    expect(await namespaceCounts('conflict-ns')).toEqual({ namespaces: 1, roots: 1 });
+    expect(await receiptCount('owner-key')).toBe(1);
+    expect(await receiptCount('other-key')).toBe(1);
   });
 
   it('같은 key로 409 응답을 재시도해도 재생 응답에 requestId가 포함된다', async () => {

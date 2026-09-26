@@ -51,7 +51,7 @@ describe('NamespaceService', () => {
   });
 
   describe('create', () => {
-    it('처음 보는 key면 namespace를 생성하고 201과 함께 idempotency record를 남긴다', async () => {
+    it('처음 보는 key면 receipt와 함께 namespace 생성 transaction을 요청한다', async () => {
       idempotencyRepo.findOneBy.mockResolvedValue(null);
       provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity());
 
@@ -59,10 +59,11 @@ describe('NamespaceService', () => {
 
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'NONE', 'PRIVATE', null);
-      expect(idempotencyRepo.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ key: 'key-1', responseStatus: 201 }),
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        'acme', 'NONE', 'PRIVATE', null,
+        expect.objectContaining({ key: 'key-1', responseStatus: 201, requestHash: expect.any(String) }),
       );
+      expect(idempotencyRepo.insert).not.toHaveBeenCalled();
     });
 
     it('같은 key와 같은 body로 재시도하면 저장된 응답을 그대로 재생하고 다시 생성하지 않는다', async () => {
@@ -106,14 +107,13 @@ describe('NamespaceService', () => {
       );
     });
 
-    it('idempotency record 기록이 동시성 충돌(23505)로 실패해도 계산된 결과를 그대로 반환한다', async () => {
+    it('409 idempotency record 저장 실패에도 원래 namespace 충돌 오류를 보존한다', async () => {
       idempotencyRepo.findOneBy.mockResolvedValue(null);
-      provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity());
-      idempotencyRepo.insert.mockRejectedValue({ code: '23505' });
+      const provisioningError = new NamespaceAlreadyExistsError('acme');
+      provisioningRepo.createWithRoot.mockRejectedValue(provisioningError);
+      idempotencyRepo.insert.mockRejectedValue(new Error('injected conflict receipt write failure'));
 
-      const result = await service.create('key-1', 'acme');
-
-      expect(result.status).toBe(201);
+      await expect(service.create('key-1', 'acme')).rejects.toBe(provisioningError);
     });
 
     it('encryptionPolicy가 ENCRYPTED이고 마스터 키가 없으면 NamespaceEncryptionNotConfiguredError를 던진다', async () => {
@@ -136,7 +136,7 @@ describe('NamespaceService', () => {
       const result = await service.create('key-1', 'acme', 'ENCRYPTED');
 
       expect(result.status).toBe(201);
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE', null);
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE', null, expect.any(Object));
     });
 
     it('accessPolicy를 provisioningRepo에 그대로 전달한다', async () => {
@@ -144,20 +144,19 @@ describe('NamespaceService', () => {
 
       await service.create('key-public', 'public-ns', 'NONE', 'PUBLIC');
 
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC', null);
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC', null, expect.any(Object));
     });
 
     it('accessPolicy만 다른 재요청은 같은 Idempotency-Key로 재사용할 수 없다', async () => {
       // 테스트가 canonicalJsonHash를 직접 재계산하면, 구현이 accessPolicy를
       // 해시에서 빠뜨리는 회귀가 생겨도 테스트가 같은 실수를 반복해 통과해버린다.
-      // 그래서 첫 create() 호출로 서비스가 실제로 저장한 requestHash를 캡처하고,
-      // 그 값을 그대로 두 번째 호출의 "기존 레코드"로 재사용해 비교한다.
+      // 서비스가 계산해야 하는 계약 hash를 독립적으로 구성해 재사용 검증을 확인한다.
       idempotencyRepo.findOneBy.mockResolvedValueOnce(null);
       provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity());
 
       await service.create('key-reuse', 'acme', 'NONE', 'PRIVATE');
 
-      const persistedHash = idempotencyRepo.insert.mock.calls[0][0].requestHash;
+      const persistedHash = canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' });
 
       idempotencyRepo.findOneBy.mockResolvedValueOnce({
         key: 'key-reuse',

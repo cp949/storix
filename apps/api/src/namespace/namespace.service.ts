@@ -17,15 +17,19 @@ import {
 import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const POSTGRES_UNIQUE_VIOLATION = '23505';
 
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; driverError?: { code?: unknown }; message?: unknown };
+  const code = candidate.code ?? candidate.driverError?.code;
+  return code === '23505' ||
+    code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+    code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
+    (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message));
+}
 export interface CreateNamespaceResult {
   readonly status: number;
   readonly body: NamespaceResponseDto | { code: string; message: string };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === POSTGRES_UNIQUE_VIOLATION;
 }
 
 @Injectable()
@@ -82,14 +86,42 @@ export class NamespaceService {
         encryptionPolicy,
         accessPolicy,
         maxTotalLogicalBytes,
+        {
+          key: idempotencyKey,
+          requestHash,
+          responseStatus: 201,
+          responseBody: (created) => ({ ...toNamespaceResponse(created) }),
+        },
       );
       const body = toNamespaceResponse(namespace);
-      await this.recordIdempotency(idempotencyKey, requestHash, 201, body);
       return { status: 201, body };
     } catch (error) {
+      // 동시 요청의 transaction이 먼저 커밋됐으면 그 receipt가 이 예외의 정답이다.
+      // receipt 저장 실패로 rollback된 경우에는 행이 없으므로 원래 예외를 유지한다.
+      let winner: IdempotencyKeyEntity | null = null;
+      try {
+        winner = await this.idempotencyRepo.findOneBy({ key: idempotencyKey });
+      } catch {
+        // 조회 실패 시에도 provisioning이 던진 원래 예외를 보존한다.
+      }
+      if (winner) {
+        if (winner.requestHash !== requestHash) {
+          throw new IdempotencyKeyReusedError(idempotencyKey);
+        }
+        if (winner.responseStatus === 201) {
+          return { status: winner.responseStatus, body: winner.responseBody as CreateNamespaceResult['body'] };
+        }
+        if (winner.responseStatus === 409) {
+          throw new NamespaceAlreadyExistsError(name);
+        }
+      }
       if (error instanceof NamespaceAlreadyExistsError) {
         const body = { code: error.code, message: error.message };
-        await this.recordIdempotency(idempotencyKey, requestHash, 409, body);
+        try {
+          await this.recordIdempotency(idempotencyKey, requestHash, 409, body);
+        } catch {
+          // 오류 receipt 저장 실패가 원래 namespace 충돌 오류를 덮지 않게 한다.
+        }
       }
       throw error;
     }
