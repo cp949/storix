@@ -4,7 +4,7 @@ import {
   NamespaceEntity,
   NamespaceStatus,
 } from '../../persistence/entities/namespace.entity.js';
-import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../../common/resource-limit.js';
+import { resolveMaxFileSizeBytes } from '../../common/resource-limit.js';
 import { resolveNamespaceQuota, resolveTotalLogicalBytes } from '../../vfs/namespace-quota.js';
 
 export interface NamespaceResponseDto {
@@ -19,8 +19,10 @@ export interface NamespaceResponseDto {
   readonly quota: { readonly limitBytes: string; readonly usedBytes: string };
 }
 
+// globalMaxFileSizeBytes는 업로드 경로와 같은 값을 쓰도록 호출 서비스가 ConfigService에서 해석해 넘긴다
 export function toNamespaceResponse(
   entity: NamespaceEntity,
+  globalMaxFileSizeBytes: number,
   globalLimit?: string,
 ): NamespaceResponseDto {
   return {
@@ -32,12 +34,7 @@ export function toNamespaceResponse(
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
     limits: {
-      maxFileSizeBytes: String(
-        resolveMaxFileSizeBytes(
-          entity.maxFileSizeBytes,
-          resolveGlobalMaxFileSizeBytes(process.env.STORIX_MAX_FILE_SIZE_BYTES),
-        ),
-      ),
+      maxFileSizeBytes: String(resolveMaxFileSizeBytes(entity.maxFileSizeBytes, globalMaxFileSizeBytes)),
     },
     quota: {
       limitBytes: resolveNamespaceQuota(entity.maxTotalLogicalBytes ?? null, globalLimit).toString(),

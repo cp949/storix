@@ -17,7 +17,7 @@ describe('toNamespaceResponse', () => {
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
 
-    expect(toNamespaceResponse(entity, '30')).toEqual({
+    expect(toNamespaceResponse(entity, 5368709120, '30')).toEqual({
       id: 'ns-1',
       name: 'acme',
       encryptionPolicy: 'NONE',
@@ -31,34 +31,27 @@ describe('toNamespaceResponse', () => {
   });
 
   it.each([
-    { override: '8', global: '12', expected: '8' },
-    { override: '20', global: '12', expected: '12' },
-    { override: null, global: '12', expected: '12' },
+    { override: '8', global: 12, expected: '8' },
+    { override: '20', global: 12, expected: '12' },
+    { override: null, global: 12, expected: '12' },
   ])('파일 한도 override=$override, 전역=$global에서 적용값 $expected를 반환한다', ({ override, global, expected }) => {
-    const previous = process.env.STORIX_MAX_FILE_SIZE_BYTES;
-    process.env.STORIX_MAX_FILE_SIZE_BYTES = global;
-    try {
-      const entity = {
-        maxFileSizeBytes: override,
-        maxTotalLogicalBytes: '20',
-        liveFileByteCount: '12',
-        retainedSnapshotByteCount: '5',
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
-      } as NamespaceEntity;
+    const entity = {
+      maxFileSizeBytes: override,
+      maxTotalLogicalBytes: '20',
+      liveFileByteCount: '12',
+      retainedSnapshotByteCount: '5',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    } as NamespaceEntity;
 
-      const response = toNamespaceResponse(entity, '30');
-      expect(response.limits).toEqual({ maxFileSizeBytes: expected });
-      expect(response.quota).toEqual({ limitBytes: '20', usedBytes: '17' });
-    } finally {
-      if (previous === undefined) delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
-      else process.env.STORIX_MAX_FILE_SIZE_BYTES = previous;
-    }
+    const response = toNamespaceResponse(entity, global, '30');
+    expect(response.limits).toEqual({ maxFileSizeBytes: expected });
+    expect(response.quota).toEqual({ limitBytes: '20', usedBytes: '17' });
   });
 
-  it('전역 파일 한도가 없으면 5368709120을 decimal string으로 반환한다', () => {
+  it('파일 한도는 STORIX_MAX_FILE_SIZE_BYTES 환경변수가 아니라 전달받은 전역값을 사용한다', () => {
     const previous = process.env.STORIX_MAX_FILE_SIZE_BYTES;
-    delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
+    process.env.STORIX_MAX_FILE_SIZE_BYTES = '1';
     try {
       const entity = {
         maxFileSizeBytes: null,
@@ -67,7 +60,7 @@ describe('toNamespaceResponse', () => {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
         updatedAt: new Date('2026-01-02T00:00:00.000Z'),
       } as NamespaceEntity;
-      expect(toNamespaceResponse(entity).limits).toEqual({ maxFileSizeBytes: '5368709120' });
+      expect(toNamespaceResponse(entity, 64).limits).toEqual({ maxFileSizeBytes: '64' });
     } finally {
       if (previous === undefined) delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
       else process.env.STORIX_MAX_FILE_SIZE_BYTES = previous;

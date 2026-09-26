@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { resolveGlobalMaxFileSizeBytes } from '../common/resource-limit.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -14,7 +16,14 @@ import {
 
 @Injectable()
 export class NamespaceQuotaService {
-  constructor(private readonly nodes: VfsNodeRepository) {}
+  private readonly maxFileSizeBytes: number;
+
+  constructor(
+    private readonly nodes: VfsNodeRepository,
+    config: ConfigService,
+  ) {
+    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+  }
 
   async update(
     namespaceId: string,
@@ -48,7 +57,7 @@ export class NamespaceQuotaService {
 
       namespace.maxTotalLogicalBytes = maxTotalLogicalBytes;
       const saved = await namespaces.save(namespace);
-      const body = toNamespaceResponse(saved);
+      const body = toNamespaceResponse(saved, this.maxFileSizeBytes);
       await keys.insert({
         key: storageKey,
         requestHash,

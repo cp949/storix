@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryDeepPartialEntity, Repository } from 'typeorm';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { resolveGlobalMaxFileSizeBytes } from '../common/resource-limit.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
@@ -34,12 +36,17 @@ export interface CreateNamespaceResult {
 
 @Injectable()
 export class NamespaceService {
+  private readonly maxFileSizeBytes: number;
+
   constructor(
     @InjectRepository(NamespaceEntity) private readonly namespaceRepo: Repository<NamespaceEntity>,
     @InjectRepository(IdempotencyKeyEntity) private readonly idempotencyRepo: Repository<IdempotencyKeyEntity>,
     private readonly provisioningRepo: NamespaceProvisioningRepository,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+  }
 
   async create(
     idempotencyKey: string,
@@ -90,10 +97,10 @@ export class NamespaceService {
           key: idempotencyKey,
           requestHash,
           responseStatus: 201,
-          responseBody: (created) => ({ ...toNamespaceResponse(created) }),
+          responseBody: (created) => ({ ...toNamespaceResponse(created, this.maxFileSizeBytes) }),
         },
       );
-      const body = toNamespaceResponse(namespace);
+      const body = toNamespaceResponse(namespace, this.maxFileSizeBytes);
       return { status: 201, body };
     } catch (error) {
       // 동시 요청의 transaction이 먼저 커밋됐으면 그 receipt가 이 예외의 정답이다.
@@ -137,7 +144,7 @@ export class NamespaceService {
       throw new NamespaceNotFoundError(id);
     }
 
-    return toNamespaceResponse(namespace);
+    return toNamespaceResponse(namespace, this.maxFileSizeBytes);
   }
 
   async findAll(): Promise<NamespaceResponseDto[]> {
@@ -146,7 +153,7 @@ export class NamespaceService {
       order: { name: 'ASC', id: 'ASC' },
     });
 
-    return namespaces.map((namespace) => toNamespaceResponse(namespace));
+    return namespaces.map((namespace) => toNamespaceResponse(namespace, this.maxFileSizeBytes));
   }
 
   private async recordIdempotency(

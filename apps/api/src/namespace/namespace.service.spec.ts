@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import type { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
@@ -25,6 +26,10 @@ function makeNamespaceEntity(overrides: Partial<NamespaceEntity> = {}): Namespac
   } as NamespaceEntity;
 }
 
+function makeConfig(values: Record<string, string> = {}): ConfigService {
+  return { get: (key: string) => values[key] } as unknown as ConfigService;
+}
+
 describe('NamespaceService', () => {
   let namespaceRepo: {
     findOneBy: jest.Mock<() => Promise<NamespaceEntity | null>>;
@@ -47,6 +52,7 @@ describe('NamespaceService', () => {
       idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
       provisioningRepo as unknown as NamespaceProvisioningRepository,
       null,
+      makeConfig(),
     );
   });
 
@@ -129,6 +135,7 @@ describe('NamespaceService', () => {
         idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
         provisioningRepo as unknown as NamespaceProvisioningRepository,
         Buffer.alloc(32),
+        makeConfig(),
       );
       idempotencyRepo.findOneBy.mockResolvedValue(null);
       provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity({ encryptionPolicy: 'ENCRYPTED' }));
@@ -191,6 +198,24 @@ describe('NamespaceService', () => {
       const result = await service.findById('11111111-1111-1111-1111-111111111111');
 
       expect(result.id).toBe('11111111-1111-1111-1111-111111111111');
+      expect(result.limits).toEqual({ maxFileSizeBytes: '5368709120' });
+    });
+
+    it('응답 파일 한도는 ConfigService의 STORIX_MAX_FILE_SIZE_BYTES를 사용한다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        null,
+        makeConfig({ STORIX_MAX_FILE_SIZE_BYTES: '4096' }),
+      );
+      namespaceRepo.findOneBy.mockResolvedValue(
+        makeNamespaceEntity({ id: '11111111-1111-1111-1111-111111111111', maxFileSizeBytes: null }),
+      );
+
+      const result = await service.findById('11111111-1111-1111-1111-111111111111');
+
+      expect(result.limits).toEqual({ maxFileSizeBytes: '4096' });
     });
   });
 
