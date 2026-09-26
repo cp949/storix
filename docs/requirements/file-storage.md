@@ -223,10 +223,10 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-027 선택 capability의 설정과 검색
 
 - [ ] **진행 상태:** 진행 중
-- **판정 근거:** 현재 OpenAPI와 namespace/API 설정에는 capability별 활성화·검색 계약이 확인되지 않았다. 이는 새 선택 기능을 위한 확정 요구사항이며, 현재 API가 지원한다는 뜻이나 capability endpoint의 세부 계약 확정을 뜻하지 않는다.
+- **판정 근거:** 현재 구현은 시작 JSON 설정과 namespace 존재 검증, 정적 registry·전역/namespace 활성 판정·의존성 검증, 409 `VFS_FEATURE_DISABLED`와 조건부 receipt 경계를 제공한다. 설정 환경 변수와 오류 코드는 README·`.env.example`·OpenAPI에 공개되어 있다. Production registry는 비어 있고 실제 선택 기능 route가 없다. 활성 capability 조회 API의 구체 계약·구현은 [VFS-07](../ROADMAP.md)에 남아 있어 전체 수용 조건은 충족되지 않았다. 상세 설계는 [VFS capability 설계](../design/06-vfs-capabilities.md)를 참고한다.
 - 기존 파일 API는 기본 활성으로 유지하며 VFS-01에서 기존 연산을 끄는 설정은 도입하지 않는다. 이후 추가되는 선택 기능은 관련 endpoint를 완결된 capability 단위로 묶어 설정할 수 있어야 한다. 전역 설정은 상위 차단으로 작동하고 namespace 설정은 전역에서 허용한 기능만 제한하거나 허용한다. 전역 차단을 namespace 설정으로 다시 켤 수 없다. 새 선택 기능은 명시적으로 활성화하기 전까지 비활성이다.
 - 기능 비활성화는 그 기능이 이미 저장한 데이터를 삭제하거나 감추지 않는다. 기존 데이터의 안전한 조회·내보내기·복구·삭제는 계속 가능해야 한다. 비활성 기능 요청은 안정적인 `VFS_FEATURE_DISABLED` 오류로 거부하고 소비자가 활성 capability를 조회할 방법을 제공한다.
-- 설정은 우선 서비스 시작 시 적용한다. 각 capability 요구사항은 적용 범위, 기본값, 전역/namespace 우선순위, 의존성, 비활성 응답, 기존 데이터 처리, 조회 노출을 명시한다. 운영 중 설정 변경과 capability 검색 API의 구체 계약·구현은 별도 후속 작업에서 정한다.
+- 설정은 서비스 시작 시 적용한다. 각 capability 요구사항은 적용 범위, 기본값, 전역/namespace 우선순위, 의존성, 비활성 응답, 기존 데이터 처리, 조회 노출을 명시한다. 운영 중 설정 변경은 현재 제공하지 않는다. capability 조회 API의 구체 계약·구현은 VFS-07에서 정한다.
 - **수용 조건:** 새 선택 기능이 capability 경계 밖으로 부분 활성화되지 않고, namespace 설정으로 전역 차단을 우회할 수 없다. 비활성화 뒤에도 기존 데이터 보존 조건을 지키며, 소비자는 안정된 오류 코드와 활성 상태 조회로 비활성 이유를 판별할 수 있다.
 
 ## 소비자 어댑터 책임과 범위 제외

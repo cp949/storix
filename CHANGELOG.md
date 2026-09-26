@@ -10,6 +10,8 @@
 
 ### Added
 
+- 선택 VFS capability의 시작 JSON 설정 기반과 409 `VFS_FEATURE_DISABLED` 오류를 추가했다. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 비어 있으면 선택 기능은 모두 비활성이고, 지정한 파일의 읽기·schema·namespace·registry 검증 실패는 시작 오류다. 현재 등록된 선택 기능과 활성 상태 조회 API는 없다.
+
 - OpenAPI에 namespace 사전 조건과 파일 생성·조회·조건부 교체·FILE snapshot 복원까지의 curl 예시를 추가했다. revision, 전체 바이트 SHA-256, 실행 중 한도 확인, receipt의 30일 재생 범위도 설명한다.
 
 - 조건부 move/copy에 선택 필드 `destinationResolution: "exact"`를 추가했다. 지정 경로(`/` 포함)가 이미 있으면 대상 metadata를 담은 412를 재생 가능 receipt로 저장하고, 없으면 정확한 경로에 이동·복사한다. 디렉터리를 자기 자신이나 subtree로 지정한 요청은 기존과 같이 409 `VFS_INVALID_OPERATION`이다. 필드를 생략하면 기존 목적지 배치 규칙을 유지한다.
