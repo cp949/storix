@@ -26,10 +26,10 @@ describe('NamespaceController', () => {
     namespaceService.findById.mockResolvedValue({ status: 'ACTIVE' } as Awaited<
       ReturnType<NamespaceService['findById']>
     >);
-    capabilityService.listEnabled.mockReturnValue(['files-v2']);
+    capabilityService.listEnabled.mockReturnValue(['content-search']);
     const response = { setHeader: jest.fn() } as unknown as Response;
 
-    await expect(controller.findCapabilities('namespace-id', response)).resolves.toEqual({ capabilities: ['files-v2'] });
+    await expect(controller.findCapabilities('namespace-id', response)).resolves.toEqual({ capabilities: ['content-search'] });
 
     expect(namespaceService.findById).toHaveBeenCalledWith('namespace-id');
     expect(capabilityService.listEnabled).toHaveBeenCalledWith('namespace-id');

@@ -135,17 +135,21 @@ describe('Capability discovery HTTP contract (PostgreSQL)', () => {
 
   it.each(['DELETING', 'DELETED'] as const)('%s namespace는 capability 조회에서 숨기고 기존 단건 조회 정책은 유지한다', async (status) => {
     await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', [status, namespaceId]);
-    const hidden = await request(app.getHttpServer())
-      .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
-      .set('Authorization', `Bearer ${API_KEY}`)
-      .expect(404);
-    expect(hidden.body.code).toBe('NAMESPACE_NOT_FOUND');
-    const existing = await request(app.getHttpServer())
-      .get(`/api/v2/namespaces/${namespaceId}`)
-      .set('Authorization', `Bearer ${API_KEY}`)
-      .expect(200);
-    expect(existing.body.status).toBe(status);
-    await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', ['ACTIVE', namespaceId]);
+    try {
+      const hidden = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(404);
+      expect(hidden.body.code).toBe('NAMESPACE_NOT_FOUND');
+      const existing = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${namespaceId}`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(200);
+      expect(existing.body.status).toBe(status);
+    } finally {
+      // 실패해도 이후 양성 사례가 같은 namespace를 쓰므로 상태를 되돌린다
+      await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', ['ACTIVE', namespaceId]);
+    }
   });
 
   it('test registry의 전역·namespace 허용 기능과 활성 의존성을 정렬해 반환한다', async () => {
