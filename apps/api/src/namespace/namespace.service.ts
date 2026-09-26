@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { classifyPersistenceFailure } from '../persistence/persistence-failure.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryDeepPartialEntity, Repository } from 'typeorm';
+import { classifyPersistenceFailure } from '../persistence/persistence-failure.js';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';

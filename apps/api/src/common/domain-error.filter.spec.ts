@@ -247,6 +247,34 @@ describe('DomainErrorFilter', () => {
     loggerErrorSpy.mockRestore();
   });
 
+  it('STORAGE_FAILURE 로그에는 응답에 숨긴 원본 cause stack을 이어 남긴다', () => {
+    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { host, json } = createHost();
+    const cause = Object.assign(new Error('disk full on /var/lib/postgresql'), { code: '53100' });
+
+    filter.catch(new StorageFailureError(undefined, { cause }), host);
+
+    const [, stack] = loggerErrorSpy.mock.calls[0] as [string, string];
+    expect(stack).toContain('Caused by: Error: disk full on /var/lib/postgresql');
+    expect(JSON.stringify(json.mock.calls)).not.toContain('disk full');
+    loggerErrorSpy.mockRestore();
+  });
+
+  it('STORAGE_UNAVAILABLE은 원본 cause를 경고 로그로 남기고 응답에는 노출하지 않는다', () => {
+    const loggerWarnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { host, json } = createHost();
+    const cause = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), { code: 'ECONNREFUSED' });
+
+    filter.catch(new StorageUnavailableError(undefined, { cause }), host);
+
+    expect(loggerWarnSpy).toHaveBeenCalledTimes(1);
+    expect(String(loggerWarnSpy.mock.calls[0][0])).toContain(
+      'Caused by: Error: connect ECONNREFUSED 10.0.0.5:5432',
+    );
+    expect(JSON.stringify(json.mock.calls)).not.toContain('10.0.0.5');
+    loggerWarnSpy.mockRestore();
+  });
+
   it('exception에 path가 있어도 500 응답에서는 노출하지 않는다', () => {
     const { host, json } = createHost();
     const thirdPartyError = Object.assign(new Error('ENOENT'), { path: '/etc/passwd' });

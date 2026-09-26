@@ -22,9 +22,7 @@ describe('MinioBlobStorage', () => {
     await expect(storage.get('key')).rejects.toMatchObject({ code: 'STORAGE_FAILURE', status: 500 });
     const result = await storage.get('key');
     await expect(async () => {
-      for await (const _chunk of result) {
-        /* drain */
-      }
+      for await (const chunk of result) void chunk;
     }).rejects.toMatchObject({
       code: 'STORAGE_UNAVAILABLE',
       status: 503,
@@ -40,9 +38,7 @@ describe('MinioBlobStorage', () => {
       })(),
     );
     const putObject = jest.fn<(...args: unknown[]) => Promise<void>>(async (_bucket, _key, body) => {
-      for await (const _chunk of body as AsyncIterable<Buffer>) {
-        /* consume */
-      }
+      for await (const chunk of body as AsyncIterable<Buffer>) void chunk;
     });
     const storage = new MinioBlobStorage({ putObject } as unknown as Client, 'bucket', null);
     await expect(storage.put('key', source)).rejects.toBe(sourceError);

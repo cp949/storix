@@ -95,11 +95,17 @@ describe('classifyPersistenceFailure', () => {
     },
   );
 
-  it.each(['SQLITE_BUSY', 'SQLITE_LOCKED'])('SQLite %s 드라이버 오류는 503이다', (code) => {
+  it.each([
+    'SQLITE_BUSY',
+    'SQLITE_LOCKED',
+    'SQLITE_BUSY_SNAPSHOT',
+    'SQLITE_BUSY_TIMEOUT',
+    'SQLITE_LOCKED_SHAREDCACHE',
+  ])('SQLite %s 드라이버 오류는 503이다', (code) => {
     expect(classifyPersistenceFailure({ code })).toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
   });
 
-  it.each(['53100', 'XX001', 'SQLITE_FULL', 'SQLITE_CORRUPT', 'SQLITE_READONLY'])(
+  it.each(['53100', 'XX001', 'SQLITE_FULL', 'SQLITE_CORRUPT', 'SQLITE_CORRUPT_INDEX', 'SQLITE_READONLY'])(
     '%s 저장 오류는 500이다',
     (code) => {
       expect(classifyPersistenceFailure({ driverError: { code } })).toMatchObject({
@@ -122,6 +128,8 @@ describe('classifyPersistenceFailure', () => {
     expect(classifyPersistenceFailure({ code: 'SQLITE_CONSTRAINT_UNIQUE' })).toBeNull();
     expect(classifyPersistenceFailure({ code: 'SQLITE_IOERR' })).toBeNull();
     expect(classifyPersistenceFailure({ code: 'SQLITE_CANTOPEN' })).toBeNull();
+    // READONLY 확장 코드는 일시성이 기본 코드와 달라 접지 않는다.
+    expect(classifyPersistenceFailure({ code: 'SQLITE_READONLY_RECOVERY' })).toBeNull();
     expect(classifyPersistenceFailure(new Error('ECONNREFUSED'))).toBeNull();
     expect(classifyPersistenceFailure({ driverError: { code: 'FUTURE_CODE' } })).toBeNull();
   });

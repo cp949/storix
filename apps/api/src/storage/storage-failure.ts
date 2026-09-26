@@ -2,7 +2,8 @@ import { S3Error } from 'minio';
 import { DomainError } from '../common/domain-error.js';
 import { StorageFailureError, StorageUnavailableError } from '../common/storage-failure.errors.js';
 
-// MinIO SDK 8 S3Error.code (server response), Node transport Error.code (SDK call only).
+// Blob 저장 장애 분류표. S3 코드는 MinIO SDK 8 S3Error.code(서버 응답)이고, transport 코드는 SDK 호출과
+// SDK가 반환한 다운로드 stream의 Node Error.code다. 업로드 원본 stream 오류는 adapter가 이 분류 전에 걸러낸다.
 const TEMPORARY_S3_CODES = new Set(['SlowDown', 'ServiceUnavailable', 'InternalError', 'RequestTimeout']);
 const PERMANENT_S3_CODES = new Set([
   'NoSuchKey',

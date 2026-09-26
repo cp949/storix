@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { classifyPersistenceFailure, classifyPersistenceOperation } from './persistence-failure.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
+import { classifyPersistenceFailure, classifyPersistenceOperation } from './persistence-failure.js';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { KeysetCursor } from '../common/keyset-cursor.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
@@ -334,8 +334,8 @@ export class VfsNodeRepository {
         return { value, affectedRevisions };
       });
     } catch (error) {
-      // work/afterBump may consume a client upload stream. A raw transport code
-      // from that callback has no proven DB provenance.
+      // work/afterBump는 클라이언트 업로드 stream을 소비할 수 있다. callback의 원시 transport 코드는
+      // DB에서 났다는 근거가 없으므로 driverError가 없으면 분류하지 않는다.
       if (error === callbackError && !(error as { driverError?: unknown })?.driverError) throw error;
       throw classifyPersistenceFailure(error) ?? error;
     }

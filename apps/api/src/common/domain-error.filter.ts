@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { inspect } from 'node:util';
 import { DomainError } from './domain-error.js';
 import { StorageFailureError, StorageUnavailableError } from './storage-failure.errors.js';
 import type { ErrorReporter } from '../observability/error-reporter.js';
@@ -54,6 +55,17 @@ export function resolveErrorMessage(exception: unknown, status: number): string 
   return exception instanceof Error ? exception.message : INTERNAL_ERROR_MESSAGE;
 }
 
+// 저장 장애 오류는 원본 DB·Blob 오류를 cause로만 들고 응답에는 고정 문구를 쓴다. 로그에는 cause stack을
+// 이어 붙여 SQLSTATE·SDK 코드 같은 진단 정보를 잃지 않게 한다.
+export function resolveLogStack(exception: Error): string | undefined {
+  if (exception.cause === undefined) return exception.stack;
+  const cause =
+    exception.cause instanceof Error
+      ? (exception.cause.stack ?? exception.cause.message)
+      : inspect(exception.cause);
+  return `${exception.stack ?? exception.message}\nCaused by: ${cause}`;
+}
+
 // DomainError가 아닌 예외(third-party, body-parser 등)는 shouldReport 개념이 없으므로
 // 기존 전역 규칙(500만 report)으로 fallback한다.
 export function resolveShouldReport(exception: unknown, status: number): boolean {
@@ -78,8 +90,11 @@ export class DomainErrorFilter implements ExceptionFilter {
     if (status === 500) {
       this.logger.error(
         exception instanceof Error ? exception.message : String(exception),
-        exception instanceof Error ? exception.stack : undefined,
+        exception instanceof Error ? resolveLogStack(exception) : undefined,
       );
+    } else if (exception instanceof StorageUnavailableError) {
+      // 503은 재시도 대상이지만 장애 원인 추적을 위해 cause를 경고로 남긴다.
+      this.logger.warn(resolveLogStack(exception) ?? exception.message);
     }
 
     if (resolveShouldReport(exception, status)) {

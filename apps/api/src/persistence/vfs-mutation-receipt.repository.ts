@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { classifyPersistenceOperation } from './persistence-failure.js';
 import { DataSource, EntityManager } from 'typeorm';
+import { classifyPersistenceOperation } from './persistence-failure.js';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import type { MutationTx } from './vfs-node.repository.js';
