@@ -15,7 +15,9 @@ _Avoid_: 테넌트, 버킷, 워크스페이스
 **VFS Node**:
 Namespace 안에서 파일 또는 디렉터리 하나를 가리키는 단위로, FILE과 DIRECTORY 두
 종류가 있다. 위치는 parent-child 관계로 표현하고 사용자가 보는 경로 문자열은
-식별자가 아니며, FILE Node만 Blob을 참조해 콘텐츠를 가리킨다.
+식별자가 아니며, FILE Node만 Blob을 참조해 콘텐츠를 가리킨다. 불변 `id`(UUID)로
+식별하며, 이동·이름 변경·내용 교체 후에도 같은 Node이고 삭제 뒤 같은 경로에 다시
+만든 것은 다른 Node다.
 _Avoid_: 엔트리, 아이템
 
 **Blob**:

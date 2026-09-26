@@ -9,7 +9,12 @@ import {
   VfsNodeRepository,
 } from '../persistence/vfs-node.repository.js';
 import { VfsNodeType } from '../persistence/entities/vfs-node.entity.js';
-import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
+import {
+  toNodeResponse,
+  toStatResponse,
+  VfsNodeResponseDto,
+  VfsStatResponseDto,
+} from './dto/node-response.dto.js';
 import { joinChildPath, PathResolver } from './path-resolver.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { resolveEffectiveLimit } from '../common/resource-limit.js';
@@ -43,11 +48,6 @@ export interface RevisionPageResult {
   readonly items: (VfsNodeResponseDto & { readonly revision: string })[];
   readonly nextCursor: string | null;
   readonly directoryRevision: string;
-}
-
-export interface VfsStatResponseDto extends VfsNodeResponseDto {
-  readonly revision: string;
-  readonly sha256: string | null;
 }
 
 function isNameFilterMode(value: string | undefined): value is NameFilterMode {
@@ -234,11 +234,7 @@ export class VfsService {
       throw new VfsNodeNotFoundError(canonical);
     }
 
-    return {
-      ...toNodeResponse(target.node, canonical),
-      revision: encodeRevision(target.node),
-      sha256: target.sha256,
-    };
+    return toStatResponse(target.node, canonical, target.sha256);
   }
 
   async exists(namespaceId: string, rawPath: string): Promise<{ exists: boolean }> {

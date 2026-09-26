@@ -14,6 +14,7 @@ import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { uploadStream } from '../storage/stream-upload.js';
 import {
   NamespaceResourceLimits,
+  VfsContentBlobRef,
   VfsNodeRecord,
   VfsNodeRepository,
 } from '../persistence/vfs-node.repository.js';
@@ -230,11 +231,7 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
-    const { storageKey, encryptionIv, sha256 } = read.blob as {
-      storageKey: string;
-      encryptionIv: Buffer | null;
-      sha256: string;
-    };
+    const { storageKey, encryptionIv, sha256 } = read.blob as VfsContentBlobRef;
     const totalSize = Number(target.size);
     const mimeType = target.mimeType ?? 'application/octet-stream';
 

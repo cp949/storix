@@ -50,3 +50,18 @@ export function toConditionalContentResponse(
 ): VfsConditionalContentResourceDto {
   return { ...toNodeResponse(record, path), revision: encodeRevision(record) };
 }
+
+// GET /fs/stat 전용 shape. 같은 읽기 트랜잭션에서 읽은 노드의 revision과 참조 Blob SHA-256을 더한다.
+// DIRECTORY의 sha256은 null이다.
+export interface VfsStatResponseDto extends VfsNodeResponseDto {
+  readonly revision: string;
+  readonly sha256: string | null;
+}
+
+export function toStatResponse(
+  record: VfsNodeRecord,
+  path: string,
+  sha256: string | null,
+): VfsStatResponseDto {
+  return { ...toNodeResponse(record, path), revision: encodeRevision(record), sha256 };
+}

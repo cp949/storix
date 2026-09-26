@@ -53,6 +53,13 @@ export interface VfsNodeRecord {
   readonly version: number;
 }
 
+// FILE 콘텐츠 조회에 필요한 참조 Blob 정보. sha256은 복호화한 원본 전체 바이트 기준이다.
+export interface VfsContentBlobRef {
+  readonly storageKey: string;
+  readonly encryptionIv: Buffer | null;
+  readonly sha256: string;
+}
+
 export interface NamespaceResourceLimits {
   readonly maxFileSizeBytes: string | null;
   readonly maxSyncDeleteNodes: number | null;
@@ -738,10 +745,7 @@ export class VfsNodeRepository {
     namespaceId: string,
     rootId: string,
     segments: string[],
-  ): Promise<{
-    node: VfsNodeRecord;
-    blob: { storageKey: string; encryptionIv: Buffer | null; sha256: string } | null;
-  } | null> {
+  ): Promise<{ node: VfsNodeRecord; blob: VfsContentBlobRef | null } | null> {
     return this.readSnapshot(async (manager) => {
       const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
       if (!node) return null;
