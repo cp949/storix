@@ -12,6 +12,7 @@ import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../common/body-parser.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { ApiKeyGuard } from '../auth/api-key.guard.js';
+import { AuthModule } from '../auth/auth.module.js';
 import { VALID_API_KEYS } from '../auth/auth.constants.js';
 import { Public } from '../auth/public.decorator.js';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
@@ -280,6 +281,40 @@ describe('감사 로그 end-to-end', () => {
       }
     } finally {
       await authApp.close();
+    }
+  });
+
+  it('실제 컨트롤러의 필터도 API key 거부를 감사 기록한다', async () => {
+    // 운영 경로의 VFS·namespace 컨트롤러는 전역 필터가 아니라 @UseFilters(DomainErrorFilter)로
+    // DI 생성된 필터가 가드 예외를 처리한다. 이 인스턴스에 감사 저장소가 주입되는지 확인한다.
+    const previous = process.env.STORIX_API_KEY;
+    process.env.STORIX_API_KEY = 'audit-real-route-key';
+    let securedApp: INestApplication | undefined;
+    try {
+      const moduleRef = await Test.createTestingModule({
+        imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, AuditModule, NamespaceModule, VfsModule],
+      }).compile();
+      securedApp = moduleRef.createNestApplication({ bodyParser: false });
+      configureBodyParsers(securedApp);
+      await securedApp.init();
+      const namespaceId = randomUUID();
+      const snapshotsPath = `/api/v2/namespaces/${namespaceId}/fs/snapshots`;
+      const namespacePath = `/api/v2/namespaces/${namespaceId}`;
+      const vfsRequestId = `audit-real-vfs-${randomUUID()}`;
+      const namespaceRequestId = `audit-real-ns-${randomUUID()}`;
+      await request(securedApp.getHttpServer()).get(snapshotsPath).set('X-Request-Id', vfsRequestId).expect(401);
+      await request(securedApp.getHttpServer()).get(namespacePath)
+        .set('Authorization', 'Bearer raw-secret-key').set('X-Request-Id', namespaceRequestId).expect(401);
+
+      for (const [requestId, path] of [[vfsRequestId, snapshotsPath], [namespaceRequestId, namespacePath]] as const) {
+        const row = await findAuditLogByRequestId(requestId);
+        expect(row).toMatchObject({ operation: `GET ${path}`, path, namespace_id: null, caller: null, status: 401 });
+        expect(JSON.stringify(row)).not.toContain('raw-secret-key');
+      }
+    } finally {
+      await securedApp?.close();
+      if (previous === undefined) delete process.env.STORIX_API_KEY;
+      else process.env.STORIX_API_KEY = previous;
     }
   });
 
