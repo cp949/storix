@@ -10,6 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Audited } from '../audit/audited.decorator.js';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { Public } from '../auth/public.decorator.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
@@ -19,6 +20,7 @@ import { NamespaceQuotaService } from './namespace-quota.service.js';
 import { parseUpdateNamespaceQuotaRequest } from './dto/update-namespace-quota.dto.js';
 
 @Public()
+@Audited()
 @Controller('api/v2/admin/namespaces')
 @UseGuards(AdminApiKeyGuard)
 @UseFilters(DomainErrorFilter)

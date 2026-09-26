@@ -5,6 +5,7 @@ import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
 import { isUuid } from '../common/uuid.js';
 import { AuditLogRepository } from '../persistence/audit-log.repository.js';
+import { AUDITED_KEY } from './audited.decorator.js';
 
 const CALLER_ID_HEADER = 'x-caller-id';
 // 로그 삽입/개행을 막기 위해 request-context.middleware.ts의 requestId 검증과
@@ -42,11 +43,9 @@ export class AuditLogInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) {
+    const targets = [context.getHandler(), context.getClass()];
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets);
+    if (isPublic && !this.reflector.getAllAndOverride<boolean>(AUDITED_KEY, targets)) {
       return next.handle();
     }
 

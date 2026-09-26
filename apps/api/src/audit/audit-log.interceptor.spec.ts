@@ -3,7 +3,9 @@ import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import { jest } from '@jest/globals';
 import { of } from 'rxjs';
+import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
 import { AuditLogInterceptor, resolveCallerId } from './audit-log.interceptor.js';
+import { AUDITED_KEY } from './audited.decorator.js';
 import type { AuditLogEntry, AuditLogRepository } from '../persistence/audit-log.repository.js';
 
 function createContext(
@@ -78,7 +80,7 @@ describe('AuditLogInterceptor', () => {
   }
 
   it('@Public() 라우트는 기록하지 않는다', (done) => {
-    reflector.getAllAndOverride.mockReturnValue(true);
+    reflector.getAllAndOverride.mockImplementation((key) => key === IS_PUBLIC_KEY);
     const { context, response } = createContext({});
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
@@ -87,6 +89,22 @@ describe('AuditLogInterceptor', () => {
       .subscribe(() => {
         response.emit('close');
         expect(auditLogRepository.record).not.toHaveBeenCalled();
+        done();
+      });
+  });
+
+  it('@Public()이어도 @Audited() 라우트는 기록한다', (done) => {
+    reflector.getAllAndOverride.mockImplementation((key) => key === IS_PUBLIC_KEY || key === AUDITED_KEY);
+    const { context, response } = createContext({ namespaceId: '11111111-1111-1111-1111-111111111111' });
+    const handler: CallHandler = { handle: () => of({ ok: true }) };
+
+    createInterceptor()
+      .intercept(context, handler)
+      .subscribe(() => {
+        response.emit('close');
+        expect(auditLogRepository.record).toHaveBeenCalledWith(
+          expect.objectContaining({ namespaceId: '11111111-1111-1111-1111-111111111111', status: 200 }),
+        );
         done();
       });
   });

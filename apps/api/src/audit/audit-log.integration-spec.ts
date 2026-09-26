@@ -318,6 +318,28 @@ describe('감사 로그 end-to-end', () => {
     }
   });
 
+  it('admin quota 변경 성공도 감사 기록한다', async () => {
+    const previous = process.env.STORIX_ADMIN_API_KEY;
+    process.env.STORIX_ADMIN_API_KEY = 'audit-admin-key';
+    try {
+      const name = `audit-quota-${randomUUID()}`;
+      const ns = await request(httpServer).post('/api/v2/namespaces')
+        .set('Idempotency-Key', `ns-${name}`).send({ name }).expect(201);
+      const response = await request(httpServer).patch(`/api/v2/admin/namespaces/${ns.body.id}/quota`)
+        .set('Authorization', 'Bearer audit-admin-key').set('Idempotency-Key', randomUUID())
+        .set('X-Caller-Id', 'ops-console').send({ maxTotalLogicalBytes: '2048' }).expect(200);
+
+      const row = await findAuditLogByRequestId(response.headers['x-request-id'] as string);
+      expect(row).toMatchObject({
+        namespace_id: ns.body.id, operation: 'NamespaceQuotaController.update', caller: 'ops-console', status: 200,
+      });
+      expect(JSON.stringify(row)).not.toContain('audit-admin-key');
+    } finally {
+      if (previous === undefined) delete process.env.STORIX_ADMIN_API_KEY;
+      else process.env.STORIX_ADMIN_API_KEY = previous;
+    }
+  });
+
   it('/health/live 요청은 감사 로그에 남지 않는다', async () => {
     const response = await request(httpServer).get('/health/live').expect(200);
 
