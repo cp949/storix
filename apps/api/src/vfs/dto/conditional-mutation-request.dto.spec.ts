@@ -31,37 +31,49 @@ describe('conditional mutation request', () => {
     });
   });
 
-  it.each(['move', 'copy'] as const)('accepts exact %s and preserves the omitted command shape', (kind) => {
-    const body = { kind, source: '/a', destination: '/b', sourceRevision: revision, destinationAbsent: true };
-    const legacy = parseConditionalMutation(body);
-    expect(Object.keys(legacy)).not.toContain('destinationResolution');
-    expect(parseConditionalMutation({ ...body, destinationResolution: 'exact' })).toEqual({
-      ...legacy,
-      destinationResolution: 'exact',
-    });
-    expect(() =>
-      parseConditionalMutation({
+  it.each(['move', 'copy'] as const)(
+    '%s의 exact selector를 받고 생략 시 기존 command shape를 유지한다',
+    (kind) => {
+      const body = {
         kind,
         source: '/a',
         destination: '/b',
         sourceRevision: revision,
-        destinationResolution: 'exact',
-      }),
-    ).toThrow(VfsPreconditionRequiredError);
-  });
-
-  it.each(['placement', false, null])('rejects unsupported destinationResolution %j', (value) => {
-    expect(() =>
-      parseConditionalMutation({
-        kind: 'copy',
-        source: '/a',
-        destination: '/b',
-        sourceRevision: revision,
         destinationAbsent: true,
-        destinationResolution: value,
-      }),
-    ).toThrow(expect.objectContaining({ status: 400 }));
-  });
+      };
+      const legacy = parseConditionalMutation(body);
+      expect(Object.keys(legacy)).not.toContain('destinationResolution');
+      expect(parseConditionalMutation({ ...body, destinationResolution: 'exact' })).toEqual({
+        ...legacy,
+        destinationResolution: 'exact',
+      });
+      expect(() =>
+        parseConditionalMutation({
+          kind,
+          source: '/a',
+          destination: '/b',
+          sourceRevision: revision,
+          destinationResolution: 'exact',
+        }),
+      ).toThrow(VfsPreconditionRequiredError);
+    },
+  );
+
+  it.each(['placement', false, null])(
+    '지원하지 않는 destinationResolution %j는 400으로 거절한다',
+    (value) => {
+      expect(() =>
+        parseConditionalMutation({
+          kind: 'copy',
+          source: '/a',
+          destination: '/b',
+          sourceRevision: revision,
+          destinationAbsent: true,
+          destinationResolution: value,
+        }),
+      ).toThrow(expect.objectContaining({ status: 400 }));
+    },
+  );
 
   it.each([
     { kind: 'mkdir', path: '/a' },

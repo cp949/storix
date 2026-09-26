@@ -614,7 +614,7 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
     });
 
     it.each(['move', 'copy'] as const)(
-      '%s exact destination rejects occupied paths and preserves state',
+      '%s exact 목적지가 이미 있으면 412로 거절하고 상태를 바꾸지 않는다',
       async (kind) => {
         const namespace = await createNamespace(`exact-${kind}-${randomUUID()}`);
         const root = (await getRepo().getRoot(namespace.id))!;
@@ -682,25 +682,28 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
       },
     );
 
-    it.each(['move', 'copy'] as const)('%s omitted selector retains directory placement', async (kind) => {
-      const namespace = await createNamespace(`legacy-${kind}-${randomUUID()}`);
-      const root = (await getRepo().getRoot(namespace.id))!;
-      await createFile(namespace.id, root.id, 'source');
-      await getRepo().ensureDirectory(namespace.id, root.id, ['directory'], false);
-      const source = (await getRepo().resolvePath(namespace.id, root.id, ['source']))!;
-      const result = await getRepo().withMutation(namespace.id, root.id, (tx) =>
-        getRepo().applyConditionalMutation(tx, {
-          kind,
-          source: '/source',
-          sourceSegments: ['source'],
-          destination: '/directory',
-          destinationSegments: ['directory'],
-          sourceRevision: encodeRevision(source),
-          destinationAbsent: true,
-        }),
-      );
-      expect(result.value.resource?.path).toBe('/directory/source');
-    });
+    it.each(['move', 'copy'] as const)(
+      '%s selector를 생략하면 기존 디렉터리 배치를 유지한다',
+      async (kind) => {
+        const namespace = await createNamespace(`legacy-${kind}-${randomUUID()}`);
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await createFile(namespace.id, root.id, 'source');
+        await getRepo().ensureDirectory(namespace.id, root.id, ['directory'], false);
+        const source = (await getRepo().resolvePath(namespace.id, root.id, ['source']))!;
+        const result = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+          getRepo().applyConditionalMutation(tx, {
+            kind,
+            source: '/source',
+            sourceSegments: ['source'],
+            destination: '/directory',
+            destinationSegments: ['directory'],
+            sourceRevision: encodeRevision(source),
+            destinationAbsent: true,
+          }),
+        );
+        expect(result.value.resource?.path).toBe('/directory/source');
+      },
+    );
 
     it.each(['move', 'copy'] as const)(
       '%s exact 목적지가 자기 subtree면 412보다 409 VFS_INVALID_OPERATION이 우선한다',

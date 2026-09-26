@@ -1680,7 +1680,7 @@ describe('Fs HTTP contract', () => {
 
   describe('conditional mutation receipts', () => {
     it.each(['move', 'copy'] as const)(
-      '%s exact target conflicts, replay, and legacy placement',
+      '%s exact 목적지 충돌·receipt 재생·기존 배치 유지를 HTTP 경계에서 지킨다',
       async (kind) => {
         const namespaceId = await createNamespace(`exact-http-${kind}-${randomUUID()}`);
         const base = `/api/v2/namespaces/${namespaceId}/fs`;
@@ -1774,7 +1774,7 @@ describe('Fs HTTP contract', () => {
       },
     );
 
-    it('serializes two exact copies to one absent target', async () => {
+    it('같은 부재 exact 목적지로 동시 copy하면 하나만 생성하고 나머지는 412다', async () => {
       const namespaceId = await createNamespace(`exact-race-${randomUUID()}`);
       const base = `/api/v2/namespaces/${namespaceId}/fs`;
       for (const path of ['/one', '/two']) {
@@ -1808,6 +1808,7 @@ describe('Fs HTTP contract', () => {
       const listing = await request(httpServer).get(`${base}/ls`).query({ path: '/' }).expect(200);
       expect(listing.body.items.filter((item: { name: string }) => item.name === 'target')).toHaveLength(1);
     });
+
     it('NFD path 거부를 receipt로 재생하고 같은 key의 NFC 요청은 key 재사용으로 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-nfd-retry-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs/mutations`;

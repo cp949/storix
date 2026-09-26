@@ -97,7 +97,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
 
   treeSnapshotContract(() => app);
 
-  it('replays exact directory collision across SQLite app and DataSource restart', async () => {
+  it('exact DIRECTORY 충돌 412를 SQLite app·DataSource 재시작 후에도 재생한다', async () => {
     const http = () => request(app.getHttpServer());
     const namespace = await http()
       .post('/api/v2/namespaces')
@@ -148,7 +148,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     );
   });
 
-  it('serializes SQLite exact copies to one target creation and one 412', async () => {
+  it('SQLite에서 같은 exact 목적지로 동시 copy하면 하나만 생성하고 나머지는 412다', async () => {
     const http = () => request(app.getHttpServer());
     const namespace = await http()
       .post('/api/v2/namespaces')
