@@ -427,12 +427,17 @@ export class VfsNodeRepository {
     return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
-  private async resolvePathInTx(tx: MutationTx, segments: string[]): Promise<VfsNodeEntity | null> {
-    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
-    let node = await nodeRepo.findOneBy({ id: tx.rootId, namespaceId: tx.namespaceId });
+  private async resolvePathInManager(
+    manager: EntityManager,
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+  ): Promise<VfsNodeEntity | null> {
+    const nodeRepo = manager.getRepository(VfsNodeEntity);
+    let node = await nodeRepo.findOneBy({ id: rootId, namespaceId });
     for (const segment of segments) {
       if (!node || node.type !== 'DIRECTORY') return null;
-      node = await nodeRepo.findOneBy({ namespaceId: tx.namespaceId, parentId: node.id, name: segment });
+      node = await nodeRepo.findOneBy({ namespaceId, parentId: node.id, name: segment });
     }
     return node;
   }
@@ -446,7 +451,7 @@ export class VfsNodeRepository {
     maxNodes: number,
   ): Promise<SnapshotSourceRow[]> {
     if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new Error('Invalid snapshot node limit');
-    const source = await this.resolvePathInTx(tx, segments);
+    const source = await this.resolvePathInManager(tx.manager, tx.namespaceId, tx.rootId, segments);
     if (!source) throw new VfsNodeNotFoundError(joinSegments(segments));
     const ph = new DialectPlaceholders(this.isSqlite);
     const namespace = ph.bind(tx.namespaceId);
@@ -516,7 +521,7 @@ export class VfsNodeRepository {
     const namespaceId = tx.namespaceId;
     const rootId = tx.rootId;
     if (command.kind === 'mkdir') {
-      const existing = await this.resolvePathInTx(tx, command.segments);
+      const existing = await this.resolvePathInManager(tx.manager, namespaceId, rootId, command.segments);
       if (existing) {
         throw new VfsPreconditionFailedError(command.path, this.currentOf(existing, command.path));
       }
@@ -526,7 +531,7 @@ export class VfsNodeRepository {
 
     const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
     if (command.kind === 'delete') {
-      const target = await this.resolvePathInTx(tx, command.segments);
+      const target = await this.resolvePathInManager(tx.manager, namespaceId, rootId, command.segments);
       if (!target) throw new VfsNodeNotFoundError(command.path);
       this.assertRevision(target, command.ifRevision, command.path);
       const max = resolveEffectiveLimit(
@@ -541,7 +546,7 @@ export class VfsNodeRepository {
       return { status: 200, resource: null };
     }
 
-    const source = await this.resolvePathInTx(tx, command.sourceSegments);
+    const source = await this.resolvePathInManager(tx.manager, namespaceId, rootId, command.sourceSegments);
     if (!source) throw new VfsNodeNotFoundError(command.source);
     this.assertRevision(source, command.sourceRevision, command.source);
     try {
@@ -575,8 +580,10 @@ export class VfsNodeRepository {
     } catch (error) {
       if (error instanceof VfsAlreadyExistsError) {
         // 충돌한 목적지 노드를 같은 트랜잭션에서 다시 읽는다(경로는 정규화된 세그먼트 조합이다).
-        const collision = await this.resolvePathInTx(
-          tx,
+        const collision = await this.resolvePathInManager(
+          tx.manager,
+          namespaceId,
+          rootId,
           error.path.split('/').filter((segment) => segment.length > 0),
         );
         throw new VfsPreconditionFailedError(error.path, this.currentOf(collision, error.path));
@@ -594,7 +601,7 @@ export class VfsNodeRepository {
   ): Promise<{ status: 200 | 201; resource: VfsConditionalContentResourceDto }> {
     assertConditionalSegments(segments);
     const path = joinSegments(segments);
-    const existing = await this.resolvePathInTx(tx, segments);
+    const existing = await this.resolvePathInManager(tx.manager, tx.namespaceId, tx.rootId, segments);
     if ('ifAbsent' in condition) {
       if (existing) throw new VfsPreconditionFailedError(path, this.currentOf(existing, path));
     } else {
@@ -748,25 +755,10 @@ export class VfsNodeRepository {
       : this.dataSource.transaction('REPEATABLE READ', work);
   }
 
-  private async resolveInReadTx(
-    manager: EntityManager,
-    namespaceId: string,
-    rootId: string,
-    segments: string[],
-  ): Promise<VfsNodeEntity | null> {
-    const nodeRepo = manager.getRepository(VfsNodeEntity);
-    let node = await nodeRepo.findOneBy({ id: rootId, namespaceId });
-    for (const segment of segments) {
-      if (!node || node.type !== 'DIRECTORY') return null;
-      node = await nodeRepo.findOneBy({ namespaceId, parentId: node.id, name: segment });
-    }
-    return node;
-  }
-
   @classifyPersistenceOperation
   async readRevision(namespaceId: string, rootId: string, segments: string[]): Promise<VfsNodeRecord | null> {
     return this.readSnapshot(async (manager) => {
-      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      const node = await this.resolvePathInManager(manager, namespaceId, rootId, segments);
       return node ? toRecord(node) : null;
     });
   }
@@ -788,7 +780,7 @@ export class VfsNodeRepository {
     segments: string[],
   ): Promise<{ node: VfsNodeRecord; blob: VfsContentBlobRef | null } | null> {
     return this.readSnapshot(async (manager) => {
-      const node = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      const node = await this.resolvePathInManager(manager, namespaceId, rootId, segments);
       if (!node) return null;
       if (node.type === 'DIRECTORY') return { node: toRecord(node), blob: null };
       if (!node.blobId) throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
@@ -811,7 +803,7 @@ export class VfsNodeRepository {
     limit: number,
   ): Promise<{ directory: VfsNodeRecord; rows: VfsNodeRecord[] }> {
     return this.readSnapshot(async (manager) => {
-      const directory = await this.resolveInReadTx(manager, namespaceId, rootId, segments);
+      const directory = await this.resolvePathInManager(manager, namespaceId, rootId, segments);
       if (!directory) throw new VfsNodeNotFoundError(canonicalPath);
       if (directory.type !== 'DIRECTORY') throw new VfsNotDirectoryError(canonicalPath);
       if (cursor?.directoryId !== undefined && cursor.directoryId !== directory.id) {
