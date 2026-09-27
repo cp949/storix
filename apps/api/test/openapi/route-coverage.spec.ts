@@ -15,7 +15,7 @@ import { NamespaceQuotaController } from '../../src/namespace/namespace-quota.co
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
 // openapi.yaml은 수기 작성이라 컨트롤러 라우트와 조용히 어긋날 수 있다(ADR-0019).
-// 여기서는 "엔드포인트 존재 여부"만 검증하고 파라미터/스키마 정합성은 리뷰에 맡긴다.
+// 라우트 집합과 일부 공개 API의 필수 파라미터·응답 계약을 검증한다.
 
 type ControllerClass = new (...args: never[]) => object;
 
@@ -370,4 +370,54 @@ it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약�
     $ref: '#/components/schemas/ErrorResponse',
   });
   expect(operation.responses['500']).toEqual({ $ref: '#/components/responses/InternalError' });
+});
+
+it('다섯 Range 조회의 206 식별·구간 헤더와 416 오류 헤더를 공개한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const base = '/api/v2/namespaces/{namespaceId}/fs';
+  const publicBase = '/api/v2/public/{namespaceId}/fs';
+  const paths = [
+    `${base}/content`,
+    `${base}/download`,
+    `${publicBase}/content`,
+    `${publicBase}/download`,
+    `${base}/snapshots/{snapshotId}/content`,
+  ];
+  for (const path of paths) {
+    const operation = spec.paths[path].get;
+    const partial = operation.responses['206'];
+    const unsatisfiable = operation.responses['416'];
+    expect(operation.parameters).toContainEqual({ $ref: '#/components/parameters/RangeHeader' });
+    expect(partial.headers['Content-Range'].schema).toEqual({ type: 'string' });
+    expect(partial.headers['Content-Length'].schema).toEqual({ type: 'integer' });
+    expect(partial.headers['Accept-Ranges'].schema).toEqual({ type: 'string', enum: ['bytes'] });
+    expect(partial.headers['X-Storix-File-Id'].schema).toEqual({ type: 'string', format: 'uuid' });
+    expect(partial.headers['X-Storix-Revision'].schema).toEqual({
+      type: 'string',
+      pattern: '^r1\\.[A-Za-z0-9_-]{32}$',
+    });
+    expect(partial.headers['X-Storix-Sha256']).toBeUndefined();
+    expect(unsatisfiable.headers['Content-Range'].schema).toEqual({ type: 'string' });
+    expect(unsatisfiable.headers['Content-Range'].description).toMatch(/bytes \*\/<전체 길이>/);
+    expect(unsatisfiable.description).toMatch(/VFS_RANGE_NOT_SATISFIABLE/);
+    expect(unsatisfiable.content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/ErrorResponse',
+    });
+  }
+  const snapshot = spec.paths[paths[4]].get.responses['206'];
+  expect(snapshot.headers['X-Storix-Snapshot-Id'].schema).toEqual({ type: 'string', format: 'uuid' });
+});
+
+it('Range 요청 설명은 단일 범위 문법과 경계·거부·해시 정책을 공개한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const description = spec.components.parameters.RangeHeader.description as string;
+  for (const example of ['bytes=0-1023', 'bytes=500-', 'bytes=-500']) {
+    expect(description).toContain(example);
+  }
+  expect(description).toMatch(/단일/);
+  expect(description).toMatch(/clipping/);
+  expect(description).toMatch(/suffix.*전체/);
+  expect(description).toMatch(/문법.*복수.*충족 불가.*416/s);
+  expect(description).toMatch(/206.*X-Storix-Sha256.*제공하지/s);
+  expect(description).toMatch(/If-Range.*미지원/);
 });

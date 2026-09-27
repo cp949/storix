@@ -964,6 +964,16 @@ paths:
           headers:
             Content-Range:
               schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+            Accept-Ranges:
+              schema: { type: string, enum: [bytes] }
+            X-Storix-File-Id:
+              description: 반환한 바이트가 속한 파일의 안정적인 VFS 노드 UUID.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 바이트가 속한 파일 상태의 불투명 revision 토큰.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
           content:
             application/octet-stream:
               schema:
@@ -983,6 +993,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '416':
           description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          headers:
+            Content-Range:
+              description: '거부된 Range의 전체 표현 길이: `bytes */<전체 길이>`.'
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1327,6 +1341,19 @@ paths:
                 format: binary
         '206':
           description: 부분 콘텐츠(`Range` 요청)
+          headers:
+            Content-Range:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+            Accept-Ranges:
+              schema: { type: string, enum: [bytes] }
+            X-Storix-File-Id:
+              description: 반환한 바이트가 속한 파일의 안정적인 VFS 노드 UUID.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 바이트가 속한 파일 상태의 불투명 revision 토큰.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
           content:
             application/octet-stream:
               schema:
@@ -1346,6 +1373,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '416':
           description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          headers:
+            Content-Range:
+              description: '거부된 Range의 전체 표현 길이: `bytes */<전체 길이>`.'
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1411,6 +1442,19 @@ paths:
                 format: binary
         '206':
           description: 부분 콘텐츠(`Range` 요청)
+          headers:
+            Content-Range:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+            Accept-Ranges:
+              schema: { type: string, enum: [bytes] }
+            X-Storix-File-Id:
+              description: 반환한 바이트가 속한 파일의 안정적인 VFS 노드 UUID.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 바이트가 속한 파일 상태의 불투명 revision 토큰.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
           content:
             application/octet-stream:
               schema:
@@ -1428,6 +1472,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '416':
           description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          headers:
+            Content-Range:
+              description: '거부된 Range의 전체 표현 길이: `bytes */<전체 길이>`.'
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1462,6 +1510,19 @@ paths:
                 format: binary
         '206':
           description: 부분 콘텐츠(`Range` 요청)
+          headers:
+            Content-Range:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+            Accept-Ranges:
+              schema: { type: string, enum: [bytes] }
+            X-Storix-File-Id:
+              description: 반환한 바이트가 속한 파일의 안정적인 VFS 노드 UUID.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 바이트가 속한 파일 상태의 불투명 revision 토큰.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
           content:
             application/octet-stream:
               schema:
@@ -1479,6 +1540,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '416':
           description: 처리할 수 없는 Range(`VFS_RANGE_NOT_SATISFIABLE`)
+          headers:
+            Content-Range:
+              description: '거부된 Range의 전체 표현 길이: `bytes */<전체 길이>`.'
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1934,6 +1999,15 @@ paths:
             Content-Range: { schema: { type: string } }
             Content-Length: { schema: { type: integer } }
             Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+            X-Storix-File-Id:
+              description: 반환한 바이트의 원본 파일 노드 UUID. FILE은 rootNodeId, TREE는 entry의 sourceNodeId다.
+              schema: { type: string, format: uuid }
+            X-Storix-Revision:
+              description: 반환한 바이트의 원본 파일 revision. FILE은 sourceRevision, TREE는 entry의 sourceRevision이다.
+              schema: { type: string, pattern: '^r1\.[A-Za-z0-9_-]{32}$' }
+            X-Storix-Snapshot-Id:
+              description: 반환한 바이트가 속한 snapshot UUID.
+              schema: { type: string, format: uuid }
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
@@ -1947,6 +2021,10 @@ paths:
           $ref: '#/components/responses/Conflict'
         '416':
           description: VFS_RANGE_NOT_SATISFIABLE
+          headers:
+            Content-Range:
+              description: '거부된 Range의 전체 표현 길이: `bytes */<전체 길이>`.'
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2171,7 +2249,13 @@ components:
       name: Range
       in: header
       required: false
-      description: 'RFC 7233 형식 (예: `bytes=0-1023`).'
+      description: |
+        단일 byte 범위만 허용한다. 시작-끝 `bytes=0-1023`, 열린 끝 `bytes=500-`,
+        suffix `bytes=-500` 형식을 지원한다. 끝값이 전체 길이를 넘으면 마지막 byte로
+        clipping하며, 길이보다 긴 suffix는 전체 콘텐츠를 206으로 반환한다.
+        잘못된 문법, 복수 범위, 충족 불가 범위는 416 `VFS_RANGE_NOT_SATISFIABLE`로 거부하고
+        `Content-Range: bytes */<전체 길이>`를 반환한다. 206에는 전체 파일의
+        `X-Storix-Sha256`을 제공하지 않는다. `If-Range`는 미지원이다.
       schema:
         type: string
     Cursor:

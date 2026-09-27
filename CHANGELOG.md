@@ -36,6 +36,8 @@
 
 ### Changed
 
+- 인증·PUBLIC 파일 콘텐츠 및 다운로드와 snapshot 콘텐츠의 단일 byte Range 조회에서 206 응답에 `Content-Range`·`Content-Length`·`Accept-Ranges: bytes`와 파일 ID·revision을 제공한다. snapshot은 snapshot ID도 제공한다. 처리할 수 없는 Range의 416 응답은 `Content-Range: bytes */<전체 길이>`를 제공한다. 206에는 전체 파일 SHA-256을 제공하지 않는다.
+
 - 인증 키 거부도 request ID, HTTP 작업, 경로, 401 결과로 비동기 best-effort 감사 기록한다. 감사 행에 snapshot ID를 보존해 snapshot 생성과 개별 ID 작업을 연결한다. 파일 본문과 인증 키 원문은 기록하지 않는다.
 
 - snapshot 자체가 없거나 snapshot ID 형식이 잘못된 경우 404 `VFS_SNAPSHOT_NOT_FOUND`를 반환한다. 파일 경로·snapshot 내부 entry 부재는 404 `VFS_NODE_NOT_FOUND`를 유지한다. 복원 대상 snapshot 종류가 FILE이 아니면 409 `VFS_INVALID_OPERATION`을 반환한다.

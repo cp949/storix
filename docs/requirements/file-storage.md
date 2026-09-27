@@ -61,7 +61,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-006 전체 파일 조회
 
 - [x] **진행 상태:** 로컬 코드·통합 검증 완료
-- **판정 근거:** 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256`이 반환한 바이트와 같은 노드/Blob 상태를 식별한다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 141/141에서 저장·교체·재시작, stat 대조, 교체 경합을 확인했고, `encrypted-content.integration-spec.ts` L1 5/5에서 복호화 바이트의 해시를 확인했다. 최종 PostgreSQL/MinIO L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다(전체 PostgreSQL/MinIO L2의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과). Range 206에는 세 헤더를 제공하지 않는다.
+- **판정 근거:** 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256`이 반환한 바이트와 같은 노드/Blob 상태를 식별한다. PostgreSQL/MinIO `fs.integration-spec.ts` L1 141/141에서 저장·교체·재시작, stat 대조, 교체 경합을 확인했고, `encrypted-content.integration-spec.ts` L1 5/5에서 복호화 바이트의 해시를 확인했다. 최종 PostgreSQL/MinIO L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다(전체 PostgreSQL/MinIO L2의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과). Range 206에는 `X-Storix-File-Id`·`X-Storix-Revision`을 제공하며, 전체 파일의 `X-Storix-Sha256`은 제공하지 않는다.
 - 호출자는 namespace와 경로로 현재 파일 전체를 읽을 수 있어야 한다. 조회 결과에는 반환한 바이트에 대응하는 파일 ID, revision, 콘텐츠 해시를 식별할 수단이 있어야 한다. 디렉터리와 파일 부재는 구분해야 한다.
 - **수용 조건:** 저장 직후와 Storix 재시작 후 조회한 바이트와 해당 revision·해시가 일관된다.
 
@@ -174,8 +174,8 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 
 ### RQ-021 Range 부분 콘텐츠 조회
 
-- [ ] **진행 상태:** 진행 중
-- **판정 근거:** OpenAPI는 인증·PUBLIC 파일 콘텐츠 및 snapshot 콘텐츠 조회의 Range 요청과 `200`/`206`/`416` 응답을 선언한다. 파일 `206` 응답의 파일 ID·revision 식별 헤더, 단일 범위 지원 및 반환 구간의 의미는 공개 계약에서 완결되게 확인되지 않는다. 이 항목은 요구사항과 현재 계약의 갭을 기록하며 API 계약 변경이나 runtime 검증을 뜻하지 않는다.
+- [x] **진행 상태:** 구현 및 계약 검증 완료
+- **판정 근거:** 단일 Range의 시작-끝·열린 끝·suffix와 clipping 및 긴 suffix 처리, 잘못된 문법·복수·충족 불가 범위의 416은 DELTA-01 단위 2 suites/45 tests, PostgreSQL/MinIO L1 2 suites/167 tests에서 확인했다. 인증·PUBLIC content/download의 206 bytes·길이·`Content-Range`·파일 ID/revision 및 파일 교체 경합, 암호화 파일과 FILE/TREE snapshot의 206 식별자는 DELTA-02 단위 4 suites/90 tests와 PostgreSQL/MinIO L1 3 suites/174 tests에서 확인했다. 인증 PRIVATE 파일의 빈 파일 및 `start == size` 416 응답은 PostgreSQL/MinIO `public-fs.integration-spec.ts`에서 `Content-Range`와 기존 오류 envelope를 확인했다. 다섯 GET operation의 OpenAPI 206/416 헤더, 기존 416 JSON error schema/code, 공통 Range 설명은 `route-coverage.spec.ts` 12/12와 `error-contract.spec.ts` 5/5로 확인했다. 최종 `pnpm test`는 API 88 suites/872 tests, demo1-was 15/73, demo1-web 7/39 통과했고 typecheck·lint·build가 모두 통과했다(lint는 기존 demo1-web 경고 4건, 오류 0건). PostgreSQL/MinIO L2는 33 suites/495 tests, SQLite L2는 19 suites/287 tests 통과했다. 206은 전체 파일 `X-Storix-Sha256`을 제공하지 않는다. 배포·외부 소비자·운영 proxy/storage 검증은 수행하지 않았다.
 - 호출자는 전체 파일을 받지 않고 byte range로 콘텐츠 일부를 조회할 수 있어야 한다. 부분 응답은 해당 바이트가 속한 안정 파일 ID와 revision을 식별할 수 있어야 한다. 전체 파일 SHA-256은 부분 응답의 검증값으로 사용하지 않는다.
 - **수용 조건:** 단일 byte range의 시작-끝, 열린 끝, suffix 요청은 지정 구간의 바이트와 길이, `Content-Range`를 일치시켜 반환한다. 범위를 처리할 수 없는 요청은 `416`으로 거부한다. 파일 `206`에는 파일 ID와 revision이 포함되며, 전체 SHA-256 헤더의 의미를 부분 바이트 해시로 바꾸지 않는다.
 - **관련 계약:** `GET /api/v2/namespaces/{namespaceId}/fs/content`, `/fs/download`, 공개 콘텐츠·다운로드 경로, snapshot 콘텐츠 경로의 `Range` / `206` / `416` 응답.
