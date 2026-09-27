@@ -13,6 +13,8 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
+import { VfsTrashEntity } from './entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from './entities/vfs-trash-entry.entity.js';
 import { AuditLogRepository } from './audit-log.repository.js';
 import { AUDIT_LOG_REPOSITORY } from './audit-log.tokens.js';
 import { BlobRepository } from './blob.repository.js';
@@ -39,6 +41,8 @@ const ENTITIES = [
   VfsMutationReceiptEntity,
   VfsSnapshotEntity,
   VfsSnapshotEntryEntity,
+  VfsTrashEntity,
+  VfsTrashEntryEntity,
   VfsUploadSessionEntity,
   VfsUploadPartEntity,
   VfsUploadStagingCleanupEntity,

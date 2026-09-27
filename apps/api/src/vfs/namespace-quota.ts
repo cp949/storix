@@ -27,8 +27,9 @@ export function resolveNamespaceQuota(namespaceLimit: string | null, globalBytes
   return namespaceBytes < globalBytes ? namespaceBytes : globalBytes;
 }
 
-export function resolveTotalLogicalBytes(liveFileBytes: string, retainedSnapshotBytes: string): bigint {
-  const total = parseNonNegativeBytes(liveFileBytes) + parseNonNegativeBytes(retainedSnapshotBytes);
+export function resolveTotalLogicalBytes(liveFileBytes: string, retainedSnapshotBytes: string, retainedTrashBytes: string): bigint {
+  const total = parseNonNegativeBytes(liveFileBytes) + parseNonNegativeBytes(retainedSnapshotBytes)
+    + parseNonNegativeBytes(retainedTrashBytes);
   if (total > MAX_SQLITE_AND_POSTGRES_BIGINT) throw new Error('Invalid total logical byte count');
   return total;
 }

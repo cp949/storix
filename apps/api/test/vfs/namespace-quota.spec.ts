@@ -21,7 +21,7 @@ describe('namespace quota', () => {
   });
 
   it('parses decimal byte values without number precision loss', () => {
-    expect(resolveTotalLogicalBytes('9007199254740993', '9007199254740994')).toBe(18014398509481987n);
+    expect(resolveTotalLogicalBytes('9007199254740993', '9007199254740994', '7')).toBe(18014398509481994n);
   });
 
   it.each(['0', '-1', '1.5', '1e6', '9223372036854775808'])('rejects invalid byte limit %s', (value) => {
@@ -36,7 +36,8 @@ describe('namespace quota', () => {
   });
 
   it('rejects negative or non-decimal usage counters', () => {
-    expect(() => resolveTotalLogicalBytes('-1', '100')).toThrow('Invalid total logical byte count');
-    expect(() => resolveTotalLogicalBytes('1', '1.2')).toThrow('Invalid total logical byte count');
+    expect(() => resolveTotalLogicalBytes('-1', '100', '0')).toThrow('Invalid total logical byte count');
+    expect(() => resolveTotalLogicalBytes('1', '1.2', '0')).toThrow('Invalid total logical byte count');
+    expect(() => resolveTotalLogicalBytes('1', '2', '-1')).toThrow('Invalid total logical byte count');
   });
 });

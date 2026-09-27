@@ -9,6 +9,7 @@ import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.
 import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
+import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -36,6 +37,68 @@ describe('마이그레이션 체인 (SQLite)', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
+  });
+
+  it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: `trash-migration-${randomUUID()}` });
+    const migration = new AddVfsTrash1791700000007();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await migration.down(runner);
+      expect(await runner.query('SELECT id FROM namespace WHERE id = ?', [namespace.id])).toEqual([{ id: namespace.id }]);
+      expect(await runner.query("SELECT name FROM sqlite_master WHERE name IN ('vfs_trash', 'vfs_trash_entry')"))
+        .toEqual([]);
+      await migration.up(runner);
+      expect(await runner.query('SELECT retained_trash_node_count, retained_trash_byte_count FROM namespace WHERE id = ?', [namespace.id]))
+        .toEqual([{ retained_trash_node_count: 0, retained_trash_byte_count: 0 }]);
+      expect(await runner.query('PRAGMA table_info(vfs_trash)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'id', type: 'varchar(36)' }),
+        expect.objectContaining({ name: 'node_count', type: 'bigint' }),
+        expect.objectContaining({ name: 'deleted_at', type: 'datetime' }),
+        expect.objectContaining({ name: 'expires_at', type: 'datetime' }),
+      ]));
+      expect(await runner.query('PRAGMA table_info(namespace)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'retained_trash_node_count', type: 'bigint' }),
+      ]));
+      await runner.query('UPDATE namespace SET retained_trash_node_count = ? WHERE id = ?',
+        [Number.MAX_SAFE_INTEGER.toString(), namespace.id]);
+      expect(await runner.query('SELECT retained_trash_node_count FROM namespace WHERE id = ?', [namespace.id]))
+        .toEqual([{ retained_trash_node_count: Number.MAX_SAFE_INTEGER }]);
+      expect(await runner.query('PRAGMA table_info(vfs_trash_entry)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'source_node_id', type: 'varchar(36)' }),
+        expect.objectContaining({ name: 'blob_id', type: 'varchar(36)' }),
+      ]));
+      expect(await runner.query('PRAGMA foreign_key_list(vfs_trash)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: 'namespace', on_delete: 'CASCADE' }),
+      ]));
+      expect(await runner.query('PRAGMA foreign_key_list(vfs_trash_entry)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: 'vfs_trash', on_delete: 'CASCADE' }),
+        expect.objectContaining({ table: 'blob', on_delete: 'RESTRICT' }),
+      ]));
+      await expect(runner.query('UPDATE namespace SET retained_trash_node_count = -1 WHERE id = ?', [namespace.id])).rejects.toThrow();
+      await expect(runner.query('UPDATE namespace SET retained_trash_byte_count = -1 WHERE id = ?', [namespace.id])).rejects.toThrow();
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('trash entries belong to their namespace and cascade when the trash item is removed', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: `trash-owner-${randomUUID()}` });
+    const other = await dataSource.getRepository(NamespaceEntity).save({ name: `trash-other-${randomUUID()}` });
+    const trashId = randomUUID();
+    const entryId = randomUUID();
+    await dataSource.query(`INSERT INTO vfs_trash
+      (id, namespace_id, root_type, original_path, root_node_id, root_revision, node_count, logical_bytes, expires_at)
+      VALUES (?, ?, 'DIRECTORY', '/old', ?, 'r1', 1, 0, datetime('now', '+30 days'))`,
+    [trashId, namespace.id, randomUUID()]);
+    const addEntry = (owner: string) => dataSource.query(`INSERT INTO vfs_trash_entry
+      (id, namespace_id, trash_id, relative_path, path_key, type, source_node_id, source_revision)
+      VALUES (?, ?, ?, '', '', 'DIRECTORY', ?, 'r1')`,
+    [entryId, owner, trashId, randomUUID()]);
+    await expect(addEntry(other.id)).rejects.toThrow();
+    await addEntry(namespace.id);
+    await dataSource.query('DELETE FROM vfs_trash WHERE id = ?', [trashId]);
+    expect(await dataSource.query('SELECT id FROM vfs_trash_entry WHERE id = ?', [entryId])).toEqual([]);
   });
 
   it('change feed migration down/up은 기존 VFS 노드를 보존한다', async () => {
@@ -90,7 +153,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       .toEqual([]);
   });
 
-  it('17개 마이그레이션이 전부 적용된다', async () => {
+  it('18개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -110,6 +173,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddUploadPartLease1791700000004',
       'AddUploadChecksumFailure1791700000005',
       'AddVfsChangeFeed1791700000006',
+      'AddVfsTrash1791700000007',
     ]);
   });
 

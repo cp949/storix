@@ -10,7 +10,7 @@ import {
   VfsRevisionExhaustedError,
   VfsQuotaExceededError,
 } from '../vfs/vfs.errors.js';
-import { resolveGlobalTotalLogicalByteLimit, resolveNamespaceQuota } from '../vfs/namespace-quota.js';
+import { resolveGlobalTotalLogicalByteLimit, resolveNamespaceQuota, resolveTotalLogicalBytes } from '../vfs/namespace-quota.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
@@ -181,13 +181,11 @@ export class VfsNodeRepositoryCore {
     const namespace = await namespaces.findOneByOrFail({ id: tx.namespaceId });
     const liveBytes = BigInt(String(namespace.liveFileByteCount)) + tx.liveFileByteDelta;
     const retainedBytes = BigInt(String(namespace.retainedSnapshotByteCount));
+    const retainedTrashBytes = BigInt(String(namespace.retainedTrashByteCount));
     if (liveBytes < 0n || liveBytes > 9223372036854775807n) {
       throw new Error('namespace live file byte counter out of int64 range');
     }
-    const totalBytes = liveBytes + retainedBytes;
-    if (totalBytes > 9223372036854775807n) {
-      throw new Error('namespace total logical byte counter out of int64 range');
-    }
+    const totalBytes = resolveTotalLogicalBytes(liveBytes.toString(), retainedBytes.toString(), retainedTrashBytes.toString());
 
     if (tx.logicalByteDelta > 0n) {
       const limit = resolveNamespaceQuota(

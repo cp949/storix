@@ -9,6 +9,8 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
+import { VfsTrashEntity } from './entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from './entities/vfs-trash-entry.entity.js';
 import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
 import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
@@ -24,6 +26,8 @@ const entities = [
   VfsMutationReceiptEntity,
   VfsSnapshotEntity,
   VfsSnapshotEntryEntity,
+  VfsTrashEntity,
+  VfsTrashEntryEntity,
   VfsUploadSessionEntity,
   VfsUploadPartEntity,
   VfsUploadStagingCleanupEntity,

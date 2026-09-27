@@ -17,7 +17,21 @@ export interface NamespaceResponseDto {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly limits: { readonly maxFileSizeBytes: string };
-  readonly quota: { readonly limitBytes: string; readonly usedBytes: string };
+  readonly quota: NamespaceQuotaDto;
+}
+
+export interface NamespaceQuotaDto {
+  readonly limitBytes: string;
+  readonly usedBytes: string;
+  readonly trash: { readonly retainedNodeCount: number; readonly maxRetainedNodes: number };
+}
+
+function toSafeRetainedNodeCount(value: string | undefined): number {
+  const decimal = value ?? '0';
+  if (!/^(0|[1-9][0-9]*)$/.test(decimal)) throw new Error('Invalid retained trash node count');
+  const count = BigInt(decimal);
+  if (count > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Invalid retained trash node count');
+  return Number(count);
 }
 
 // globalLimits는 강제 경로와 같은 값을 쓰도록 호출 서비스가 ConfigService에서 해석해 넘긴다
@@ -38,7 +52,12 @@ export function toNamespaceResponse(entity: NamespaceEntity, globalLimits: Names
       usedBytes: resolveTotalLogicalBytes(
         String(entity.liveFileByteCount ?? '0'),
         String(entity.retainedSnapshotByteCount ?? '0'),
+        String(entity.retainedTrashByteCount ?? '0'),
       ).toString(),
+      trash: {
+        retainedNodeCount: toSafeRetainedNodeCount(entity.retainedTrashNodeCount),
+        maxRetainedNodes: globalLimits.maxRetainedTrashNodes,
+      },
     },
   };
 }

@@ -13,11 +13,13 @@ describe('toNamespaceResponse', () => {
       maxTotalLogicalBytes: '20',
       liveFileByteCount: '12',
       retainedSnapshotByteCount: '5',
+      retainedTrashByteCount: '7',
+      retainedTrashNodeCount: '3',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
 
-    expect(toNamespaceResponse(entity, { maxFileSizeBytes: 5368709120, maxTotalLogicalBytes: 30n })).toEqual({
+    expect(toNamespaceResponse(entity, { maxFileSizeBytes: 5368709120, maxTotalLogicalBytes: 30n, maxRetainedTrashNodes: 100000 })).toEqual({
       id: 'ns-1',
       name: 'acme',
       encryptionPolicy: 'NONE',
@@ -26,7 +28,7 @@ describe('toNamespaceResponse', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       limits: { maxFileSizeBytes: '5368709120' },
-      quota: { limitBytes: '20', usedBytes: '17' },
+      quota: { limitBytes: '20', usedBytes: '24', trash: { retainedNodeCount: 3, maxRetainedNodes: 100000 } },
     });
   });
 
@@ -44,9 +46,9 @@ describe('toNamespaceResponse', () => {
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
 
-    const response = toNamespaceResponse(entity, { maxFileSizeBytes: global, maxTotalLogicalBytes: 30n });
+    const response = toNamespaceResponse(entity, { maxFileSizeBytes: global, maxTotalLogicalBytes: 30n, maxRetainedTrashNodes: 100000 });
     expect(response.limits).toEqual({ maxFileSizeBytes: expected });
-    expect(response.quota).toEqual({ limitBytes: '20', usedBytes: '17' });
+    expect(response.quota).toEqual({ limitBytes: '20', usedBytes: '17', trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
   });
 
   it('파일 한도는 STORIX_MAX_FILE_SIZE_BYTES 환경변수가 아니라 전달받은 전역값을 사용한다', () => {
@@ -60,10 +62,26 @@ describe('toNamespaceResponse', () => {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
         updatedAt: new Date('2026-01-02T00:00:00.000Z'),
       } as NamespaceEntity;
-      expect(toNamespaceResponse(entity, { maxFileSizeBytes: 64, maxTotalLogicalBytes: 30n }).limits).toEqual({ maxFileSizeBytes: '64' });
+      expect(toNamespaceResponse(entity, { maxFileSizeBytes: 64, maxTotalLogicalBytes: 30n, maxRetainedTrashNodes: 100000 }).limits).toEqual({ maxFileSizeBytes: '64' });
     } finally {
       if (previous === undefined) delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
       else process.env.STORIX_MAX_FILE_SIZE_BYTES = previous;
     }
+  });
+
+  it('bigint 휴지통 node 카운터를 안전한 응답 정수로 변환한다', () => {
+    const entity = {
+      liveFileByteCount: '0',
+      retainedSnapshotByteCount: '0',
+      retainedTrashByteCount: '0',
+      retainedTrashNodeCount: '9007199254740991',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    } as NamespaceEntity;
+    const limits = { maxFileSizeBytes: 64, maxTotalLogicalBytes: 30n, maxRetainedTrashNodes: Number.MAX_SAFE_INTEGER };
+
+    expect(toNamespaceResponse(entity, limits).quota.trash.retainedNodeCount).toBe(Number.MAX_SAFE_INTEGER);
+    entity.retainedTrashNodeCount = '9007199254740992';
+    expect(() => toNamespaceResponse(entity, limits)).toThrow('Invalid retained trash node count');
   });
 });

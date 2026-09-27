@@ -61,6 +61,12 @@ export class NamespaceEntity {
   @Column({ name: 'retained_snapshot_byte_count', type: 'bigint', default: 0 })
   retainedSnapshotByteCount: string;
 
+  @Column({ name: 'retained_trash_node_count', type: 'bigint', default: 0 })
+  retainedTrashNodeCount: string;
+
+  @Column({ name: 'retained_trash_byte_count', type: 'bigint', default: 0 })
+  retainedTrashByteCount: string;
+
   @Column({ name: 'max_total_logical_bytes', type: 'bigint', nullable: true })
   maxTotalLogicalBytes: string | null;
 
