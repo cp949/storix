@@ -168,7 +168,8 @@ describe('Namespace HTTP contract', () => {
       status: 'ACTIVE',
     });
     expect(response.body.id).toEqual(expect.any(String));
-    expect(response.body.quota).toEqual({ limitBytes: '53687091200', usedBytes: '0' });
+    expect(response.body.quota).toEqual({ limitBytes: '53687091200', usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
   });
 
   it('namespace 생성 시 더 낮은 logical quota를 지정하고 응답·조회에 노출한다', async () => {
@@ -178,9 +179,11 @@ describe('Namespace HTTP contract', () => {
       .send({ name: 'quota-create', maxTotalLogicalBytes: '1024' })
       .expect(201);
 
-    expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
+    expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
     const fetched = await request(app.getHttpServer()).get(`/api/v2/namespaces/${created.body.id}`).expect(200);
-    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0' });
+    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
   });
 
   it('namespace 조회는 유효 파일 한도와 live·snapshot 논리 사용량을 문자열로 반환한다', async () => {
@@ -199,7 +202,8 @@ describe('Namespace HTTP contract', () => {
       .get(`/api/v2/namespaces/${created.body.id}`)
       .expect(200);
     expect(fetched.body.limits).toEqual({ maxFileSizeBytes: '512' });
-    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '17' });
+    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '17',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
   });
 
   it('namespace 조회는 인증 누락과 잘못된 키를 거부한다', async () => {

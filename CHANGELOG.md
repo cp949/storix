@@ -10,6 +10,8 @@
 
 ### Added
 
+- 파일·디렉터리 삭제를 30일 복구 가능한 휴지통으로 옮기고 목록·원래 ID 복구·관리자 영구 삭제 API를 추가했다. namespace별 기본 100000 node 보존 상한과 live·snapshot·휴지통 논리 quota, 만료 항목의 GC 배치 purge를 적용한다.
+
 - 기본 비활성 `change-feed` capability와 `GET /api/v2/namespaces/{namespaceId}/fs/changes`를 추가했다. 초기 checkpoint 뒤 전체 열거한 변경을 namespace 순서의 cursor 페이지로 재생하며, 30일 기본 보존 경계 이전 cursor는 410으로 전체 재동기화를 요구한다.
 
 - `demo1-was`와 `demo1-web`에 재개 업로드를 추가했다. WAS가 사용자별 세션 생성·상태 조회·조각 저장·완료·취소를 Storix에 중계하고, 웹은 중단 후 같은 파일을 다시 선택하면 저장된 조각을 건너뛰어 이어 보낸다. 데모 설정·HTTP 경로와 실제 Storix 소비자 검증 절차를 문서화했다.

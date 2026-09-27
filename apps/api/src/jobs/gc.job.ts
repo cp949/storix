@@ -5,6 +5,7 @@ import { BlobRepository } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import { VfsChangeFeedRetentionRepository, resolveChangeFeedRetentionDays } from '../persistence/vfs-change-feed-retention.repository.js';
+import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
@@ -20,6 +21,8 @@ export interface GcResult {
   readonly deletedStagingObjects: number;
   readonly prunedUploadSessions: number;
   readonly prunedChangeEvents: number;
+  readonly prunedTrashItems: number;
+  readonly prunedTrashBytes: string;
 }
 
 @Injectable()
@@ -35,6 +38,7 @@ export class GcJob {
     @Optional() private readonly receiptRepository?: VfsMutationReceiptRepository,
     @Optional() private readonly uploadSessions?: VfsUploadSessionRepository,
     @Optional() private readonly changeFeedRetention?: VfsChangeFeedRetentionRepository,
+    @Optional() private readonly trashRetention?: VfsTrashRetentionRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
     this.changeRetentionDays = resolveChangeFeedRetentionDays(config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'));
@@ -112,13 +116,23 @@ export class GcJob {
         prunedChangeEvents += count;
       }
     }
+    let prunedTrashItems = 0;
+    let prunedTrashBytes = 0n;
+    if (this.trashRetention) {
+      while (true) {
+        const batch = await this.trashRetention.pruneExpiredBatch(CLEANUP_BATCH_SIZE);
+        prunedTrashItems += batch.items;
+        prunedTrashBytes += BigInt(batch.bytes);
+        if (batch.items === 0) break;
+      }
+    }
 
     this.logger.log(
       `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
     );
     return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts,
       expiredUploadSessions, recoveredUploadSessions, deletedStagingObjects, prunedUploadSessions,
-      prunedChangeEvents };
+      prunedChangeEvents, prunedTrashItems, prunedTrashBytes: prunedTrashBytes.toString() };
   }
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을

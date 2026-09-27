@@ -652,7 +652,9 @@ paths:
             type: string
       responses:
         '204':
-          description: 삭제됨
+          description: 빈 디렉터리를 30일 휴지통으로 이동
+          headers:
+            X-Trash-Id: { schema: { type: string, format: uuid } }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -688,7 +690,9 @@ paths:
             default: false
       responses:
         '204':
-          description: 삭제됨
+          description: 파일 또는 디렉터리 subtree를 30일 휴지통으로 이동
+          headers:
+            X-Trash-Id: { schema: { type: string, format: uuid } }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -698,7 +702,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '413':
-          description: 삭제 대상 Node 수가 namespace/전역 상한을 초과함(`VFS_DELETE_LIMIT_EXCEEDED`)
+          description: 삭제 대상 Node 수 상한(`VFS_DELETE_LIMIT_EXCEEDED`) 또는 namespace 휴지통 보존 node 수 상한(`VFS_TRASH_LIMIT_EXCEEDED`) 초과. 상태는 바뀌지 않는다.
           content:
             application/json:
               schema:
@@ -1789,6 +1793,109 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v2/namespaces/{namespaceId}/fs/trash:
+    get:
+      operationId: listTrash
+      tags: [Trash]
+      summary: 미만료 휴지통 항목 목록
+      description: 항목은 `deletedAt DESC, trashId ASC` 순서다. 30일 만료 항목은 조회에서 제외하며 잘못되거나 다른 namespace의 `tr1.` cursor는 400 `VFS_INVALID_CURSOR`다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: 휴지통 페이지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrashPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v2/namespaces/{namespaceId}/fs/trash/{trashId}/restore:
+    post:
+      operationId: restoreTrash
+      tags: [Trash]
+      summary: 원래 node ID와 새 revision으로 휴지통 항목 복구
+      description: 원래 경로 또는 선택한 `targetPath`에 subtree 전체를 복구한다. 부모는 자동 생성하지 않고 대상은 덮어쓰지 않는다. 동일 namespace/scope/key와 본문은 최초 status/body/X-Request-Id를 receipt로 재생한다. 원래 revision은 복구 뒤 유효하지 않다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - $ref: '#/components/parameters/TrashId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/MutationScopeHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                targetPath: { type: string, description: 생략하면 삭제 전 원래 경로 }
+      responses:
+        '200':
+          description: 복구 완료 또는 동일 요청 재생
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrashRestoreResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 항목 또는 대상 부모 부재. 다른 namespace의 항목도 `VFS_TRASH_ITEM_NOT_FOUND`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410':
+          description: DB 시각 기준 만료(`VFS_TRASH_ITEM_EXPIRED`). GC purge 전에도 복구 불가.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '412':
+          description: 대상 경로 충돌(`VFS_PRECONDITION_FAILED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
+  /api/v2/namespaces/{namespaceId}/fs/trash/{trashId}/purge:
+    post:
+      operationId: purgeTrash
+      tags: [Trash]
+      summary: 관리자 전용 영구 삭제
+      description: 보존 기한 전후에 단일 manifest를 영구 삭제한다. quota는 purge commit 뒤 해제하고 다른 live node·snapshot·휴지통 항목의 Blob 참조는 보존한다. 복구 불가. 동일 namespace/scope/key와 본문은 최초 응답을 재생한다.
+      security:
+        - AdminApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - $ref: '#/components/parameters/TrashId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/MutationScopeHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: 영구 삭제 완료 또는 동일 요청 재생
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrashPurgeResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없는 항목 또는 다른 namespace 항목(`VFS_TRASH_ITEM_NOT_FOUND`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/v2/namespaces/{namespaceId}/fs/snapshots:
     get:
       operationId: listFileSnapshots
@@ -2266,7 +2373,22 @@ components:
         배포 전체가 공유하는 단일 키 쌍(`STORIX_API_KEY`, 로테이션 중엔
         `STORIX_API_KEY_PREVIOUS`) 중 하나와 일치해야 한다. 실패 사유는
         구분해 알려주지 않고 항상 401만 반환한다.
+    AdminApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: 별도 `STORIX_ADMIN_API_KEY` 또는 로테이션 중 이전 관리자 key. 일반 서비스 key는 허용하지 않는다.
   parameters:
+    TrashId:
+      name: trashId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MutationScopeHeader:
+      name: X-Mutation-Scope
+      in: header
+      required: true
+      description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
+      schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
     UploadSessionId:
       name: sessionId
       in: path
@@ -2655,7 +2777,7 @@ components:
               description: namespace 재정의와 전역 파일 크기 상한 중 적용되는 작은 값(바이트). 전역 기본값은 5368709120이다.
         quota:
           type: object
-          required: [limitBytes, usedBytes]
+          required: [limitBytes, usedBytes, trash]
           properties:
             limitBytes:
               type: string
@@ -2664,7 +2786,13 @@ components:
             usedBytes:
               type: string
               pattern: '^[0-9]+$'
-              description: live FILE과 보존된 모든 snapshot FILE entry의 논리 크기 합.
+              description: live FILE, 보존 snapshot FILE entry, purge 전 휴지통 FILE entry의 논리 크기 합.
+            trash:
+              type: object
+              required: [retainedNodeCount, maxRetainedNodes]
+              properties:
+                retainedNodeCount: { type: integer, minimum: 0 }
+                maxRetainedNodes: { type: integer, minimum: 1, default: 100000 }
         createdAt:
           type: string
           format: date-time
@@ -2745,6 +2873,10 @@ components:
       type: object
       required: [resource, affectedRevisions]
       properties:
+        trashId:
+          type: string
+          format: uuid
+          description: 'kind: delete 성공에만 존재. 동일 receipt 재생에서 같은 ID를 반환한다.'
         resource:
           nullable: true
           allOf:
@@ -2757,6 +2889,43 @@ components:
             properties:
               path: { type: string }
               revision: { type: string, pattern: '^r1\.' }
+    TrashItem:
+      type: object
+      required: [trashId, originalPath, rootType, deletedAt, expiresAt, nodeCount, logicalBytes]
+      properties:
+        trashId: { type: string, format: uuid }
+        originalPath: { type: string }
+        rootType: { type: string, enum: [FILE, DIRECTORY] }
+        deletedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, description: 삭제 시각으로부터 30일 }
+        nodeCount: { type: integer, minimum: 1 }
+        logicalBytes: { type: string, pattern: '^[0-9]+$' }
+    TrashPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrashItem' }
+        nextCursor: { type: string, nullable: true }
+    TrashRestoreResult:
+      type: object
+      required: [trashId, resource]
+      properties:
+        trashId: { type: string, format: uuid }
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/VfsNode'
+            - type: object
+              required: [revision]
+              properties:
+                revision: { type: string, pattern: '^r1\.' }
+    TrashPurgeResult:
+      type: object
+      required: [trashId, purged]
+      properties:
+        trashId: { type: string, format: uuid }
+        purged: { type: boolean, enum: [true] }
     ConditionalContentResult:
       type: object
       required: [resource, affectedRevisions]

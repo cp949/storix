@@ -5,6 +5,12 @@ import { DataSource } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
+import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
+import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 export interface GcJobTestContext {
@@ -12,6 +18,8 @@ export interface GcJobTestContext {
   readonly storage: MinioBlobStorage;
   readonly blobRepository: BlobRepository;
   readonly namespaceId: string;
+  readonly nodeRepository: VfsNodeRepository;
+  readonly trashRetention: VfsTrashRetentionRepository;
   setZeroSinceSecondsAgo(blobId: string, secondsAgo: number): Promise<void>;
 }
 
@@ -40,6 +48,85 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await storage.put(storageKey, Readable.from(Buffer.from('content')));
     return blob;
   }
+
+  async function createTrashFixture(expiredCount: number, futureCount: number) {
+    const { dataSource, storage } = getContext();
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: `gc-trash-${randomUUID()}` });
+    const root = await dataSource.getRepository(VfsNodeEntity).save({
+      namespaceId: namespace.id, parentId: null, name: '', type: 'DIRECTORY',
+      blobId: null, size: null, mimeType: null,
+    });
+    const storageKey = `blobs/ab/${randomUUID()}`;
+    const blob = await dataSource.getRepository(BlobEntity).save({
+      namespaceId: namespace.id, storageKey, size: '7', mimeType: 'text/plain',
+      sha256: 'f'.repeat(64), referenceCount: expiredCount + futureCount + 1,
+    });
+    await storage.put(storageKey, Readable.from(Buffer.from('content')));
+    await dataSource.getRepository(VfsNodeEntity).save({
+      namespaceId: namespace.id, parentId: root.id, name: 'live', type: 'FILE',
+      blobId: blob.id, size: '7', mimeType: 'text/plain',
+    });
+    const ids: string[] = [];
+    for (let index = 0; index < expiredCount + futureCount; index++) {
+      const sourceNodeId = randomUUID();
+      const trash = await dataSource.getRepository(VfsTrashEntity).save({
+        namespaceId: namespace.id, rootType: 'FILE', originalPath: `/old-${index}`,
+        rootNodeId: sourceNodeId, rootRevision: 'old-revision', nodeCount: '1', logicalBytes: '7',
+        deletedAt: new Date(Date.now() - 31 * 86400000),
+        expiresAt: new Date(Date.now() + 3600_000),
+      });
+      await dataSource.getRepository(VfsTrashEntryEntity).save({
+        namespaceId: namespace.id, trashId: trash.id, relativePath: '.', pathKey: '.',
+        type: 'FILE', sourceNodeId, sourceRevision: 'old-revision',
+        blobId: blob.id, size: '7', mimeType: 'text/plain',
+      });
+      if (index < expiredCount) {
+        await dataSource.getRepository(VfsTrashEntity).createQueryBuilder().update()
+          .set({ expiresAt: () => 'CURRENT_TIMESTAMP' }).where('id = :id', { id: trash.id }).execute();
+      }
+      ids.push(trash.id);
+    }
+    await dataSource.getRepository(NamespaceEntity).update({ id: namespace.id }, {
+      liveFileByteCount: '7', retainedTrashNodeCount: String(ids.length),
+      retainedTrashByteCount: String(7 * ids.length),
+    });
+    return { namespaceId: namespace.id, blob, ids, storageKey };
+  }
+
+  it('만료 경계의 항목을 한 배치씩 purge하고 미만료 항목·공유 Blob·quota를 보존한다', async () => {
+    const { dataSource, storage, trashRetention } = getContext();
+    const fixture = await createTrashFixture(2, 1);
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const before = await namespaceRepo.findOneByOrFail({ id: fixture.namespaceId });
+    expect([String(before.retainedTrashNodeCount), String(before.retainedTrashByteCount)])
+      .toEqual(['3', '21']);
+
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7' });
+    const midway = await namespaceRepo.findOneByOrFail({ id: fixture.namespaceId });
+    expect([String(midway.retainedTrashNodeCount), String(midway.retainedTrashByteCount)])
+      .toEqual(['2', '14']);
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7' });
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 0, nodes: 0, bytes: '0' });
+    expect(await dataSource.getRepository(VfsTrashEntity).findBy({ namespaceId: fixture.namespaceId }))
+      .toHaveLength(1);
+    const after = await namespaceRepo.findOneByOrFail({ id: fixture.namespaceId });
+    expect([String(after.retainedTrashNodeCount), String(after.retainedTrashByteCount), String(after.liveFileByteCount)])
+      .toEqual(['1', '7', '7']);
+    expect((await dataSource.getRepository(BlobEntity).findOneByOrFail({ id: fixture.blob.id })).referenceCount)
+      .toBe(2);
+    await expect(storage.get(fixture.storageKey)).resolves.toBeDefined();
+  });
+
+  it('GC 결과는 완료된 만료 purge의 item 수와 논리 byte만 집계한다', async () => {
+    const { dataSource, storage, blobRepository, trashRetention } = getContext();
+    const fixture = await createTrashFixture(1, 1);
+    const job = new GcJob(storage, blobRepository, makeConfig(3600), undefined, undefined, undefined, trashRetention);
+    const result = await job.run();
+    expect([result.prunedTrashItems, result.prunedTrashBytes]).toEqual([1, '7']);
+    expect(await dataSource.getRepository(VfsTrashEntity).countBy({ namespaceId: fixture.namespaceId })).toBe(1);
+    const repeated = await job.run();
+    expect([repeated.prunedTrashItems, repeated.prunedTrashBytes]).toEqual([0, '0']);
+  });
 
   it('grace period가 지난 reference_count=0 blob의 object와 row를 모두 삭제한다', async () => {
     const { dataSource, storage, blobRepository, setZeroSinceSecondsAgo } = getContext();

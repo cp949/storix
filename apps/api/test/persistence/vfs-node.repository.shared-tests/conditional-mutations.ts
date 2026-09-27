@@ -219,7 +219,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
           expect(blobs.map((blob) => blob.referenceCount).sort()).toEqual([0, 1]);
         } else if (kind === 'delete') {
           expect(atSource).toBeNull();
-          expect(blobs.map((blob) => blob.referenceCount)).toEqual([0]);
+          expect(blobs.map((blob) => blob.referenceCount)).toEqual([1]);
         } else {
           expect(atSource).toBeNull();
           expect(await getRepo().resolvePath(namespace.id, root.id, ['b', 'source'])).toMatchObject({
@@ -433,7 +433,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
           recursive: false,
         }),
       );
-      expect(deleted.value).toEqual({ status: 200, resource: null });
+      expect(deleted.value).toMatchObject({ status: 200, resource: null, trashId: expect.any(String) });
       expect(deleted.affectedRevisions.map((item) => item.path)).toEqual(['/']);
       const recreated = await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
       expect(encodeRevision(recreated.node)).not.toBe(oldRevision);

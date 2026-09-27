@@ -6,6 +6,8 @@ import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import { runVfsNodeRepositorySharedTests } from './vfs-node.repository.shared-tests.js';
@@ -21,7 +23,8 @@ describe('VfsNodeRepository (Postgres)', () => {
       type: 'postgres',
       url: container.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity,
+        VfsTrashEntity, VfsTrashEntryEntity],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();

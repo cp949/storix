@@ -17,7 +17,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
   describe('removeNode', () => {
     const UNLIMITED = Number.MAX_SAFE_INTEGER;
 
-    it('FILE을 삭제하면 Blob reference_count를 감소시킨다', async () => {
+    it('FILE을 삭제하면 Blob 참조를 휴지통에 보존한다', async () => {
       const namespace = await createNamespace('rm-file-ns');
       const root = await getRepo().getRoot(namespace.id);
       const file = await createFile(namespace.id, root!.id, 'a.txt');
@@ -28,8 +28,8 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const blob = await getDs()
         .getRepository(BlobEntity)
         .findOneByOrFail({ id: file.blobId as string });
-      expect(blob.referenceCount).toBe(0);
-      expect(blob.zeroSince).not.toBeNull();
+      expect(blob.referenceCount).toBe(1);
+      expect(blob.zeroSince).toBeNull();
     });
 
     it('recursive=false로 directory를 삭제하려 하면 VfsIsDirectoryError를 던진다', async () => {
@@ -42,7 +42,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       );
     });
 
-    it('recursive=true면 하위 트리를 모두 삭제하고 각 file의 Blob 참조를 줄인다', async () => {
+    it('recursive=true면 하위 트리를 휴지통으로 옮기고 각 file의 Blob 참조를 보존한다', async () => {
       const namespace = await createNamespace('rm-recursive-ns');
       const root = await getRepo().getRoot(namespace.id);
       const a = await getRepo().ensureDirectory(namespace.id, root!.id, ['a'], false);
@@ -56,10 +56,10 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const blobRepo = getDs().getRepository(BlobEntity);
       const blobB = await blobRepo.findOneByOrFail({ id: fileB.blobId as string });
       const blobD = await blobRepo.findOneByOrFail({ id: fileD.blobId as string });
-      expect(blobB.referenceCount).toBe(0);
-      expect(blobB.zeroSince).not.toBeNull();
-      expect(blobD.referenceCount).toBe(0);
-      expect(blobD.zeroSince).not.toBeNull();
+      expect(blobB.referenceCount).toBe(1);
+      expect(blobB.zeroSince).toBeNull();
+      expect(blobD.referenceCount).toBe(1);
+      expect(blobD.zeroSince).toBeNull();
     });
 
     it('같은 Blob을 여러 Node가 참조하면 recursive delete가 감소량을 합산한다', async () => {
@@ -103,7 +103,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
 
       await getRepo().removeNode(namespace.id, root!.id, ['a'], true, UNLIMITED);
 
-      expect((await blobRepo.findOneByOrFail({ id: sharedBlob.id })).referenceCount).toBe(0);
+      expect((await blobRepo.findOneByOrFail({ id: sharedBlob.id })).referenceCount).toBe(2);
     });
 
     it('존재하지 않는 경로는 VfsNodeNotFoundError를 던진다', async () => {

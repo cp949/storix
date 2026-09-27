@@ -5,6 +5,8 @@ import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsSnapshotEntity } from '../../src/persistence/entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from '../../src/persistence/entities/vfs-snapshot-entry.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
@@ -22,7 +24,8 @@ describe('VfsSnapshotRepository (PostgreSQL)', () => {
     dataSource = new DataSource({
       type: 'postgres',
       url: container.getConnectionUri(),
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsSnapshotEntity, VfsSnapshotEntryEntity],
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsSnapshotEntity, VfsSnapshotEntryEntity,
+        VfsTrashEntity, VfsTrashEntryEntity],
       migrations: ALL_MIGRATIONS,
       synchronize: false,
     });

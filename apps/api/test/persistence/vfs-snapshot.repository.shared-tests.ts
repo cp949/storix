@@ -280,13 +280,16 @@ export function runSnapshotRepositoryTests(
     await file(namespace.id, root.id, 'b', blob);
     await ds().getRepository(BlobEntity).update(blob.id, { referenceCount: 2 });
     const snapshot = await capture(namespace.id, root.id, [], 'TREE');
-    await context().nodes.removeNode(namespace.id, root.id, ['a'], false, 1000);
-    await context().nodes.removeNode(namespace.id, root.id, ['b'], false, 1000);
+    const trashedA = await context().nodes.removeNode(namespace.id, root.id, ['a'], false, 1000);
+    const trashedB = await context().nodes.removeNode(namespace.id, root.id, ['b'], false, 1000);
     await context().nodes.withMutation(namespace.id, root.id, async (tx) => {
       const locked = (await context().snapshots.findForUpdate(tx, namespace.id, snapshot.id))!;
       await context().snapshots.remove(tx, locked);
       await context().snapshots.remove(tx, locked);
     });
+    await empty(namespace.id, blob.id, 2);
+    await context().nodes.purgeTrashItem(namespace.id, trashedA);
+    await context().nodes.purgeTrashItem(namespace.id, trashedB);
     await empty(namespace.id, blob.id, 0);
     expect((await ds().getRepository(BlobEntity).findOneByOrFail({ id: blob.id })).zeroSince).toBeInstanceOf(
       Date,

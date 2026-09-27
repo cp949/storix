@@ -8,6 +8,10 @@ import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
+import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
@@ -18,6 +22,8 @@ describe('GcJob 통합', () => {
   let blobRepository: BlobRepository;
   let storage: MinioBlobStorage;
   let namespaceId: string;
+  let nodeRepository: VfsNodeRepository;
+  let trashRetention: VfsTrashRetentionRepository;
   const bucket = 'storix-gc-test';
 
   beforeAll(async () => {
@@ -30,12 +36,16 @@ describe('GcJob 통합', () => {
       type: 'postgres',
       url: pgContainer.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, VfsTrashEntity, VfsTrashEntryEntity],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
     blobRepository = new BlobRepository(dataSource);
+    nodeRepository = new VfsNodeRepository(dataSource.getRepository(NamespaceEntity),
+      dataSource.getRepository(VfsNodeEntity), dataSource.getRepository(BlobEntity), dataSource,
+      blobRepository, { get: () => undefined } as never);
+    trashRetention = new VfsTrashRetentionRepository(dataSource, nodeRepository);
 
     const client = new Client({
       endPoint: minioContainer.getHost(),
@@ -62,6 +72,8 @@ describe('GcJob 통합', () => {
     storage,
     blobRepository,
     namespaceId,
+    nodeRepository,
+    trashRetention,
     setZeroSinceSecondsAgo: (blobId, secondsAgo) =>
       dataSource.query(`UPDATE blob SET zero_since = now() - ($1 || ' seconds')::interval WHERE id = $2`, [
         secondsAgo,

@@ -237,7 +237,7 @@ describe('DomainErrorFilter', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(audit.record).toHaveBeenCalledWith({
-      requestId: 'req-denied', namespaceId: null, snapshotId: null,
+      requestId: 'req-denied', namespaceId: null, snapshotId: null, trashId: null,
       operation: 'GET /api/v2/namespaces', path: '/api/v2/namespaces',
       detail: null, caller: null, status: 401,
     });

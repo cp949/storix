@@ -49,6 +49,10 @@ export function registerVfsTrashHttpContract(
     const counters = await ds.getRepository(NamespaceEntity).findOneByOrFail({ id });
     expect([String(counters.liveFileByteCount), String(counters.retainedTrashByteCount), String(counters.retainedTrashNodeCount)])
       .toEqual(['3', '5', '1']);
+    const published = (await http().get(`/api/v2/namespaces/${id}`).expect(200)).body;
+    expect(published.quota).toMatchObject({
+      usedBytes: '13', trash: { retainedNodeCount: 1, maxRetainedNodes: 100000 },
+    });
   });
 
   it('TREE 삭제는 subtree manifest와 keyset 목록을 만들고 노드 한도 초과를 원자적으로 거절한다', async () => {

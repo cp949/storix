@@ -2,7 +2,7 @@
 
 ## 계약
 
-논리 사용량은 namespace의 현재 live FILE byte 수와 유지 중인 모든 snapshot의 FILE entry 크기 합이다. 같은 Blob을 여러 경로 또는 snapshot이 참조하면 각 논리 항목을 따로 센다. 디렉터리는 0 bytes다. FILE snapshot은 해당 live 파일 크기를 한 번 더 보유한 것으로 계산하고, TREE snapshot은 manifest의 각 FILE entry를 계산한다.
+논리 사용량은 namespace의 현재 live FILE byte 수, 유지 중인 모든 snapshot FILE entry 크기, 영구 삭제 전 휴지통 FILE manifest 크기의 합이다. 같은 Blob을 여러 경로·snapshot·휴지통 항목이 참조하면 각 논리 항목을 따로 센다. 디렉터리는 0 bytes다. FILE snapshot은 해당 live 파일 크기를 한 번 더 보유한 것으로 계산하고, TREE snapshot은 manifest의 각 FILE entry를 계산한다. 일반 삭제와 복구는 live·휴지통 사이에서 같은 바이트를 옮긴다. 만료 뒤에도 GC purge가 완료될 때까지 휴지통 바이트가 남는다.
 
 전역 `STORIX_MAX_TOTAL_LOGICAL_BYTES`는 양수 64-bit decimal byte 값이며 기본값은 `53687091200`(50 GiB)다. namespace는 이보다 작거나 같은 `maxTotalLogicalBytes` override를 둘 수 있고, 없으면 전역값을 상속한다. namespace 조회/생성 응답의 `quota.limitBytes`와 `quota.usedBytes`는 decimal string이다.
 
@@ -16,7 +16,7 @@
 
 ## 영속화와 운영
 
-`live_file_byte_count`는 migration이 기존 FILE node의 `size` 합으로 backfill하며 이후 파일 생성·수정·삭제·복사·복원 delta로 유지한다. retained snapshot byte counter는 기존 저장소 계수를 재사용한다. 신규 schema migration은 기존 API에서 동기화 없이 실행할 수 있는 nullable override 및 default-zero counter 추가로 구성된다.
+`live_file_byte_count`는 migration이 기존 FILE node의 `size` 합으로 backfill하며 이후 파일 생성·수정·삭제·복사·복원 delta로 유지한다. retained snapshot byte counter는 기존 저장소 계수를 재사용한다. `retained_trash_byte_count`와 `retained_trash_node_count`는 삭제 시 증가하고 복구·영구 삭제 완료 시 감소한다. 휴지통 node 상한은 namespace당 기본 100000이며 전역 `STORIX_MAX_RETAINED_TRASH_NODES`로 설정한다. 신규 schema migration은 기존 API에서 동기화 없이 실행할 수 있는 nullable override 및 default-zero counter 추가로 구성된다.
 
 `.env.example` 및 compose는 전역 상한과 별도 현재/이전 관리자 키를 API에 전달한다. 키가 설정되지 않으면 관리자 route는 fail closed다. 일반 API key로 관리자 route를 호출할 수 없다.
 

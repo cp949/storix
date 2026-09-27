@@ -48,10 +48,13 @@ export function runVfsMutationReceiptSharedTests(
     const identity = { namespaceId: namespace.id, scope: 'caller-1', key };
     const now = new Date();
     expect(await receiptRepository.claim(identity, now)).toEqual({ kind: 'owner', generation: 1 });
-    expect(await receiptRepository.claim(identity, now)).toMatchObject({
-      kind: 'busy',
-      retryAfterSeconds: 60,
-    });
+    const busy = await receiptRepository.claim(identity, now);
+    expect(busy.kind).toBe('busy');
+    if (busy.kind !== 'busy') throw new Error('Expected busy receipt claim');
+    // DB에서 60초 lease를 시작한 시각은 위의 앱 now보다 조금 늦을 수 있다.
+    // 올림한 Retry-After는 그 차이에 따라 60 또는 61초다.
+    expect(busy.retryAfterSeconds).toBeGreaterThanOrEqual(60);
+    expect(busy.retryAfterSeconds).toBeLessThanOrEqual(61);
     await expireLease(dataSource, identity);
     const later = new Date();
     expect(await receiptRepository.claim(identity, later)).toEqual({ kind: 'owner', generation: 2 });

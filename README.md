@@ -30,9 +30,26 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 10진 문자열이며, namespace 재정의와 `STORIX_MAX_FILE_SIZE_BYTES` 전역 상한 중
 작은 값이다. 전역 설정이 없으면 `5368709120`(5 GiB)을 사용한다. 같은 응답의
 `quota.limitBytes`는 namespace의 적용 논리 저장량 상한, `quota.usedBytes`는
-live FILE과 보존 snapshot FILE entry의 논리 크기 합계다. 두 quota 값도 바이트
+live FILE과 보존 snapshot·휴지통 FILE entry의 논리 크기 합계다. 두 quota 값도 바이트
 단위 10진 문자열이다. namespace 생성·목록·quota 변경 응답도 같은 `limits`·`quota`
-필드를 포함한다.
+필드를 포함한다. `quota.trash.retainedNodeCount`와 `maxRetainedNodes`는 현재 보존
+node 수와 적용 상한이다.
+
+### 삭제 복구
+
+파일 또는 디렉터리를 삭제하면 subtree 전체가 하나의 휴지통 항목으로 30일간
+보존된다. `/fs/rm`·`/fs/rmdir`의 204 응답은 `X-Trash-Id` 헤더를, 조건부
+`kind: delete` 응답은 `trashId`를 반환한다. 서비스 key로 `GET /fs/trash`를 조회하고
+`POST /fs/trash/{trashId}/restore`에 `Idempotency-Key`와 `X-Mutation-Scope`를
+보내 원래 경로 또는 `targetPath`로 복구한다. 복구는 원래 node ID를 되살리고 새
+revision을 발급하며, 이미 존재하는 목적지는 덮어쓰지 않는다. 직접 영구 삭제
+`POST /fs/trash/{trashId}/purge`에는 별도의 관리자 key가 필요하다.
+
+기본 보존 상한은 namespace당 100000 node(`STORIX_MAX_RETAINED_TRASH_NODES`)다.
+삭제 뒤 live byte는 trash byte로 옮겨지고, 만료 시각 뒤에도 GC purge가 완료될
+때까지 quota에 포함된다. 만료 항목은 복구할 수 없으며 GC가 DB 시각 기준으로
+배치 purge한다. 다른 live 파일·snapshot·휴지통이 공유하는 Blob은 보존된다.
+운영 배포 DB migration, 실제 백업 복원 및 외부 consumer 연동 검증은 별도다.
 
 ### namespace 변경 feed
 
@@ -277,6 +294,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_MAX_SNAPSHOT_BYTES` | 선택 | `5368709120` | app | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB) |
 | `STORIX_MAX_RETAINED_SNAPSHOT_NODES` | 선택 | `100000` | app | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한 |
 | `STORIX_MAX_RETAINED_SNAPSHOT_BYTES` | 선택 | `53687091200` | app | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB) |
+| `STORIX_MAX_RETAINED_TRASH_NODES` | 선택 | `100000` | app | namespace별 보존 휴지통 node 수 상한. 양의 안전 정수만 허용하며 만료 뒤 GC purge 완료까지 과금 |
 | `STORIX_MUTATION_LEASE_SECONDS` | 선택 | `60` | app | 조건부 업로드 claim lease(초). 업로드 중 이 시간의 1/3 간격으로 갱신 |
 | `STORIX_MUTATION_MAX_UPLOAD_SECONDS` | 선택 | `86400` | app | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간) |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` | 선택 | `300` | app | presigned URL 만료(초). 상한 `604800`(7일), 초과하면 부팅 거부 |

@@ -22,6 +22,8 @@ describe('ALL_MIGRATIONS', () => {
       'AddUploadPartLease1791700000004',
       'AddUploadChecksumFailure1791700000005',
       'AddVfsChangeFeed1791700000006',
+      'AddVfsTrash1791700000007',
+      'AddAuditLogTrashId1791700000008',
     ]);
   });
 });

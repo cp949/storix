@@ -1,4 +1,5 @@
 import { VfsSnapshotController } from '../../src/vfs/vfs-snapshot.controller.js';
+import { VfsTrashController } from '../../src/vfs/vfs-trash.controller.js';
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -72,6 +73,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
       ...controllerRoutes(FsController),
       ...controllerRoutes(ChangeFeedController),
       ...controllerRoutes(VfsSnapshotController),
+      ...controllerRoutes(VfsTrashController),
       ...controllerRoutes(PublicFsController),
       ...controllerRoutes(UploadSessionController),
     ].sort();

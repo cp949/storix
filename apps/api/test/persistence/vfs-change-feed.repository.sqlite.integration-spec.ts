@@ -4,6 +4,8 @@ import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
 import { VfsChangeEventEntity } from '../../src/persistence/entities/vfs-change-event.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
@@ -20,7 +22,8 @@ describe('VFS change feed persistence (SQLite)', () => {
     dataSource = new DataSource({
       type: 'better-sqlite3', database: ':memory:', synchronize: false,
       migrationsTransactionMode: 'each',
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsChangeFeedStateEntity, VfsChangeEventEntity],
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsChangeFeedStateEntity, VfsChangeEventEntity,
+        VfsTrashEntity, VfsTrashEntryEntity],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();

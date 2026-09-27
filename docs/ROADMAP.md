@@ -223,10 +223,17 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       SQLite L2 22 suites/307 tests, API L0 88 suites/875 tests, typecheck·lint·build도
       통과했다. 초기 checkpoint/mutation, 같은 namespace 직렬화, namespace별 독립
       sequence를 barrier/shared-spec에서 확인했다. 실제 운영 활성화와 소비자 동기화·복구는 제외한다.
-- [ ] VFS-05: **revision 이력과 삭제 복구 정책** — 현재 snapshot 기능과 매 변경
-      revision 이력, 복구 가능한 삭제(휴지통)를 분리해 설계한다. 보존 기한·수량,
-      명시적/자동 영구 삭제, quota 산정, 복구 시 파일 ID와 revision 의미를 정한다.
-      실제 복구 가능성은 백업/복구 `OPS-02`와 별도로 검증한다.
+- [x] VFS-05: **revision 이력과 삭제 복구 정책** — 현재 revision은 조건부 변경용
+      비교 토큰이고 과거 바이트는 명시적 snapshot으로만 보존한다. 일반 삭제는 FILE 또는
+      subtree를 30일 휴지통 manifest로 옮긴다. namespace별 기본 100000 보존 node 상한,
+      미만료 목록, 원래 node ID와 새 revision 복구, 관리자 직접 purge, DB 시각 기반 만료
+      GC를 구현했다. live·snapshot·purge 전 휴지통 FILE byte를 논리 quota에 합산하고,
+      purge는 공유 Blob 참조를 보존한다. [RQ-024](./requirements/file-storage.md)와
+      [설계](./design/09-vfs-trash-and-recovery.md)를 따른다. 로컬 focused PostgreSQL
+      GC+HTTP 2 suites/167 tests, SQLite GC+HTTP 2 suites/28 tests가 통과했고,
+      최종 PostgreSQL/MinIO L2 36 suites/536 tests, SQLite L2 22 suites/326 tests가 통과했다.
+      최종 root test는 API 90 suites/891 tests, typecheck·lint·build도 통과했다. 운영 DB migration, 실제 백업 복원,
+      외부 consumer/browser/production 연동은 별도 검증 대상이다.
 - [x] VFS-06: **선택 capability 설정과 비활성 동작** — 이후 추가되는 선택 기능을 완결된
       capability 단위로 설정한다. 설정 기반은 완료했다: 시작 시 JSON 검증, 정적 registry,
       전역 상한·namespace 명시적 허용, 기본 비활성, 의존성 검증, 409
