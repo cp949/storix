@@ -46,6 +46,7 @@ export class FsController {
     @Headers('x-if-revision') ifRevision: string | undefined,
     @Headers('content-type') contentType: string | undefined,
     @Headers('content-length') contentLength: string | undefined,
+    @Headers('x-content-sha256') expectedSha256: string | undefined,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -60,6 +61,7 @@ export class FsController {
       contentType,
       contentLength,
       req.requestId,
+      expectedSha256,
     );
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);

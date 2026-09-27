@@ -2392,6 +2392,69 @@ describe('Fs HTTP contract', () => {
       expect(downloaded.body).toEqual(bytes);
     });
 
+    it('raw checksum contract validates before receipt, checks plaintext, and replays 422 without mutation', async () => {
+      for (const policy of ['NONE', 'ENCRYPTED'] as const) {
+        const namespace = await request(httpServer)
+          .post('/api/v2/namespaces')
+          .set('Idempotency-Key', `checksum-${policy}`)
+          .send({ name: `checksum-${policy.toLowerCase()}`, encryptionPolicy: policy })
+          .expect(201);
+        const namespaceId = namespace.body.id as string;
+        const base = `/api/v2/namespaces/${namespaceId}/fs`;
+        const initial = Buffer.from('plaintext checksum payload');
+        const next = Buffer.from('changed payload');
+        const correct = createHash('sha256').update(initial).digest('hex');
+        const nextHash = createHash('sha256').update(next).digest('hex');
+        const bad = '0'.repeat(64);
+        const createKey = randomUUID();
+        const send = (key: string, bytes: Buffer, checksum: string | undefined, ifRevision?: string) => {
+          let call = request(httpServer)
+            .post(`${base}/content/conditional`)
+            .query({ path: '/file' })
+            .set('Content-Type', 'application/octet-stream')
+            .set('Idempotency-Key', key)
+            .set('X-Mutation-Scope', 'checksum-contract');
+          call = ifRevision ? call.set('X-If-Revision', ifRevision) : call.set('X-If-Absent', 'true');
+          if (checksum !== undefined) call = call.set('X-Content-Sha256', checksum);
+          return call.send(bytes);
+        };
+
+        const malformed = await send(createKey, initial, correct.toUpperCase()).expect(400);
+        expect(malformed.body.code).toBe('VFS_INVALID_CHECKSUM');
+        expect(
+          await migrationDataSource.getRepository(VfsMutationReceiptEntity).count({ where: { namespaceId } }),
+        ).toBe(0);
+        const created = await send(createKey, initial, correct).expect(201);
+        const revision = created.body.resource.revision as string;
+        const replay = await send(createKey, initial, correct).expect(201);
+        expect(replay.body).toEqual(created.body);
+        expect(replay.headers['x-request-id']).toBe(created.headers['x-request-id']);
+        expect((await send(createKey, next, correct).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+        expect((await send(createKey, initial, bad).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+
+        const mismatchKey = randomUUID();
+        const mismatch = await send(mismatchKey, next, bad, revision).expect(422);
+        expect(mismatch.body.code).toBe('VFS_CHECKSUM_MISMATCH');
+        expect(JSON.stringify(mismatch.body)).not.toContain(bad);
+        expect(JSON.stringify(mismatch.body)).not.toContain(nextHash);
+        const repeated = await send(mismatchKey, next, bad, revision).expect(422);
+        expect(repeated.body).toEqual(mismatch.body);
+        expect(repeated.headers['x-request-id']).toBe(mismatch.headers['x-request-id']);
+        expect((await send(mismatchKey, next, correct, revision).expect(409)).body.code).toBe(
+          'MUTATION_KEY_REUSED',
+        );
+        expect((await send(mismatchKey, initial, bad, revision).expect(409)).body.code).toBe(
+          'MUTATION_KEY_REUSED',
+        );
+        const after = await request(httpServer).get(`${base}/revision`).query({ path: '/file' }).expect(200);
+        expect(after.body.revision).toBe(revision);
+        expect(
+          (await request(httpServer).get(`${base}/content`).query({ path: '/file' }).expect(200)).body,
+        ).toEqual(initial);
+        expect(await migrationDataSource.getRepository(BlobEntity).count({ where: { namespaceId } })).toBe(1);
+      }
+    });
+
     it('교체는 정확한 revision을 요구하고 최초 412는 파일 교체 뒤에도 충돌 시점 current로 재생하며 fingerprint가 바뀐 재시도는 거부한다', async () => {
       const namespaceId = await createNamespace('conditional-content-replace-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs/content/conditional`;

@@ -29,6 +29,24 @@ export class VfsInvalidMutationRequestError extends DomainError {
   }
 }
 
+export class VfsInvalidChecksumError extends DomainError {
+  readonly code = 'VFS_INVALID_CHECKSUM';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 checksum');
+  }
+}
+
+export class VfsChecksumMismatchError extends DomainError {
+  readonly code = 'VFS_CHECKSUM_MISMATCH';
+  readonly status = 422;
+
+  constructor() {
+    super('콘텐츠 checksum 불일치');
+  }
+}
+
 export class VfsPreconditionRequiredError extends DomainError {
   readonly code = 'VFS_PRECONDITION_REQUIRED';
   readonly status = 428;

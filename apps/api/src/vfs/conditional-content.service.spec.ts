@@ -77,6 +77,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     ifRevision: string | undefined,
     source: Readable = Readable.from([Buffer.from('body')]),
     requestId = 'req-1',
+    expectedSha256?: string,
   ) {
     return service.put(
       namespaceId,
@@ -89,8 +90,52 @@ describe('ConditionalContentService 오류 receipt', () => {
       'application/octet-stream',
       undefined,
       requestId,
+      expectedSha256,
     );
   }
+
+  it.each(['', 'A'.repeat(64), 'a'.repeat(63), 'g'.repeat(64), ' a'.repeat(64)])(
+    '잘못된 checksum %j는 body와 receipt를 건드리기 전에 거부한다',
+    async (checksum) => {
+      const source = Readable.from([Buffer.from('body')]);
+      await expect(upload('/x', 'true', undefined, source, 'req-1', checksum)).rejects.toMatchObject({
+        code: 'VFS_INVALID_CHECKSUM',
+        status: 400,
+      });
+      expect(source.readableEnded).toBe(false);
+      expect(claim).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    },
+  );
+
+  it('평문 checksum 불일치는 object를 삭제하고 422 receipt를 body와 기대값에 결합한다', async () => {
+    const expected = '0'.repeat(64);
+    const result = await upload(
+      '/x',
+      'true',
+      undefined,
+      Readable.from([Buffer.from('body')]),
+      'req-1',
+      expected,
+    );
+    expect(result).toMatchObject({ status: 422, body: { code: 'VFS_CHECKSUM_MISMATCH' } });
+    expect(JSON.stringify(result)).not.toContain(expected);
+    expect(JSON.stringify(result)).not.toContain(createHash('sha256').update('body').digest('hex'));
+    expect(deleteObject).toHaveBeenCalledWith('object-key');
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(completeAfterRollback.mock.calls[0][2]).toBe(
+      hashParts([
+        'POST',
+        'content/conditional',
+        '/x',
+        '{"ifAbsent":true}',
+        'application/octet-stream',
+        createHash('sha256').update('body').digest('hex'),
+        expected,
+      ]),
+    );
+    expect(completeAfterRollback.mock.calls[0][5]).toBe(4);
+  });
 
   it('NFD raw path를 업로드 전에 400 응답으로 확정한다', async () => {
     const result = await upload('/é', 'true', undefined);

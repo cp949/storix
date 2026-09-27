@@ -23,7 +23,12 @@ import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
 import { decodeRevision } from './revision.js';
-import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from './vfs.errors.js';
+import {
+  VfsChecksumMismatchError,
+  VfsInvalidChecksumError,
+  VfsInvalidMutationRequestError,
+  VfsPreconditionRequiredError,
+} from './vfs.errors.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -52,8 +57,17 @@ function conditionIdentity(
   return JSON.stringify({ invalid: { ifAbsent: ifAbsent ?? null, ifRevision: ifRevision ?? null } });
 }
 
-function fingerprint(path: string, condition: string, mimeType: string, bodyHash: string): string {
-  return hashParts(['POST', 'content/conditional', path, condition, mimeType, bodyHash]);
+function fingerprint(
+  path: string,
+  condition: string,
+  mimeType: string,
+  bodyHash: string,
+  expectedSha256?: string,
+): string {
+  const parts = ['POST', 'content/conditional', path, condition, mimeType, bodyHash];
+  // 기존 checksum 미제공 receipt의 fingerprint를 보존한다.
+  if (expectedSha256 !== undefined) parts.push(expectedSha256);
+  return hashParts(parts);
 }
 
 @Injectable()
@@ -86,7 +100,11 @@ export class ConditionalContentService {
     contentType: string | undefined,
     contentLength: string | undefined,
     requestId: string,
+    expectedSha256?: string,
   ): Promise<MutationHttpResult> {
+    if (expectedSha256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSha256)) {
+      throw new VfsInvalidChecksumError();
+    }
     const identity = identityOf(namespaceId, scope, key);
     const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
     const maxBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.maxFileSizeBytes);
@@ -128,7 +146,13 @@ export class ConditionalContentService {
           claim.kind === 'owner' && parseError ? this.startLeaseRenewal(identity, claim.generation) : null;
         try {
           const replayed = await hashStream(source, replayMaxBytes);
-          const currentFingerprint = fingerprint(path, conditionKey, mimeType, replayed.sha256);
+          const currentFingerprint = fingerprint(
+            path,
+            conditionKey,
+            mimeType,
+            replayed.sha256,
+            expectedSha256,
+          );
           if (claim.kind === 'complete') {
             return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
           }
@@ -174,11 +198,14 @@ export class ConditionalContentService {
       const owner: ErrorReceiptOwner = {
         identity,
         generation: claim.generation,
-        fingerprint: fingerprint(path, conditionKey, mimeType, uploaded.sha256),
+        fingerprint: fingerprint(path, conditionKey, mimeType, uploaded.sha256, expectedSha256),
         method: 'POST',
         requestBodyBytes: uploaded.size,
       };
       try {
+        if (expectedSha256 !== undefined && uploaded.sha256 !== expectedSha256) {
+          throw new VfsChecksumMismatchError();
+        }
         if (lease.lost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
           throw new Error('VFS mutation claim lost');
         }
