@@ -3,9 +3,6 @@ import { classifyPersistenceOperation } from './persistence-failure.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsCopyLimitExceededError,
-  VfsDeleteLimitExceededError,
-  VfsIsDirectoryError,
-  VfsNodeNotFoundError,
 } from '../vfs/vfs.errors.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
@@ -15,104 +12,6 @@ import { VfsNodeRepositoryFileMutations } from './vfs-node.repository.file-mutat
 import { trackChangeFeedBefore } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutations {
-  @classifyPersistenceOperation
-  async removeNode(
-    namespaceId: string,
-    rootId: string,
-    segments: string[],
-    recursive: boolean,
-    maxSyncDeleteNodes: number,
-    tx?: MutationTx,
-  ): Promise<void> {
-    if (!tx) {
-      await this.withMutation(namespaceId, rootId, (inner) =>
-        this.removeNode(namespaceId, rootId, segments, recursive, maxSyncDeleteNodes, inner),
-      );
-      return;
-    }
-    const manager = tx.manager;
-    const nodeRepo = manager.getRepository(VfsNodeEntity);
-    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
-    const name = segments[segments.length - 1];
-    const target = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
-
-    if (!target) {
-      throw new VfsNodeNotFoundError(joinSegments(segments));
-    }
-
-    if (target.type === 'FILE') {
-      if (!target.blobId) {
-        throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
-      }
-      await nodeRepo.remove(target);
-      if (target.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
-      this.recordLiveByteDelta(tx, -BigInt(target.size));
-      await this.blobRepository.decrementReferenceCount(manager, target.blobId, 1);
-      return;
-    }
-
-    if (!recursive) {
-      throw new VfsIsDirectoryError(joinSegments(segments));
-    }
-
-    // target 자신의 row lock을 이미 보유하고 있어 이 subtree 안팎으로의 모든
-    // insert/rename/delete는 target을 잠그려다 대기한다(lockParentChain은 항상
-    // root부터 순서대로 잠그므로 target 하위 어디를 만들려 해도 target을 거친다).
-    // 따라서 아래 재귀 조회~삭제 사이에 subtree 구성이 바뀔 수 없다.
-    const ph = new DialectPlaceholders(this.isSqlite);
-    const subtreeRows: { id: string; type: VfsNodeType; blob_id: string | null; size: string | null }[] =
-      await manager.query(
-        `WITH RECURSIVE subtree AS (
-           SELECT id, namespace_id, type, blob_id, size FROM vfs_node WHERE id = ${ph.bind(target.id)} AND namespace_id = ${ph.bind(namespaceId)}
-           UNION ALL
-           SELECT vn.id, vn.namespace_id, vn.type, vn.blob_id, vn.size FROM vfs_node vn
-           INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
-         )
-         SELECT id, type, blob_id, size FROM subtree`,
-        ph.params,
-      );
-
-    if (subtreeRows.length > maxSyncDeleteNodes) {
-      throw new VfsDeleteLimitExceededError(maxSyncDeleteNodes);
-    }
-    await trackChangeFeedBefore(tx, subtreeRows.map((row) => row.id));
-
-    const ids = subtreeRows.map((row) => row.id);
-    let removedBytes = 0n;
-    for (const row of subtreeRows) {
-      if (row.type === 'FILE') {
-        if (row.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
-        removedBytes += BigInt(row.size);
-      }
-    }
-    await this.applyRowLockIfSupported(
-      manager
-        .createQueryBuilder(VfsNodeEntity, 'n')
-        .where('n.id IN (:...ids)', { ids })
-        .orderBy('n.id', 'ASC'),
-    ).getMany();
-
-    const blobDecrements = new Map<string, number>();
-    for (const row of subtreeRows) {
-      if (row.blob_id) {
-        blobDecrements.set(row.blob_id, (blobDecrements.get(row.blob_id) ?? 0) + 1);
-      }
-    }
-
-    await nodeRepo.delete(ids);
-    this.recordLiveByteDelta(tx, -removedBytes);
-
-    // CTE 결과의 row 순서는 비결정적이라 Map의 삽입 순서를 그대로 따르면 decrement
-    // 호출 순서가 매번 달라진다. 여러 독립적인 row에 대한 write를 한 트랜잭션에서
-    // 수행할 때는 고정된 정렬 순서로 처리해 두는 편이 이후 잠재적인 AB-BA 교착의
-    // 소지를 없앤다(moveNode의 lock 순서와 동일한 원리).
-    const sortedBlobDecrements = [...blobDecrements].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-
-    for (const [blobId, count] of sortedBlobDecrements) {
-      await this.blobRepository.decrementReferenceCount(manager, blobId, count);
-    }
-  }
-
   @classifyPersistenceOperation
   async copyNode(
     namespaceId: string,

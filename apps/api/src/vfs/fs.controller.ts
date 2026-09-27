@@ -143,8 +143,12 @@ export class FsController {
 
   @Post('rmdir')
   @HttpCode(204)
-  async rmdir(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
-    await this.vfsService.rmdir(namespaceId, path ?? '');
+  async rmdir(
+    @Param('namespaceId') namespaceId: string,
+    @Query('path') path: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('X-Trash-Id', await this.vfsService.rmdir(namespaceId, path ?? ''));
   }
 
   @Post('rm')
@@ -153,8 +157,9 @@ export class FsController {
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,
     @Query('recursive') recursive: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true');
+    res.setHeader('X-Trash-Id', await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true'));
   }
 
   @Post('content')

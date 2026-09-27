@@ -164,7 +164,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       await http().get(`${base}/snapshots/${id}/entries`).expect(404);
     });
 
-    it('원본과 snapshot을 모두 삭제한 뒤 grace period가 지나면 GC가 Blob row와 object를 회수한다', async () => {
+    it('원본을 휴지통에 보관하면 snapshot 삭제와 GC 후에도 Blob row와 object를 보존한다', async () => {
       const { app, http, base, namespaceId, upload } = await fixture();
       const bytes = Buffer.from([0, 255, 128, 65]);
       await upload('/source', bytes).expect(201);
@@ -173,7 +173,7 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       const blobs = ds.getRepository(BlobEntity);
       const blob = await blobs.findOneByOrFail({ namespaceId });
       await http().post(`${base}/rm`).query({ path: '/source' }).expect(204);
-      expect((await blobs.findOneByOrFail({ id: blob.id })).referenceCount).toBe(1);
+      expect((await blobs.findOneByOrFail({ id: blob.id })).referenceCount).toBe(2);
       const gc = new GcJob(
         app.get<BlobStorage>(BLOB_STORAGE),
         app.get(BlobRepository),
@@ -186,11 +186,12 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
       ).toEqual(bytes);
 
       await snapshotPost(app, base, `/${captured.body.snapshotId}/delete`, {}).expect(200);
-      expect((await blobs.findOneByOrFail({ id: blob.id })).referenceCount).toBe(0);
-      await blobs.update(blob.id, { zeroSince: new Date(Date.now() - 2 * 86400_000) });
+      expect((await blobs.findOneByOrFail({ id: blob.id })).referenceCount).toBe(1);
       await gc.run();
-      expect(await blobs.findOneBy({ id: blob.id })).toBeNull();
-      await expect(app.get<BlobStorage>(BLOB_STORAGE).get(blob.storageKey)).rejects.toThrow();
+      expect(await blobs.findOneBy({ id: blob.id })).not.toBeNull();
+      const retainedObject = await app.get<BlobStorage>(BLOB_STORAGE).get(blob.storageKey);
+      expect(retainedObject).toBeDefined();
+      retainedObject.destroy();
     });
 
     it.each([false, true])(

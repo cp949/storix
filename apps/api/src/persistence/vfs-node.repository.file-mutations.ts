@@ -5,7 +5,6 @@ import { assertPathSegments } from '../vfs/path-resolver.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import {
   VfsAlreadyExistsError,
-  VfsDirectoryNotEmptyError,
   VfsInvalidOperationError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
@@ -401,44 +400,6 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     for (const descendant of descendants) this.markChanged(tx, descendant.id, true);
 
     return { node: toRecord(saved), finalPath: joinSegments(finalSegments) };
-  }
-
-  @classifyPersistenceOperation
-  async removeEmptyDirectory(
-    namespaceId: string,
-    rootId: string,
-    segments: string[],
-    tx?: MutationTx,
-  ): Promise<void> {
-    if (!tx) {
-      await this.withMutation(namespaceId, rootId, (inner) =>
-        this.removeEmptyDirectory(namespaceId, rootId, segments, inner),
-      );
-      return;
-    }
-    const manager = tx.manager;
-    const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
-    const name = segments[segments.length - 1];
-    const target = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
-
-    if (!target) {
-      throw new VfsNodeNotFoundError(joinSegments(segments));
-    }
-    if (target.type === 'FILE') {
-      throw new VfsNotDirectoryError(joinSegments(segments));
-    }
-
-    const childCount = await manager
-      .createQueryBuilder(VfsNodeEntity, 'n')
-      .where('n.namespace_id = :namespaceId', { namespaceId })
-      .andWhere('n.parent_id = :parentId', { parentId: target.id })
-      .getCount();
-
-    if (childCount > 0) {
-      throw new VfsDirectoryNotEmptyError(joinSegments(segments));
-    }
-
-    await manager.getRepository(VfsNodeEntity).remove(target);
   }
 
   @classifyPersistenceOperation

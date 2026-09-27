@@ -9,6 +9,7 @@ import { registerFsRevisionReadContract } from './fs-revision-read.test-support.
 import { registerFsBasicOperationsContract } from './fs-basic-operations.test-support.js';
 import { registerFsContentHttpContract } from './fs-content-http.test-support.js';
 import { registerFsMoveCopyDeleteContract } from './fs-move-copy-delete.test-support.js';
+import { registerVfsTrashHttpContract } from './vfs-trash.http.shared-tests.js';
 
 describe('Fs HTTP contract', () => {
   const ctx = createFsHttpFixture();
@@ -22,4 +23,5 @@ describe('Fs HTTP contract', () => {
   registerFsBasicOperationsContract(ctx);
   registerFsContentHttpContract(ctx);
   registerFsMoveCopyDeleteContract(ctx);
+  registerVfsTrashHttpContract(() => ctx.app, ctx.createNamespace);
 });

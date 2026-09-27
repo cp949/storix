@@ -28,9 +28,9 @@ import type {
   ContentPrecondition,
 } from './vfs-node.repository.types.js';
 import { toRecord, joinSegments } from './vfs-node.repository.helpers.js';
-import { VfsNodeRepositoryTreeMutations } from './vfs-node.repository.tree-mutations.js';
+import { VfsNodeRepositoryTrash } from './vfs-node.repository.trash.js';
 
-export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTreeMutations {
+export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
   private assertRevision(node: VfsNodeEntity, revision: string, path: string): void {
     const expected = decodeRevision(revision);
     if (node.id !== expected.id || node.version !== expected.version) {
@@ -42,7 +42,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTreeMutation
   async applyConditionalMutation(
     tx: MutationTx,
     command: ConditionalMutation,
-  ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null }> {
+  ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null; trashId?: string }> {
     if (command.kind === 'mkdir' || command.kind === 'delete') {
       assertConditionalSegments(command.segments);
     } else {
@@ -69,12 +69,10 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTreeMutation
         namespace.maxSyncDeleteNodes,
         parsePositiveInt(process.env.STORIX_MAX_SYNC_DELETE_NODES, 1000),
       );
-      if (target.type === 'DIRECTORY' && !command.recursive) {
-        await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx);
-      } else {
-        await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
-      }
-      return { status: 200, resource: null };
+      const trashId = target.type === 'DIRECTORY' && !command.recursive
+        ? await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx)
+        : await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
+      return { status: 200, resource: null, trashId };
     }
 
     const source = await this.resolvePathInManager(tx.manager, namespaceId, rootId, command.sourceSegments);

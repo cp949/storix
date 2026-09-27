@@ -84,7 +84,7 @@ export function registerFsFileSnapshotRestContract(
     expect(
       (await ctx.migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ id: blob.id }))
         .referenceCount,
-    ).toBe(2);
+    ).toBe(3);
     await request(ctx.httpServer)
       .post(`${base}/content`)
       .query({ path: '/target', force: 'true' })
@@ -107,7 +107,7 @@ export function registerFsFileSnapshotRestContract(
     expect(
       (await ctx.migrationDataSource.getRepository(BlobEntity).findOneByOrFail({ id: blob.id }))
         .referenceCount,
-    ).toBe(2);
+    ).toBe(3);
     await snapshotPost(base, `/${id}/delete`, randomUUID(), '{}').expect(200);
     const content = await request(ctx.httpServer)
       .get(`${base}/content`)

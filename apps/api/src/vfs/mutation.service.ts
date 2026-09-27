@@ -105,11 +105,15 @@ export class MutationService {
     requestId: string,
   ): Promise<MutationHttpResult> {
     const toResponse = (result: {
-      value: { status: number; resource: unknown };
+      value: { status: number; resource: unknown; trashId?: string };
       affectedRevisions: unknown;
     }): MutationHttpResult => ({
       status: result.value.status,
-      body: { resource: result.value.resource, affectedRevisions: result.affectedRevisions },
+      body: {
+        resource: result.value.resource,
+        affectedRevisions: result.affectedRevisions,
+        ...(result.value.trashId ? { trashId: result.value.trashId } : {}),
+      },
       headers: { 'x-request-id': requestId },
     });
     const applied = await this.nodes.withMutation(

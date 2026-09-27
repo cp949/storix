@@ -136,7 +136,7 @@ export class VfsService {
     return { status: 201, body: toNodeResponse(result.node, result.finalPath) };
   }
 
-  async rmdir(namespaceId: string, rawPath: string): Promise<void> {
+  async rmdir(namespaceId: string, rawPath: string): Promise<string> {
     const root = await requireRoot(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
 
@@ -144,10 +144,10 @@ export class VfsService {
       throw new VfsInvalidOperationError(canonical);
     }
 
-    await this.repo.removeEmptyDirectory(namespaceId, root.id, segments);
+    return this.repo.removeEmptyDirectory(namespaceId, root.id, segments);
   }
 
-  async rm(namespaceId: string, rawPath: string, recursive: boolean): Promise<void> {
+  async rm(namespaceId: string, rawPath: string, recursive: boolean): Promise<string> {
     const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
 
@@ -156,7 +156,7 @@ export class VfsService {
     }
 
     const maxSyncDeleteNodes = resolveEffectiveLimit(limits.maxSyncDeleteNodes, this.maxSyncDeleteNodes);
-    await this.repo.removeNode(namespaceId, root.id, segments, recursive, maxSyncDeleteNodes);
+    return this.repo.removeNode(namespaceId, root.id, segments, recursive, maxSyncDeleteNodes);
   }
 
   async ls(

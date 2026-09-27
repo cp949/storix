@@ -19,10 +19,12 @@ import { UploadSessionPartService } from './upload-session-part.service.js';
 import { UploadSessionFinalizeService } from './upload-session-finalize.service.js';
 import { ChangeFeedController } from './change-feed.controller.js';
 import { ChangeFeedService } from './change-feed.service.js';
+import { VfsTrashController } from './vfs-trash.controller.js';
+import { VfsTrashService } from './vfs-trash.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
-  controllers: [FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController],
+  controllers: [FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController, VfsTrashController],
   providers: [
     VfsSnapshotService,
     VfsService,
@@ -34,12 +36,13 @@ import { ChangeFeedService } from './change-feed.service.js';
     UploadSessionPartService,
     UploadSessionFinalizeService,
     ChangeFeedService,
+    VfsTrashService,
   ],
 })
 export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(RequestContextMiddleware)
-      .forRoutes(FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController);
+      .forRoutes(FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController, VfsTrashController);
   }
 }

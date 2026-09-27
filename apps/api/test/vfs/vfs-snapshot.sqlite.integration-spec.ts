@@ -23,6 +23,7 @@ import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { snapshotPost, treeSnapshotContract } from './vfs-snapshot-tree.test-support.js';
+import { registerVfsTrashHttpContract } from './vfs-trash.http.shared-tests.js';
 
 describe('SQLite file + MinIO snapshot HTTP durability', () => {
   let container: StartedMinioContainer | undefined;
@@ -96,6 +97,41 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
   });
 
   treeSnapshotContract(() => app);
+  registerVfsTrashHttpContract(
+    () => app,
+    async (name) => (await request(app.getHttpServer()).post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID()).send({ name }).expect(201)).body.id as string,
+  );
+
+  it('휴지통 항목을 expiresAt 정각 밀리초부터 목록에서 제외한다', async () => {
+    const http = () => request(app.getHttpServer());
+    const namespaceId = (await http().post('/api/v2/namespaces')
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: `trash-expiry-${randomUUID()}` }).expect(201)).body.id as string;
+    const base = `/api/v2/namespaces/${namespaceId}/fs`;
+    await http().post(`${base}/touch`).send({ path: '/expired' }).expect(201);
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/expired' }).expect(204))
+      .headers['x-trash-id'] as string;
+    const ds = app.get(DataSource);
+    let observedExactBoundary = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      // 같은 DB 초 안에서만 검사하여 예전 CURRENT_TIMESTAMP 비교의 오탐도 입증한다.
+      await ds.query(`UPDATE vfs_trash SET deleted_at = datetime('now', '-1 day'),
+        expires_at = strftime('%Y-%m-%d %H:%M:%S.000', 'now') WHERE id = ?`, [trashId]);
+      const before = (await ds.query(`SELECT CURRENT_TIMESTAMP AS second,
+        expires_at > CURRENT_TIMESTAMP AS old_visible FROM vfs_trash WHERE id = ?`, [trashId]))[0] as {
+        second: string; old_visible: number;
+      };
+      const page = (await http().get(`${base}/trash`).expect(200)).body;
+      const after = (await ds.query('SELECT CURRENT_TIMESTAMP AS second'))[0] as { second: string };
+      if (before.second !== after.second) continue;
+      expect(before.old_visible).toBe(1);
+      expect(page.items).toEqual([]);
+      observedExactBoundary = true;
+      break;
+    }
+    expect(observedExactBoundary).toBe(true);
+  });
 
   it('exact DIRECTORY 충돌 412를 SQLite app·DataSource 재시작 후에도 재생한다', async () => {
     const http = () => request(app.getHttpServer());

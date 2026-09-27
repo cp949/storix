@@ -217,6 +217,15 @@ export class VfsDeleteLimitExceededError extends DomainError {
   }
 }
 
+export class VfsTrashLimitExceededError extends DomainError {
+  readonly code = 'VFS_TRASH_LIMIT_EXCEEDED';
+  readonly status = 413;
+
+  constructor(readonly maxNodes: number) {
+    super(`휴지통 보존 Node 수가 상한(${maxNodes})을 초과함`);
+  }
+}
+
 export class VfsCopyLimitExceededError extends DomainError {
   readonly code = 'VFS_COPY_LIMIT_EXCEEDED';
   readonly status = 413;
