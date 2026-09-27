@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { withExactNamespaceBigints } from '../persistence/namespace-bigint-read.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
 import { toNamespaceResponse } from './dto/namespace-response.dto.js';
@@ -57,7 +58,7 @@ export class NamespaceQuotaService {
 
       namespace.maxTotalLogicalBytes = maxTotalLogicalBytes;
       const saved = await namespaces.save(namespace);
-      const body = toNamespaceResponse(saved, this.globalLimits);
+      const body = toNamespaceResponse((await withExactNamespaceBigints(tx.manager, [saved]))[0], this.globalLimits);
       await keys.insert({
         key: storageKey,
         requestHash,

@@ -9,6 +9,7 @@ import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
+import { withExactNamespaceBigints } from '../persistence/namespace-bigint-read.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
 import { NamespaceGlobalLimits, readNamespaceGlobalLimits } from './namespace-global-limits.js';
 import {
@@ -159,7 +160,7 @@ export class NamespaceService {
       throw new NamespaceNotFoundError(id);
     }
 
-    return toNamespaceResponse(namespace, this.globalLimits);
+    return toNamespaceResponse((await withExactNamespaceBigints(this.namespaceRepo.manager, [namespace]))[0], this.globalLimits);
   }
 
   async findAll(): Promise<NamespaceResponseDto[]> {
@@ -168,7 +169,8 @@ export class NamespaceService {
       order: { name: 'ASC', id: 'ASC' },
     });
 
-    return namespaces.map((namespace) => toNamespaceResponse(namespace, this.globalLimits));
+    return (await withExactNamespaceBigints(this.namespaceRepo.manager, namespaces))
+      .map((namespace) => toNamespaceResponse(namespace, this.globalLimits));
   }
 
   private async recordIdempotency(

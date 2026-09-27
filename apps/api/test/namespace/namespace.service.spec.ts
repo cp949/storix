@@ -35,6 +35,10 @@ describe('NamespaceService', () => {
   let namespaceRepo: {
     findOneBy: jest.Mock<() => Promise<NamespaceEntity | null>>;
     find: jest.Mock<() => Promise<NamespaceEntity[]>>;
+    manager: {
+      connection: { options: { type: 'better-sqlite3' } };
+      query: jest.Mock<(sql: string, ids: string[]) => Promise<unknown[]>>;
+    };
   };
   let idempotencyRepo: {
     findOneBy: jest.Mock<() => Promise<IdempotencyKeyEntity | null>>;
@@ -44,7 +48,21 @@ describe('NamespaceService', () => {
   let service: NamespaceService;
 
   beforeEach(() => {
-    namespaceRepo = { findOneBy: jest.fn(), find: jest.fn() };
+    namespaceRepo = {
+      findOneBy: jest.fn(),
+      find: jest.fn(),
+      manager: {
+        connection: { options: { type: 'better-sqlite3' } },
+        query: jest.fn(async (_sql: string, ids: string[]) => ids.map((id) => ({
+          id,
+          maxTotalLogicalBytes: null,
+          liveFileByteCount: '0',
+          retainedSnapshotByteCount: '0',
+          retainedTrashByteCount: '0',
+          retainedTrashNodeCount: '0',
+        }))),
+      },
+    };
     idempotencyRepo = { findOneBy: jest.fn(), insert: jest.fn() };
     provisioningRepo = { createWithRoot: jest.fn() };
 

@@ -16,6 +16,6 @@
 
 논리 quota는 `live FILE bytes + snapshot FILE entry bytes + retained trash FILE bytes`다. 일반 삭제와 복구는 같은 바이트를 live와 trash 사이에 옮긴다. 만료 시각만으로 quota를 해제하지 않고 실제 purge commit에서 해제한다. 보존 node 수는 namespace별 기본 100000이며 `STORIX_MAX_RETAINED_TRASH_NODES`로 양의 안전 정수를 설정한다. 상한을 넘는 새 삭제는 413으로 원자적으로 거절하고 기존 항목을 자동 축출하지 않는다.
 
-삭제는 change feed에 `deleted`, 복구는 `created` net 이벤트를 남긴다. 목록과 purge는 파일 변경 이벤트를 만들지 않는다. Snapshot은 원본 삭제·복구·purge와 독립적으로 유지된다. 삭제·복구·purge의 성공 및 결정적 실패 receipt는 namespace·scope·key·요청 fingerprint에 묶여 30일간 재생된다. 감사 기록에는 대상 `trash_id`를 남긴다.
+삭제는 change feed에 `deleted`, 복구는 `created` net 이벤트를 남긴다. 목록과 purge는 파일 변경 이벤트를 만들지 않는다. Snapshot은 원본 삭제·복구·purge와 독립적으로 유지된다. 조건부 `kind: delete` mutation 및 휴지통 restore·purge의 성공과 결정적 실패 receipt는 namespace·scope·key·요청 fingerprint에 묶여 30일간 재생된다. Legacy `/fs/rm`과 `/fs/rmdir`는 204와 `X-Trash-Id`를 반환하며 mutation receipt를 만들지 않는다. 감사 기록에는 대상 `trash_id`를 남긴다.
 
 로컬 PostgreSQL/MinIO와 SQLite 자동 검증은 코드 경계의 근거다. 운영 DB migration, 실제 백업 복원, 외부 consumer 동작은 별도 검증 대상이다.

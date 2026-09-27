@@ -22,8 +22,12 @@ interface TrashCursor extends TrashListBoundary {
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/;
 
 function valid(cursor: TrashCursor): boolean {
+  const timestamp = cursor.deletedAtKey;
+  const millis = timestamp.slice(0, 23);
   return isUuid(cursor.namespaceId) && isUuid(cursor.trashId) && cursor.order === 'deletedAtDescTrashIdAsc'
-    && TIMESTAMP.test(cursor.deletedAtKey) && !Number.isNaN(Date.parse(cursor.deletedAtKey));
+    && TIMESTAMP.test(timestamp) && timestamp.slice(0, 4) !== '0000'
+    && !Number.isNaN(Date.parse(`${millis}Z`))
+    && new Date(`${millis}Z`).toISOString() === `${millis}Z`;
 }
 
 function encode(cursor: TrashCursor): string {

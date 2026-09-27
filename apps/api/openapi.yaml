@@ -667,6 +667,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: 보존 휴지통 노드 한도 초과(`VFS_TRASH_LIMIT_EXCEEDED`). 삭제와 quota 등 전체 상태는 변경되지 않음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/rm:

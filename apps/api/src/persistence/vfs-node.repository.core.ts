@@ -14,6 +14,7 @@ import { resolveGlobalTotalLogicalByteLimit, resolveNamespaceQuota, resolveTotal
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
+import { withExactNamespaceBigints } from './namespace-bigint-read.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import type { VfsNodeType } from './entities/vfs-node.entity.js';
 import type { MutationTx, AffectedRevision } from './vfs-node.repository.types.js';
@@ -178,10 +179,11 @@ export class VfsNodeRepositoryCore {
     if (tx.logicalByteDelta <= 0n && tx.liveFileByteDelta === 0n) return;
 
     const namespaces = tx.manager.getRepository(NamespaceEntity);
-    const namespace = await namespaces.findOneByOrFail({ id: tx.namespaceId });
-    const liveBytes = BigInt(String(namespace.liveFileByteCount)) + tx.liveFileByteDelta;
-    const retainedBytes = BigInt(String(namespace.retainedSnapshotByteCount));
-    const retainedTrashBytes = BigInt(String(namespace.retainedTrashByteCount));
+    const namespace = (await withExactNamespaceBigints(tx.manager,
+      [await namespaces.findOneByOrFail({ id: tx.namespaceId })]))[0];
+    const liveBytes = BigInt(namespace.liveFileByteCount) + tx.liveFileByteDelta;
+    const retainedBytes = BigInt(namespace.retainedSnapshotByteCount);
+    const retainedTrashBytes = BigInt(namespace.retainedTrashByteCount);
     if (liveBytes < 0n || liveBytes > 9223372036854775807n) {
       throw new Error('namespace live file byte counter out of int64 range');
     }

@@ -381,6 +381,28 @@ describe('Namespace HTTP contract', () => {
     }
   });
 
+  it.each([
+    [{ driverError: { code: '08006', message: 'private postgres endpoint' } }, 503, 'STORAGE_UNAVAILABLE'],
+    [{ driverError: { code: '53100', message: 'private disk path' } }, 500, 'STORAGE_FAILURE'],
+  ] as const)('namespace 정확도 재조회 실패 %p를 %i로 응답한다', async (failure, status, code) => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `exact-read-error-${code}`)
+      .send({ name: `exact-read-error-${code.toLowerCase().replace('_', '-')}` })
+      .expect(201);
+    const repo = app.get(DataSource).getRepository(NamespaceEntity);
+    const spy = jest.spyOn(repo.manager, 'query').mockRejectedValueOnce(failure);
+    try {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${created.body.id}`)
+        .expect(status);
+      expect(response.body.code).toBe(code);
+      expect(JSON.stringify(response.body)).not.toContain('private');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('생성한 namespace가 목록 조회에 포함된다', async () => {
     await request(app.getHttpServer())
       .post('/api/v2/namespaces')

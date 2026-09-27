@@ -41,9 +41,10 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     const collision = await this.lockTargetNode(tx.manager, namespaceId, parentId, segments.at(-1)!, tx);
     if (collision) throw new VfsPreconditionFailedError(path, this.currentOf(collision, path));
 
+    const depth = (path: string) => path === '.' ? 0 : path.split('/').length;
     const entries = [...item.entries].sort((left, right) =>
-      left.relativePath.split('/').length - right.relativePath.split('/').length ||
-      left.relativePath.localeCompare(right.relativePath));
+      depth(left.relativePath) - depth(right.relativePath) ||
+      (left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0));
     if (entries[0]?.relativePath !== '.') throw new Error('Trash manifest root missing');
     const restored = new Map<string, string>();
     let bytes = 0n;

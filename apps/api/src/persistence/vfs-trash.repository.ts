@@ -49,12 +49,31 @@ export class VfsTrashRepository {
     const trash = await tx.manager.getRepository(VfsTrashEntity).findOneBy({ id: trashId, namespaceId: tx.namespaceId });
     if (!trash) throw new VfsTrashItemNotFoundError(trashId);
     const entries = await tx.manager.getRepository(VfsTrashEntryEntity).findBy({ trashId, namespaceId: tx.namespaceId });
-    if (BigInt(entries.length) !== BigInt(String(trash.nodeCount))) throw new Error('Trash manifest node count mismatch');
     const ph = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
+    const exactRows = await tx.manager.query(`SELECT CAST(node_count AS TEXT) AS "nodeCount",
+      CAST(logical_bytes AS TEXT) AS "logicalBytes" FROM vfs_trash
+      WHERE namespace_id = ${ph.bind(tx.namespaceId)} AND id = ${ph.bind(trashId)}`,
+    ph.params) as Array<{ nodeCount: string; logicalBytes: string }>;
+    if (exactRows.length !== 1) throw new Error('Trash manifest changed during mutation');
+    trash.nodeCount = exactRows[0].nodeCount;
+    trash.logicalBytes = exactRows[0].logicalBytes;
+    const entryParams = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
+    const entryRows = await tx.manager.query(`SELECT id, CAST(size AS TEXT) AS size FROM vfs_trash_entry
+      WHERE namespace_id = ${entryParams.bind(tx.namespaceId)} AND trash_id = ${entryParams.bind(trashId)}`,
+    entryParams.params) as Array<{ id: string; size: string | null }>;
+    const exactSizes = new Map(entryRows.map((row) => [row.id, row.size]));
+    if (entries.length !== entryRows.length || BigInt(entries.length) !== BigInt(trash.nodeCount))
+      throw new Error('Trash manifest node count mismatch');
+    for (const entry of entries) {
+      const size = exactSizes.get(entry.id);
+      if (size === undefined) throw new Error('Trash manifest entry changed during mutation');
+      entry.size = size;
+    }
+    const expiryParams = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
     const rows = await tx.manager.query(`SELECT expires_at <= ${isSqliteDataSource(this.dataSource.options)
       ? "strftime('%Y-%m-%d %H:%M:%f', 'now')" : 'clock_timestamp()'} AS expired
-      FROM vfs_trash WHERE namespace_id = ${ph.bind(tx.namespaceId)} AND id = ${ph.bind(trashId)}`,
-    ph.params) as Array<{ expired: boolean | number }>;
+      FROM vfs_trash WHERE namespace_id = ${expiryParams.bind(tx.namespaceId)} AND id = ${expiryParams.bind(trashId)}`,
+    expiryParams.params) as Array<{ expired: boolean | number }>;
     return { trash, entries, expired: Boolean(rows[0]?.expired) };
   }
 
@@ -154,7 +173,7 @@ export class VfsTrashRepository {
       : `(strftime('%Y-%m-%dT%H:%M:%fZ', t.deleted_at) < ? OR (strftime('%Y-%m-%dT%H:%M:%fZ', t.deleted_at) = ? AND t.id > ?))`;
     const sql = `SELECT t.id AS "trashId", t.original_path AS "originalPath", t.root_type AS "rootType",
       t.deleted_at AS "deletedAt", t.expires_at AS "expiresAt", t.node_count AS "nodeCount",
-      t.logical_bytes AS "logicalBytes", ${timestamp} AS "deletedAtKey"
+      CAST(t.logical_bytes AS TEXT) AS "logicalBytes", ${timestamp} AS "deletedAtKey"
       FROM vfs_trash t WHERE t.namespace_id = ${pg ? '$1' : '?'}
         AND t.expires_at > ${pg ? 'CURRENT_TIMESTAMP' : "strftime('%Y-%m-%d %H:%M:%f', 'now')"}
       ${after ? `AND ${compare}` : ''}
