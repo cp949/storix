@@ -229,6 +229,15 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 - 설정은 서비스 시작 시 적용한다. 각 capability 요구사항은 적용 범위, 기본값, 전역/namespace 우선순위, 의존성, 비활성 응답, 기존 데이터 처리, 조회 노출을 명시한다. 운영 중 설정 변경은 현재 제공하지 않는다. 조회 API는 설정 snapshot의 실제 활성 ID만 반환한다.
 - **수용 조건:** 새 선택 기능이 capability 경계 밖으로 부분 활성화되지 않고, namespace 설정으로 전역 차단을 우회할 수 없다. 비활성화 뒤에도 기존 데이터 보존 조건을 지키며, 소비자는 안정된 오류 코드와 활성 상태 조회로 비활성 이유를 판별할 수 있다.
 
+### RQ-028 업로드 전체 checksum 검증
+
+- [x] **진행 상태:** 로컬 코드·자동 검증 완료
+- **판정 근거:** raw 조건부 업로드와 재개 업로드에 checksum 입력·평문 SHA-256 비교·불일치 보존 결과가 구현됐다. DELTA-01 raw 집중 검증과 DELTA-02 PostgreSQL/MinIO 2 suites/23 tests, SQLite 3 suites/41 tests의 선택 L1 근거가 있다. 마지막 기존 파일 보존 단언 보강 뒤 `upload-session-finalize.integration-spec.ts`와 SQLite 대응 spec을 각각 20/20 통과했다. 최종 L0는 통과했다. 최종 PostgreSQL/MinIO L2는 33 suites/485 tests, SQLite L2는 19 suites/286 tests 통과했다. 최초 PostgreSQL/MinIO 전체 실행 중 기존 short-lease 사례 1건이 400으로 실패했으나 단독·파일 전체 재실행에서는 재현되지 않았고, 후속 전체 L2는 통과했다. 원인은 특정하지 않았다. 운영 배포 활성화와 소비자 연동은 검증 범위에서 제외한다.
+- 호출자는 raw 조건부 업로드의 선택적 `X-Content-Sha256` 또는 재개 업로드 세션 생성의 선택적 `sha256`으로 전체 파일의 SHA-256을 지정할 수 있어야 한다. 값은 정확히 64자리 소문자 hex이며 ENCRYPTED namespace도 저장 전 평문 바이트를 기준으로 한다. checksum을 생략한 기존 요청은 계속 처리한다.
+- 잘못된 표현은 raw 본문 소비·receipt 생성 또는 재개 세션 생성 전에 `400 VFS_INVALID_CHECKSUM`으로 거부해야 한다. 계산값과 다르면 `422 VFS_CHECKSUM_MISMATCH`이며 파일 바이트·revision을 바꾸거나 기대값·계산값을 노출해서는 안 된다.
+- raw의 422 receipt는 본문 해시와 기대 checksum에 결합해 동일 key의 동일 요청에서 재생한다. 재개 생성 fingerprint도 checksum에 결합한다. 재개 완료 불일치는 `FAILED`와 최초 422 결과를 보존해 반복 완료에서 재생하고, 상태 조회는 `failure.code`만 공개한다. 실패 세션 결과는 종결 뒤 최소 30일 보존하며, staging 객체는 삭제 확인 전까지 임시 사용량에 포함한다.
+- **수용 조건:** 평문·ENCRYPTED namespace에서 정상 checksum은 완료되고 불일치는 기존 파일·revision을 유지한다. malformed 입력, key 재사용·결과 재생, FAILED 상태 조회, 30일 보존과 조각 정리·사용량 회계를 PostgreSQL/MinIO 및 SQLite 검증에서 확인한다.
+
 ## 소비자 어댑터 책임과 범위 제외
 
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.

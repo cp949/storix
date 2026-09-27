@@ -198,9 +198,19 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       해당 예약이 상한을 소진하면 추가 업로드가 막힐 수 있음을 설계에 명시했다.
       운영 활성화, 배포별 한도 선택, 배포 GC, 여러 API instance의 실제 배치와 실사용
       소비자 검증은 이 로컬 증거에 포함되지 않는다.
-- [ ] VFS-03: **업로드 checksum 검증** — 호출자가 제공한 전체 콘텐츠 checksum을
-      Storix 계산값과 커밋 전에 비교한다. 알고리즘·인코딩·암호화 namespace에서의
-      평문/암호문 기준, 불일치 오류와 재시도 의미를 공개 계약으로 정한다.
+- [x] VFS-03: **업로드 checksum 검증** — 호출자가 제공한 전체 콘텐츠 checksum을
+      Storix 계산값과 커밋 전에 비교한다. raw 조건부 업로드의 선택적
+      `X-Content-Sha256`과 재개 세션 생성의 선택적 `sha256`을 구현했다. 둘 다 저장 전
+      전체 평문 바이트의 SHA-256 64자리 소문자 hex이며 ENCRYPTED namespace도 평문 기준이다.
+      잘못된 값은 400 `VFS_INVALID_CHECKSUM`, 불일치는 무변경 422
+      `VFS_CHECKSUM_MISMATCH`다. raw receipt와 재개 생성 fingerprint는 기대 checksum에
+      결합하고, 재개 불일치는 `FAILED` 완료 결과로 30일 이상 재생한다.
+      DELTA-01/02의 선택 L1 검증과 마지막 테스트 보강 후 PostgreSQL/MinIO·SQLite finalize spec
+      각 20/20 통과를 기록했다. 최종 L0 전체 통과, PostgreSQL/MinIO L2 33 suites/485 tests,
+      SQLite L2 19 suites/286 tests 통과를 확인했다. 최초 PostgreSQL/MinIO L2에서 기존
+      short-lease 사례 1건이 일시 실패했으나 단독·파일 전체 재실행에서 재현되지 않았고 후속 전체 L2에서 통과했다.
+      실패 원인은 특정하지 않았다. 운영 활성화와 실제 소비자 연동 검증은 제외 범위다.
+      요구사항 판정은 [RQ-028](./requirements/file-storage.md)을 참고한다.
 - [ ] VFS-04: **namespace 변경 feed** — 최초 전체 열거와 이후 파일/디렉터리 변경
       동기화를 위한 cursor API를 제공한다. 추가·수정·이동·삭제 식별, tombstone,
       cursor 보존 기간·만료·재동기화, 페이지 사이 누락/중복 기준을 포함한다.
