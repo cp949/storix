@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createDirectory, listDocuments } from './client';
+import { ApiError, createDirectory, createUploadSession, getUploadSession, putUploadSessionPart, completeUploadSession, cancelUploadSession, listDocuments } from './client';
 
 describe('listDocuments', () => {
   afterEach(() => {
@@ -47,5 +47,47 @@ describe('createDirectory', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 201 }));
 
     await expect(createDirectory('alice', '/reports')).resolves.toBeUndefined();
+  });
+});
+
+describe('upload sessions', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('생성 시 UUID key와 크기 문자열, ifAbsent 조건을 보낸다', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ sessionId: 'session-1', state: 'OPEN', partSizeBytes: 4, partCount: 2 }), { status: 201 }),
+    );
+    const file = new File(['abcdef'], 'a.bin');
+
+    await createUploadSession('alice', '/a.bin', file, '33333333-3333-4333-8333-333333333333');
+
+    const [route, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(route).toBe('/demo-api/documents/upload-sessions');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ 'X-Demo-User': 'alice', 'Idempotency-Key': '33333333-3333-4333-8333-333333333333' });
+    expect(JSON.parse(String(init.body))).toEqual({ path: '/a.bin', sizeBytes: '6', mimeType: 'application/octet-stream', ifAbsent: true });
+  });
+
+  it('상태, Blob 조각, 완료, 취소에 정확한 라우트와 전송 형식을 사용한다', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', { status: 200 }));
+    const part = new Blob(['abcd']);
+    await getUploadSession('alice', 'session-1');
+    await putUploadSessionPart('alice', 'session-1', 2, part);
+    await completeUploadSession('alice', 'session-1');
+    await cancelUploadSession('alice', 'session-1');
+
+    expect(fetchSpy.mock.calls.map(([route]) => route)).toEqual([
+      '/demo-api/documents/upload-sessions/session-1',
+      '/demo-api/documents/upload-sessions/session-1/parts/2',
+      '/demo-api/documents/upload-sessions/session-1/complete',
+      '/demo-api/documents/upload-sessions/session-1',
+    ]);
+    const partInit = fetchSpy.mock.calls[1][1] as RequestInit;
+    expect(partInit.method).toBe('PUT');
+    expect(partInit.body).toBe(part);
+    expect(partInit.headers).toMatchObject({ 'Content-Type': 'application/octet-stream', 'X-Demo-User': 'alice' });
+    expect((partInit.headers as Record<string, string>)['Content-Length']).toBeUndefined();
+    expect((fetchSpy.mock.calls[2][1] as RequestInit).method).toBe('POST');
+    expect((fetchSpy.mock.calls[3][1] as RequestInit).method).toBe('DELETE');
   });
 });

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, DemoUser, EntryPage, FileEntry, PresignedDownload, PublicLink } from './types';
+import type { ApiErrorBody, DemoUser, EntryPage, FileEntry, PresignedDownload, PublicLink, UploadPartResult, UploadSessionCompleteResult, UploadSessionCreated, UploadSessionStatus } from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -88,6 +88,39 @@ export function uploadDocument(user: DemoUser, path: string, file: File): Promis
     headers: { 'Content-Type': file.type || 'application/octet-stream' },
     body: file,
   });
+}
+
+export function createUploadSession(user: DemoUser, path: string, file: File, idempotencyKey: string, signal?: AbortSignal): Promise<UploadSessionCreated> {
+  return request(user, '/documents/upload-sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ path, sizeBytes: String(file.size), mimeType: file.type || 'application/octet-stream', ifAbsent: true }),
+    signal,
+  });
+}
+
+export function getUploadSession(user: DemoUser, sessionId: string, signal?: AbortSignal): Promise<UploadSessionStatus> {
+  return request(user, `/documents/upload-sessions/${encodeURIComponent(sessionId)}`, { signal });
+}
+
+export function putUploadSessionPart(user: DemoUser, sessionId: string, index: number, part: Blob, signal?: AbortSignal): Promise<UploadPartResult> {
+  // 브라우저는 Content-Length 설정을 금지한다. Blob 크기로 정확한 길이를 자동 전송한다.
+  return request(user, `/documents/upload-sessions/${encodeURIComponent(sessionId)}/parts/${index}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: part,
+    signal,
+  });
+}
+
+export function completeUploadSession(user: DemoUser, sessionId: string, signal?: AbortSignal): Promise<UploadSessionCompleteResult> {
+  return request(user, `/documents/upload-sessions/${encodeURIComponent(sessionId)}/complete`, {
+    method: 'POST', signal,
+  });
+}
+
+export function cancelUploadSession(user: DemoUser, sessionId: string): Promise<UploadSessionStatus> {
+  return request(user, `/documents/upload-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 }
 
 export function createDownload(user: DemoUser, path: string): Promise<PresignedDownload> {

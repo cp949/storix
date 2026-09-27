@@ -6,6 +6,7 @@ import { useErrorReporter } from '../error/ErrorContext';
 import { joinPath } from '../utils/path';
 import { EntryList } from './EntryList';
 import { FolderTree } from './FolderTree';
+import { ResumableUpload } from './ResumableUpload';
 
 export interface DocumentArchiveProps {
   readonly user: DemoUser;
@@ -267,6 +268,17 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
               {uploadStatus === 'error' && '업로드 실패'}
             </p>
           </div>
+
+          <ResumableUpload
+            key={`${user}:${currentPath}`}
+            user={user}
+            currentPath={currentPath}
+            onComplete={async () => {
+              setSearchResults(null);
+              setTreeRefreshKey((key) => key + 1);
+              await loadList(currentPath);
+            }}
+          />
 
           <form onSubmit={handleCreateDirectory}>
             <label>

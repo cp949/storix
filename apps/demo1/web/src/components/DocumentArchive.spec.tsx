@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, listDocuments, searchDocuments, uploadDocument, createDirectory, moveEntry, removeEntry, createDownload, publishDocument, unpublishDocument } from '../api/client';
+import { ApiError, listDocuments, searchDocuments, uploadDocument, createUploadSession, getUploadSession, putUploadSessionPart, completeUploadSession, cancelUploadSession, createDirectory, moveEntry, removeEntry, createDownload, publishDocument, unpublishDocument } from '../api/client';
 import type { EntryPage } from '../api/types';
 import { ErrorPanel } from '../error/ErrorPanel';
 import { ErrorProvider } from '../error/ErrorContext';
@@ -14,6 +14,11 @@ vi.mock('../api/client', async (importOriginal) => {
     listDocuments: vi.fn(),
     searchDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    createUploadSession: vi.fn(),
+    getUploadSession: vi.fn(),
+    putUploadSessionPart: vi.fn(),
+    completeUploadSession: vi.fn(),
+    cancelUploadSession: vi.fn(),
     createDirectory: vi.fn(),
     moveEntry: vi.fn(),
     copyEntry: vi.fn(),
@@ -62,6 +67,7 @@ async function selectRow(text: string) {
 
 describe('DocumentArchive', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.mocked(listDocuments).mockReset();
     vi.mocked(searchDocuments).mockReset();
     vi.mocked(FolderTree).mockClear();
@@ -173,6 +179,74 @@ describe('DocumentArchive', () => {
 
     await waitFor(() => expect(uploadDocument).toHaveBeenCalledWith('alice', '/a.txt', file));
     expect(await screen.findByText('업로드 완료')).toBeTruthy();
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(2));
+  });
+
+  it('재개 업로드 완료 후 문서 목록과 폴더 트리를 새로고침한다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([]));
+    vi.mocked(searchDocuments).mockResolvedValue(page([{ ...entryA, path: '/old.txt', name: 'old.txt' }]));
+    vi.mocked(createUploadSession).mockResolvedValue({
+      sessionId: '33333333-3333-4333-8333-333333333333', state: 'OPEN',
+      partSizeBytes: 4, partCount: 1, expiresAt: '', maxExpiresAt: '',
+    });
+    vi.mocked(getUploadSession).mockResolvedValue({
+      sessionId: '33333333-3333-4333-8333-333333333333', state: 'OPEN',
+      path: '/a.txt', sizeBytes: '3', mimeType: 'text/plain', partSizeBytes: 4,
+      partCount: 1, expiresAt: '', maxExpiresAt: '', parts: [],
+    });
+    vi.mocked(putUploadSessionPart).mockResolvedValue({ index: 0, sizeBytes: '3', sha256: 'a'.repeat(64), replayed: false });
+    vi.mocked(completeUploadSession).mockResolvedValue({ resource: { ...entryA, size: 3, revision: 'r1' }, affectedRevisions: [] });
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText('검색어'), { target: { value: 'old' } });
+    fireEvent.click(screen.getByText('검색'));
+    expect(await screen.findByText('old.txt', { exact: false })).toBeTruthy();
+    const initialRefreshKey = vi.mocked(FolderTree).mock.lastCall?.[0].refreshKey;
+    fireEvent.change(screen.getByLabelText('재개 업로드 파일'), {
+      target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] },
+    });
+
+    expect(await screen.findByText('재개 업로드 완료')).toBeTruthy();
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('old.txt', { exact: false })).toBeNull();
+    expect(vi.mocked(FolderTree).mock.lastCall?.[0].refreshKey).toBe((initialRefreshKey ?? 0) + 1);
+  });
+
+  it('완료와 취소 경합에서 서버가 COMPLETED를 반환하면 목록을 새로고침한다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([]));
+    vi.mocked(createUploadSession).mockResolvedValue({
+      sessionId: '33333333-3333-4333-8333-333333333333', state: 'OPEN',
+      partSizeBytes: 4, partCount: 1, expiresAt: '', maxExpiresAt: '',
+    });
+    const session = {
+      sessionId: '33333333-3333-4333-8333-333333333333', state: 'OPEN' as const,
+      path: '/a.txt', sizeBytes: '3', mimeType: 'text/plain', partSizeBytes: 4,
+      partCount: 1, expiresAt: '', maxExpiresAt: '', parts: [],
+    };
+    vi.mocked(getUploadSession).mockResolvedValueOnce(session)
+      .mockResolvedValueOnce({ ...session, state: 'COMPLETED' });
+    vi.mocked(putUploadSessionPart).mockResolvedValue({ index: 0, sizeBytes: '3', sha256: 'a'.repeat(64), replayed: false });
+    vi.mocked(completeUploadSession).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(cancelUploadSession).mockRejectedValue(new ApiError(409, 'VFS_UPLOAD_SESSION_CLOSED', 'req-5', '닫힘'));
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText('재개 업로드 파일'), {
+      target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] },
+    });
+    await waitFor(() => expect(completeUploadSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText('세션 취소'));
+
+    expect(await screen.findByText('재개 업로드 완료')).toBeTruthy();
     await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(2));
   });
 
