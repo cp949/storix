@@ -10,7 +10,7 @@ interface StorixErrorBody {
 }
 
 export interface StorixRequestOptions {
-  readonly method: 'GET' | 'POST' | 'DELETE';
+  readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   readonly path: string;
   readonly query?: Record<string, string | undefined>;
   readonly headers?: Record<string, string>;
@@ -55,6 +55,7 @@ export class StorixHttpClient {
         errorBody?.code ?? 'STORIX_UNKNOWN_ERROR',
         errorBody?.message ?? response.statusText,
         errorBody?.requestId,
+        response.headers.get('retry-after') ?? undefined,
       );
     }
 

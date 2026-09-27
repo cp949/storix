@@ -5,6 +5,7 @@ const ALL_KEYS = [
   ...REQUIRED_KEYS,
   'DEMO_WAS_PORT',
   'DEMO_WAS_NAMESPACE_NAME',
+  'DEMO_WAS_NAMESPACE_ID',
   'DEMO_WAS_PUBLIC_NAMESPACE_NAME',
   'DEMO_WAS_PUBLIC_URL_BASE',
 ] as const;
@@ -42,6 +43,7 @@ describe('loadDemoWasConfig', () => {
       storixBaseUrl: 'http://localhost:3000',
       storixApiKey: 'test-key',
       namespaceName: 'demo',
+      namespaceId: undefined,
       publicNamespaceName: 'demo-public',
       publicUrlBase: 'http://localhost:3000',
     });
@@ -60,8 +62,27 @@ describe('loadDemoWasConfig', () => {
       storixBaseUrl: 'http://storix:3000',
       storixApiKey: 'key',
       namespaceName: 'demo-custom',
+      namespaceId: undefined,
       publicNamespaceName: 'demo-custom-public',
       publicUrlBase: 'http://localhost:8080',
     });
   });
+
+  it('고정 private namespace UUID를 읽는다', () => {
+    process.env.DEMO_WAS_STORIX_BASE_URL = 'http://localhost:3000';
+    process.env.DEMO_WAS_STORIX_API_KEY = 'test-key';
+    process.env.DEMO_WAS_NAMESPACE_ID = '63f238da-3f8d-482d-a384-7995994271dc';
+
+    expect(loadDemoWasConfig().namespaceId).toBe('63f238da-3f8d-482d-a384-7995994271dc');
+  });
+
+  it.each(['not-a-uuid', ' 63f238da-3f8d-482d-a384-7995994271dc', '63f238da-3f8d-482d-0384-7995994271dc'])(
+    '잘못된 private namespace UUID %s는 시작 시 거부한다', (value) => {
+      process.env.DEMO_WAS_STORIX_BASE_URL = 'http://localhost:3000';
+      process.env.DEMO_WAS_STORIX_API_KEY = 'test-key';
+      process.env.DEMO_WAS_NAMESPACE_ID = value;
+
+      expect(() => loadDemoWasConfig()).toThrow(/DEMO_WAS_NAMESPACE_ID/);
+    },
+  );
 });

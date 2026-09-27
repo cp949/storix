@@ -52,6 +52,15 @@ describe('StorixHttpClient', () => {
     });
   });
 
+  it('429 Retry-After 헤더를 StorixApiError에 보존한다', async () => {
+    mockFetchOnce(429, { code: 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', message: 'limit', requestId: 'req-2' }, { 'retry-after': '1' });
+    await expect(client.requestJson({ method: 'POST', path: '/api/v2/probe' })).rejects.toMatchObject({
+      status: 429,
+      code: 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED',
+      retryAfter: '1',
+    });
+  });
+
   it('네트워크 오류는 StorixUnreachableError로 감싼다', async () => {
     jest.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('ECONNREFUSED'));
 

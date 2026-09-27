@@ -49,6 +49,34 @@ describe('StorixClient — namespace 부트스트랩', () => {
     });
   });
 
+  it('고정 UUID가 있으면 private namespace를 생성하지 않고 VFS 요청에 사용한다', async () => {
+    const namespaceId = '63f238da-3f8d-482d-a384-7995994271dc';
+    const config = {
+      port: 4000,
+      storixBaseUrl: 'http://storix.test',
+      storixApiKey: 'key',
+      namespaceName: 'demo',
+      namespaceId,
+      publicNamespaceName: 'demo-public',
+      publicUrlBase: 'http://storix.test',
+    };
+    const pinned = new StorixClient(new StorixHttpClient(config), config);
+    const spy = mockFetchOnce(200, { items: [], nextCursor: null });
+
+    await expect(pinned.ensureDemoNamespace()).resolves.toBe(namespaceId);
+    await pinned.list('/');
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [url] = spy.mock.calls[0] as [URL];
+    expect(url.pathname).toBe(`/api/v2/namespaces/${namespaceId}/fs/ls`);
+
+    const publicSpy = mockFetchOnce(201, { id: 'ns-public-id' });
+    await expect(pinned.ensurePublicNamespace()).resolves.toBe('ns-public-id');
+    const [publicUrl, publicInit] = publicSpy.mock.calls[1] as [URL, RequestInit];
+    expect(publicUrl.pathname).toBe('/api/v2/namespaces');
+    expect(JSON.parse(publicInit.body as string).accessPolicy).toBe('PUBLIC');
+  });
+
   it('ensurePublicNamespace는 고정 Idempotency-Key로 PUBLIC namespace를 생성한다', async () => {
     const spy = mockFetchOnce(201, { id: 'ns-public-id' });
     const id = await client.ensurePublicNamespace();
@@ -265,5 +293,76 @@ describe('StorixClient — 다운로드/공개 발행', () => {
     const [url] = spy.mock.calls[0] as [URL];
     expect(url.pathname).toBe('/api/v2/namespaces/ns-public-id/fs/rm');
     expect(url.searchParams.get('path')).toBe(derivePublicPath('/documents/alice/a.txt'));
+  });
+});
+
+describe('StorixClient — upload sessions', () => {
+  let client: StorixClient;
+
+  beforeEach(async () => {
+    const config = {
+      port: 4000,
+      storixBaseUrl: 'http://storix.test',
+      storixApiKey: 'key',
+      namespaceName: 'demo',
+      namespaceId: '63f238da-3f8d-482d-a384-7995994271dc',
+      publicNamespaceName: 'demo-public',
+      publicUrlBase: 'http://storix.test',
+    };
+    client = new StorixClient(new StorixHttpClient(config), config);
+    await client.ensureDemoNamespace();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('create/status/part/complete/cancel을 Storix upload-session URL과 계약 헤더로 호출한다', async () => {
+    const sessionId = '33333333-3333-4333-8333-333333333333';
+    const base = '/api/v2/namespaces/63f238da-3f8d-482d-a384-7995994271dc/fs/upload-sessions';
+    const created = { sessionId, state: 'OPEN', partSizeBytes: 4, partCount: 1, expiresAt: '', maxExpiresAt: '' };
+    const status = { ...created, path: '/documents/alice/a.bin', sizeBytes: '4', mimeType: 'application/octet-stream', condition: { ifAbsent: true }, parts: [] };
+    const requestBody = { path: status.path, sizeBytes: '4', mimeType: status.mimeType, ifAbsent: true } as const;
+    const createSpy = mockFetchOnce(201, created);
+    await expect(client.createUploadSession(requestBody, sessionId, 'demo1-was:upload:alice')).resolves.toEqual(created);
+    const [createUrl, createInit] = createSpy.mock.calls[0] as [URL, RequestInit];
+    expect(createUrl.pathname).toBe(base);
+    expect(createInit.method).toBe('POST');
+    expect((createInit.headers as Headers).get('idempotency-key')).toBe(sessionId);
+    expect((createInit.headers as Headers).get('x-mutation-scope')).toBe('demo1-was:upload:alice');
+    expect(JSON.parse(createInit.body as string)).toEqual(requestBody);
+
+    const statusSpy = mockFetchOnce(200, status);
+    await expect(client.getUploadSession(sessionId)).resolves.toEqual(status);
+    expect((statusSpy.mock.calls[1] as [URL])[0].pathname).toBe(`${base}/${sessionId}`);
+
+    const stream = new ReadableStream();
+    const partResult = { index: 0, sizeBytes: '4', sha256: 'a'.repeat(64), replayed: false };
+    const partSpy = mockFetchOnce(200, partResult);
+    await expect(client.putUploadSessionPart(sessionId, '0', stream, '4', 'application/octet-stream')).resolves.toEqual(partResult);
+    const [partUrl, partInit] = partSpy.mock.calls[2] as [URL, RequestInit];
+    expect(partUrl.pathname).toBe(`${base}/${sessionId}/parts/0`);
+    expect(partInit.method).toBe('PUT');
+    expect(partInit.body).toBe(stream);
+    expect(partInit.duplex).toBe('half');
+    expect((partInit.headers as Headers).get('content-length')).toBe('4');
+    expect((partInit.headers as Headers).get('content-type')).toBe('application/octet-stream');
+
+    const result = { resource: { path: status.path }, affectedRevisions: [] };
+    const completeSpy = mockFetchOnce(201, result);
+    await expect(client.completeUploadSession(sessionId)).resolves.toEqual({ status: 201, body: result });
+    expect((completeSpy.mock.calls[3] as [URL])[0].pathname).toBe(`${base}/${sessionId}/complete`);
+
+    const cancelSpy = mockFetchOnce(200, { ...status, state: 'CANCELLED' });
+    await expect(client.cancelUploadSession(sessionId)).resolves.toMatchObject({ state: 'CANCELLED' });
+    const [cancelUrl, cancelInit] = cancelSpy.mock.calls[4] as [URL, RequestInit];
+    expect(cancelUrl.pathname).toBe(`${base}/${sessionId}`);
+    expect(cancelInit.method).toBe('DELETE');
+  });
+
+  it('Storix 실패 응답의 상태와 코드를 보존한다', async () => {
+    mockFetchOnce(409, { code: 'VFS_FEATURE_DISABLED', message: 'disabled', requestId: 'req-1' });
+    await expect(client.createUploadSession(
+      { path: '/documents/alice/a.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true },
+      '33333333-3333-4333-8333-333333333333', 'demo1-was:upload:alice',
+    )).rejects.toMatchObject({ status: 409, code: 'VFS_FEATURE_DISABLED' });
   });
 });

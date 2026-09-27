@@ -28,3 +28,21 @@ export class ExternalPathResolutionError extends DomainError {
     this.internalPath = internalPath;
   }
 }
+
+export class UploadSessionNotFoundError extends DomainError {
+  readonly code = 'VFS_UPLOAD_SESSION_NOT_FOUND';
+  readonly status = 404;
+
+  constructor() {
+    super('업로드 세션을 찾을 수 없음');
+  }
+}
+
+export class UploadSessionInvalidRequestError extends DomainError {
+  readonly code = 'UPLOAD_SESSION_INVALID_REQUEST';
+  readonly status = 400;
+
+  constructor() {
+    super('업로드 세션 생성 요청이 올바르지 않음');
+  }
+}

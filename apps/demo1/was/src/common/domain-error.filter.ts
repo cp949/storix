@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Injectable, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ExternalPathResolutionError } from '../document-archive/document-archive.errors.js';
+import { StorixApiError } from '../storix-client/storix-client.errors.js';
 import { DomainError } from './domain-error.js';
 
 @Catch()
@@ -13,6 +14,9 @@ export class DomainErrorFilter implements ExceptionFilter {
     const request = host.switchToHttp().getRequest<Request>();
 
     if (exception instanceof DomainError) {
+      if (exception instanceof StorixApiError && exception.retryAfter !== undefined) {
+        response.setHeader('Retry-After', exception.retryAfter);
+      }
       if (exception.shouldReport) {
         const internalPathSuffix =
           exception instanceof ExternalPathResolutionError ? ` (internalPath: ${exception.internalPath})` : '';
