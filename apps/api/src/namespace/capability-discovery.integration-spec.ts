@@ -109,17 +109,40 @@ describe('Capability discovery HTTP contract (PostgreSQL)', () => {
   it('서비스 key 누락과 잘못된 key를 namespace 조회보다 먼저 거부한다', async () => {
     const path = '/api/v2/namespaces/not-a-uuid/capabilities';
     await request(app.getHttpServer()).get(path).expect(401);
-    const invalid = await request(app.getHttpServer()).get(path).set('Authorization', 'Bearer wrong-key').expect(401);
+    const invalid = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', 'Bearer wrong-key')
+      .expect(401);
     expect(invalid.body.code).toBe('UNAUTHORIZED');
   });
 
-  it('ACTIVE namespace는 production registry가 비어 있을 때 빈 배열과 no-store를 반환한다', async () => {
+  it('ACTIVE namespace는 등록된 resumable-upload가 기본 비활성일 때 빈 배열과 no-store를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
       .set('Authorization', `Bearer ${API_KEY}`)
       .expect(200);
     expect(response.body).toEqual({ capabilities: [] });
     expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('production registry의 resumable-upload가 전역·namespace 허용 시에만 조회된다', async () => {
+    await app.close();
+    app = await bootstrap(
+      new CapabilityService({
+        globalAllowedCapabilities: ['resumable-upload'],
+        namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload'] },
+      }),
+    );
+    const enabled = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
+    expect(enabled.body).toEqual({ capabilities: ['resumable-upload'] });
+    const other = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${otherNamespaceId}/capabilities`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
+    expect(other.body).toEqual({ capabilities: [] });
   });
 
   it.each([
@@ -133,24 +156,33 @@ describe('Capability discovery HTTP contract (PostgreSQL)', () => {
     expect(response.body.code).toBe('NAMESPACE_NOT_FOUND');
   });
 
-  it.each(['DELETING', 'DELETED'] as const)('%s namespace는 capability 조회에서 숨기고 기존 단건 조회 정책은 유지한다', async (status) => {
-    await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', [status, namespaceId]);
-    try {
-      const hidden = await request(app.getHttpServer())
-        .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
-        .set('Authorization', `Bearer ${API_KEY}`)
-        .expect(404);
-      expect(hidden.body.code).toBe('NAMESPACE_NOT_FOUND');
-      const existing = await request(app.getHttpServer())
-        .get(`/api/v2/namespaces/${namespaceId}`)
-        .set('Authorization', `Bearer ${API_KEY}`)
-        .expect(200);
-      expect(existing.body.status).toBe(status);
-    } finally {
-      // 실패해도 이후 양성 사례가 같은 namespace를 쓰므로 상태를 되돌린다
-      await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', ['ACTIVE', namespaceId]);
-    }
-  });
+  it.each(['DELETING', 'DELETED'] as const)(
+    '%s namespace는 capability 조회에서 숨기고 기존 단건 조회 정책은 유지한다',
+    async (status) => {
+      await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', [
+        status,
+        namespaceId,
+      ]);
+      try {
+        const hidden = await request(app.getHttpServer())
+          .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(404);
+        expect(hidden.body.code).toBe('NAMESPACE_NOT_FOUND');
+        const existing = await request(app.getHttpServer())
+          .get(`/api/v2/namespaces/${namespaceId}`)
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(200);
+        expect(existing.body.status).toBe(status);
+      } finally {
+        // 실패해도 이후 양성 사례가 같은 namespace를 쓰므로 상태를 되돌린다
+        await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', [
+          'ACTIVE',
+          namespaceId,
+        ]);
+      }
+    },
+  );
 
   it('test registry의 전역·namespace 허용 기능과 활성 의존성을 정렬해 반환한다', async () => {
     await app.close();

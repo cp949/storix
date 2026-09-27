@@ -16,6 +16,8 @@ describe('ALL_MIGRATIONS', () => {
       'AddVfsSnapshotListIndex1791500000000',
       'AddAuditLogSnapshotId1791600000000',
       'AddVfsUploadSessions1791700000000',
+      'AddUploadCreationExpiry1791700000001',
+      'AddUploadFinalizeLeaseToken1791700000002',
     ]);
   });
 });

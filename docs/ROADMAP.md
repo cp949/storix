@@ -190,6 +190,10 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
 - [ ] VFS-02: **재개 가능한 대용량 업로드** — 현재 raw stream 업로드와 구분되는
       업로드 session 계약을 설계·구현한다. 조각 재전송, 완료 시 원자적 공개,
       동시 완료/중단, 만료·취소, 임시 저장량 한도 및 정리를 포함한다.
+      구현과 집중 로컬 검증: PostgreSQL+MinIO 및 SQLite에서 lifecycle·parts·finalize를
+      확인했고, 기본 비활성 capability와 공개 계약·암호화·GC 경계를 문서화했다.
+      최종 L2 전체 검증 전이므로 완료 표시는 보류한다. 운영 활성화, 배포별 한도 선택,
+      배포 GC, 여러 API instance의 실제 배치와 실사용 소비자 검증은 로컬 증거에 포함되지 않는다.
 - [ ] VFS-03: **업로드 checksum 검증** — 호출자가 제공한 전체 콘텐츠 checksum을
       Storix 계산값과 커밋 전에 비교한다. 알고리즘·인코딩·암호화 namespace에서의
       평문/암호문 기준, 불일치 오류와 재시도 의미를 공개 계약으로 정한다.
@@ -206,13 +210,14 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       `VFS_FEATURE_DISABLED`와 조건부 receipt 재생 경계를 구현했다. 기존 파일 API는
       계속 활성이고 저장 데이터의 조회·내보내기·복구·삭제 경계는 선택 기능 추가 시
       지켜야 한다. 활성 capability 조회 계약·구현은 VFS-07에서 완료했다. 현재
-      production registry에 선택 capability가 없으므로 실제 기능의 비활성화 후 데이터
-      접근은 아직 검증할 수 없어 VFS-06 전체와 RQ-027은 미완료다. 현재 설계는
+      production registry에는 기본 비활성 `resumable-upload`가 있고 로컬에서는
+      비활성화 뒤 기존 세션 조회·취소·완료 경로를 검증했다. VFS-06과 RQ-027의
+      전체 완료 판정은 별도로 남겨 둔다. 현재 설계는
       [06-vfs-capabilities.md](./design/06-vfs-capabilities.md)에 기록한다.
 - [x] VFS-07: **활성 capability 조회** — `GET /api/v2/namespaces/{id}/capabilities`를
       전역 서비스 Bearer key로 보호하고 ACTIVE namespace에서 실제 활성 선택 ID를
       사전순으로 반환한다. 전역·namespace 허용과 의존성 결과를 기존 활성 판정에 따라
-      반영하고, 기본 파일 API는 제외한다. Production registry가 비어 있으면
+      반영하고, 기본 파일 API는 제외한다. 기본 설정에서 활성 ID가 없으면
       `200 { "capabilities": [] }`이며 `Cache-Control: no-store`다. 잘못된 UUID·없는
       namespace·ACTIVE가 아닌 namespace는 404다. OpenAPI와 route coverage가 같은 계약을 확인한다.
       실제 선택 기능 및 해당 데이터의 비활성화 후 접근 가능성 검증은 포함하지 않는다.

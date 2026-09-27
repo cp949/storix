@@ -10,13 +10,15 @@
 
 ### Added
 
+- 기본 비활성 `resumable-upload` capability로 생성·조각 저장·상태 조회·완료·취소 API를 추가했다. 같은 조각의 평문 SHA-256 재전송, 활동 기반 만료 갱신, 전역·namespace 임시 저장량 및 활성 세션 한도, 암호화 staging, GC 정리를 지원한다. 완전 업로드된 기존 세션은 capability를 끈 뒤에도 완료할 수 있다.
+
 - `POST /api/v2/namespaces/{namespaceId}/fs/upload-sessions/{sessionId}/complete`로 저장된 조각을 순서대로 합쳐 조건부 파일 변경·논리 quota를 한 DB 트랜잭션에서 공개한다. 완료 결과와 `X-Request-Id`는 재시도 시 재생하며, 재회수된 완료 작업자는 lease token 검증으로 공개를 차단한다.
 
 - 재개 업로드의 선택 capability, 유한 quota 설정, 세션·조각·사용량 저장 모델과 가역 마이그레이션을 추가했다.
 
 - 선택 VFS capability의 시작 JSON 설정 기반과 409 `VFS_FEATURE_DISABLED` 오류를 추가했다. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 비어 있으면 선택 기능은 모두 비활성이고, 지정한 파일의 읽기·schema·namespace·registry 검증 실패는 시작 오류다.
 
-- `GET /api/v2/namespaces/{id}/capabilities`로 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다. 서비스 Bearer 인증을 적용하고 ID는 사전순으로 반환하며, 활성 의존 ID를 포함하고 빈 production registry에서는 빈 배열을 반환한다.
+- `GET /api/v2/namespaces/{id}/capabilities`로 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다. 서비스 Bearer 인증을 적용하고 ID는 사전순으로 반환하며, 활성 의존 ID를 포함하고 기본 설정에서는 빈 배열을 반환한다.
 
 - OpenAPI에 namespace 사전 조건과 파일 생성·조회·조건부 교체·FILE snapshot 복원까지의 curl 예시를 추가했다. revision, 전체 바이트 SHA-256, 실행 중 한도 확인, receipt의 30일 재생 범위도 설명한다.
 

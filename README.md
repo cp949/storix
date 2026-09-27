@@ -203,7 +203,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
 | `STORIX_MAX_TOTAL_LOGICAL_BYTES` | 선택 | `53687091200` | app | Namespace 논리 사용량 전역 상한(50 GiB). namespace별 override는 이 값 이하여야 한다 |
 | `STORIX_VFS_CAPABILITIES_CONFIG_PATH` | 선택 | — | app | 시작 시 읽는 선택 VFS capability JSON 파일 경로. 비우면 선택 기능 전부 비활성. JSON은 `globalAllowedCapabilities` 문자열 목록과 `namespaceAllowedCapabilities`(namespace UUID를 키로 하는 문자열 목록 객체)만 허용하며, 파일·구문·schema·namespace 존재·미등록 capability 검증 실패 시 시작을 거부한다. `resumable-upload`가 기본 비활성으로 등록되어 있으며, 활성 상태는 서비스 Bearer 인증이 필요한 `GET /api/v2/namespaces/{id}/capabilities`에서 조회한다 |
-| `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH` | 선택 | — | app | 재개 업로드의 전역·namespace별 유한 quota JSON 경로. `resumable-upload` capability를 허용하면 해당 설정이 필수다 |
+| `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH` | 조건부 | — | app | 재개 업로드 정책 JSON 경로. `resumable-upload`를 전역 또는 namespace에서 허용하면 필수다. 엄격한 schema·기본값·활성 순서는 아래 참고 |
 | `STORIX_ADMIN_API_KEY` | 선택 | — | app | `/api/v2/admin/*` 전용 관리자 Bearer key. 비우면 관리자 API는 모두 401 |
 | `STORIX_ADMIN_API_KEY_PREVIOUS` | 선택 | — | app | 관리자 키 교체 기간에만 허용하는 이전 Bearer key |
 | `STORIX_DB_DRIVER` | 선택 | `postgres` | 모두 | `postgres` 또는 `sqlite`. `sqlite`면 `STORIX_DB_HOST` 등은 무시되고 `STORIX_DB_SQLITE_PATH`만 쓰인다. 단일 프로세스 all-in-one 배포 전제이며 compose에서는 `docker-compose.sqlite.yml`을 겹친다 — 상세는 `README.sqlite.md` |
@@ -235,7 +235,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_MAX_RETAINED_SNAPSHOT_NODES` | 선택 | `100000` | app | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한 |
 | `STORIX_MAX_RETAINED_SNAPSHOT_BYTES` | 선택 | `53687091200` | app | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB) |
 | `STORIX_MUTATION_LEASE_SECONDS` | 선택 | `60` | app | 조건부 업로드 claim lease(초). 업로드 중 이 시간의 1/3 간격으로 갱신 |
-| `STORIX_MUTATION_MAX_UPLOAD_SECONDS` | 선택 | `86400` | app | 조건부 raw 업로드 한 요청의 최대 지속 시간(초, 기본 24시간) |
+| `STORIX_MUTATION_MAX_UPLOAD_SECONDS` | 선택 | `86400` | app | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간) |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` | 선택 | `300` | app | presigned URL 만료(초). 상한 `604800`(7일), 초과하면 부팅 거부 |
 | `STORIX_ORPHAN_GRACE_PERIOD` | 선택 | `86400` | gc | 참조 0 이후 회수까지 유예(초) |
 | `STORIX_GC_MIN_INTERVAL` | 선택 | `3600` | gc | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초). advisory lock + 이 간격으로 함대 전체에서 한 인스턴스만 실행되게 한다 |
@@ -246,6 +246,43 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_BACKUP_DIR` | 필수 | — | backup | 백업 저장 디렉터리. compose 실행에서는 `/backups`(호스트 `./backups`)가 기본 |
 | `STORIX_RESTORE_SOURCE_DIR` | 필수 | — | restore | 복구할 백업 디렉터리. 빈 문자열도 거부 |
 | `STORIX_RESTORE_FORCE` | 선택 | `false` | restore | 대상에 데이터가 있어도 덮어쓴다(되돌릴 수 없음) |
+
+### 재개 업로드 활성화
+
+`resumable-upload`는 기본 비활성이다. 활성화할 namespace를 만든 뒤 두 JSON 파일을 준비하고 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`와 `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`를 설정해 app을 재시작한다. 두 파일은 시작 시 한 번만 읽는다. 다음 UUID와 한도는 **예시**이며 배포에서 실제 용량과 동시 요청 수에 맞게 선택해야 한다. 활성 결과는 서비스 Bearer 인증으로 `GET /api/v2/namespaces/{id}/capabilities`에서 확인한다.
+
+Capability 파일:
+
+```json
+{
+  "globalAllowedCapabilities": ["resumable-upload"],
+  "namespaceAllowedCapabilities": {
+    "11111111-1111-4111-8111-111111111111": ["resumable-upload"]
+  }
+}
+```
+
+세션 정책 파일:
+
+```json
+{
+  "global": {
+    "maxStagedBytes": "10737418240",
+    "maxActiveSessions": 100,
+    "partSizeBytes": 16777216,
+    "inactivitySeconds": 86400,
+    "maxLifetimeSeconds": 604800
+  },
+  "namespaces": {
+    "11111111-1111-4111-8111-111111111111": {
+      "maxStagedBytes": "1073741824",
+      "maxActiveSessions": 10
+    }
+  }
+}
+```
+
+정책 최상위는 `global`, `namespaces`만 허용한다. `global`에는 양의 10진 문자열 `maxStagedBytes`(signed int64 이하)와 양의 안전한 정수 `maxActiveSessions`가 필수다. 선택 값인 `partSizeBytes`는 기본 16777216 bytes, 최대 2147483647 bytes이고, `inactivitySeconds`는 기본 86400초, `maxLifetimeSeconds`는 기본 604800초다. 세 값은 양의 안전한 정수이며 비활동 기간은 최대 수명 이하여야 한다. `namespaces`의 UUID별 두 필수 한도는 해당 전역 한도 이하여야 한다. 활성 namespace의 정책 누락, 정규화 후 중복 UUID, 추가 필드·잘못된 값은 시작 오류다. 파일 전체에는 기존 `STORIX_MAX_FILE_SIZE_BYTES`(기본 5 GiB)와 namespace 적용 상한 중 낮은 값이 적용된다. 각 조각 요청에는 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 86400초)가 적용된다. capability를 끈 뒤에도 세션 조회·취소·완전 업로드된 세션의 완료와 GC 정리는 가능하다. GC 잡이 만료·객체 삭제·30일 경과 세션 정리를 수행하므로 배포에서 GC 실행을 유지해야 한다. 자세한 API 계약은 `apps/api/openapi.yaml`과 `docs/design/07-resumable-upload.md`를 따른다.
 
 ### 불변 VFS snapshot
 

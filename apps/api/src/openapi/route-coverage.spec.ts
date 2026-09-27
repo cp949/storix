@@ -8,6 +8,7 @@ import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { parse } from 'yaml';
 import { FsController } from '../vfs/fs.controller.js';
 import { PublicFsController } from '../vfs/public-fs.controller.js';
+import { UploadSessionController } from '../vfs/upload-session.controller.js';
 import { NamespaceController } from '../namespace/namespace.controller.js';
 import { NamespaceQuotaController } from '../namespace/namespace-quota.controller.js';
 
@@ -70,6 +71,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
       ...controllerRoutes(FsController),
       ...controllerRoutes(VfsSnapshotController),
       ...controllerRoutes(PublicFsController),
+      ...controllerRoutes(UploadSessionController),
     ].sort();
 
     expect(specRoutes().sort()).toEqual(codeRoutes);
@@ -110,6 +112,93 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     );
     expect(spec.paths[`${base}/ls`].get.responses).toHaveProperty('412');
   });
+});
+
+it('재개 업로드의 다섯 operation과 필수 헤더·응답 스키마를 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const base = '/api/v2/namespaces/{namespaceId}/fs/upload-sessions';
+  const operations = [
+    spec.paths[base]?.post,
+    spec.paths[`${base}/{sessionId}`]?.get,
+    spec.paths[`${base}/{sessionId}`]?.delete,
+    spec.paths[`${base}/{sessionId}/parts/{index}`]?.put,
+    spec.paths[`${base}/{sessionId}/complete`]?.post,
+  ];
+  expect(operations.every(Boolean)).toBe(true);
+  expect(operations.map((operation: { operationId: string }) => operation.operationId)).toEqual([
+    'createUploadSession',
+    'getUploadSession',
+    'cancelUploadSession',
+    'putUploadSessionPart',
+    'completeUploadSession',
+  ]);
+  expect(spec.paths[base].post.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+      expect.objectContaining({ name: 'X-Mutation-Scope', in: 'header', required: true }),
+    ]),
+  );
+  expect(spec.paths[base].post.requestBody.content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/UploadSessionCreateRequest',
+  });
+  expect(spec.components.schemas.UploadSessionCreateRequest.oneOf).toHaveLength(2);
+  for (const variant of spec.components.schemas.UploadSessionCreateRequest.oneOf) {
+    const mime = variant.properties.mimeType;
+    expect(mime.maxLength).toBe(255);
+    const pattern = new RegExp(mime.pattern);
+    expect(pattern.test('application/octet-stream')).toBe(true);
+    expect(pattern.test('invalid mime')).toBe(false);
+  }
+  expect(spec.paths[`${base}/{sessionId}/parts/{index}`].put.requestBody.content).toHaveProperty(
+    'application/octet-stream',
+  );
+  expect(spec.paths[`${base}/{sessionId}/parts/{index}`].put.parameters).toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: 'Content-Length', required: true })]),
+  );
+  expect(spec.components.schemas.UploadSessionStatus.required).toEqual(
+    expect.arrayContaining(['state', 'expiresAt', 'parts']),
+  );
+  expect(spec.components.schemas.UploadPartResult.required).toEqual(
+    expect.arrayContaining(['sha256', 'replayed']),
+  );
+  const created = spec.paths[base].post.responses['201'].content['application/json'].example;
+  const part = spec.paths[`${base}/{sessionId}/parts/{index}`].put;
+  const status = spec.paths[`${base}/{sessionId}`].get.responses['200'].content['application/json'].example;
+  const complete = spec.paths[`${base}/{sessionId}/complete`].post;
+  expect(part.requestBody.content['application/octet-stream'].example).toBe('test');
+  expect(part.responses['200'].content['application/json'].example).toEqual(
+    expect.objectContaining({
+      index: 0,
+      sizeBytes: '4',
+      sha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+      replayed: false,
+    }),
+  );
+  expect(status).toEqual(
+    expect.objectContaining({
+      sessionId: created.sessionId,
+      path: '/large.bin',
+      parts: [{ index: 0, sizeBytes: '4' }],
+    }),
+  );
+  expect(complete.responses['201'].content['application/json'].example).toEqual(
+    expect.objectContaining({
+      resource: expect.objectContaining({ path: status.path, size: 4 }),
+      affectedRevisions: [expect.objectContaining({ path: status.path })],
+    }),
+  );
+  expect(complete.responses['409'].description).not.toMatch(/quota/);
+  expect(complete.responses['413'].description).toMatch(/VFS_QUOTA_EXCEEDED/);
+  expect(Object.keys(spec.paths[base].post.responses)).toEqual(
+    expect.arrayContaining(['201', '400', '401', '404', '409', '412', '413', '428', '429', '500']),
+  );
+  expect(spec.paths[base].post.responses['429']).toHaveProperty('headers.Retry-After.schema.type', 'integer');
+  expect(Object.keys(spec.paths[`${base}/{sessionId}/complete`].post.responses)).toEqual(
+    expect.arrayContaining(['200', '201', '401', '404', '409', '412', '413', '500']),
+  );
+  for (const operation of operations) {
+    expect(operation.responses['401']).toEqual({ $ref: '#/components/responses/Unauthorized' });
+  }
 });
 
 it('snapshot mutation과 content의 계약을 명시한다', () => {
@@ -246,9 +335,7 @@ it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약�
   expect(operation).toBeDefined();
   expect(operation.security).toEqual([{ ApiKeyAuth: [] }]);
   expect(operation.parameters).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ name: 'id', in: 'path', required: true }),
-    ]),
+    expect.arrayContaining([expect.objectContaining({ name: 'id', in: 'path', required: true })]),
   );
   expect(operation.responses['200']).toEqual(
     expect.objectContaining({

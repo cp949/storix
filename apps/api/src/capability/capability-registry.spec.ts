@@ -3,6 +3,7 @@ import {
   type CapabilityDefinition,
   validateCapabilityRegistry,
 } from './capability-registry.js';
+import { CapabilityService } from './capability.service.js';
 
 const feature: CapabilityDefinition = {
   id: 'content-search',
@@ -18,6 +19,19 @@ const feature: CapabilityDefinition = {
 describe('capability registry', () => {
   it('resumable-upload는 기본 비활성 namespace capability로 등록된다', () => {
     expect(CAPABILITY_REGISTRY).toEqual([{ ...feature, id: 'resumable-upload' }]);
+    const namespaceId = '11111111-1111-4111-8111-111111111111';
+    const disabled = new CapabilityService({
+      globalAllowedCapabilities: [],
+      namespaceAllowedCapabilities: {},
+    });
+    expect(disabled.listEnabled(namespaceId)).toEqual([]);
+    expect(disabled.isEnabled(namespaceId, 'resumable-upload')).toBe(false);
+    expect(() => disabled.requireEnabled(namespaceId, 'resumable-upload')).toThrow(/resumable-upload/);
+    const enabled = new CapabilityService({
+      globalAllowedCapabilities: ['resumable-upload'],
+      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload'] },
+    });
+    expect(enabled.listEnabled(namespaceId)).toEqual(['resumable-upload']);
   });
 
   it('필수 메타데이터 누락과 잘못된 값을 거부한다', () => {

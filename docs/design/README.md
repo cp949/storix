@@ -17,3 +17,4 @@
 | [04-namespace-logical-quota.md](./04-namespace-logical-quota.md) | namespace live FILE 및 보존 snapshot FILE entry의 논리 사용량 상한, 동시성·오류·관리 API 계약                                             |
 | [05-vfs-path-contract.md](./05-vfs-path-contract.md)             | 파일·snapshot의 정규 경로, 허용 문자·UTF-8 길이, 부모·루트 동작과 이동·복사 결과 경로 불변식                                              |
 | [06-vfs-capabilities.md](./06-vfs-capabilities.md)                 | 선택 VFS capability의 시작 설정, 정적 registry, 활성 판정, 오류·데이터 보존 경계와 활성 조회 API                                        |
+| [07-resumable-upload.md](./07-resumable-upload.md)                 | 업로드 세션의 생성·조각·완료·취소 계약, 암호화와 임시 quota, 원자적 공개·정리 불변식                                                     |

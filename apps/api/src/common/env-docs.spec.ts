@@ -105,6 +105,20 @@ describe('환경변수 문서 동기화', () => {
     expect(codeVars.has(name)).toBe(true);
     expect(exampleKeys.has(name)).toBe(true);
     expect(readmeKeys.has(name)).toBe(true);
+    const readme = readFileSync(join(repoRoot, 'README.md'), 'utf8');
+    const example = readFileSync(join(repoRoot, '.env.example'), 'utf8');
+    for (const field of [
+      'maxStagedBytes',
+      'maxActiveSessions',
+      'partSizeBytes',
+      'inactivitySeconds',
+      'maxLifetimeSeconds',
+    ]) {
+      expect(readme).toContain(field);
+      expect(example).toContain(field);
+    }
+    expect(readme).toContain('resumable-upload');
+    expect(example).toContain('resumable-upload');
   });
 
   it('코드가 읽는 STORIX_ 변수는 전부 .env.example에 키로 있다', () => {
