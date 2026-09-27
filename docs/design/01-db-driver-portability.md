@@ -16,14 +16,14 @@ compose 배치는 [ADR-0022](../adr/0022-sqlite-compose-override.md), 운영 절
 
 ## 2. 드라이버 선택
 
-| 환경변수 | 의미 |
-| --- | --- |
-| `STORIX_DB_DRIVER` | `postgres`(기본) 또는 `sqlite`. 그 외 값은 `postgres`로 취급한다 |
-| `STORIX_DB_SQLITE_PATH` | SQLite 파일 경로. `sqlite`일 때 필수 |
-| `STORIX_DB_HOST`·`PORT`·`USERNAME`·`PASSWORD`·`NAME` | `postgres`일 때만 의미가 있다 |
+| 환경변수                                             | 의미                                                             |
+| ---------------------------------------------------- | ---------------------------------------------------------------- |
+| `STORIX_DB_DRIVER`                                   | `postgres`(기본) 또는 `sqlite`. 그 외 값은 `postgres`로 취급한다 |
+| `STORIX_DB_SQLITE_PATH`                              | SQLite 파일 경로. `sqlite`일 때 필수                             |
+| `STORIX_DB_HOST`·`PORT`·`USERNAME`·`PASSWORD`·`NAME` | `postgres`일 때만 의미가 있다                                    |
 
 - 드라이버 판정은 `common/db-driver.ts`의 `getDbDriver()`(환경변수)와 `isSqliteDataSource()`(연결 옵션 `type ===
-  'better-sqlite3'`)가 한다. 코드 분기는 이 둘 중 하나로만 한다.
+'better-sqlite3'`)가 한다. 코드 분기는 이 둘 중 하나로만 한다.
 - `loadDbConfig()`는 호출할 때마다 `process.env`를 다시 읽는다. `data-source.ts`(CLI·마이그레이션)와
   `persistence.module.ts`(런타임)가 같은 함수를 써서 두 연결이 어긋나지 않게 한다.
 - **엔티티 컬럼 타입은 모듈 로드 시점에 한 번 확정된다.** 아래 3절의 컬럼 타입 상수가 `import` 시점의
@@ -39,14 +39,14 @@ compose 배치는 [ADR-0022](../adr/0022-sqlite-compose-override.md), 운영 절
 드라이버별 마이그레이션 세트를 따로 두지 않는다. 두 세트는 시간이 지나면서 조용히 어긋나기 쉽다. 각 마이그레이션 파일이
 `queryRunner.connection.options.type`으로 DDL을 분기한다. 마이그레이션 목록은 `migrations/all-migrations.ts` 하나다.
 
-| 항목 | PostgreSQL | SQLite |
-| --- | --- | --- |
-| UUID 컬럼(PK·FK) | `uuid` | `varchar(36)` |
-| 타임스탬프 | `timestamptz`, `now()` | `datetime`, `datetime('now')` |
-| 바이너리 | `bytea` | `blob` |
-| 고정 길이 문자열 | `char(n)` | `char(n)` 그대로(SQLite는 타입 이름을 자유롭게 받는다) |
-| 이름 형식 CHECK | 정규식 `~ '^[a-z0-9_-]{1,128}$'` | `NOT GLOB '*[^a-z0-9_-]*' AND length(name) BETWEEN 1 AND 128` |
-| `gc_state` 테이블 | 있음 | 만들지 않음(6절) |
+| 항목              | PostgreSQL                       | SQLite                                                        |
+| ----------------- | -------------------------------- | ------------------------------------------------------------- |
+| UUID 컬럼(PK·FK)  | `uuid`                           | `varchar(36)`                                                 |
+| 타임스탬프        | `timestamptz`, `now()`           | `datetime`, `datetime('now')`                                 |
+| 바이너리          | `bytea`                          | `blob`                                                        |
+| 고정 길이 문자열  | `char(n)`                        | `char(n)` 그대로(SQLite는 타입 이름을 자유롭게 받는다)        |
+| 이름 형식 CHECK   | 정규식 `~ '^[a-z0-9_-]{1,128}$'` | `NOT GLOB '*[^a-z0-9_-]*' AND length(name) BETWEEN 1 AND 128` |
+| `gc_state` 테이블 | 있음                             | 만들지 않음(6절)                                              |
 
 - SQLite에서 uuid 컬럼을 `varchar(36)`으로 쓰는 것은 마이그레이션 DDL 한정이다. 이 저장소는 마이그레이션을 손으로 쓴 SQL로
   관리하므로(`synchronize: false`) TypeORM의 타입 자동 정규화가 DDL 문자열에는 적용되지 않는다.
@@ -66,11 +66,11 @@ PostgreSQL 스키마의 `DEFAULT gen_random_uuid()`는 안전망일 뿐이며 �
 
 `persistence/entities/dialect-column-types.ts`가 드라이버별로 갈라지는 타입을 상수로 제공한다.
 
-| 상수 | postgres | sqlite |
-| --- | --- | --- |
-| `BINARY_COLUMN_TYPE` | `bytea` | `blob` |
-| `TIMESTAMP_COLUMN_TYPE` | `timestamptz` | `datetime` |
-| `FIXED_CHAR_COLUMN_TYPE` | `char` | `varchar` |
+| 상수                     | postgres      | sqlite     |
+| ------------------------ | ------------- | ---------- |
+| `BINARY_COLUMN_TYPE`     | `bytea`       | `blob`     |
+| `TIMESTAMP_COLUMN_TYPE`  | `timestamptz` | `datetime` |
+| `FIXED_CHAR_COLUMN_TYPE` | `char`        | `varchar`  |
 
 - 엔티티에서 `bytea`·`timestamptz`·`char`를 직접 쓰지 않고 이 상수를 쓴다. `better-sqlite3` 드라이버는 이 타입을 지원하지
   않아 `DataSource.initialize()`가 `DataTypeNotSupportedError`로 실패한다.
@@ -83,17 +83,17 @@ PostgreSQL 스키마의 `DEFAULT gen_random_uuid()`는 안전망일 뿐이며 �
 
 repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유한다. 갈라지는 지점은 아래로 한정한다.
 
-| 지점 | 규칙 |
-| --- | --- |
-| 플레이스홀더 | Postgres `$N`은 SQLite에서 동작하지 않는다(`?`만 된다). raw SQL은 `DialectPlaceholders`(`persistence/dialect-placeholders.ts`)의 `bind()`로 값을 바인딩한다. 값이 SQL에 나올 때마다 `bind()`를 한 번씩 호출하는 규칙 하나로 두 드라이버를 다룬다 |
-| 배열 | 배열 타입에 의존하지 않는다. 재귀 쿼리의 경로는 텍스트와 구분자(`path \|\| '/' \|\| name`)로 누적하고 앱에서 `split`한다. 다건 삭제는 Postgres가 `ANY($1::uuid[])`, SQLite는 `IN (?,?,…)`이며 SQLite는 변수 개수 상한 때문에 `BLOB_DELETE_CHUNK_SIZE`(500) 단위로 나눈다 |
-| 현재 시각 | `CURRENT_TIMESTAMP`(ANSI)를 쓴다. `now()`는 쓰지 않는다 |
-| `Date` 바인딩 | SQLite는 `Date` 객체를 바인딩할 수 없다. `YYYY-MM-DD HH:MM:SS` 문자열(`T`·밀리초·`Z` 없음)로 바꿔 넘긴다. ISO 8601을 그대로 쓰면 구분자 차이(`T` vs 공백) 때문에 문자열 비교가 시각 순서와 어긋난다 |
+| 지점                     | 규칙                                                                                                                                                                                                                                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 플레이스홀더             | Postgres `$N`은 SQLite에서 동작하지 않는다(`?`만 된다). raw SQL은 `DialectPlaceholders`(`persistence/dialect-placeholders.ts`)의 `bind()`로 값을 바인딩한다. 값이 SQL에 나올 때마다 `bind()`를 한 번씩 호출하는 규칙 하나로 두 드라이버를 다룬다                                                    |
+| 배열                     | 배열 타입에 의존하지 않는다. 재귀 쿼리의 경로는 텍스트와 구분자(`path \|\| '/' \|\| name`)로 누적하고 앱에서 `split`한다. 다건 삭제는 Postgres가 `ANY($1::uuid[])`, SQLite는 `IN (?,?,…)`이며 SQLite는 변수 개수 상한 때문에 `BLOB_DELETE_CHUNK_SIZE`(500) 단위로 나눈다                            |
+| 현재 시각                | `CURRENT_TIMESTAMP`(ANSI)를 쓴다. `now()`는 쓰지 않는다                                                                                                                                                                                                                                             |
+| `Date` 바인딩            | SQLite는 `Date` 객체를 바인딩할 수 없다. `YYYY-MM-DD HH:MM:SS` 문자열(`T`·밀리초·`Z` 없음)로 바꿔 넘긴다. ISO 8601을 그대로 쓰면 구분자 차이(`T` vs 공백) 때문에 문자열 비교가 시각 순서와 어긋난다                                                                                                 |
 | raw SQL의 timestamp 읽기 | SQLite는 `Date`가 아니라 공백 구분 문자열(`2026-09-08 23:02:01`)을 돌려준다. `new Date()`에 그대로 넘기면 V8이 로컬 타임존으로 해석해 컨테이너 타임존이 UTC가 아닐 때 시각이 조용히 틀어진다. raw 경로는 `T`·`Z`를 보정하는 `parseSqlTimestamp`를 거친다. TypeORM 엔티티 경로는 이 보정을 이미 한다 |
-| `LIKE` 대소문자 | SQLite는 기본이 ASCII 대소문자 무시다. 연결 직후 `PRAGMA case_sensitive_like = ON`을 한 번 실행해 Postgres와 맞춘다(`persistence.module.ts`) |
-| 재귀 CTE 상한 | Postgres는 바깥 `SELECT`의 `LIMIT`으로 CTE 평가가 멈춘다. SQLite는 재귀 항 안쪽 `LIMIT`이 있어야 큐 확장이 멈춘다. 상한이 필요한 재귀 쿼리는 위치를 드라이버별로 나눈다 |
-| row lock | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. 그 대신 SQLite 쿼리 게이트가 모든 쿼리를 직렬화한다(아래) |
-| 트랜잭션 격리 | Postgres는 읽기 스냅샷에 `REPEATABLE READ`를 지정하고, SQLite는 기본 트랜잭션을 쓴다 |
+| `LIKE` 대소문자          | SQLite는 기본이 ASCII 대소문자 무시다. 연결 직후 `PRAGMA case_sensitive_like = ON`을 한 번 실행해 Postgres와 맞춘다(`persistence.module.ts`)                                                                                                                                                        |
+| 재귀 CTE 상한            | Postgres는 바깥 `SELECT`의 `LIMIT`으로 CTE 평가가 멈춘다. SQLite는 재귀 항 안쪽 `LIMIT`이 있어야 큐 확장이 멈춘다. 상한이 필요한 재귀 쿼리는 위치를 드라이버별로 나눈다                                                                                                                             |
+| row lock                 | SQLite는 `setLock()`이 `LockNotSupportedOnGivenDriverError`를 던진다. `applyRowLockIfSupported`처럼 SQLite면 호출 자체를 건너뛴다. 그 대신 SQLite 쿼리 게이트가 모든 쿼리를 직렬화한다(아래)                                                                                                        |
+| 트랜잭션 격리            | Postgres는 읽기 스냅샷에 `REPEATABLE READ`를 지정하고, SQLite는 기본 트랜잭션을 쓴다                                                                                                                                                                                                                |
 
 새 raw SQL을 추가할 때는 위 표의 항목에 해당하는지 먼저 확인한다. 해당하지 않는 SQL은 분기 없이 공유한다.
 
@@ -125,11 +125,11 @@ repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유�
 `BackupJob`·`RestoreJob`은 구체 도구가 아니라 `DbDumpTool`(`jobs/db-dump.tool.ts`) 인터페이스에 의존한다. 백업·복구
 모듈이 `getDbDriver()`로 구현체를 골라 주입한다.
 
-| | PostgreSQL (`PgDumpCliTool`) | SQLite (`SqliteDumpTool`) |
-| --- | --- | --- |
-| dump 파일 이름 | `postgres.dump` | `storix.sqlite` |
-| 백업 | `pg_dump` 자식 프로세스 | `VACUUM INTO ?`(경로는 바인딩). 다른 연결이 읽기·쓰기 중이어도 일관된 스냅샷을 만든다. 외부 바이너리가 필요 없다 |
-| 복구 | `pg_restore` 자식 프로세스 | 백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사하고, 대상의 `-wal`·`-shm`·`-journal`을 지운다(새 메인 파일과 어긋나면 손상되므로) |
+|                | PostgreSQL (`PgDumpCliTool`) | SQLite (`SqliteDumpTool`)                                                                                                    |
+| -------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| dump 파일 이름 | `postgres.dump`              | `storix.sqlite`                                                                                                              |
+| 백업           | `pg_dump` 자식 프로세스      | `VACUUM INTO ?`(경로는 바인딩). 다른 연결이 읽기·쓰기 중이어도 일관된 스냅샷을 만든다. 외부 바이너리가 필요 없다             |
+| 복구           | `pg_restore` 자식 프로세스   | 백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사하고, 대상의 `-wal`·`-shm`·`-journal`을 지운다(새 메인 파일과 어긋나면 손상되므로) |
 
 - 복구 가드(`BackupRepository.hasExistingNamespaces()`로 대상에 데이터가 있으면 강제 플래그 없이 거부)는 TypeORM 쿼리라
   드라이버와 무관하게 공유한다.

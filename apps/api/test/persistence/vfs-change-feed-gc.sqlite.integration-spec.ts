@@ -20,7 +20,9 @@ describe('VFS change feed GC (SQLite)', () => {
   beforeAll(async () => {
     if (process.env.STORIX_DB_DRIVER !== 'sqlite') throw new Error('STORIX_DB_DRIVER=sqlite required');
     dataSource = new DataSource({
-      type: 'better-sqlite3', database: ':memory:', synchronize: false,
+      type: 'better-sqlite3',
+      database: ':memory:',
+      synchronize: false,
       migrationsTransactionMode: 'each',
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsChangeFeedStateEntity, VfsChangeEventEntity],
       migrations: ALL_MIGRATIONS,
@@ -28,9 +30,14 @@ describe('VFS change feed GC (SQLite)', () => {
     await dataSource.initialize();
     await dataSource.runMigrations();
     installSqliteGate(dataSource);
-    nodes = new VfsNodeRepository(dataSource.getRepository(NamespaceEntity),
-      dataSource.getRepository(VfsNodeEntity), dataSource.getRepository(BlobEntity), dataSource,
-      new BlobRepository(dataSource), new ConfigService());
+    nodes = new VfsNodeRepository(
+      dataSource.getRepository(NamespaceEntity),
+      dataSource.getRepository(VfsNodeEntity),
+      dataSource.getRepository(BlobEntity),
+      dataSource,
+      new BlobRepository(dataSource),
+      new ConfigService(),
+    );
     retention = new VfsChangeFeedRetentionRepository(dataSource);
   }, 30000);
 

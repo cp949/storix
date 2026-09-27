@@ -1,5 +1,15 @@
 import {
-  Body, Controller, Delete, Get, Headers, Param, Post, Put, Req, Res, UseFilters,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Put,
+  Req,
+  Res,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -14,13 +24,19 @@ import { VfsInvalidMutationRequestError } from './vfs.errors.js';
 @UseFilters(DomainErrorFilter)
 @UseInterceptors(StructuredLoggingInterceptor)
 export class UploadSessionController {
-  constructor(private readonly sessions: UploadSessionService,
+  constructor(
+    private readonly sessions: UploadSessionService,
     private readonly parts: UploadSessionPartService,
-    private readonly finalize: UploadSessionFinalizeService) {}
+    private readonly finalize: UploadSessionFinalizeService,
+  ) {}
 
   @Post(':sessionId/complete')
-  async complete(@Param('namespaceId') namespaceId: string, @Param('sessionId') sessionId: string,
-    @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async complete(
+    @Param('namespaceId') namespaceId: string,
+    @Param('sessionId') sessionId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.finalize.complete(namespaceId, sessionId, req.requestId);
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);

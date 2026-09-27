@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+_works/
+.superpowers/
+.worktrees/
+.scratch/
+docs/superpowers/

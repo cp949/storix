@@ -4,7 +4,10 @@ import { parsePositiveInt } from '../common/env-parsing.js';
 import { BlobRepository } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
-import { VfsChangeFeedRetentionRepository, resolveChangeFeedRetentionDays } from '../persistence/vfs-change-feed-retention.repository.js';
+import {
+  VfsChangeFeedRetentionRepository,
+  resolveChangeFeedRetentionDays,
+} from '../persistence/vfs-change-feed-retention.repository.js';
 import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
@@ -41,7 +44,9 @@ export class GcJob {
     @Optional() private readonly trashRetention?: VfsTrashRetentionRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
-    this.changeRetentionDays = resolveChangeFeedRetentionDays(config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'));
+    this.changeRetentionDays = resolveChangeFeedRetentionDays(
+      config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'),
+    );
   }
 
   async run(): Promise<GcResult> {
@@ -60,7 +65,12 @@ export class GcJob {
       while (true) {
         const stale = await this.uploadSessions.findExpiredReservedParts(now, staleAfter, CLEANUP_BATCH_SIZE);
         for (const part of stale) {
-          await this.uploadSessions.retireExpiredPartReservation(part.sessionId, part.partIndex, part.stagingKey, now);
+          await this.uploadSessions.retireExpiredPartReservation(
+            part.sessionId,
+            part.partIndex,
+            part.stagingKey,
+            now,
+          );
         }
         if (stale.length < CLEANUP_BATCH_SIZE) break;
         const last = stale[stale.length - 1];
@@ -72,9 +82,14 @@ export class GcJob {
         for (const part of parts) {
           try {
             await this.storage.delete(part.stagingKey);
-            if (await this.uploadSessions.markStagingObjectDeleted(
-              part.sessionId, part.partIndex, part.stagingKey, part.state,
-            ))
+            if (
+              await this.uploadSessions.markStagingObjectDeleted(
+                part.sessionId,
+                part.partIndex,
+                part.stagingKey,
+                part.state,
+              )
+            )
               deletedStagingObjects++;
           } catch (error) {
             this.logger.error(`staging object 삭제 실패: ${part.stagingKey}`, error);
@@ -106,12 +121,15 @@ export class GcJob {
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff);
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
-    const prunedUploadSessions = (await this.uploadSessions?.pruneTerminalSessions(
-      new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
+    const prunedUploadSessions =
+      (await this.uploadSessions?.pruneTerminalSessions(new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
     let prunedChangeEvents = 0;
     if (this.changeFeedRetention) {
       while (true) {
-        const count = await this.changeFeedRetention.pruneExpiredBatch(this.changeRetentionDays, CLEANUP_BATCH_SIZE);
+        const count = await this.changeFeedRetention.pruneExpiredBatch(
+          this.changeRetentionDays,
+          CLEANUP_BATCH_SIZE,
+        );
         if (count === 0) break;
         prunedChangeEvents += count;
       }
@@ -130,9 +148,18 @@ export class GcJob {
     this.logger.log(
       `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
     );
-    return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts,
-      expiredUploadSessions, recoveredUploadSessions, deletedStagingObjects, prunedUploadSessions,
-      prunedChangeEvents, prunedTrashItems, prunedTrashBytes: prunedTrashBytes.toString() };
+    return {
+      deletedOrphanObjects,
+      deletedOrphanBlobs,
+      prunedMutationReceipts,
+      expiredUploadSessions,
+      recoveredUploadSessions,
+      deletedStagingObjects,
+      prunedUploadSessions,
+      prunedChangeEvents,
+      prunedTrashItems,
+      prunedTrashBytes: prunedTrashBytes.toString(),
+    };
   }
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을

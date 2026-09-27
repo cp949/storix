@@ -95,20 +95,22 @@ export class DomainErrorFilter implements ExceptionFilter {
     const status = resolveErrorStatus(exception);
 
     if (exception instanceof InvalidApiKeyError && this.auditLogRepository) {
-      void this.auditLogRepository.record({
-        requestId: request.requestId,
-        namespaceId: null,
-        snapshotId: null,
-        trashId: null,
-        // operation 컬럼은 기존 varchar(128) 계약을 유지하고 전체 경로는 text path에 남긴다.
-        operation: `${request.method} ${request.path}`.slice(0, 128),
-        path: request.path,
-        detail: null,
-        caller: null,
-        status: 401,
-      }).catch((error: unknown) => {
-        this.logger.error('감사 로그 기록 실패', error instanceof Error ? error.stack : String(error));
-      });
+      void this.auditLogRepository
+        .record({
+          requestId: request.requestId,
+          namespaceId: null,
+          snapshotId: null,
+          trashId: null,
+          // operation 컬럼은 기존 varchar(128) 계약을 유지하고 전체 경로는 text path에 남긴다.
+          operation: `${request.method} ${request.path}`.slice(0, 128),
+          path: request.path,
+          detail: null,
+          caller: null,
+          status: 401,
+        })
+        .catch((error: unknown) => {
+          this.logger.error('감사 로그 기록 실패', error instanceof Error ? error.stack : String(error));
+        });
     }
 
     if (status === 500) {

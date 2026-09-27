@@ -19,7 +19,11 @@ export class ChangeFeedService {
     private readonly capabilities: CapabilityService,
   ) {}
 
-  async list(namespaceId: string, rawCursor: string | undefined, rawLimit: string | undefined): Promise<ChangeFeedPageDto> {
+  async list(
+    namespaceId: string,
+    rawCursor: string | undefined,
+    rawLimit: string | undefined,
+  ): Promise<ChangeFeedPageDto> {
     if (!isUuid(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
     const id = namespaceId.toLowerCase();
     const namespace = await this.namespaces.findOneBy({ id });
@@ -32,7 +36,11 @@ export class ChangeFeedService {
       const sequence = await this.nodes.createChangeFeedCheckpoint(id, root.id);
       const state = await this.nodes.getChangeFeedState(id);
       if (!state) throw new Error('Change feed checkpoint state missing');
-      return { changes: [], nextCursor: encodeChangeFeedCursor(id, sequence, state.signingSecret), hasMore: false };
+      return {
+        changes: [],
+        nextCursor: encodeChangeFeedCursor(id, sequence, state.signingSecret),
+        hasMore: false,
+      };
     }
 
     const limit = resolveLimit(rawLimit);
@@ -47,8 +55,10 @@ export class ChangeFeedService {
     const page = rows.slice(0, limit);
     return {
       changes: page.map(toChangeFeedEventDto),
-      nextCursor: page.length === 0 ? rawCursor :
-        encodeChangeFeedCursor(id, page[page.length - 1].sequence, state.signingSecret),
+      nextCursor:
+        page.length === 0
+          ? rawCursor
+          : encodeChangeFeedCursor(id, page[page.length - 1].sequence, state.signingSecret),
       hasMore,
     };
   }

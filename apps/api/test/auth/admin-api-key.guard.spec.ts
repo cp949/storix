@@ -17,7 +17,9 @@ describe('AdminApiKeyGuard', () => {
 
   it('regular API key만으로는 admin 경로를 통과하지 못한다', () => {
     expect(() =>
-      new AdminApiKeyGuard(config({ STORIX_ADMIN_API_KEY: 'admin-current' })).canActivate(context('Bearer regular')),
+      new AdminApiKeyGuard(config({ STORIX_ADMIN_API_KEY: 'admin-current' })).canActivate(
+        context('Bearer regular'),
+      ),
     ).toThrow(InvalidApiKeyError);
   });
 

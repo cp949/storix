@@ -21,16 +21,29 @@ describe('VFS change feed persistence (Postgres)', () => {
   beforeAll(async () => {
     container = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     dataSource = new DataSource({
-      type: 'postgres', url: container.getConnectionUri(), synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsChangeFeedStateEntity, VfsChangeEventEntity,
-        VfsTrashEntity, VfsTrashEntryEntity],
+      type: 'postgres',
+      url: container.getConnectionUri(),
+      synchronize: false,
+      entities: [
+        NamespaceEntity,
+        VfsNodeEntity,
+        BlobEntity,
+        VfsChangeFeedStateEntity,
+        VfsChangeEventEntity,
+        VfsTrashEntity,
+        VfsTrashEntryEntity,
+      ],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
     repository = new VfsNodeRepository(
-      dataSource.getRepository(NamespaceEntity), dataSource.getRepository(VfsNodeEntity),
-      dataSource.getRepository(BlobEntity), dataSource, new BlobRepository(dataSource), new ConfigService(),
+      dataSource.getRepository(NamespaceEntity),
+      dataSource.getRepository(VfsNodeEntity),
+      dataSource.getRepository(BlobEntity),
+      dataSource,
+      new BlobRepository(dataSource),
+      new ConfigService(),
     );
   }, 120000);
 

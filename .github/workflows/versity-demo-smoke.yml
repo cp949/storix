@@ -4,22 +4,22 @@ on:
   push:
     branches: [dev]
     paths:
-      - 'docker-compose.yml'
-      - 'docker-compose.versitygw.yml'
-      - 'docker-compose.postgres.yml'
-      - '.github/compose.ci.yml'
-      - '.env.example'
-      - 'apps/api/**'
-      - '.github/workflows/versity-demo-smoke.yml'
+      - "docker-compose.yml"
+      - "docker-compose.versitygw.yml"
+      - "docker-compose.postgres.yml"
+      - ".github/compose.ci.yml"
+      - ".env.example"
+      - "apps/api/**"
+      - ".github/workflows/versity-demo-smoke.yml"
   pull_request:
     paths:
-      - 'docker-compose.yml'
-      - 'docker-compose.versitygw.yml'
-      - 'docker-compose.postgres.yml'
-      - '.github/compose.ci.yml'
-      - '.env.example'
-      - 'apps/api/**'
-      - '.github/workflows/versity-demo-smoke.yml'
+      - "docker-compose.yml"
+      - "docker-compose.versitygw.yml"
+      - "docker-compose.postgres.yml"
+      - ".github/compose.ci.yml"
+      - ".env.example"
+      - "apps/api/**"
+      - ".github/workflows/versity-demo-smoke.yml"
   workflow_dispatch:
 
 permissions:

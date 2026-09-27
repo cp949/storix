@@ -16,6 +16,9 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error: unknown) => {
-  new Logger('Bootstrap').error('애플리케이션 부팅 실패', error instanceof Error ? error.stack : String(error));
+  new Logger('Bootstrap').error(
+    '애플리케이션 부팅 실패',
+    error instanceof Error ? error.stack : String(error),
+  );
   process.exit(1);
 });

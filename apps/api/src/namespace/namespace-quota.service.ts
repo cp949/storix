@@ -58,7 +58,10 @@ export class NamespaceQuotaService {
 
       namespace.maxTotalLogicalBytes = maxTotalLogicalBytes;
       const saved = await namespaces.save(namespace);
-      const body = toNamespaceResponse((await withExactNamespaceBigints(tx.manager, [saved]))[0], this.globalLimits);
+      const body = toNamespaceResponse(
+        (await withExactNamespaceBigints(tx.manager, [saved]))[0],
+        this.globalLimits,
+      );
       await keys.insert({
         key: storageKey,
         requestHash,

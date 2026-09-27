@@ -13,7 +13,11 @@ export interface NamespaceGlobalLimits {
 export function readNamespaceGlobalLimits(config: ConfigService): NamespaceGlobalLimits {
   return {
     maxFileSizeBytes: resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES')),
-    maxTotalLogicalBytes: resolveGlobalTotalLogicalByteLimit(config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES')),
-    maxRetainedTrashNodes: resolveTrashRetentionNodeLimit(config.get<string>('STORIX_MAX_RETAINED_TRASH_NODES')),
+    maxTotalLogicalBytes: resolveGlobalTotalLogicalByteLimit(
+      config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES'),
+    ),
+    maxRetainedTrashNodes: resolveTrashRetentionNodeLimit(
+      config.get<string>('STORIX_MAX_RETAINED_TRASH_NODES'),
+    ),
   };
 }

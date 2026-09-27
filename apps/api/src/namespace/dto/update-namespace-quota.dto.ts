@@ -5,9 +5,10 @@ export interface UpdateNamespaceQuotaRequest {
 }
 
 export function parseUpdateNamespaceQuotaRequest(body: unknown): UpdateNamespaceQuotaRequest {
-  const record = body !== null && typeof body === 'object' && !Array.isArray(body)
-    ? (body as Record<string, unknown>)
-    : {};
+  const record =
+    body !== null && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
   const value = record.maxTotalLogicalBytes;
   if (value !== null && !isPositiveInt64Decimal(value)) {
     throw new NamespaceInvalidTotalLogicalBytesError(value);

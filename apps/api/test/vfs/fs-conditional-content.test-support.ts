@@ -590,10 +590,12 @@ export function registerFsConditionalContentContract(ctx: FsHttpContext) {
           if (!receipt) await new Promise((resolve) => setTimeout(resolve, 20));
         }
         expect(receipt).not.toBeNull();
-        await ctx.migrationDataSource.getRepository(VfsMutationReceiptEntity).update(
-          { namespaceId, scope: 'caller-a', idempotencyKey: key },
-          { leaseExpiresAt: new Date(Date.now() - 1000) },
-        );
+        await ctx.migrationDataSource
+          .getRepository(VfsMutationReceiptEntity)
+          .update(
+            { namespaceId, scope: 'caller-a', idempotencyKey: key },
+            { leaseExpiresAt: new Date(Date.now() - 1000) },
+          );
         const takeover = await ctx.app
           .get(VfsMutationReceiptRepository)
           .claim({ namespaceId, scope: 'caller-a', key }, new Date());

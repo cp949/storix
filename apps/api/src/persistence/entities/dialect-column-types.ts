@@ -4,7 +4,9 @@ export function resolveBinaryColumnType(driver: string | undefined = getDbDriver
   return driver === 'sqlite' ? 'blob' : 'bytea';
 }
 
-export function resolveTimestampColumnType(driver: string | undefined = getDbDriver()): 'datetime' | 'timestamptz' {
+export function resolveTimestampColumnType(
+  driver: string | undefined = getDbDriver(),
+): 'datetime' | 'timestamptz' {
   return driver === 'sqlite' ? 'datetime' : 'timestamptz';
 }
 

@@ -9,4 +9,4 @@
 services:
   versitygw:
     ports:
-      - '7070:7070'
+      - "7070:7070"

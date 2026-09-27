@@ -33,15 +33,15 @@ cp .env.example .env
 
 이 조합에서 실제로 읽히는 값:
 
-| 변수 | 값 | 비고 |
-|---|---|---|
-| `STORIX_API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
-| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY` | 임의 값 | app 접속 자격증명이자 VersityGW root 자격증명(`ROOT_ACCESS_KEY`/`ROOT_SECRET_KEY`). 운영에서는 기본값을 교체 |
-| `STORIX_STORAGE_BUCKET` | 버킷 이름 | `versitygw-init`이 기동 시 생성 |
-| `STORIX_VERSITYGW_DATA_PATH` | 비움 또는 `/`로 시작하는 절대 경로 | 비우면 named volume `versitygw-data`. NAS면 절대 경로 |
-| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
-| `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL` | 클라이언트가 접근 가능한 VersityGW 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패 |
-| `STORIX_STORAGE_REGION` | 예: `us-east-1` | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결) |
+| 변수                                                                                                 | 값                                      | 비고                                                                                                         |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `STORIX_API_KEY`                                                                                     | `openssl rand -hex 32` 출력             | 필수. 비어 있으면 compose가 즉시 실패                                                                        |
+| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY`                                            | 임의 값                                 | app 접속 자격증명이자 VersityGW root 자격증명(`ROOT_ACCESS_KEY`/`ROOT_SECRET_KEY`). 운영에서는 기본값을 교체 |
+| `STORIX_STORAGE_BUCKET`                                                                              | 버킷 이름                               | `versitygw-init`이 기동 시 생성                                                                              |
+| `STORIX_VERSITYGW_DATA_PATH`                                                                         | 비움 또는 `/`로 시작하는 절대 경로      | 비우면 named volume `versitygw-data`. NAS면 절대 경로                                                        |
+| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보                 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의                                |
+| `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL`    | 클라이언트가 접근 가능한 VersityGW 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패                                                           |
+| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                         | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결)                                                      |
 
 override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
 `STORIX_STORAGE_USE_SSL`(`versitygw` / `7070` / `false`로 고정).
@@ -138,7 +138,7 @@ presigned URL은 클라이언트가 VersityGW에 직접 접근하는 주소로 �
 services:
   versitygw:
     ports:
-      - '7070:7070'
+      - "7070:7070"
 ```
 
 ```bash

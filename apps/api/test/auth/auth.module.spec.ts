@@ -29,7 +29,9 @@ describe('AuthModule', () => {
   it('STORIX_API_KEY가 유효하면 VALID_API_KEYS를 정상적으로 조립한다', async () => {
     // AuthModule은 ConfigModule을 직접 import하지 않고 AppModule의 전역 등록에 의존하므로,
     // 여기서 ConfigModule을 함께 import해야 overrideProvider(ConfigService)가 적용될 대상을 찾는다.
-    const moduleRef = await Test.createTestingModule({ imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule] })
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule],
+    })
       .overrideProvider(ConfigService)
       .useValue({
         getOrThrow: (key: string) => (key === 'STORIX_API_KEY' ? 'a'.repeat(64) : undefined),

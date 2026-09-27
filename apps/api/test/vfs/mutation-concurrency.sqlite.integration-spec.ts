@@ -231,7 +231,8 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
     const okUrl = await contentUrl('/file');
     const goneUrl = await contentUrl('/gone');
     // 저장소에서 객체가 사라진 상황: storage.get이 지연된 뒤 실패해 트랜잭션이 늦게 롤백된다
-    for (const [key, body] of storage.objects) if (body.toString() === 'gone-body') storage.objects.delete(key);
+    for (const [key, body] of storage.objects)
+      if (body.toString() === 'gone-body') storage.objects.delete(key);
     const paths = Array.from({ length: 8 }, (_, i) => `/m${i}`);
     // 같은 경로를 여러 번 보내 일부 트랜잭션이 결정적 4xx로 롤백되게 한다
     const duplicates = Array.from({ length: 4 }, () => '/dup');

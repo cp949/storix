@@ -60,9 +60,9 @@
 ## Consequences
 
 - 대상 지정은 `pnpm --filter @storix/demo1-web`, `pnpm --filter
-  @storix/demo1-was`로 한다.
+@storix/demo1-was`로 한다.
 - `apps/demo1/was/Dockerfile`, `docs/deployment/scenarios/demo-all-in-one/
-  nginx/Dockerfile`, `compose.demo.yml`,
+nginx/Dockerfile`, `compose.demo.yml`,
   `.github/workflows/demo-all-in-one-smoke.yml`의 경로/패키지명 참조를
   전부 갱신했다.
 - 과거 ADR(0001, 0002, 0007, 0012, 0020)과 `CHANGELOG.md`의 `apps/demo`/

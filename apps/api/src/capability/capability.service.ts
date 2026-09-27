@@ -1,5 +1,10 @@
 import type { CapabilityConfig } from './capability-config.js';
-import { CAPABILITY_REGISTRY, type CapabilityDefinition, type CapabilityId, validateCapabilityRegistry } from './capability-registry.js';
+import {
+  CAPABILITY_REGISTRY,
+  type CapabilityDefinition,
+  type CapabilityId,
+  validateCapabilityRegistry,
+} from './capability-registry.js';
 import { VfsFeatureDisabledError } from '../vfs/vfs.errors.js';
 
 export class CapabilityService {
@@ -12,7 +17,10 @@ export class CapabilityService {
     this.definitions = new Map(registry.map((definition) => [definition.id, definition]));
     this.globalAllowed = new Set(config.globalAllowedCapabilities);
     this.namespaceAllowed = new Map(
-      Object.entries(config.namespaceAllowedCapabilities).map(([namespaceId, ids]) => [namespaceId, new Set(ids)]),
+      Object.entries(config.namespaceAllowedCapabilities).map(([namespaceId, ids]) => [
+        namespaceId,
+        new Set(ids),
+      ]),
     );
 
     for (const id of this.globalAllowed) this.requireRegistered(id);
@@ -27,7 +35,9 @@ export class CapabilityService {
             throw new Error(`Capability dependency ${dependency} must be globally allowed for ${id}`);
           }
           if (!ids.has(dependency)) {
-            throw new Error(`Capability dependency ${dependency} must be allowed in namespace ${namespaceId} for ${id}`);
+            throw new Error(
+              `Capability dependency ${dependency} must be allowed in namespace ${namespaceId} for ${id}`,
+            );
           }
         }
       }

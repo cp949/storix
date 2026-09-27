@@ -143,7 +143,11 @@ describe('job 진입점 모듈 부팅 통합', () => {
 
   it('restore 서비스 env var만으로 RestoreJobModule이 부팅되고 GcJob/BackupJob은 생성되지 않는다', async () => {
     const context = await bootWith(
-      { ...sharedComposeEnv(), STORIX_RESTORE_SOURCE_DIR: path.join(workDir, '2026-09-08T12-00-00-000Z'), STORIX_RESTORE_FORCE: 'false' },
+      {
+        ...sharedComposeEnv(),
+        STORIX_RESTORE_SOURCE_DIR: path.join(workDir, '2026-09-08T12-00-00-000Z'),
+        STORIX_RESTORE_FORCE: 'false',
+      },
       RestoreAppModuleFixture,
     );
 
@@ -162,7 +166,10 @@ describe('job 진입점 모듈 부팅 통합', () => {
     // sourceDir가 ''가 되어 상대경로 'postgres.dump'를 보게 되므로 RestoreJob이
     // 직접 막는다.
     await expect(
-      bootWith({ ...sharedComposeEnv(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }, RestoreAppModuleFixture),
+      bootWith(
+        { ...sharedComposeEnv(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' },
+        RestoreAppModuleFixture,
+      ),
     ).rejects.toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');
   }, 60000);
 });

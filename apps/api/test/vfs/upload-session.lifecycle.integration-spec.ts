@@ -36,21 +36,34 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
 
   function policy(): UploadSessionPolicy {
     return {
-      global: { maxStagedBytes: 1024n, maxActiveSessions: 3, partSizeBytes: 4,
-        inactivitySeconds: 60, maxLifetimeSeconds: 120 },
+      global: {
+        maxStagedBytes: 1024n,
+        maxActiveSessions: 3,
+        partSizeBytes: 4,
+        inactivitySeconds: 60,
+        maxLifetimeSeconds: 120,
+      },
       namespaces: { [namespaceId]: { maxStagedBytes: 1024n, maxActiveSessions: 3 } },
     };
   }
 
   async function bootstrap(enabled: boolean): Promise<INestApplication> {
     const builder = Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule, GcJobModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        AuthModule,
+        NamespaceModule,
+        VfsModule,
+        GcJobModule,
+      ],
     });
     if (namespaceId) {
-      builder.overrideProvider(CapabilityService).useValue(new CapabilityService({
-        globalAllowedCapabilities: enabled ? ['resumable-upload'] : [],
-        namespaceAllowedCapabilities: { [namespaceId]: enabled ? ['resumable-upload'] : [] },
-      }));
+      builder.overrideProvider(CapabilityService).useValue(
+        new CapabilityService({
+          globalAllowedCapabilities: enabled ? ['resumable-upload'] : [],
+          namespaceAllowedCapabilities: { [namespaceId]: enabled ? ['resumable-upload'] : [] },
+        }),
+      );
       builder.overrideProvider(UPLOAD_SESSION_POLICY).useValue(policy());
     }
     const moduleRef = await builder.compile();
@@ -64,8 +77,12 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     return `/api/v2/namespaces/${namespaceId}/fs/upload-sessions${path}`;
   }
 
-  function create(key: string, body = { path: '/hidden.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true }) {
-    return request(app.getHttpServer()).post(url())
+  function create(
+    key: string,
+    body = { path: '/hidden.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true },
+  ) {
+    return request(app.getHttpServer())
+      .post(url())
       .set('Authorization', `Bearer ${API_KEY}`)
       .set('X-Mutation-Scope', 'integration')
       .set('Idempotency-Key', key)
@@ -94,18 +111,30 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
 
-    const client = new MinioClient({ endPoint: minio.getHost(), port: minio.getPort(), useSSL: false,
-      accessKey: minio.getUsername(), secretKey: minio.getPassword() });
+    const client = new MinioClient({
+      endPoint: minio.getHost(),
+      port: minio.getPort(),
+      useSSL: false,
+      accessKey: minio.getUsername(),
+      secretKey: minio.getPassword(),
+    });
     await client.makeBucket(process.env.STORIX_STORAGE_BUCKET);
-    migrations = new DataSource({ type: 'postgres', url: postgres.getConnectionUri(),
-      synchronize: false, entities: [NamespaceEntity, VfsNodeEntity], migrations: ALL_MIGRATIONS });
+    migrations = new DataSource({
+      type: 'postgres',
+      url: postgres.getConnectionUri(),
+      synchronize: false,
+      entities: [NamespaceEntity, VfsNodeEntity],
+      migrations: ALL_MIGRATIONS,
+    });
     await migrations.initialize();
     await migrations.runMigrations();
     app = await bootstrap(false);
-    const created = await request(app.getHttpServer()).post('/api/v2/namespaces')
+    const created = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
       .set('Authorization', `Bearer ${API_KEY}`)
       .set('Idempotency-Key', 'upload-lifecycle-namespace')
-      .send({ name: 'upload-lifecycle' }).expect(201);
+      .send({ name: 'upload-lifecycle' })
+      .expect(201);
     namespaceId = created.body.id as string;
     await app.close();
     app = await bootstrap(true);
@@ -126,19 +155,38 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     const replay = await create(key).expect(201);
     expect(replay.body).toEqual(first.body);
     expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
-    expect(await app.get(VfsUploadSessionRepository).renewSession(namespaceId, id,
-      new Date(Date.now() + 2000), 60)).toBe(true);
+    expect(
+      await app
+        .get(VfsUploadSessionRepository)
+        .renewSession(namespaceId, id, new Date(Date.now() + 2000), 60),
+    ).toBe(true);
     expect((await create(key).expect(201)).body).toEqual(first.body);
-    const changed = await create(key, { path: '/different.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true }).expect(409);
+    const changed = await create(key, {
+      path: '/different.bin',
+      sizeBytes: '4',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    }).expect(409);
     expect(changed.body.code).toBe('MUTATION_KEY_REUSED');
-    expect((await request(app.getHttpServer()).get(url('/not-a-uuid'))
-      .set('Authorization', `Bearer ${API_KEY}`).expect(404)).body.code).toBe('VFS_UPLOAD_SESSION_NOT_FOUND');
-    await request(app.getHttpServer()).get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
-      .set('Authorization', `Bearer ${API_KEY}`).query({ path: '/hidden.bin' }).expect(404);
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get(url('/not-a-uuid'))
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(404)
+      ).body.code,
+    ).toBe('VFS_UPLOAD_SESSION_NOT_FOUND');
+    await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path: '/hidden.bin' })
+      .expect(404);
     await app.close();
     app = await bootstrap(false);
-    const status = await request(app.getHttpServer()).get(url(`/${id}`))
-      .set('Authorization', `Bearer ${API_KEY}`).expect(200);
+    const status = await request(app.getHttpServer())
+      .get(url(`/${id}`))
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
     expect(status.body).toMatchObject({ sessionId: id, state: 'OPEN', path: '/hidden.bin', parts: [] });
     expect((await create(key).expect(201)).body).toEqual(first.body);
     await create(randomUUID()).expect(409);
@@ -148,7 +196,12 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     await app.close();
     app = await bootstrap(true);
     const key = randomUUID();
-    const created = await create(key, { path: '/cleanup.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true }).expect(201);
+    const created = await create(key, {
+      path: '/cleanup.bin',
+      sizeBytes: '4',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    }).expect(201);
     const id = created.body.sessionId as string;
     const repo = app.get(VfsUploadSessionRepository);
     const storage = app.get<BlobStorage>(BLOB_STORAGE);
@@ -159,12 +212,27 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     expect(await repo.commitPart(id, 0, '0'.repeat(64), null)).toBe(true);
     const orphanKey = `upload-staging/${randomUUID()}`;
     await storage.put(orphanKey, Readable.from(Buffer.from('orphan')));
-    const cancelled = await request(app.getHttpServer()).delete(url(`/${id}`))
-      .set('Authorization', `Bearer ${API_KEY}`).expect(200);
+    const cancelled = await request(app.getHttpServer())
+      .delete(url(`/${id}`))
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
     expect(cancelled.body.state).toBe('CANCELLED');
-    expect((await create(key, { path: '/cleanup.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true }).expect(201)).body).toEqual(created.body);
+    expect(
+      (
+        await create(key, {
+          path: '/cleanup.bin',
+          sizeBytes: '4',
+          mimeType: 'application/octet-stream',
+          ifAbsent: true,
+        }).expect(201)
+      ).body,
+    ).toEqual(created.body);
     const originalDelete = storage.delete.bind(storage);
-    const deleteSpy = jest.spyOn(storage, 'delete').mockImplementationOnce(async () => { throw new Error('MinIO unavailable'); })
+    const deleteSpy = jest
+      .spyOn(storage, 'delete')
+      .mockImplementationOnce(async () => {
+        throw new Error('MinIO unavailable');
+      })
       .mockImplementation(originalDelete);
     const gc = app.get(GcJob);
     await gc.run();
@@ -180,32 +248,61 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
   });
 
   it('expires idle sessions, recovers stale finalization leases, and prunes terminal records after retention', async () => {
-    const expired = await create(randomUUID(), { path: '/expires.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true }).expect(201);
+    const expired = await create(randomUUID(), {
+      path: '/expires.bin',
+      sizeBytes: '0',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    }).expect(201);
     const expiredId = expired.body.sessionId as string;
-    await migrations.query(`UPDATE vfs_upload_session SET expires_at = now() - interval '1 second' WHERE id = $1`, [expiredId]);
+    await migrations.query(
+      `UPDATE vfs_upload_session SET expires_at = now() - interval '1 second' WHERE id = $1`,
+      [expiredId],
+    );
     const repo = app.get(VfsUploadSessionRepository);
     expect(await repo.renewSession(namespaceId, expiredId, new Date(), 60)).toBe(false);
     const firstGc = await app.get(GcJob).run();
     expect(firstGc.expiredUploadSessions).toBe(1);
     expect((await repo.findForStatus(namespaceId, expiredId))?.session.state).toBe('EXPIRED');
 
-    const finalizing = await create(randomUUID(), { path: '/lease.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true }).expect(201);
+    const finalizing = await create(randomUUID(), {
+      path: '/lease.bin',
+      sizeBytes: '0',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    }).expect(201);
     const finalizingId = finalizing.body.sessionId as string;
     expect((await repo.claimFinalize(namespaceId, finalizingId, 60_000)).kind).toBe('claimed');
-    await migrations.query(`UPDATE vfs_upload_session SET lease_expires_at = now() - interval '1 second' WHERE id = $1`, [finalizingId]);
+    await migrations.query(
+      `UPDATE vfs_upload_session SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
+      [finalizingId],
+    );
     const secondGc = await app.get(GcJob).run();
     expect(secondGc.recoveredUploadSessions).toBe(1);
     expect((await repo.findForStatus(namespaceId, finalizingId))?.session.state).toBe('OPEN');
 
-    const maxLifetime = await create(randomUUID(), { path: '/max-lifetime.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true }).expect(201);
+    const maxLifetime = await create(randomUUID(), {
+      path: '/max-lifetime.bin',
+      sizeBytes: '0',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    }).expect(201);
     const maxLifetimeId = maxLifetime.body.sessionId as string;
-    await migrations.query(`UPDATE vfs_upload_session SET max_expires_at = now() - interval '1 second' WHERE id = $1`, [maxLifetimeId]);
-    await migrations.query(`UPDATE vfs_upload_session SET terminal_at = now() - interval '31 days' WHERE id = $1`, [expiredId]);
+    await migrations.query(
+      `UPDATE vfs_upload_session SET max_expires_at = now() - interval '1 second' WHERE id = $1`,
+      [maxLifetimeId],
+    );
+    await migrations.query(
+      `UPDATE vfs_upload_session SET terminal_at = now() - interval '31 days' WHERE id = $1`,
+      [expiredId],
+    );
     const thirdGc = await app.get(GcJob).run();
     expect(thirdGc.expiredUploadSessions).toBe(1);
     expect((await repo.findForStatus(namespaceId, maxLifetimeId))?.session.state).toBe('EXPIRED');
     expect(thirdGc.prunedUploadSessions).toBe(1);
-    await request(app.getHttpServer()).get(url(`/${expiredId}`))
-      .set('Authorization', `Bearer ${API_KEY}`).expect(404);
+    await request(app.getHttpServer())
+      .get(url(`/${expiredId}`))
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(404);
   });
 });

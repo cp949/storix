@@ -7,7 +7,10 @@ import { VfsMutationReceiptEntity } from '../../src/persistence/entities/vfs-mut
 
 const RECEIPT_MS = 30 * 86400_000;
 
-async function expireLease(dataSource: DataSource, identity: { namespaceId: string; scope: string; key: string }) {
+async function expireLease(
+  dataSource: DataSource,
+  identity: { namespaceId: string; scope: string; key: string },
+) {
   await dataSource.getRepository(VfsMutationReceiptEntity).update(
     {
       namespaceId: identity.namespaceId,

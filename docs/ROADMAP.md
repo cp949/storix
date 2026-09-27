@@ -46,7 +46,7 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
 3. **apps/demo 구현 및 반복 개선**: 실사용 시나리오로 fs API와 `SEC-01`(서비스
    인증)의 사용성을 검증하고, `STORAGE-02`/`STORAGE-03`(presigned URL + nginx
    reverse-proxy)을 실제로 재현해 검증한다. 발견된 불편함을 api에 반영한다.
-4. **배포/온보딩 + API 계약 고정**: `DEPLOY-01`~`DEPLOY-06`, `API-01`~`API-03`.
+4. **배포/온보딩 + API 계약 고정**: `DEPLOY-01`~~`DEPLOY-06`, `API-01`~~`API-03`.
    apps/demo로 API 모양이 검증된 뒤 스펙과 버저닝을 고정한다 — 먼저 고정하면
    demo 피드백으로 다시 깨야 한다.
 5. **범용 파일 저장 계약 확장**: `VFS-01`로 요구사항과 기존 OpenAPI 계약을

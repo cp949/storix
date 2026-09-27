@@ -1,4 +1,8 @@
-import { isMutationJsonRoute, isRawUploadRoute, isSnapshotJsonMutationRoute } from '../../src/common/body-parser.js';
+import {
+  isMutationJsonRoute,
+  isRawUploadRoute,
+  isSnapshotJsonMutationRoute,
+} from '../../src/common/body-parser.js';
 
 describe('isRawUploadRoute', () => {
   it('conditional raw content route bypasses JSON parsing', () => {

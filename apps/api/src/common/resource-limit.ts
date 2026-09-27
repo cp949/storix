@@ -16,6 +16,9 @@ export function resolveGlobalMaxFileSizeBytes(value: string | undefined): number
 }
 
 // 업로드 강제와 namespace 응답이 같은 규칙으로 적용 파일 상한을 계산하게 한다
-export function resolveMaxFileSizeBytes(namespaceValue: string | null | undefined, globalValue: number): number {
+export function resolveMaxFileSizeBytes(
+  namespaceValue: string | null | undefined,
+  globalValue: number,
+): number {
   return resolveEffectiveLimit(namespaceValue == null ? null : Number(namespaceValue), globalValue);
 }

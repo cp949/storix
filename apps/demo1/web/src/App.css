@@ -52,7 +52,7 @@ main {
   padding: 0.15rem 0.3rem;
 }
 
-.archive-sidebar button[aria-current='true'] {
+.archive-sidebar button[aria-current="true"] {
   background: #dbeafe;
   border-radius: 3px;
   font-weight: 600;
@@ -103,31 +103,31 @@ main {
   gap: 0.4rem;
 }
 
-table[aria-label='문서 목록'] {
+table[aria-label="문서 목록"] {
   width: 100%;
   border-collapse: collapse;
 }
 
-table[aria-label='문서 목록'] th,
-table[aria-label='문서 목록'] td {
+table[aria-label="문서 목록"] th,
+table[aria-label="문서 목록"] td {
   text-align: left;
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid #eee;
 }
 
-table[aria-label='문서 목록'] tbody tr {
+table[aria-label="문서 목록"] tbody tr {
   cursor: pointer;
 }
 
-table[aria-label='문서 목록'] tbody tr:hover {
+table[aria-label="문서 목록"] tbody tr:hover {
   background: #f5f5f5;
 }
 
-table[aria-label='문서 목록'] tbody tr[aria-selected='true'] {
+table[aria-label="문서 목록"] tbody tr[aria-selected="true"] {
   background: #dbeafe;
 }
 
-div[role='toolbar'] {
+div[role="toolbar"] {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;

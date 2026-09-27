@@ -77,7 +77,8 @@ describe('loadDemoWasConfig', () => {
   });
 
   it.each(['not-a-uuid', ' 63f238da-3f8d-482d-a384-7995994271dc', '63f238da-3f8d-482d-0384-7995994271dc'])(
-    '잘못된 private namespace UUID %s는 시작 시 거부한다', (value) => {
+    '잘못된 private namespace UUID %s는 시작 시 거부한다',
+    (value) => {
       process.env.DEMO_WAS_STORIX_BASE_URL = 'http://localhost:3000';
       process.env.DEMO_WAS_STORIX_API_KEY = 'test-key';
       process.env.DEMO_WAS_NAMESPACE_ID = value;

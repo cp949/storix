@@ -30,7 +30,9 @@ export class AddVfsChangeFeed1791700000006 implements MigrationInterface {
       CONSTRAINT "PK_vfs_change_event" PRIMARY KEY ("namespace_id", "sequence"),
       CONSTRAINT "CHK_vfs_change_event_tombstone" CHECK (("kind" = 'deleted' AND "previous_path" IS NULL AND "revision" IS NULL) OR ("kind" <> 'deleted' AND "revision" IS NOT NULL))
     )`);
-    await runner.query('CREATE INDEX "idx_vfs_change_event_occurred_at" ON "vfs_change_event" ("occurred_at", "namespace_id", "sequence")');
+    await runner.query(
+      'CREATE INDEX "idx_vfs_change_event_occurred_at" ON "vfs_change_event" ("occurred_at", "namespace_id", "sequence")',
+    );
   }
 
   async down(runner: QueryRunner): Promise<void> {

@@ -1,9 +1,9 @@
-export type DemoUser = 'alice' | 'bob';
+export type DemoUser = "alice" | "bob";
 
 export interface FileEntry {
   readonly path: string;
   readonly name: string;
-  readonly type: 'FILE' | 'DIRECTORY';
+  readonly type: "FILE" | "DIRECTORY";
   readonly size: number | null;
   readonly mimeType: string | null;
   readonly createdAt: string;
@@ -28,24 +28,34 @@ export interface PublicLink {
 
 export interface UploadSessionCreated {
   readonly sessionId: string;
-  readonly state: 'OPEN';
+  readonly state: "OPEN";
   readonly partSizeBytes: number;
   readonly partCount: number;
   readonly expiresAt: string;
   readonly maxExpiresAt: string;
 }
 
-export interface UploadSessionStatus extends Omit<UploadSessionCreated, 'state'> {
-  readonly state: 'OPEN' | 'FINALIZING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
+export interface UploadSessionStatus extends Omit<
+  UploadSessionCreated,
+  "state"
+> {
+  readonly state:
+    "OPEN" | "FINALIZING" | "COMPLETED" | "CANCELLED" | "EXPIRED" | "FAILED";
   readonly path: string;
   readonly sizeBytes: string;
   readonly mimeType: string;
-  readonly parts: readonly { readonly index: number; readonly sizeBytes: string }[];
+  readonly parts: readonly {
+    readonly index: number;
+    readonly sizeBytes: string;
+  }[];
 }
 
 export interface UploadSessionCompleteResult {
   readonly resource: FileEntry & { readonly revision: string };
-  readonly affectedRevisions: readonly { readonly path: string; readonly revision: string }[];
+  readonly affectedRevisions: readonly {
+    readonly path: string;
+    readonly revision: string;
+  }[];
 }
 
 export interface UploadPartResult {

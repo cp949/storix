@@ -25,8 +25,13 @@ describe('upload session repository (SQLite)', () => {
       type: 'better-sqlite3',
       database: ':memory:',
       synchronize: false,
-      entities: [NamespaceEntity, VfsUploadSessionEntity, VfsUploadPartEntity,
-        VfsUploadStagingCleanupEntity, VfsUploadUsageEntity],
+      entities: [
+        NamespaceEntity,
+        VfsUploadSessionEntity,
+        VfsUploadPartEntity,
+        VfsUploadStagingCleanupEntity,
+        VfsUploadUsageEntity,
+      ],
       migrations: ALL_MIGRATIONS,
       migrationsTransactionMode: 'each',
     }).initialize();
@@ -82,11 +87,21 @@ describe('upload session repository (SQLite)', () => {
     if (created.kind !== 'created') throw new Error('expected creation');
     const id = created.session.id;
     expect(await repository.claimTerminalTransition(NAMESPACE, id, 'CANCELLED', new Date())).toBe(true);
-    const placeholders = Array.from({ length: 501 }, () => "(?, ?, 1, ?, 'x', 'STORED', '2026-09-27 00:00:00', '2026-09-27 00:00:00')");
-    const values = Array.from({ length: 501 }, (_, index) => [id, index, `upload-staging/${randomUUID()}`]).flat();
-    await db.query(`INSERT INTO vfs_upload_part
+    const placeholders = Array.from(
+      { length: 501 },
+      () => "(?, ?, 1, ?, 'x', 'STORED', '2026-09-27 00:00:00', '2026-09-27 00:00:00')",
+    );
+    const values = Array.from({ length: 501 }, (_, index) => [
+      id,
+      index,
+      `upload-staging/${randomUUID()}`,
+    ]).flat();
+    await db.query(
+      `INSERT INTO vfs_upload_part
       (session_id, part_index, size_bytes, staging_key, digest, state, created_at, updated_at)
-      VALUES ${placeholders.join(',')}`, values);
+      VALUES ${placeholders.join(',')}`,
+      values,
+    );
     const first = await repository.findCleanupParts(null, 500);
     expect(first).toHaveLength(500);
     expect(first[0].partIndex).toBe(0);
@@ -100,22 +115,34 @@ describe('upload session repository (SQLite)', () => {
     const eligibleId = randomUUID();
     const ids = [...blockedIds, eligibleId];
     const sessionValues = ids.flatMap((id) => [id, randomUUID()]);
-    const sessions = ids.map((_, index) =>
-      `(?, '${NAMESPACE}', 'scope', ?, '${'a'.repeat(64)}', '/file', 1, 'text/plain',
+    const sessions = ids.map(
+      (_, index) =>
+        `(?, '${NAMESPACE}', 'scope', ?, '${'a'.repeat(64)}', '/file', 1, 'text/plain',
         'ABSENT', 1, 1, 'CANCELLED', '2026-08-01 00:00:00', '2026-08-02 00:00:00',
-        '${index === 501 ? '2026-08-02' : '2026-08-01'} 00:00:00', '2026-08-01 00:00:00', '2026-08-01 00:00:00')`);
-    await db.query(`INSERT INTO vfs_upload_session
+        '${index === 501 ? '2026-08-02' : '2026-08-01'} 00:00:00', '2026-08-01 00:00:00', '2026-08-01 00:00:00')`,
+    );
+    await db.query(
+      `INSERT INTO vfs_upload_session
       (id, namespace_id, scope, creation_key, fingerprint, target_path, size_bytes, mime_type,
        condition_type, part_size_bytes, part_count, state, expires_at, max_expires_at,
        terminal_at, created_at, updated_at)
-      VALUES ${sessions.join(',')}`, sessionValues);
+      VALUES ${sessions.join(',')}`,
+      sessionValues,
+    );
     const partValues = blockedIds.flatMap((id) => [id, `upload-staging/${randomUUID()}`]);
-    const parts = blockedIds.map(() => "(?, 0, 1, ?, 'x', 'STORED', '2026-08-01 00:00:00', '2026-08-01 00:00:00')");
-    await db.query(`INSERT INTO vfs_upload_part
+    const parts = blockedIds.map(
+      () => "(?, 0, 1, ?, 'x', 'STORED', '2026-08-01 00:00:00', '2026-08-01 00:00:00')",
+    );
+    await db.query(
+      `INSERT INTO vfs_upload_part
       (session_id, part_index, size_bytes, staging_key, digest, state, created_at, updated_at)
-      VALUES ${parts.join(',')}`, partValues);
+      VALUES ${parts.join(',')}`,
+      partValues,
+    );
     expect(await repository.pruneTerminalSessions(new Date('2026-09-27T00:00:00Z'), 500)).toBe(1);
-    expect((await db.query('SELECT id FROM vfs_upload_session WHERE id = ?', [eligibleId])) as unknown[]).toEqual([]);
+    expect(
+      (await db.query('SELECT id FROM vfs_upload_session WHERE id = ?', [eligibleId])) as unknown[],
+    ).toEqual([]);
   });
 
   it('initializes namespace usage only after reading the global usage row', async () => {
@@ -190,7 +217,9 @@ describe('upload session repository (SQLite)', () => {
     expect(await repository.claimTerminalTransition(NAMESPACE, id, 'CANCELLED', new Date())).toBe(true);
     expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toBe(false);
     expect((await repository.reservePart(id, 0, '10', 'upload-staging/later', caps)).kind).toBe('closed');
-    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/terminal', 'RESERVED')).toBe(false);
+    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/terminal', 'RESERVED')).toBe(
+      false,
+    );
     expect(await repository.releasePartReservation(id, 0, false, 'upload-staging/terminal')).toBe(true);
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { staged_bytes: 0 },
@@ -204,27 +233,34 @@ describe('upload session repository (SQLite)', () => {
     const oldKey = 'upload-staging/stale-old';
     expect((await repository.reservePart(id, 0, '4', oldKey, caps)).kind).toBe('reserved');
     expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(false);
-    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?',
-      ['2020-01-01 00:00:00.000', id]);
+    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?', [
+      '2020-01-01 00:00:00.000',
+      id,
+    ]);
     expect(await repository.renewPartLease(id, 0, oldKey)).toBe(false);
     expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(true);
-    expect((await repository.reservePart(id, 0, '4', 'upload-staging/blocked', caps)).kind).toBe('in-progress');
+    expect((await repository.reservePart(id, 0, '4', 'upload-staging/blocked', caps)).kind).toBe(
+      'in-progress',
+    );
     expect(await repository.findAllStagingKeys()).toContain(oldKey);
     // mark is called only after storage.delete(oldKey) has acknowledged completion.
     expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
     // Repeated GC deletes do not provide evidence that the old PUT has settled.
     expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
     expect((await repository.reservePart(id, 0, '4', 'upload-staging/new', caps)).kind).toBe('reserved');
-    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
-      .toEqual([{ staged_bytes: 8 }]);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
+      { staged_bytes: 8 },
+    ]);
     expect(await repository.releasePartReservation(id, 0, true, oldKey)).toBe(true);
-    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
-      .toEqual([{ staged_bytes: 8 }]);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
+      { staged_bytes: 8 },
+    ]);
     const settled = (await repository.findCleanupTombstones())[0].putSettledAt;
     expect(settled).not.toBeNull();
     expect(await repository.markTombstoneDeleted(oldKey, settled)).toBe(true);
-    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
-      .toEqual([{ staged_bytes: 4 }]);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
+      { staged_bytes: 4 },
+    ]);
   });
 
   it('does not refund a stale reservation without PUT settlement evidence', async () => {
@@ -233,21 +269,27 @@ describe('upload session repository (SQLite)', () => {
     const id = created.session.id;
     const oldKey = 'upload-staging/unsettled';
     expect((await repository.reservePart(id, 0, '10', oldKey, caps)).kind).toBe('reserved');
-    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?',
-      ['2020-01-01 00:00:00.000', id]);
+    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?', [
+      '2020-01-01 00:00:00.000',
+      id,
+    ]);
     expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(true);
     expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
     expect((await repository.reservePart(id, 0, '10', 'upload-staging/retry', caps)).kind).toBe('limit');
-    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
-      .toEqual([{ staged_bytes: 10 }]);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
+      { staged_bytes: 10 },
+    ]);
   });
 
   it('pages tombstone cleanup beyond 500 keys', async () => {
     const created = await repository.createSession(input(), caps);
     if (created.kind !== 'created') throw new Error('expected creation');
-    const rows = Array.from({ length: 501 }, (_, index) =>
-      `('upload-staging/${String(index).padStart(4, '0')}', '${created.session.id}', 0,
-        '${NAMESPACE}', 1, '2026-09-27 00:00:00')`);
+    const rows = Array.from(
+      { length: 501 },
+      (_, index) =>
+        `('upload-staging/${String(index).padStart(4, '0')}', '${created.session.id}', 0,
+        '${NAMESPACE}', 1, '2026-09-27 00:00:00')`,
+    );
     await db.query(`INSERT INTO vfs_upload_staging_cleanup
       (staging_key, session_id, part_index, namespace_id, size_bytes, created_at)
       VALUES ${rows.join(',')}`);
@@ -273,7 +315,9 @@ describe('upload session repository (SQLite)', () => {
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { staged_bytes: 10 },
     ]);
-    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/uncertain', 'CLEANUP')).toBe(true);
+    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/uncertain', 'CLEANUP')).toBe(
+      true,
+    );
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { staged_bytes: 0 },
     ]);
@@ -362,8 +406,7 @@ describe('upload session repository (SQLite)', () => {
     );
     expect(await repository.pruneTerminalSessions(new Date('2026-10-10T00:00:00Z'))).toBe(0);
     await db.getRepository(VfsUploadSessionEntity).update({ id }, { sizeBytes: '0', partCount: 0 });
-    expect((await repository.claimFinalize(NAMESPACE, id, 60_000)).kind)
-      .toBe('claimed');
+    expect((await repository.claimFinalize(NAMESPACE, id, 60_000)).kind).toBe('claimed');
     expect(await db.query("SELECT active_sessions FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { active_sessions: 1 },
     ]);

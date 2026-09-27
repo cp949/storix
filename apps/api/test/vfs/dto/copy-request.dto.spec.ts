@@ -19,9 +19,11 @@ describe('parseCopyRequest', () => {
   });
 
   it('destinationParents가 boolean이 아니면 false로 취급한다', () => {
-    expect(
-      parseCopyRequest({ source: '/a', destination: '/b', destinationParents: 'true' }),
-    ).toEqual({ source: '/a', destination: '/b', destinationParents: false });
+    expect(parseCopyRequest({ source: '/a', destination: '/b', destinationParents: 'true' })).toEqual({
+      source: '/a',
+      destination: '/b',
+      destinationParents: false,
+    });
   });
 
   it('source가 없으면 VfsInvalidPathError를 던진다', () => {

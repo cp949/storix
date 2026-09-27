@@ -91,7 +91,7 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
 
 - **breaking**: base 단독 `docker compose up`이 더 이상 `postgres`/`minio`를 띄우지
   않는다. 기존 로컬 개발 명령은 `-f docker-compose.yml -f docker-compose.versitygw.yml
-  -f docker-compose.postgres.yml`(또는 minio)로 바뀐다. `SHARED_DB_HOST`/`AWS_S3_*`
+-f docker-compose.postgres.yml`(또는 minio)로 바뀐다. `SHARED_DB_HOST`/`AWS_S3_*`
   변수는 사라진다.
 - ADR-0003 Consequences 1번("스택마다 전용 postgres를 새로 만드는 구조")은 이
   배치로 해소된다. 멀티 인스턴스 절차는

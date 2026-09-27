@@ -53,14 +53,16 @@ describe('NamespaceService', () => {
       find: jest.fn(),
       manager: {
         connection: { options: { type: 'better-sqlite3' } },
-        query: jest.fn(async (_sql: string, ids: string[]) => ids.map((id) => ({
-          id,
-          maxTotalLogicalBytes: null,
-          liveFileByteCount: '0',
-          retainedSnapshotByteCount: '0',
-          retainedTrashByteCount: '0',
-          retainedTrashNodeCount: '0',
-        }))),
+        query: jest.fn(async (_sql: string, ids: string[]) =>
+          ids.map((id) => ({
+            id,
+            maxTotalLogicalBytes: null,
+            liveFileByteCount: '0',
+            retainedSnapshotByteCount: '0',
+            retainedTrashByteCount: '0',
+            retainedTrashNodeCount: '0',
+          })),
+        ),
       },
     };
     idempotencyRepo = { findOneBy: jest.fn(), insert: jest.fn() };
@@ -85,7 +87,10 @@ describe('NamespaceService', () => {
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
       expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
-        'acme', 'NONE', 'PRIVATE', null,
+        'acme',
+        'NONE',
+        'PRIVATE',
+        null,
         expect.objectContaining({ key: 'key-1', responseStatus: 201, requestHash: expect.any(String) }),
       );
       expect(idempotencyRepo.insert).not.toHaveBeenCalled();
@@ -157,12 +162,20 @@ describe('NamespaceService', () => {
         makeConfig(),
       );
       idempotencyRepo.findOneBy.mockResolvedValue(null);
-      provisioningRepo.createWithRoot.mockResolvedValue(makeNamespaceEntity({ encryptionPolicy: 'ENCRYPTED' }));
+      provisioningRepo.createWithRoot.mockResolvedValue(
+        makeNamespaceEntity({ encryptionPolicy: 'ENCRYPTED' }),
+      );
 
       const result = await service.create('key-1', 'acme', 'ENCRYPTED');
 
       expect(result.status).toBe(201);
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('acme', 'ENCRYPTED', 'PRIVATE', null, expect.any(Object));
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        'acme',
+        'ENCRYPTED',
+        'PRIVATE',
+        null,
+        expect.any(Object),
+      );
     });
 
     it('accessPolicy를 provisioningRepo에 그대로 전달한다', async () => {
@@ -170,7 +183,13 @@ describe('NamespaceService', () => {
 
       await service.create('key-public', 'public-ns', 'NONE', 'PUBLIC');
 
-      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith('public-ns', 'NONE', 'PUBLIC', null, expect.any(Object));
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        'public-ns',
+        'NONE',
+        'PUBLIC',
+        null,
+        expect.any(Object),
+      );
     });
 
     it('accessPolicy만 다른 재요청은 같은 Idempotency-Key로 재사용할 수 없다', async () => {
@@ -182,7 +201,11 @@ describe('NamespaceService', () => {
 
       await service.create('key-reuse', 'acme', 'NONE', 'PRIVATE');
 
-      const persistedHash = canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' });
+      const persistedHash = canonicalJsonHash({
+        name: 'acme',
+        encryptionPolicy: 'NONE',
+        accessPolicy: 'PRIVATE',
+      });
 
       idempotencyRepo.findOneBy.mockResolvedValueOnce({
         key: 'key-reuse',
@@ -229,7 +252,9 @@ describe('NamespaceService', () => {
     });
 
     it('존재하는 namespace를 응답 DTO로 반환한다', async () => {
-      namespaceRepo.findOneBy.mockResolvedValue(makeNamespaceEntity({ id: '11111111-1111-1111-1111-111111111111' }));
+      namespaceRepo.findOneBy.mockResolvedValue(
+        makeNamespaceEntity({ id: '11111111-1111-1111-1111-111111111111' }),
+      );
 
       const result = await service.findById('11111111-1111-1111-1111-111111111111');
 
@@ -274,7 +299,10 @@ describe('NamespaceService', () => {
 
   describe('findAll', () => {
     it('activate namespace 목록을 name/id 오름차순으로 응답 DTO 배열로 반환한다', async () => {
-      namespaceRepo.find.mockResolvedValue([makeNamespaceEntity(), makeNamespaceEntity({ id: 'ns-2', name: 'beta' })]);
+      namespaceRepo.find.mockResolvedValue([
+        makeNamespaceEntity(),
+        makeNamespaceEntity({ id: 'ns-2', name: 'beta' }),
+      ]);
 
       const result = await service.findAll();
 

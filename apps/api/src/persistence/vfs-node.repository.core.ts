@@ -10,7 +10,11 @@ import {
   VfsRevisionExhaustedError,
   VfsQuotaExceededError,
 } from '../vfs/vfs.errors.js';
-import { resolveGlobalTotalLogicalByteLimit, resolveNamespaceQuota, resolveTotalLogicalBytes } from '../vfs/namespace-quota.js';
+import {
+  resolveGlobalTotalLogicalByteLimit,
+  resolveNamespaceQuota,
+  resolveTotalLogicalBytes,
+} from '../vfs/namespace-quota.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
@@ -20,7 +24,12 @@ import type { VfsNodeType } from './entities/vfs-node.entity.js';
 import type { MutationTx, AffectedRevision } from './vfs-node.repository.types.js';
 import { joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
-import { appendChangeFeedEvents, readChangeFeedEvents, readChangeFeedState, trackChangeFeedBefore } from './vfs-change-feed-journal.js';
+import {
+  appendChangeFeedEvents,
+  readChangeFeedEvents,
+  readChangeFeedState,
+  trackChangeFeedBefore,
+} from './vfs-change-feed-journal.js';
 import type { ChangeFeedState } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryCore {
@@ -67,7 +76,9 @@ export class VfsNodeRepositoryCore {
       return await this.dataSource.transaction(async (manager) => {
         const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
         if (namespaceRoot.id !== rootId) {
-          const startingNode = await manager.getRepository(VfsNodeEntity).findOneBy({ id: rootId, namespaceId });
+          const startingNode = await manager
+            .getRepository(VfsNodeEntity)
+            .findOneBy({ id: rootId, namespaceId });
           if (!startingNode || startingNode.type !== 'DIRECTORY') throw new VfsNodeNotFoundError('/');
         }
         const feedState = await readChangeFeedState(manager, namespaceId, this.isSqlite);
@@ -98,7 +109,8 @@ export class VfsNodeRepositoryCore {
             throw error;
           }
         }
-        if (before) await appendChangeFeedEvents(manager, namespaceId, before, [...tx.changed.keys()], this.isSqlite);
+        if (before)
+          await appendChangeFeedEvents(manager, namespaceId, before, [...tx.changed.keys()], this.isSqlite);
         return { value, affectedRevisions };
       });
     } catch (error) {
@@ -118,8 +130,13 @@ export class VfsNodeRepositoryCore {
         const states = manager.getRepository(VfsChangeFeedStateEntity);
         const state = await readChangeFeedState(manager, namespaceId, this.isSqlite);
         if (!state) {
-          await states.insert({ namespaceId, lastSequence: '0', prunedThrough: '0', hasCheckpoint: true,
-            signingSecret: randomBytes(32).toString('hex') });
+          await states.insert({
+            namespaceId,
+            lastSequence: '0',
+            prunedThrough: '0',
+            hasCheckpoint: true,
+            signingSecret: randomBytes(32).toString('hex'),
+          });
         } else if (!state.hasCheckpoint) {
           await states.update({ namespaceId }, { hasCheckpoint: true });
         }
@@ -154,8 +171,9 @@ export class VfsNodeRepositoryCore {
       return { state, events };
     };
     try {
-      return this.isSqlite ? await this.dataSource.transaction(read) :
-        await this.dataSource.transaction('REPEATABLE READ', read);
+      return this.isSqlite
+        ? await this.dataSource.transaction(read)
+        : await this.dataSource.transaction('REPEATABLE READ', read);
     } catch (error) {
       throw classifyPersistenceFailure(error) ?? error;
     }
@@ -163,7 +181,8 @@ export class VfsNodeRepositoryCore {
 
   private async lockNamespaceRoot(manager: EntityManager, namespaceId: string): Promise<VfsNodeEntity> {
     const root = await this.applyRowLockIfSupported(
-      manager.createQueryBuilder(VfsNodeEntity, 'n')
+      manager
+        .createQueryBuilder(VfsNodeEntity, 'n')
         .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
     ).getOne();
     if (!root || root.type !== 'DIRECTORY') throw new VfsNodeNotFoundError('/');
@@ -179,15 +198,20 @@ export class VfsNodeRepositoryCore {
     if (tx.logicalByteDelta <= 0n && tx.liveFileByteDelta === 0n) return;
 
     const namespaces = tx.manager.getRepository(NamespaceEntity);
-    const namespace = (await withExactNamespaceBigints(tx.manager,
-      [await namespaces.findOneByOrFail({ id: tx.namespaceId })]))[0];
+    const namespace = (
+      await withExactNamespaceBigints(tx.manager, [await namespaces.findOneByOrFail({ id: tx.namespaceId })])
+    )[0];
     const liveBytes = BigInt(namespace.liveFileByteCount) + tx.liveFileByteDelta;
     const retainedBytes = BigInt(namespace.retainedSnapshotByteCount);
     const retainedTrashBytes = BigInt(namespace.retainedTrashByteCount);
     if (liveBytes < 0n || liveBytes > 9223372036854775807n) {
       throw new Error('namespace live file byte counter out of int64 range');
     }
-    const totalBytes = resolveTotalLogicalBytes(liveBytes.toString(), retainedBytes.toString(), retainedTrashBytes.toString());
+    const totalBytes = resolveTotalLogicalBytes(
+      liveBytes.toString(),
+      retainedBytes.toString(),
+      retainedTrashBytes.toString(),
+    );
 
     if (tx.logicalByteDelta > 0n) {
       const limit = resolveNamespaceQuota(

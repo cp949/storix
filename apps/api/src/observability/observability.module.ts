@@ -25,7 +25,8 @@ export function resolveErrorReporter(dsn: string | undefined, client: SentryClie
     { provide: METRICS_REGISTRY, useExisting: PrometheusMetricsRegistry },
     {
       provide: ERROR_REPORTER,
-      useFactory: (config: ConfigService) => resolveErrorReporter(parseOptionalString(config.get<string>('STORIX_SENTRY_DSN')), Sentry),
+      useFactory: (config: ConfigService) =>
+        resolveErrorReporter(parseOptionalString(config.get<string>('STORIX_SENTRY_DSN')), Sentry),
       inject: [ConfigService],
     },
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },

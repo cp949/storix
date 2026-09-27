@@ -62,7 +62,7 @@ compose 기반 배포·개발(`docker compose up`)을 SQLite로는 할 수 없�
 ## Consequences
 
 - `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up
-  -d`로 SQLite 기반 all-in-one 스택을 기동할 수 있다.
+-d`로 SQLite 기반 all-in-one 스택을 기동할 수 있다.
 - `README.sqlite.md`의 "compose 스택이 SQLite를 지원하지 않는다"는
   제약 문장은 제거되고, override 사용법으로 교체됐다.
 - 로컬 검증은 `docker compose ... config`로 병합 결과만 확인했다

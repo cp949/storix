@@ -29,7 +29,9 @@ describe('NamespaceController', () => {
     capabilityService.listEnabled.mockReturnValue(['content-search']);
     const response = { setHeader: jest.fn() } as unknown as Response;
 
-    await expect(controller.findCapabilities('namespace-id', response)).resolves.toEqual({ capabilities: ['content-search'] });
+    await expect(controller.findCapabilities('namespace-id', response)).resolves.toEqual({
+      capabilities: ['content-search'],
+    });
 
     expect(namespaceService.findById).toHaveBeenCalledWith('namespace-id');
     expect(capabilityService.listEnabled).toHaveBeenCalledWith('namespace-id');
@@ -37,10 +39,14 @@ describe('NamespaceController', () => {
   });
 
   it.each(['DELETING', 'DELETED'] as const)('%s namespace의 capability 조회를 숨긴다', async (status) => {
-    namespaceService.findById.mockResolvedValue({ status } as Awaited<ReturnType<NamespaceService['findById']>>);
+    namespaceService.findById.mockResolvedValue({ status } as Awaited<
+      ReturnType<NamespaceService['findById']>
+    >);
     const response = { setHeader: jest.fn() } as unknown as Response;
 
-    await expect(controller.findCapabilities('namespace-id', response)).rejects.toBeInstanceOf(NamespaceNotFoundError);
+    await expect(controller.findCapabilities('namespace-id', response)).rejects.toBeInstanceOf(
+      NamespaceNotFoundError,
+    );
     expect(capabilityService.listEnabled).not.toHaveBeenCalled();
   });
 });

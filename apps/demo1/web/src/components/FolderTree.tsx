@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { listDocuments } from '../api/client';
-import type { DemoUser, FileEntry } from '../api/types';
+import { useEffect, useState } from "react";
+import { listDocuments } from "../api/client";
+import type { DemoUser, FileEntry } from "../api/types";
 
 export interface FolderTreeProps {
   readonly user: DemoUser;
@@ -9,7 +9,12 @@ export interface FolderTreeProps {
   readonly refreshKey: number;
 }
 
-export function FolderTree({ user, selectedPath, onNavigate, refreshKey }: FolderTreeProps) {
+export function FolderTree({
+  user,
+  selectedPath,
+  onNavigate,
+  refreshKey,
+}: FolderTreeProps) {
   return (
     <nav aria-label="폴더 트리">
       <TreeNode
@@ -37,7 +42,16 @@ interface TreeNodeProps {
   readonly defaultExpanded?: boolean;
 }
 
-function TreeNode({ user, path, label, depth, selectedPath, onNavigate, refreshKey, defaultExpanded }: TreeNodeProps) {
+function TreeNode({
+  user,
+  path,
+  label,
+  depth,
+  selectedPath,
+  onNavigate,
+  refreshKey,
+  defaultExpanded,
+}: TreeNodeProps) {
   const [expanded, setExpanded] = useState(Boolean(defaultExpanded));
   const [children, setChildren] = useState<FileEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,7 +67,7 @@ function TreeNode({ user, path, label, depth, selectedPath, onNavigate, refreshK
         if (cancelled) {
           return;
         }
-        setChildren(result.items.filter((item) => item.type === 'DIRECTORY'));
+        setChildren(result.items.filter((item) => item.type === "DIRECTORY"));
       })
       .finally(() => {
         if (!cancelled) {
@@ -68,10 +82,18 @@ function TreeNode({ user, path, label, depth, selectedPath, onNavigate, refreshK
   return (
     <div>
       <div style={{ paddingLeft: depth * 12 }}>
-        <button type="button" aria-label={`${label} ${expanded ? '접기' : '펼치기'}`} onClick={() => setExpanded((value) => !value)}>
-          {expanded ? '▾' : '▸'}
+        <button
+          type="button"
+          aria-label={`${label} ${expanded ? "접기" : "펼치기"}`}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "▾" : "▸"}
         </button>
-        <button type="button" aria-current={path === selectedPath ? 'true' : undefined} onClick={() => onNavigate(path)}>
+        <button
+          type="button"
+          aria-current={path === selectedPath ? "true" : undefined}
+          onClick={() => onNavigate(path)}
+        >
           📁 {label}
         </button>
       </div>

@@ -1,30 +1,45 @@
-import type { FormEvent } from 'react';
-import { useCallback, useEffect, useState } from 'react';
-import { copyEntry, createDirectory, listDocuments, moveEntry, removeEntry, searchDocuments, uploadDocument, createDownload, publishDocument, unpublishDocument } from '../api/client';
-import type { DemoUser, FileEntry, PublicLink } from '../api/types';
-import { useErrorReporter } from '../error/ErrorContext';
-import { joinPath } from '../utils/path';
-import { EntryList } from './EntryList';
-import { FolderTree } from './FolderTree';
-import { ResumableUpload } from './ResumableUpload';
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  copyEntry,
+  createDirectory,
+  listDocuments,
+  moveEntry,
+  removeEntry,
+  searchDocuments,
+  uploadDocument,
+  createDownload,
+  publishDocument,
+  unpublishDocument,
+} from "../api/client";
+import type { DemoUser, FileEntry, PublicLink } from "../api/types";
+import { useErrorReporter } from "../error/ErrorContext";
+import { joinPath } from "../utils/path";
+import { EntryList } from "./EntryList";
+import { FolderTree } from "./FolderTree";
+import { ResumableUpload } from "./ResumableUpload";
 
 export interface DocumentArchiveProps {
   readonly user: DemoUser;
 }
 
 function splitBreadcrumb(path: string): string[] {
-  return path.split('/').filter((segment) => segment.length > 0);
+  return path.split("/").filter((segment) => segment.length > 0);
 }
 
 export function DocumentArchive({ user }: DocumentArchiveProps) {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [currentPath, setCurrentPath] = useState("/");
   const [items, setItems] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchName, setSearchName] = useState('');
+  const [searchName, setSearchName] = useState("");
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [newFolderName, setNewFolderName] = useState('');
-  const [publishedLinks, setPublishedLinks] = useState<Record<string, PublicLink>>({});
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "uploading" | "success" | "error"
+  >("idle");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [publishedLinks, setPublishedLinks] = useState<
+    Record<string, PublicLink>
+  >({});
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const { reportError, clearError } = useErrorReporter();
@@ -46,7 +61,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   );
 
   useEffect(() => {
-    setCurrentPath('/');
+    setCurrentPath("/");
   }, [user]);
 
   useEffect(() => {
@@ -58,7 +73,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   async function handleSearch() {
     setLoading(true);
     try {
-      const pageResult = await searchDocuments(user, '/', searchName);
+      const pageResult = await searchDocuments(user, "/", searchName);
       setSearchResults(pageResult.items);
       setSelectedPath(null);
       clearError();
@@ -70,14 +85,14 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   }
 
   async function handleUpload(file: File) {
-    setUploadStatus('uploading');
+    setUploadStatus("uploading");
     try {
       await uploadDocument(user, joinPath(currentPath, file.name), file);
-      setUploadStatus('success');
+      setUploadStatus("success");
       clearError();
       await loadList(currentPath);
     } catch (cause) {
-      setUploadStatus('error');
+      setUploadStatus("error");
       reportError(cause);
     }
   }
@@ -90,7 +105,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
     }
     try {
       await createDirectory(user, joinPath(currentPath, name));
-      setNewFolderName('');
+      setNewFolderName("");
       clearError();
       setTreeRefreshKey((key) => key + 1);
       await loadList(currentPath);
@@ -100,7 +115,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   }
 
   async function handleMove(item: FileEntry) {
-    const destination = window.prompt('이동할 대상 경로', item.path);
+    const destination = window.prompt("이동할 대상 경로", item.path);
     if (!destination) {
       return;
     }
@@ -116,7 +131,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   }
 
   async function handleCopy(item: FileEntry) {
-    const destination = window.prompt('복사할 대상 경로', item.path);
+    const destination = window.prompt("복사할 대상 경로", item.path);
     if (!destination) {
       return;
     }
@@ -136,7 +151,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       return;
     }
     try {
-      await removeEntry(user, item.path, item.type === 'DIRECTORY');
+      await removeEntry(user, item.path, item.type === "DIRECTORY");
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
@@ -149,7 +164,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   async function handleDownload(item: FileEntry) {
     try {
       const download = await createDownload(user, item.path);
-      window.open(download.url, '_blank');
+      window.open(download.url, "_blank");
       clearError();
     } catch (cause) {
       reportError(cause);
@@ -159,7 +174,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   async function handlePublish(item: FileEntry) {
     if (
       !window.confirm(
-        '공개 발행은 되돌릴 수 없습니다(발행 취소해도 이미 공유된 링크는 회수되지 않습니다). 계속할까요?',
+        "공개 발행은 되돌릴 수 없습니다(발행 취소해도 이미 공유된 링크는 회수되지 않습니다). 계속할까요?",
       )
     ) {
       return;
@@ -197,19 +212,24 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   return (
     <section aria-label="문서 아카이브" className="archive-layout">
       <aside className="archive-sidebar">
-        <FolderTree user={user} selectedPath={currentPath} onNavigate={setCurrentPath} refreshKey={treeRefreshKey} />
+        <FolderTree
+          user={user}
+          selectedPath={currentPath}
+          onNavigate={setCurrentPath}
+          refreshKey={treeRefreshKey}
+        />
       </aside>
 
       <div className="archive-main">
         <nav aria-label="현재 위치">
-          <button type="button" onClick={() => setCurrentPath('/')}>
+          <button type="button" onClick={() => setCurrentPath("/")}>
             root
           </button>
           {breadcrumbSegments.map((segment, index) => {
-            const path = `/${breadcrumbSegments.slice(0, index + 1).join('/')}`;
+            const path = `/${breadcrumbSegments.slice(0, index + 1).join("/")}`;
             return (
               <span key={path}>
-                {' / '}
+                {" / "}
                 <button type="button" onClick={() => setCurrentPath(path)}>
                   {segment}
                 </button>
@@ -227,7 +247,10 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
           >
             <label>
               검색어
-              <input value={searchName} onChange={(event) => setSearchName(event.target.value)} />
+              <input
+                value={searchName}
+                onChange={(event) => setSearchName(event.target.value)}
+              />
             </label>
             <button type="submit">검색</button>
             {searchResults !== null && (
@@ -235,7 +258,9 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
                 목록으로 돌아가기
               </button>
             )}
-            <p className="archive-hint">검색은 항상 전체 폴더를 대상으로 합니다.</p>
+            <p className="archive-hint">
+              검색은 항상 전체 폴더를 대상으로 합니다.
+            </p>
           </form>
 
           <div
@@ -258,14 +283,14 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
                   if (file) {
                     void handleUpload(file);
                   }
-                  event.target.value = '';
+                  event.target.value = "";
                 }}
               />
             </label>
             <p role="status">
-              {uploadStatus === 'uploading' && '업로드중...'}
-              {uploadStatus === 'success' && '업로드 완료'}
-              {uploadStatus === 'error' && '업로드 실패'}
+              {uploadStatus === "uploading" && "업로드중..."}
+              {uploadStatus === "success" && "업로드 완료"}
+              {uploadStatus === "error" && "업로드 실패"}
             </p>
           </div>
 
@@ -283,7 +308,10 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
           <form onSubmit={handleCreateDirectory}>
             <label>
               새 폴더 이름
-              <input value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} />
+              <input
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+              />
             </label>
             <button type="submit">폴더 만들기</button>
           </form>

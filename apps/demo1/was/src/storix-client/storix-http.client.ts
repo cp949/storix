@@ -43,7 +43,12 @@ export class StorixHttpClient {
     let response: Response;
     try {
       // Node fetch(undici)는 스트리밍 요청 본문에 duplex 옵션을 요구한다.
-      response = await fetch(url, { method: options.method, headers, body, duplex: options.duplex } as RequestInit);
+      response = await fetch(url, {
+        method: options.method,
+        headers,
+        body,
+        duplex: options.duplex,
+      } as RequestInit);
     } catch (cause) {
       throw new StorixUnreachableError(cause);
     }

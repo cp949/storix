@@ -93,7 +93,9 @@ describe('Backup/Restore SQLite 통합', () => {
 
   it('VACUUM INTO로 백업하고 파일 복사로 복구하면 namespace와 MinIO object가 그대로 복원된다', async () => {
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
-    await namespaceRepo.save(namespaceRepo.create({ name: 'sqlite-backup-fixture-ns', encryptionPolicy: 'NONE' }));
+    await namespaceRepo.save(
+      namespaceRepo.create({ name: 'sqlite-backup-fixture-ns', encryptionPolicy: 'NONE' }),
+    );
 
     const storageKey = `blobs/ab/${randomUUID()}`;
     const content = Buffer.from('sqlite-backup-restore-test-content');
@@ -152,6 +154,8 @@ describe('Backup/Restore SQLite 통합', () => {
     expect(Buffer.concat(chunks).equals(content)).toBe(true);
 
     const restoredNamespaceRepo = dataSource.getRepository(NamespaceEntity);
-    await expect(restoredNamespaceRepo.findOneBy({ name: 'sqlite-backup-fixture-ns' })).resolves.not.toBeNull();
+    await expect(
+      restoredNamespaceRepo.findOneBy({ name: 'sqlite-backup-fixture-ns' }),
+    ).resolves.not.toBeNull();
   });
 });

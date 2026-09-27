@@ -1,9 +1,9 @@
 packages:
-  - 'apps/*'
-  - 'apps/*/*'
-  - 'packages/*'
+  - "apps/*"
+  - "apps/*/*"
+  - "packages/*"
 allowBuilds:
-  '@parcel/watcher': true
+  "@parcel/watcher": true
   better-sqlite3: true
   cpu-features: true
   protobufjs: true

@@ -152,13 +152,13 @@ namespace UUID가 이미 존재하는지 확인하므로 다음 순서로 준비
 요구하며, WAS가 사용자 폴더 안의 경로와 세션 소유 범위를 확인한 뒤 Storix 공개
 API로 전달한다.
 
-| 작업 | WAS 경로 | 주요 요청·응답 |
-| --- | --- | --- |
-| 세션 생성 | `POST /demo-api/documents/upload-sessions` | `Idempotency-Key` UUID와 JSON `path`, `sizeBytes`(10진 문자열), `mimeType`, `ifAbsent: true` 또는 `ifRevision`, 선택적 `sha256`; `201`에 `sessionId`, `partSizeBytes`, `partCount` |
-| 상태 조회 | `GET /demo-api/documents/upload-sessions/{sessionId}` | `200`에 저장된 `parts`의 index·크기와 사용자 기준 `path` |
-| 조각 저장·동일 재전송 | `PUT /demo-api/documents/upload-sessions/{sessionId}/parts/{index}` | `Content-Type: application/octet-stream`, 정확한 `Content-Length`, 원시 바이트; `200`에 `replayed`와 조각 SHA-256 |
-| 완료 | `POST /demo-api/documents/upload-sessions/{sessionId}/complete` | 본문 없음; 새 파일 `201`, 기존 파일 교체 `200` |
-| 취소 | `DELETE /demo-api/documents/upload-sessions/{sessionId}` | 열린 세션 `200` |
+| 작업                  | WAS 경로                                                            | 주요 요청·응답                                                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 세션 생성             | `POST /demo-api/documents/upload-sessions`                          | `Idempotency-Key` UUID와 JSON `path`, `sizeBytes`(10진 문자열), `mimeType`, `ifAbsent: true` 또는 `ifRevision`, 선택적 `sha256`; `201`에 `sessionId`, `partSizeBytes`, `partCount` |
+| 상태 조회             | `GET /demo-api/documents/upload-sessions/{sessionId}`               | `200`에 저장된 `parts`의 index·크기와 사용자 기준 `path`                                                                                                                           |
+| 조각 저장·동일 재전송 | `PUT /demo-api/documents/upload-sessions/{sessionId}/parts/{index}` | `Content-Type: application/octet-stream`, 정확한 `Content-Length`, 원시 바이트; `200`에 `replayed`와 조각 SHA-256                                                                  |
+| 완료                  | `POST /demo-api/documents/upload-sessions/{sessionId}/complete`     | 본문 없음; 새 파일 `201`, 기존 파일 교체 `200`                                                                                                                                     |
+| 취소                  | `DELETE /demo-api/documents/upload-sessions/{sessionId}`            | 열린 세션 `200`                                                                                                                                                                    |
 
 생성 전에 대상 부모 디렉터리가 있어야 한다. 웹에서는 현재 폴더에 파일을 만들므로
 폴더를 먼저 생성한다. 저장된 조각은 세션 상태 조회의 `parts`에서 확인한다.

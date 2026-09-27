@@ -90,7 +90,9 @@ describe('BackupJob 통합', () => {
   it('Postgres 스냅샷과 MinIO object를 로컬 디렉터리에 남기고, ENCRYPTED namespace 개수를 센다', async () => {
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     await namespaceRepo.save(namespaceRepo.create({ name: 'backup-test-plain', encryptionPolicy: 'NONE' }));
-    await namespaceRepo.save(namespaceRepo.create({ name: 'backup-test-enc', encryptionPolicy: 'ENCRYPTED' }));
+    await namespaceRepo.save(
+      namespaceRepo.create({ name: 'backup-test-enc', encryptionPolicy: 'ENCRYPTED' }),
+    );
 
     const storageKey = `blobs/ab/${randomUUID()}`;
     const content = Buffer.from('backup-job-test-content');

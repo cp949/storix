@@ -390,7 +390,10 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
          ) SELECT id, parent_id, name FROM subtree`,
       ph.params,
     );
-    await trackChangeFeedBefore(tx, descendants.map((descendant) => descendant.id));
+    await trackChangeFeedBefore(
+      tx,
+      descendants.map((descendant) => descendant.id),
+    );
     assertSubtreeDestinationPaths(sourceNode.id, finalSegments, descendants);
 
     sourceNode.parentId = finalParentId;

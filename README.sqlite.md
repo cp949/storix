@@ -49,7 +49,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
 
 - **백업**: `docker-compose.sqlite.yml`을 겹쳐 쓴 상태에서
   `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml
-  --profile backup run --rm backup`, 또는 호스트에서 `.env`를 로드한
+--profile backup run --rm backup`, 또는 호스트에서 `.env`를 로드한
   상태로 `pnpm --filter @storix/api run backup:run:prod`(빌드 산출물
   실행, 개발 중에는 `backup:run`)를 직접 실행해도 된다. `VACUUM INTO`로
   실행 중에도 일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에
@@ -60,7 +60,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
   snapshot 마이그레이션의 `down()`만 실행하면 snapshot의 Blob 참조와
   manifest를 함께 보존할 수 없다.
 - **복구**: 마찬가지로 `docker compose -f docker-compose.yml
-  -f docker-compose.sqlite.yml --profile restore run --rm restore` 또는
+-f docker-compose.sqlite.yml --profile restore run --rm restore` 또는
   호스트에서 `restore:run:prod`(개발 중 `restore:run`)를 직접 실행한다.
   백업 파일을 `STORIX_DB_SQLITE_PATH`로 복사한다. API 프로세스가 그
   파일을 열고 있지 않은 상태(별도 프로세스로 도는 restore job이

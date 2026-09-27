@@ -214,9 +214,12 @@ export class VfsMutationReceiptRepository {
         updatedAt: () => databaseNowExpression(sqlite),
       })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
-      .andWhere(`state = 'RESERVED' AND generation = :generation AND lease_expires_at > ${databaseNowExpression(sqlite)}`, {
-        generation,
-      })
+      .andWhere(
+        `state = 'RESERVED' AND generation = :generation AND lease_expires_at > ${databaseNowExpression(sqlite)}`,
+        {
+          generation,
+        },
+      )
       .setParameter('receiptSeconds', RECEIPT_DAYS * 86400)
       .execute();
     if (result.affected !== 1) throw new Error('VFS mutation claim lost');

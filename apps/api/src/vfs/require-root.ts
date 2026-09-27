@@ -1,5 +1,9 @@
 import { isUuid } from '../common/uuid.js';
-import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
+import {
+  NamespaceResourceLimits,
+  VfsNodeRecord,
+  VfsNodeRepository,
+} from '../persistence/vfs-node.repository.js';
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 export async function requireRoot(repo: VfsNodeRepository, namespaceId: string): Promise<VfsNodeRecord> {

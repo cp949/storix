@@ -95,7 +95,9 @@ export class UploadSessionFinalizeService {
       if (session.sha256 && uploaded.sha256 !== session.sha256) {
         const mismatch = new VfsChecksumMismatchError();
         const body = { code: mismatch.code, message: mismatch.message, requestId };
-        if (!(await this.sessions.failFinalize(namespaceId, sessionId, token, JSON.stringify(body), requestId)))
+        if (
+          !(await this.sessions.failFinalize(namespaceId, sessionId, token, JSON.stringify(body), requestId))
+        )
           throw new Error('Upload finalize claim lost');
         // No node mutation has run. If deletion fails, ordinary orphan GC will retry.
         await this.storage.delete(storageKey).catch(() => undefined);
@@ -105,7 +107,10 @@ export class UploadSessionFinalizeService {
           try {
             await this.storage.delete(part.stagingKey);
             await this.sessions.markStagingObjectDeleted(
-              sessionId, part.partIndex, part.stagingKey, 'STORED',
+              sessionId,
+              part.partIndex,
+              part.stagingKey,
+              'STORED',
             );
           } catch {
             // The FAILED result is already committed; retry cleanup in GC.

@@ -64,13 +64,13 @@ cp .env.example .env
 
 이 조합에서 실제로 읽히는 값:
 
-| 변수 | 값 | 비고 |
-|---|---|---|
-| `STORIX_API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
-| `STORIX_STORAGE_REGION` | 버킷의 리전(예: `ap-northeast-2`) | 필수. 비우면 리전 자동 조회로 요청마다 추가 왕복 |
-| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY` | 위에서 발급한 IAM access key | 정적 키만 지원(IAM 역할·STS 세션 토큰 미지원) |
-| `STORIX_STORAGE_BUCKET` | 미리 만든 버킷 이름 | |
-| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
+| 변수                                                                                                 | 값                                | 비고                                                                          |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------- |
+| `STORIX_API_KEY`                                                                                     | `openssl rand -hex 32` 출력       | 필수. 비어 있으면 compose가 즉시 실패                                         |
+| `STORIX_STORAGE_REGION`                                                                              | 버킷의 리전(예: `ap-northeast-2`) | 필수. 비우면 리전 자동 조회로 요청마다 추가 왕복                              |
+| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY`                                            | 위에서 발급한 IAM access key      | 정적 키만 지원(IAM 역할·STS 세션 토큰 미지원)                                 |
+| `STORIX_STORAGE_BUCKET`                                                                              | 미리 만든 버킷 이름               |                                                                               |
+| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보           | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
 
 override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
 `STORIX_STORAGE_USE_SSL` / `STORIX_STORAGE_PATH_STYLE`(`s3.amazonaws.com` / `443` / `true` /

@@ -39,6 +39,8 @@ describe('resolveExternalPath', () => {
   });
 
   it('root 밖 internal path가 들어오면 예외를 던진다(방어적 하드닝 — 현재 호출부에서는 도달 불가능해야 정상)', () => {
-    expect(() => resolveExternalPath('alice', '/documents/bob/secret.txt')).toThrow(ExternalPathResolutionError);
+    expect(() => resolveExternalPath('alice', '/documents/bob/secret.txt')).toThrow(
+      ExternalPathResolutionError,
+    );
   });
 });

@@ -27,14 +27,23 @@ export function resolveNamespaceQuota(namespaceLimit: string | null, globalBytes
   return namespaceBytes < globalBytes ? namespaceBytes : globalBytes;
 }
 
-export function resolveTotalLogicalBytes(liveFileBytes: string, retainedSnapshotBytes: string, retainedTrashBytes: string): bigint {
-  const total = parseNonNegativeBytes(liveFileBytes) + parseNonNegativeBytes(retainedSnapshotBytes)
-    + parseNonNegativeBytes(retainedTrashBytes);
+export function resolveTotalLogicalBytes(
+  liveFileBytes: string,
+  retainedSnapshotBytes: string,
+  retainedTrashBytes: string,
+): bigint {
+  const total =
+    parseNonNegativeBytes(liveFileBytes) +
+    parseNonNegativeBytes(retainedSnapshotBytes) +
+    parseNonNegativeBytes(retainedTrashBytes);
   if (total > MAX_SQLITE_AND_POSTGRES_BIGINT) throw new Error('Invalid total logical byte count');
   return total;
 }
 
-export function assertNamespaceQuotaWithinGlobalLimit(namespaceLimit: string | null, globalBytes: bigint): void {
+export function assertNamespaceQuotaWithinGlobalLimit(
+  namespaceLimit: string | null,
+  globalBytes: bigint,
+): void {
   if (namespaceLimit === null) return;
   if (parsePositiveLimit(namespaceLimit) > globalBytes) {
     throw new Error('Namespace total logical byte limit exceeds the global limit');

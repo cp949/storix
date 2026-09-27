@@ -48,12 +48,17 @@ export interface SqliteTableRebuildSpec {
 }
 
 /** withSqliteTableRebuild 안에서 호출해야 한다(트랜잭션/PRAGMA는 스스로 열지 않는다). */
-export async function rebuildSqliteTable(queryRunner: QueryRunner, spec: SqliteTableRebuildSpec): Promise<void> {
+export async function rebuildSqliteTable(
+  queryRunner: QueryRunner,
+  spec: SqliteTableRebuildSpec,
+): Promise<void> {
   const tempTable = `${spec.table}_${spec.tempSuffix}`;
   const columnList = spec.copyColumns.join(', ');
 
   await queryRunner.query(`CREATE TABLE "${tempTable}" (${spec.createTableBody})`);
-  await queryRunner.query(`INSERT INTO "${tempTable}" (${columnList}) SELECT ${columnList} FROM "${spec.table}"`);
+  await queryRunner.query(
+    `INSERT INTO "${tempTable}" (${columnList}) SELECT ${columnList} FROM "${spec.table}"`,
+  );
   await queryRunner.query(`DROP TABLE "${spec.table}"`);
   await queryRunner.query(`ALTER TABLE "${tempTable}" RENAME TO "${spec.table}"`);
 

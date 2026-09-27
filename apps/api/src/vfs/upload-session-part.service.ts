@@ -20,7 +20,13 @@ import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-sessio
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 class UploadPartError extends DomainError {
-  constructor(readonly code: string, readonly status: number, message: string) { super(message); }
+  constructor(
+    readonly code: string,
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export interface UploadedPartResult {
@@ -43,32 +49,45 @@ export class UploadSessionPartService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     config: ConfigService,
   ) {
-    this.maxDurationMs = parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
+    this.maxDurationMs =
+      parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
   }
 
-  async putPart(namespaceId: string, sessionId: string, rawIndex: string, source: Readable,
-    contentLength: string | undefined, _requestId: string): Promise<UploadedPartResult> {
+  async putPart(
+    namespaceId: string,
+    sessionId: string,
+    rawIndex: string,
+    source: Readable,
+    contentLength: string | undefined,
+    _requestId: string,
+  ): Promise<UploadedPartResult> {
     if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
-    if (!isUuid(sessionId)) throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    if (!isUuid(sessionId))
+      throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     if (!/^(0|[1-9][0-9]*)$/.test(rawIndex) || !Number.isSafeInteger(Number(rawIndex)))
       throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '유효하지 않은 조각 index');
     const index = Number(rawIndex);
     const found = await this.sessions.findForStatus(namespaceId, sessionId);
     if (!found) throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const { session } = found;
-    if (index >= session.partCount) throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '조각 index 범위 초과');
+    if (index >= session.partCount)
+      throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '조각 index 범위 초과');
     if (session.state !== 'OPEN' || session.expiresAt <= new Date() || session.maxExpiresAt <= new Date())
       throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료 또는 만료');
     this.capabilities.requireEnabled(namespaceId, 'resumable-upload');
     const namespacePolicy = this.policy?.namespaces[namespaceId.toLowerCase()];
     if (!this.policy || !namespacePolicy)
       throw new UploadPartError('VFS_FEATURE_DISABLED', 409, '업로드 세션 정책 없음');
-    const expected = index === session.partCount - 1
-      ? Number(BigInt(session.sizeBytes) - BigInt(index) * BigInt(session.partSizeBytes))
-      : session.partSizeBytes;
+    const expected =
+      index === session.partCount - 1
+        ? Number(BigInt(session.sizeBytes) - BigInt(index) * BigInt(session.partSizeBytes))
+        : session.partSizeBytes;
     const existing = await this.sessions.findPart(sessionId, index);
-    if (contentLength === undefined || !/^(0|[1-9][0-9]*)$/.test(contentLength) ||
-      !Number.isSafeInteger(Number(contentLength)))
+    if (
+      contentLength === undefined ||
+      !/^(0|[1-9][0-9]*)$/.test(contentLength) ||
+      !Number.isSafeInteger(Number(contentLength))
+    )
       throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '유효하지 않은 Content-Length');
     if (Number(contentLength) !== expected)
       throw existing?.state === 'STORED'
@@ -76,18 +95,29 @@ export class UploadSessionPartService {
         : new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '선언 조각 크기 불일치');
     const { limits } = await requireRootWithLimits(this.nodes, namespaceId);
     if (existing && existing.state === 'STORED')
-      return this.replay(namespaceId, sessionId, source, expected, index, existing,
-        this.policy.global.inactivitySeconds);
+      return this.replay(
+        namespaceId,
+        sessionId,
+        source,
+        expected,
+        index,
+        existing,
+        this.policy.global.inactivitySeconds,
+      );
 
     const deadline = this.durationDeadline(source);
     let reserved: Awaited<ReturnType<VfsUploadSessionRepository['reservePart']>>;
     try {
-      if (existing?.state === 'RESERVED' &&
-        (!existing.leaseExpiresAt || existing.leaseExpiresAt <= new Date())) {
+      if (
+        existing?.state === 'RESERVED' &&
+        (!existing.leaseExpiresAt || existing.leaseExpiresAt <= new Date())
+      ) {
         const retired = await Promise.race([
-          this.sessions.retireExpiredPartReservation(sessionId, index, existing.stagingKey), deadline.promise,
+          this.sessions.retireExpiredPartReservation(sessionId, index, existing.stagingKey),
+          deadline.promise,
         ]);
-        if (!retired) throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
+        if (!retired)
+          throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
         await Promise.race([this.storage.delete(existing.stagingKey), deadline.promise]);
         await Promise.race([this.sessions.markTombstoneDeleted(existing.stagingKey, null), deadline.promise]);
       } else if (existing && existing.state !== 'DELETED') {
@@ -96,16 +126,22 @@ export class UploadSessionPartService {
 
       // 각 예약 시도마다 독립 UUID를 생성한다. 삭제된 행을 다시 사용해도 이전 key는 재사용하지 않는다.
       const stagingKey = `upload-staging/${randomUUID()}`;
-      const reservation = this.sessions.reservePart(sessionId, index, String(expected), stagingKey,
-        { global: this.policy.global, namespace: namespacePolicy });
+      const reservation = this.sessions.reservePart(sessionId, index, String(expected), stagingKey, {
+        global: this.policy.global,
+        namespace: namespacePolicy,
+      });
       try {
         reserved = await Promise.race([reservation, deadline.promise]);
       } catch (error) {
         if (deadline.expired()) {
           // DB 예약이 응답 이후 커밋되더라도 PUT는 시작하지 않았으므로 안전하게 되돌린다.
-          void reservation.then((result) => result.kind === 'reserved'
-            ? this.sessions.releasePartReservation(sessionId, index, false, stagingKey)
-            : false).catch(() => false);
+          void reservation
+            .then((result) =>
+              result.kind === 'reserved'
+                ? this.sessions.releasePartReservation(sessionId, index, false, stagingKey)
+                : false,
+            )
+            .catch(() => false);
         }
         throw error;
       }
@@ -116,22 +152,41 @@ export class UploadSessionPartService {
     if (reserved.kind === 'exists') {
       clearTimeout(deadline.timer);
       if (reserved.part.state === 'STORED')
-        return this.replay(namespaceId, sessionId, source, expected, index, reserved.part,
-          this.policy.global.inactivitySeconds);
+        return this.replay(
+          namespaceId,
+          sessionId,
+          source,
+          expected,
+          index,
+          reserved.part,
+          this.policy.global.inactivitySeconds,
+        );
       throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
     }
     if (reserved.kind === 'in-progress') {
       clearTimeout(deadline.timer);
       throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
     }
-    if (reserved.kind === 'limit') { clearTimeout(deadline.timer); throw new UploadPartError('VFS_UPLOAD_STAGING_LIMIT_EXCEEDED', 413, '임시 저장량 상한 초과'); }
-    if (reserved.kind === 'closed') { clearTimeout(deadline.timer); throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료'); }
-    if (reserved.kind !== 'reserved') { clearTimeout(deadline.timer); throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '유효하지 않은 조각'); }
+    if (reserved.kind === 'limit') {
+      clearTimeout(deadline.timer);
+      throw new UploadPartError('VFS_UPLOAD_STAGING_LIMIT_EXCEEDED', 413, '임시 저장량 상한 초과');
+    }
+    if (reserved.kind === 'closed') {
+      clearTimeout(deadline.timer);
+      throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료');
+    }
+    if (reserved.kind !== 'reserved') {
+      clearTimeout(deadline.timer);
+      throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '유효하지 않은 조각');
+    }
     const stagingKey = reserved.part.stagingKey;
     const heartbeat = setInterval(() => {
-      void this.sessions.renewPartLease(sessionId, index, stagingKey).then((renewed) => {
-        if (!renewed) source.destroy(new Error('upload part lease lost'));
-      }).catch(() => source.destroy(new Error('upload part lease renewal failed')));
+      void this.sessions
+        .renewPartLease(sessionId, index, stagingKey)
+        .then((renewed) => {
+          if (!renewed) source.destroy(new Error('upload part lease lost'));
+        })
+        .catch(() => source.destroy(new Error('upload part lease renewal failed')));
     }, 20_000);
     heartbeat.unref();
     let lateCleanup = false;
@@ -140,10 +195,15 @@ export class UploadSessionPartService {
     let commitAttempted = false;
     let commitResolved = false;
     try {
-      const target = limits.encryptionPolicy === 'ENCRYPTED'
-        ? new EncryptingPutTarget(this.storage, this.requireMasterKey()) : this.storage;
-      const upload = uploadStream(target, stagingKey, source, 'application/octet-stream', expected)
-        .finally(() => { uploadSettled = true; });
+      const target =
+        limits.encryptionPolicy === 'ENCRYPTED'
+          ? new EncryptingPutTarget(this.storage, this.requireMasterKey())
+          : this.storage;
+      const upload = uploadStream(target, stagingKey, source, 'application/octet-stream', expected).finally(
+        () => {
+          uploadSettled = true;
+        },
+      );
       let uploaded: Awaited<typeof upload>;
       try {
         uploaded = await Promise.race([upload, deadline.promise]);
@@ -152,10 +212,13 @@ export class UploadSessionPartService {
           // MinIO PUT는 취소·종료 보장이 없다. HTTP deadline 후에도 소유 lease와
           // 예약 과금을 유지하고 실제 PUT가 끝난 뒤 key별로 정리한다.
           lateCleanup = true;
-          void upload.then(
-            () => this.cleanupReservation(sessionId, index, stagingKey),
-            () => this.cleanupReservation(sessionId, index, stagingKey),
-          ).finally(() => clearInterval(heartbeat)).catch(() => undefined);
+          void upload
+            .then(
+              () => this.cleanupReservation(sessionId, index, stagingKey),
+              () => this.cleanupReservation(sessionId, index, stagingKey),
+            )
+            .finally(() => clearInterval(heartbeat))
+            .catch(() => undefined);
         }
         throw error;
       }
@@ -163,9 +226,22 @@ export class UploadSessionPartService {
         throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '실제 조각 크기 불일치');
       const encryptionIv = target instanceof EncryptingPutTarget ? target.getIv().toString('hex') : null;
       commitAttempted = true;
-      committed = await Promise.race([this.sessions.commitPart(sessionId, index, uploaded.sha256, encryptionIv,
-        stagingKey, this.policy.global.inactivitySeconds).then((result) => { commitResolved = true; return result; }),
-      deadline.promise]);
+      committed = await Promise.race([
+        this.sessions
+          .commitPart(
+            sessionId,
+            index,
+            uploaded.sha256,
+            encryptionIv,
+            stagingKey,
+            this.policy.global.inactivitySeconds,
+          )
+          .then((result) => {
+            commitResolved = true;
+            return result;
+          }),
+        deadline.promise,
+      ]);
       if (!committed) throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료');
       return { index, sizeBytes: String(expected), sha256: uploaded.sha256, replayed: false };
     } catch (error) {
@@ -187,7 +263,9 @@ export class UploadSessionPartService {
         };
         if (deadline.expired()) {
           lateCleanup = true;
-          void reconcile().finally(() => clearInterval(heartbeat)).catch(() => undefined);
+          void reconcile()
+            .finally(() => clearInterval(heartbeat))
+            .catch(() => undefined);
           throw error;
         }
         try {
@@ -195,11 +273,14 @@ export class UploadSessionPartService {
           if (persisted?.state === 'STORED' && persisted.stagingKey === stagingKey && persisted.digest)
             return { index, sizeBytes: String(expected), sha256: persisted.digest, replayed: false };
           await Promise.race([
-            this.sessions.releasePartReservation(sessionId, index, true, stagingKey), deadline.promise,
+            this.sessions.releasePartReservation(sessionId, index, true, stagingKey),
+            deadline.promise,
           ]);
         } catch (recoveryError) {
           lateCleanup = true;
-          void reconcile().finally(() => clearInterval(heartbeat)).catch(() => undefined);
+          void reconcile()
+            .finally(() => clearInterval(heartbeat))
+            .catch(() => undefined);
           throw deadline.expired() ? recoveryError : error;
         }
         throw error;
@@ -224,8 +305,15 @@ export class UploadSessionPartService {
     }
   }
 
-  private async replay(namespaceId: string, sessionId: string, source: Readable, expected: number,
-    index: number, existing: VfsUploadPartEntity, inactivitySeconds: number): Promise<UploadedPartResult> {
+  private async replay(
+    namespaceId: string,
+    sessionId: string,
+    source: Readable,
+    expected: number,
+    index: number,
+    existing: VfsUploadPartEntity,
+    inactivitySeconds: number,
+  ): Promise<UploadedPartResult> {
     const deadline = this.durationDeadline(source);
     try {
       let hashed: Awaited<ReturnType<typeof hashStream>>;
@@ -239,7 +327,8 @@ export class UploadSessionPartService {
       if (hashed.size !== expected || hashed.sha256 !== existing.digest)
         throw new UploadPartError('VFS_UPLOAD_PART_CONFLICT', 409, '기존 조각과 내용 불일치');
       const renewed = await Promise.race([
-        this.sessions.renewSession(namespaceId, sessionId, new Date(), inactivitySeconds), deadline.promise,
+        this.sessions.renewSession(namespaceId, sessionId, new Date(), inactivitySeconds),
+        deadline.promise,
       ]);
       if (!renewed) throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료 또는 만료');
       return { index, sizeBytes: String(expected), sha256: hashed.sha256, replayed: true };
@@ -248,7 +337,11 @@ export class UploadSessionPartService {
     }
   }
 
-  private durationDeadline(source: Readable): { timer: NodeJS.Timeout; promise: Promise<never>; expired: () => boolean } {
+  private durationDeadline(source: Readable): {
+    timer: NodeJS.Timeout;
+    promise: Promise<never>;
+    expired: () => boolean;
+  } {
     let expired = false;
     let timer!: NodeJS.Timeout;
     const promise = new Promise<never>((_, reject) => {
@@ -264,7 +357,10 @@ export class UploadSessionPartService {
   }
 
   private async cleanupReservation(sessionId: string, index: number, key: string): Promise<void> {
-    const deleted = await this.storage.delete(key).then(() => true, () => false);
+    const deleted = await this.storage.delete(key).then(
+      () => true,
+      () => false,
+    );
     await this.sessions.releasePartReservation(sessionId, index, !deleted, key);
   }
 

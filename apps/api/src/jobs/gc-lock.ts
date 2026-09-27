@@ -26,9 +26,10 @@ export class GcLock {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
 
-    const [{ locked }]: { locked: boolean }[] = await queryRunner.query('SELECT pg_try_advisory_lock($1) AS locked', [
-      ADVISORY_LOCK_KEY,
-    ]);
+    const [{ locked }]: { locked: boolean }[] = await queryRunner.query(
+      'SELECT pg_try_advisory_lock($1) AS locked',
+      [ADVISORY_LOCK_KEY],
+    );
     if (!locked) {
       await queryRunner.release();
       return false;

@@ -26,8 +26,12 @@ export function runCapabilityConfigBootTests(driver: 'postgres' | 'sqlite'): voi
     directory = await mkdtemp(join(tmpdir(), 'storix-capability-boot-'));
     if (sqlite) {
       process.env.STORIX_DB_SQLITE_PATH = join(directory, 'storix.sqlite');
-      dataSource = new DataSource({ type: 'better-sqlite3', database: process.env.STORIX_DB_SQLITE_PATH,
-        migrations: ALL_MIGRATIONS, migrationsTransactionMode: 'each' });
+      dataSource = new DataSource({
+        type: 'better-sqlite3',
+        database: process.env.STORIX_DB_SQLITE_PATH,
+        migrations: ALL_MIGRATIONS,
+        migrationsTransactionMode: 'each',
+      });
     } else {
       container = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
       Object.assign(process.env, {
@@ -37,7 +41,11 @@ export function runCapabilityConfigBootTests(driver: 'postgres' | 'sqlite'): voi
         STORIX_DB_PASSWORD: container.getPassword(),
         STORIX_DB_NAME: container.getDatabase(),
       });
-      dataSource = new DataSource({ type: 'postgres', url: container.getConnectionUri(), migrations: ALL_MIGRATIONS });
+      dataSource = new DataSource({
+        type: 'postgres',
+        url: container.getConnectionUri(),
+        migrations: ALL_MIGRATIONS,
+      });
     }
     Object.assign(process.env, {
       STORIX_STORAGE_ENDPOINT: 'localhost',
@@ -50,7 +58,9 @@ export function runCapabilityConfigBootTests(driver: 'postgres' | 'sqlite'): voi
     await dataSource.runMigrations();
     namespaceId = randomUUID();
     await dataSource.query(
-      sqlite ? 'INSERT INTO namespace (id, name) VALUES (?, ?)' : 'INSERT INTO namespace (id, name) VALUES ($1, $2)',
+      sqlite
+        ? 'INSERT INTO namespace (id, name) VALUES (?, ?)'
+        : 'INSERT INTO namespace (id, name) VALUES ($1, $2)',
       [namespaceId, 'capability-existing-namespace'],
     );
   }, 120000);
@@ -64,7 +74,10 @@ export function runCapabilityConfigBootTests(driver: 'postgres' | 'sqlite'): voi
 
   async function bootWithNamespace(id: string): Promise<void> {
     const path = join(directory, 'capabilities.json');
-    await writeFile(path, JSON.stringify({ globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [id]: [] } }));
+    await writeFile(
+      path,
+      JSON.stringify({ globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [id]: [] } }),
+    );
     process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH = path;
     const { AppModule } = await import('../../src/app.module.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

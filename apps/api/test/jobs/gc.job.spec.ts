@@ -19,17 +19,23 @@ describe('GcJob', () => {
   });
 
   it('선택적 retention repository를 배치가 빌 때까지 호출하고 삭제 수를 집계한다', async () => {
-    const pruneExpiredBatch = jest.fn<(days: number, batchSize: number) => Promise<number>>()
-      .mockResolvedValueOnce(500).mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+    const pruneExpiredBatch = jest
+      .fn<(days: number, batchSize: number) => Promise<number>>()
+      .mockResolvedValueOnce(500)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
     const storage = { async *list() {}, delete: async () => undefined } as unknown as BlobStorage;
     const blobs = {
       findAllStorageKeys: async () => new Set<string>(),
       findOrphanBlobs: async () => [],
       deleteBlobRows: async () => undefined,
     } as unknown as BlobRepository;
-    const config = { get: (key: string) => key === 'STORIX_VFS_CHANGE_RETENTION_DAYS' ? '7' : '3600' } as unknown as ConfigService;
-    const job = new GcJob(storage, blobs, config, undefined, undefined,
-      { pruneExpiredBatch } as unknown as VfsChangeFeedRetentionRepository);
+    const config = {
+      get: (key: string) => (key === 'STORIX_VFS_CHANGE_RETENTION_DAYS' ? '7' : '3600'),
+    } as unknown as ConfigService;
+    const job = new GcJob(storage, blobs, config, undefined, undefined, {
+      pruneExpiredBatch,
+    } as unknown as VfsChangeFeedRetentionRepository);
     expect((await job.run()).prunedChangeEvents).toBe(502);
     expect(pruneExpiredBatch).toHaveBeenCalledTimes(3);
     expect(pruneExpiredBatch).toHaveBeenCalledWith(7, 500);
@@ -139,21 +145,28 @@ describe('GcJob', () => {
         yield { key: 'upload-staging/orphan', lastModified: old };
       }
     }
-    const deleteObject = jest.fn<(key: string) => Promise<void>>()
-      .mockImplementation(async (key) => {
-        if (key === 'upload-staging/cleanup') throw new Error('temporary failure');
-      });
+    const deleteObject = jest.fn<(key: string) => Promise<void>>().mockImplementation(async (key) => {
+      if (key === 'upload-staging/cleanup') throw new Error('temporary failure');
+    });
     const uploads = {
       recoverStaleFinalizingLeases: jest.fn<() => Promise<number>>().mockResolvedValue(1),
-      findExpiredOpenSessions: jest.fn<() => Promise<Array<{ namespaceId: string; id: string }>>>()
+      findExpiredOpenSessions: jest
+        .fn<() => Promise<Array<{ namespaceId: string; id: string }>>>()
         .mockResolvedValue([{ namespaceId: 'ns', id: 'expired' }]),
       claimTerminalTransition: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
-      findCleanupParts: jest.fn<() => Promise<Array<{ sessionId: string; partIndex: number; stagingKey: string; state: 'CLEANUP' }>>>()
-        .mockResolvedValue([{ sessionId: 'expired', partIndex: 0, stagingKey: 'upload-staging/cleanup', state: 'CLEANUP' }]),
+      findCleanupParts: jest
+        .fn<
+          () => Promise<Array<{ sessionId: string; partIndex: number; stagingKey: string; state: 'CLEANUP' }>>
+        >()
+        .mockResolvedValue([
+          { sessionId: 'expired', partIndex: 0, stagingKey: 'upload-staging/cleanup', state: 'CLEANUP' },
+        ]),
       findExpiredReservedParts: async () => [],
       findCleanupTombstones: async () => [],
       markStagingObjectDeleted: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
-      findAllStagingKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set(['upload-staging/active', 'upload-staging/cleanup'])),
+      findAllStagingKeys: jest
+        .fn<() => Promise<Set<string>>>()
+        .mockResolvedValue(new Set(['upload-staging/active', 'upload-staging/cleanup'])),
       pruneTerminalSessions: jest.fn<() => Promise<number>>().mockResolvedValue(0),
     };
     const job = new GcJob(
@@ -163,20 +176,30 @@ describe('GcJob', () => {
         findOrphanBlobs: async () => [],
         deleteBlobRows: async () => undefined,
       } as unknown as BlobRepository,
-      makeConfig(3600), undefined, uploads as unknown as VfsUploadSessionRepository,
+      makeConfig(3600),
+      undefined,
+      uploads as unknown as VfsUploadSessionRepository,
     );
     const result = await job.run();
     expect(result.deletedOrphanObjects).toBe(1);
     expect(deleteObject).not.toHaveBeenCalledWith('upload-staging/active');
     expect(deleteObject).toHaveBeenCalledWith('upload-staging/orphan');
-    expect(uploads.claimTerminalTransition).toHaveBeenCalledWith('ns', 'expired', 'EXPIRED', expect.any(Date));
+    expect(uploads.claimTerminalTransition).toHaveBeenCalledWith(
+      'ns',
+      'expired',
+      'EXPIRED',
+      expect.any(Date),
+    );
     expect(uploads.markStagingObjectDeleted).not.toHaveBeenCalled();
     expect(uploads.pruneTerminalSessions).toHaveBeenCalledWith(expect.any(Date));
   });
 
   it('continues past 500 failed cleanup candidates to a later part', async () => {
     const all = Array.from({ length: 501 }, (_, partIndex) => ({
-      sessionId: 'session', partIndex, stagingKey: `upload-staging/${partIndex}`, state: 'CLEANUP' as const,
+      sessionId: 'session',
+      partIndex,
+      stagingKey: `upload-staging/${partIndex}`,
+      state: 'CLEANUP' as const,
     }));
     const attempted: number[] = [];
     const marked: number[] = [];
@@ -184,7 +207,8 @@ describe('GcJob', () => {
       recoverStaleFinalizingLeases: async () => 0,
       findExpiredOpenSessions: async () => [],
       findCleanupParts: async (cursor?: { sessionId: string; partIndex: number } | null, batchSize = 500) =>
-        all.filter((part) => cursor === undefined || cursor === null || part.partIndex > cursor.partIndex)
+        all
+          .filter((part) => cursor === undefined || cursor === null || part.partIndex > cursor.partIndex)
           .slice(0, batchSize),
       findExpiredReservedParts: async () => [],
       findCleanupTombstones: async () => [],
@@ -208,8 +232,13 @@ describe('GcJob', () => {
       findOrphanBlobs: async () => [],
       deleteBlobRows: async () => undefined,
     };
-    const job = new GcJob(storage as unknown as BlobStorage, blobs as unknown as BlobRepository,
-      makeConfig(3600), undefined, uploads as unknown as VfsUploadSessionRepository);
+    const job = new GcJob(
+      storage as unknown as BlobStorage,
+      blobs as unknown as BlobRepository,
+      makeConfig(3600),
+      undefined,
+      uploads as unknown as VfsUploadSessionRepository,
+    );
     const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     try {
       await job.run();

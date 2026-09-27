@@ -137,20 +137,22 @@ describe('storeErrorReceipt', () => {
 
   it('비활성 오류의 code, message, 최초 request ID를 receipt에 고정해 재생한다', async () => {
     let saved: VfsMutationReceiptEntity | undefined;
-    const completeAfterRollback = jest.fn(async (
-      _identity: ErrorReceiptOwner['identity'],
-      _generation: number,
-      fingerprint: string,
-      method: string,
-      response: Awaited<ReturnType<typeof storeErrorReceipt>>,
-    ) => {
-      saved = new VfsMutationReceiptEntity();
-      saved.method = method;
-      saved.fingerprint = fingerprint;
-      saved.responseStatus = response.status;
-      saved.responseBody = JSON.stringify(response.body);
-      saved.responseHeaders = JSON.stringify(response.headers);
-    });
+    const completeAfterRollback = jest.fn(
+      async (
+        _identity: ErrorReceiptOwner['identity'],
+        _generation: number,
+        fingerprint: string,
+        method: string,
+        response: Awaited<ReturnType<typeof storeErrorReceipt>>,
+      ) => {
+        saved = new VfsMutationReceiptEntity();
+        saved.method = method;
+        saved.fingerprint = fingerprint;
+        saved.responseStatus = response.status;
+        saved.responseBody = JSON.stringify(response.body);
+        saved.responseHeaders = JSON.stringify(response.headers);
+      },
+    );
     const repository = { completeAfterRollback } as unknown as VfsMutationReceiptRepository;
 
     await storeErrorReceipt(repository, owner, new VfsFeatureDisabledError('content-search'), 'req-original');

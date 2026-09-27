@@ -14,7 +14,10 @@ describe('SentryErrorReporter', () => {
 
     new SentryErrorReporter('https://public@example.sentry.io/1', client);
 
-    expect(client.init).toHaveBeenCalledWith({ dsn: 'https://public@example.sentry.io/1', sendDefaultPii: false });
+    expect(client.init).toHaveBeenCalledWith({
+      dsn: 'https://public@example.sentry.io/1',
+      sendDefaultPii: false,
+    });
   });
 
   it('report 호출 시 captureException으로 에러와 context를 extra로 전달한다', () => {
@@ -24,7 +27,9 @@ describe('SentryErrorReporter', () => {
 
     reporter.report(error, { requestId: 'req-1', status: 500 });
 
-    expect(client.captureException).toHaveBeenCalledWith(error, { extra: { requestId: 'req-1', status: 500 } });
+    expect(client.captureException).toHaveBeenCalledWith(error, {
+      extra: { requestId: 'req-1', status: 500 },
+    });
   });
 
   it('context 없이 report를 호출하면 hint 없이 captureException을 호출한다', () => {

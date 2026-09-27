@@ -10,7 +10,10 @@ describe('trash retention policy', () => {
     expect(resolveTrashRetentionNodeLimit('9007199254740991')).toBe(Number.MAX_SAFE_INTEGER);
   });
 
-  it.each(['0', '-1', '1.5', '1e3', '9007199254740992', '', ' 1'])('rejects invalid node limit %s', (value) => {
-    expect(() => resolveTrashRetentionNodeLimit(value)).toThrow('Invalid trash retention node limit');
-  });
+  it.each(['0', '-1', '1.5', '1e3', '9007199254740992', '', ' 1'])(
+    'rejects invalid node limit %s',
+    (value) => {
+      expect(() => resolveTrashRetentionNodeLimit(value)).toThrow('Invalid trash retention node limit');
+    },
+  );
 });

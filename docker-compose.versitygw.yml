@@ -22,8 +22,8 @@
 
 x-versitygw-env: &versitygw-env
   STORIX_STORAGE_ENDPOINT: versitygw
-  STORIX_STORAGE_PORT: '7070'
-  STORIX_STORAGE_USE_SSL: 'false'
+  STORIX_STORAGE_PORT: "7070"
+  STORIX_STORAGE_USE_SSL: "false"
 
 x-versitygw-deps: &versitygw-deps
   versitygw:
@@ -56,19 +56,19 @@ services:
       VGW_BACKEND: posix
       VGW_BACKEND_ARGS: /data
       # --health는 backend 서브커맨드보다 앞에 와야 하는 global flag라 VGW_ARGS로 전달한다.
-      VGW_ARGS: '--health /health'
+      VGW_ARGS: "--health /health"
     volumes:
       - ${STORIX_VERSITYGW_DATA_PATH:-versitygw-data}:/data
     healthcheck:
       # alpine 베이스 이미지라 curl이 없다 — busybox wget 사용.
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:7070/health']
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7070/health"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   versitygw-init:
     image: minio/mc:latest
-    entrypoint: ['/bin/sh', '-c']
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         mc alias set local http://versitygw:7070 ${STORIX_STORAGE_ACCESS_KEY:-storix} ${STORIX_STORAGE_SECRET_KEY:-storix-secret} &&

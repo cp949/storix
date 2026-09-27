@@ -44,7 +44,10 @@ describe('resolveMaxFileSizeBytes', () => {
     { namespaceValue: undefined, expected: 100 },
     { namespaceValue: '50', expected: 50 },
     { namespaceValue: '200', expected: 100 },
-  ])('namespace 재정의 $namespaceValue와 전역 100에서 $expected를 반환한다', ({ namespaceValue, expected }) => {
-    expect(resolveMaxFileSizeBytes(namespaceValue, 100)).toBe(expected);
-  });
+  ])(
+    'namespace 재정의 $namespaceValue와 전역 100에서 $expected를 반환한다',
+    ({ namespaceValue, expected }) => {
+      expect(resolveMaxFileSizeBytes(namespaceValue, 100)).toBe(expected);
+    },
+  );
 });

@@ -30,8 +30,15 @@ describe.each(['memory', 'file'])('VfsSnapshotRepository (SQLite %s)', (storage)
       type: 'better-sqlite3',
       database: storage === 'memory' ? ':memory:' : join(directory, 'snapshot.sqlite'),
       migrationsTransactionMode: 'each',
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsSnapshotEntity, VfsSnapshotEntryEntity,
-        VfsTrashEntity, VfsTrashEntryEntity],
+      entities: [
+        NamespaceEntity,
+        VfsNodeEntity,
+        BlobEntity,
+        VfsSnapshotEntity,
+        VfsSnapshotEntryEntity,
+        VfsTrashEntity,
+        VfsTrashEntryEntity,
+      ],
       migrations: ALL_MIGRATIONS,
       synchronize: false,
     });

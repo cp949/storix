@@ -30,9 +30,15 @@ import { AuditModule } from '../../src/audit/audit.module.js';
 
 @Controller('audit-auth-probe')
 class AuditAuthProbeController {
-  @Get('protected') protectedRoute() { return { ok: true }; }
-  @Get('protected/:id') protectedParamRoute() { return { ok: true }; }
-  @Public() @Get('public') publicRoute() { return { ok: true }; }
+  @Get('protected') protectedRoute() {
+    return { ok: true };
+  }
+  @Get('protected/:id') protectedParamRoute() {
+    return { ok: true };
+  }
+  @Public() @Get('public') publicRoute() {
+    return { ok: true };
+  }
 }
 
 @Module({
@@ -91,7 +97,13 @@ describe('감사 로그 end-to-end', () => {
     await migrationDataSource.runMigrations();
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuditModule, HealthModule, NamespaceModule, VfsModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        AuditModule,
+        HealthModule,
+        NamespaceModule,
+        VfsModule,
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication({ bodyParser: false });
@@ -115,7 +127,9 @@ describe('감사 로그 end-to-end', () => {
     const maxAttempts = 20;
     const intervalMs = 50;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const rows = await migrationDataSource.query('SELECT * FROM audit_log WHERE request_id = $1', [requestId]);
+      const rows = await migrationDataSource.query('SELECT * FROM audit_log WHERE request_id = $1', [
+        requestId,
+      ]);
       if (rows[0]) {
         return rows[0] as {
           request_id: string;
@@ -212,33 +226,66 @@ describe('감사 로그 end-to-end', () => {
 
   it('snapshot 생성과 개별 ID 조회는 ID를 기록하고 목록에는 단일 ID를 기록하지 않는다', async () => {
     const name = `audit-snapshot-${randomUUID()}`;
-    const ns = await request(httpServer).post('/api/v2/namespaces')
-      .set('Idempotency-Key', `ns-${name}`).send({ name }).expect(201);
+    const ns = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-${name}`)
+      .send({ name })
+      .expect(201);
     const base = `/api/v2/namespaces/${ns.body.id}/fs`;
-    await request(httpServer).post(`${base}/content`).query({ path: '/audit.txt' })
-      .set('Content-Type', 'application/octet-stream').send(Buffer.from('secret-body')).expect(201);
-    const created = await request(httpServer).post(`${base}/snapshots`)
-      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test')
-      .send({ kind: 'file', path: '/audit.txt' }).expect(201);
+    await request(httpServer)
+      .post(`${base}/content`)
+      .query({ path: '/audit.txt' })
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('secret-body'))
+      .expect(201);
+    const created = await request(httpServer)
+      .post(`${base}/snapshots`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({ kind: 'file', path: '/audit.txt' })
+      .expect(201);
     const snapshotId = created.body.snapshotId as string;
     const get = await request(httpServer).get(`${base}/snapshots/${snapshotId}`).expect(200);
     const content = await request(httpServer).get(`${base}/snapshots/${snapshotId}/content`).expect(200);
-    const tree = await request(httpServer).post(`${base}/snapshots`)
-      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test')
-      .send({ kind: 'tree', path: '/' }).expect(201);
+    const tree = await request(httpServer)
+      .post(`${base}/snapshots`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({ kind: 'tree', path: '/' })
+      .expect(201);
     const treeId = tree.body.snapshotId as string;
     const entries = await request(httpServer).get(`${base}/snapshots/${treeId}/entries`).expect(200);
-    const treeContent = await request(httpServer).get(`${base}/snapshots/${treeId}/content`).query({ path: 'audit.txt' }).expect(200);
-    const restored = await request(httpServer).post(`${base}/snapshots/${snapshotId}/restore`)
-      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test')
-      .send({ path: '/restored.txt', ifAbsent: true }).expect(201);
-    const list = await request(httpServer).get(`${base}/snapshots`).query({ rootNodeId: (await request(httpServer).get(`${base}/stat`).query({ path: '/audit.txt' })).body.id }).expect(200);
-    const deleted = await request(httpServer).post(`${base}/snapshots/${snapshotId}/delete`)
-      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test').send({}).expect(200);
+    const treeContent = await request(httpServer)
+      .get(`${base}/snapshots/${treeId}/content`)
+      .query({ path: 'audit.txt' })
+      .expect(200);
+    const restored = await request(httpServer)
+      .post(`${base}/snapshots/${snapshotId}/restore`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({ path: '/restored.txt', ifAbsent: true })
+      .expect(201);
+    const list = await request(httpServer)
+      .get(`${base}/snapshots`)
+      .query({
+        rootNodeId: (await request(httpServer).get(`${base}/stat`).query({ path: '/audit.txt' })).body.id,
+      })
+      .expect(200);
+    const deleted = await request(httpServer)
+      .post(`${base}/snapshots/${snapshotId}/delete`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({})
+      .expect(200);
 
     for (const [response, expectedId] of [
-      [created, snapshotId], [get, snapshotId], [content, snapshotId],
-      [entries, treeId], [treeContent, treeId], [restored, snapshotId], [deleted, snapshotId],
+      [created, snapshotId],
+      [get, snapshotId],
+      [content, snapshotId],
+      [entries, treeId],
+      [treeContent, treeId],
+      [restored, snapshotId],
+      [deleted, snapshotId],
     ] as const) {
       const row = await findAuditLogByRequestId(response.headers['x-request-id'] as string);
       expect(row?.snapshot_id).toBe(expectedId);
@@ -250,25 +297,43 @@ describe('감사 로그 end-to-end', () => {
 
   it('삭제·복원·purge는 같은 trash ID를 기록하고 목록은 null을 기록한다', async () => {
     const name = `audit-trash-${randomUUID()}`;
-    const ns = await request(httpServer).post('/api/v2/namespaces')
-      .set('Idempotency-Key', `ns-${name}`).send({ name }).expect(201);
+    const ns = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-${name}`)
+      .send({ name })
+      .expect(201);
     const base = `/api/v2/namespaces/${ns.body.id}/fs`;
     await request(httpServer).post(`${base}/touch`).send({ path: '/first' }).expect(201);
     const deleted = await request(httpServer).post(`${base}/rm`).query({ path: '/first' }).expect(204);
     const trashId = deleted.headers['x-trash-id'] as string;
     const listed = await request(httpServer).get(`${base}/trash`).expect(200);
-    const restored = await request(httpServer).post(`${base}/trash/${trashId}/restore`)
-      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test').send({}).expect(200);
+    const restored = await request(httpServer)
+      .post(`${base}/trash/${trashId}/restore`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({})
+      .expect(200);
     await request(httpServer).post(`${base}/touch`).send({ path: '/second' }).expect(201);
     const second = await request(httpServer).post(`${base}/rm`).query({ path: '/second' }).expect(204);
     const secondId = second.headers['x-trash-id'] as string;
     process.env.STORIX_ADMIN_API_KEY = 'audit-trash-admin-key';
     try {
-      const purged = await request(httpServer).post(`${base}/trash/${secondId}/purge`)
+      const purged = await request(httpServer)
+        .post(`${base}/trash/${secondId}/purge`)
         .set('Authorization', 'Bearer audit-trash-admin-key')
-        .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test').send({}).expect(200);
-      for (const [response, id] of [[deleted, trashId], [restored, trashId], [second, secondId], [purged, secondId]] as const) {
-        expect((await findAuditLogByRequestId(response.headers['x-request-id'] as string))?.trash_id).toBe(id);
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'audit-test')
+        .send({})
+        .expect(200);
+      for (const [response, id] of [
+        [deleted, trashId],
+        [restored, trashId],
+        [second, secondId],
+        [purged, secondId],
+      ] as const) {
+        expect((await findAuditLogByRequestId(response.headers['x-request-id'] as string))?.trash_id).toBe(
+          id,
+        );
       }
       expect((await findAuditLogByRequestId(listed.headers['x-request-id'] as string))?.trash_id).toBeNull();
     } finally {
@@ -289,10 +354,17 @@ describe('감사 로그 end-to-end', () => {
       const wrongId = `audit-wrong-${randomUUID()}`;
       const longPathId = `audit-long-${randomUUID()}`;
       const longPath = `/audit-auth-probe/protected/${'x'.repeat(150)}`;
-      const missing = await request(server).get('/audit-auth-probe/protected').query({ secret: 'private-body' })
-        .set('X-Request-Id', missingId).set('X-Caller-Id', 'self-claimed').expect(401);
-      const wrong = await request(server).get('/audit-auth-probe/protected').set('Authorization', 'Bearer raw-secret-key')
-        .set('X-Request-Id', wrongId).expect(401);
+      const missing = await request(server)
+        .get('/audit-auth-probe/protected')
+        .query({ secret: 'private-body' })
+        .set('X-Request-Id', missingId)
+        .set('X-Caller-Id', 'self-claimed')
+        .expect(401);
+      const wrong = await request(server)
+        .get('/audit-auth-probe/protected')
+        .set('Authorization', 'Bearer raw-secret-key')
+        .set('X-Request-Id', wrongId)
+        .expect(401);
       await request(server).get(longPath).set('X-Request-Id', longPathId).expect(401);
       await request(server).get('/audit-auth-probe/public').expect(200);
       expect(missing.body).toMatchObject({ code: 'UNAUTHORIZED', requestId: missingId });
@@ -303,8 +375,15 @@ describe('감사 로그 end-to-end', () => {
         [longPathId, `GET ${longPath}`.slice(0, 128), longPath],
       ] as const) {
         const row = await findAuditLogByRequestId(requestId);
-        expect(row).toMatchObject({ request_id: requestId, namespace_id: null, snapshot_id: null,
-          operation, path, caller: null, status: 401 });
+        expect(row).toMatchObject({
+          request_id: requestId,
+          namespace_id: null,
+          snapshot_id: null,
+          operation,
+          path,
+          caller: null,
+          status: 401,
+        });
         expect(JSON.stringify(row)).not.toContain('raw-secret-key');
         expect(JSON.stringify(row)).not.toContain('private-body');
       }
@@ -321,7 +400,13 @@ describe('감사 로그 end-to-end', () => {
     let securedApp: INestApplication | undefined;
     try {
       const moduleRef = await Test.createTestingModule({
-        imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, AuditModule, NamespaceModule, VfsModule],
+        imports: [
+          ConfigModule.forRoot({ isGlobal: true }),
+          AuthModule,
+          AuditModule,
+          NamespaceModule,
+          VfsModule,
+        ],
       }).compile();
       securedApp = moduleRef.createNestApplication({ bodyParser: false });
       configureBodyParsers(securedApp);
@@ -331,13 +416,28 @@ describe('감사 로그 end-to-end', () => {
       const namespacePath = `/api/v2/namespaces/${namespaceId}`;
       const vfsRequestId = `audit-real-vfs-${randomUUID()}`;
       const namespaceRequestId = `audit-real-ns-${randomUUID()}`;
-      await request(securedApp.getHttpServer()).get(snapshotsPath).set('X-Request-Id', vfsRequestId).expect(401);
-      await request(securedApp.getHttpServer()).get(namespacePath)
-        .set('Authorization', 'Bearer raw-secret-key').set('X-Request-Id', namespaceRequestId).expect(401);
+      await request(securedApp.getHttpServer())
+        .get(snapshotsPath)
+        .set('X-Request-Id', vfsRequestId)
+        .expect(401);
+      await request(securedApp.getHttpServer())
+        .get(namespacePath)
+        .set('Authorization', 'Bearer raw-secret-key')
+        .set('X-Request-Id', namespaceRequestId)
+        .expect(401);
 
-      for (const [requestId, path] of [[vfsRequestId, snapshotsPath], [namespaceRequestId, namespacePath]] as const) {
+      for (const [requestId, path] of [
+        [vfsRequestId, snapshotsPath],
+        [namespaceRequestId, namespacePath],
+      ] as const) {
         const row = await findAuditLogByRequestId(requestId);
-        expect(row).toMatchObject({ operation: `GET ${path}`, path, namespace_id: null, caller: null, status: 401 });
+        expect(row).toMatchObject({
+          operation: `GET ${path}`,
+          path,
+          namespace_id: null,
+          caller: null,
+          status: 401,
+        });
         expect(JSON.stringify(row)).not.toContain('raw-secret-key');
       }
     } finally {
@@ -352,15 +452,25 @@ describe('감사 로그 end-to-end', () => {
     process.env.STORIX_ADMIN_API_KEY = 'audit-admin-key';
     try {
       const name = `audit-quota-${randomUUID()}`;
-      const ns = await request(httpServer).post('/api/v2/namespaces')
-        .set('Idempotency-Key', `ns-${name}`).send({ name }).expect(201);
-      const response = await request(httpServer).patch(`/api/v2/admin/namespaces/${ns.body.id}/quota`)
-        .set('Authorization', 'Bearer audit-admin-key').set('Idempotency-Key', randomUUID())
-        .set('X-Caller-Id', 'ops-console').send({ maxTotalLogicalBytes: '2048' }).expect(200);
+      const ns = await request(httpServer)
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', `ns-${name}`)
+        .send({ name })
+        .expect(201);
+      const response = await request(httpServer)
+        .patch(`/api/v2/admin/namespaces/${ns.body.id}/quota`)
+        .set('Authorization', 'Bearer audit-admin-key')
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Caller-Id', 'ops-console')
+        .send({ maxTotalLogicalBytes: '2048' })
+        .expect(200);
 
       const row = await findAuditLogByRequestId(response.headers['x-request-id'] as string);
       expect(row).toMatchObject({
-        namespace_id: ns.body.id, operation: 'NamespaceQuotaController.update', caller: 'ops-console', status: 200,
+        namespace_id: ns.body.id,
+        operation: 'NamespaceQuotaController.update',
+        caller: 'ops-console',
+        status: 200,
       });
       expect(JSON.stringify(row)).not.toContain('audit-admin-key');
     } finally {

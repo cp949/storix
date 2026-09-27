@@ -36,10 +36,21 @@ function* generateChunks(total: number, size: number): Generator<Buffer> {
   }
 }
 
-function postStreaming(port: number, path: string, chunkCount: number, chunkSize: number): Promise<{ status: number }> {
+function postStreaming(
+  port: number,
+  path: string,
+  chunkCount: number,
+  chunkSize: number,
+): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/octet-stream' } },
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+      },
       (res) => {
         res.resume();
         res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
@@ -58,7 +69,10 @@ function postStreaming(port: number, path: string, chunkCount: number, chunkSize
   });
 }
 
-function getStreamingHash(port: number, path: string): Promise<{ status: number; sha256: string; size: number }> {
+function getStreamingHash(
+  port: number,
+  path: string,
+): Promise<{ status: number; sha256: string; size: number }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
       const hash = createHash('sha256');
@@ -79,7 +93,14 @@ function getInterruptedDownload(
   port: number,
   path: string,
   onFirstData: () => void,
-): Promise<{ status: number; headers: IncomingHttpHeaders; aborted: boolean; complete: boolean; size: number; sha256: string }> {
+): Promise<{
+  status: number;
+  headers: IncomingHttpHeaders;
+  aborted: boolean;
+  complete: boolean;
+  size: number;
+  sha256: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
       const hash = createHash('sha256');
@@ -257,7 +278,8 @@ describe('대용량 스트리밍', () => {
       .expect(201);
 
     const client = app.get<MinioClient>(STORAGE_CLIENT);
-    const spy = jest.spyOn(client, 'getObject')
+    const spy = jest
+      .spyOn(client, 'getObject')
       .mockRejectedValueOnce(Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }))
       .mockRejectedValueOnce(Object.assign(new S3Error('private object key'), { code: 'AccessDenied' }));
     try {
@@ -292,12 +314,16 @@ describe('대용량 스트리밍', () => {
 
     const client = app.get<MinioClient>(STORAGE_CLIENT);
     let signalFirstData!: () => void;
-    const firstDataObserved = new Promise<void>((resolve) => { signalFirstData = resolve; });
-    const source = Readable.from((async function* () {
-      yield fullBytes.subarray(0, 4096);
-      await firstDataObserved;
-      throw Object.assign(new Error('private stream failure'), { code: 'ECONNRESET' });
-    })());
+    const firstDataObserved = new Promise<void>((resolve) => {
+      signalFirstData = resolve;
+    });
+    const source = Readable.from(
+      (async function* () {
+        yield fullBytes.subarray(0, 4096);
+        await firstDataObserved;
+        throw Object.assign(new Error('private stream failure'), { code: 'ECONNRESET' });
+      })(),
+    );
     const spy = jest.spyOn(client, 'getObject').mockResolvedValueOnce(source);
     try {
       const downloaded = await getInterruptedDownload(

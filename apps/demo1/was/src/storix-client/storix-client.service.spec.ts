@@ -192,7 +192,16 @@ describe('StorixClient — VFS 조작', () => {
   });
 
   it('upload는 mimeType/contentLength를 헤더로 싣고 스트리밍 본문을 그대로 전달한다', async () => {
-    const entry = { path: '/a.txt', name: 'a.txt', type: 'FILE', size: 3, mimeType: 'text/plain', createdAt: '', updatedAt: '', version: 1 };
+    const entry = {
+      path: '/a.txt',
+      name: 'a.txt',
+      type: 'FILE',
+      size: 3,
+      mimeType: 'text/plain',
+      createdAt: '',
+      updatedAt: '',
+      version: 1,
+    };
     const spy = mockFetchOnce(201, entry);
     const body = new ReadableStream();
 
@@ -261,9 +270,11 @@ describe('StorixClient — 다운로드/공개 발행', () => {
         controller.close();
       },
     });
-    const getSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(bodyStream, { status: 200, headers: { 'content-type': 'text/plain' } }),
-    );
+    const getSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(bodyStream, { status: 200, headers: { 'content-type': 'text/plain' } }),
+      );
     const putSpy = jest
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }));
@@ -318,11 +329,32 @@ describe('StorixClient — upload sessions', () => {
   it('create/status/part/complete/cancel을 Storix upload-session URL과 계약 헤더로 호출한다', async () => {
     const sessionId = '33333333-3333-4333-8333-333333333333';
     const base = '/api/v2/namespaces/63f238da-3f8d-482d-a384-7995994271dc/fs/upload-sessions';
-    const created = { sessionId, state: 'OPEN', partSizeBytes: 4, partCount: 1, expiresAt: '', maxExpiresAt: '' };
-    const status = { ...created, path: '/documents/alice/a.bin', sizeBytes: '4', mimeType: 'application/octet-stream', condition: { ifAbsent: true }, parts: [] };
-    const requestBody = { path: status.path, sizeBytes: '4', mimeType: status.mimeType, ifAbsent: true } as const;
+    const created = {
+      sessionId,
+      state: 'OPEN',
+      partSizeBytes: 4,
+      partCount: 1,
+      expiresAt: '',
+      maxExpiresAt: '',
+    };
+    const status = {
+      ...created,
+      path: '/documents/alice/a.bin',
+      sizeBytes: '4',
+      mimeType: 'application/octet-stream',
+      condition: { ifAbsent: true },
+      parts: [],
+    };
+    const requestBody = {
+      path: status.path,
+      sizeBytes: '4',
+      mimeType: status.mimeType,
+      ifAbsent: true,
+    } as const;
     const createSpy = mockFetchOnce(201, created);
-    await expect(client.createUploadSession(requestBody, sessionId, 'demo1-was:upload:alice')).resolves.toEqual(created);
+    await expect(
+      client.createUploadSession(requestBody, sessionId, 'demo1-was:upload:alice'),
+    ).resolves.toEqual(created);
     const [createUrl, createInit] = createSpy.mock.calls[0] as [URL, RequestInit];
     expect(createUrl.pathname).toBe(base);
     expect(createInit.method).toBe('POST');
@@ -337,7 +369,9 @@ describe('StorixClient — upload sessions', () => {
     const stream = new ReadableStream();
     const partResult = { index: 0, sizeBytes: '4', sha256: 'a'.repeat(64), replayed: false };
     const partSpy = mockFetchOnce(200, partResult);
-    await expect(client.putUploadSessionPart(sessionId, '0', stream, '4', 'application/octet-stream')).resolves.toEqual(partResult);
+    await expect(
+      client.putUploadSessionPart(sessionId, '0', stream, '4', 'application/octet-stream'),
+    ).resolves.toEqual(partResult);
     const [partUrl, partInit] = partSpy.mock.calls[2] as [URL, RequestInit];
     expect(partUrl.pathname).toBe(`${base}/${sessionId}/parts/0`);
     expect(partInit.method).toBe('PUT');
@@ -360,9 +394,17 @@ describe('StorixClient — upload sessions', () => {
 
   it('Storix 실패 응답의 상태와 코드를 보존한다', async () => {
     mockFetchOnce(409, { code: 'VFS_FEATURE_DISABLED', message: 'disabled', requestId: 'req-1' });
-    await expect(client.createUploadSession(
-      { path: '/documents/alice/a.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true },
-      '33333333-3333-4333-8333-333333333333', 'demo1-was:upload:alice',
-    )).rejects.toMatchObject({ status: 409, code: 'VFS_FEATURE_DISABLED' });
+    await expect(
+      client.createUploadSession(
+        {
+          path: '/documents/alice/a.bin',
+          sizeBytes: '4',
+          mimeType: 'application/octet-stream',
+          ifAbsent: true,
+        },
+        '33333333-3333-4333-8333-333333333333',
+        'demo1-was:upload:alice',
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'VFS_FEATURE_DISABLED' });
   });
 });

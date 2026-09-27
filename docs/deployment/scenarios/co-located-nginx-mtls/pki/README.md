@@ -8,11 +8,11 @@ gitignore 대상이다.
 ./generate-development-certificates.sh
 ```
 
-| 파일 | 배포 대상 | 용도 |
-| --- | --- | --- |
-| `ca.crt` | Nginx, WAS | 개발 CA 신뢰 anchor |
-| `server.crt`, `server.key` | Nginx | `storix.internal` server 인증 |
-| `was-client.crt`, `was-client.key` | WAS | Nginx에 WAS 신원 증명 |
+| 파일                               | 배포 대상  | 용도                          |
+| ---------------------------------- | ---------- | ----------------------------- |
+| `ca.crt`                           | Nginx, WAS | 개발 CA 신뢰 anchor           |
+| `server.crt`, `server.key`         | Nginx      | `storix.internal` server 인증 |
+| `was-client.crt`, `was-client.key` | WAS        | Nginx에 WAS 신원 증명         |
 
 CA 개인키 `ca.key`는 인증서 발급에만 사용한다. WAS나 Nginx runtime에 배포하지
 않는다. 스크립트는 기존 출력물을 덮어쓰지 않으므로 다시 생성하려면 이전

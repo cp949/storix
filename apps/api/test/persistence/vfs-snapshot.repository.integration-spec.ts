@@ -24,8 +24,15 @@ describe('VfsSnapshotRepository (PostgreSQL)', () => {
     dataSource = new DataSource({
       type: 'postgres',
       url: container.getConnectionUri(),
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, VfsSnapshotEntity, VfsSnapshotEntryEntity,
-        VfsTrashEntity, VfsTrashEntryEntity],
+      entities: [
+        NamespaceEntity,
+        VfsNodeEntity,
+        BlobEntity,
+        VfsSnapshotEntity,
+        VfsSnapshotEntryEntity,
+        VfsTrashEntity,
+        VfsTrashEntryEntity,
+      ],
       migrations: ALL_MIGRATIONS,
       synchronize: false,
     });

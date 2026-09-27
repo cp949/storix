@@ -23,8 +23,14 @@ describe('VfsNodeRepository (Postgres)', () => {
       type: 'postgres',
       url: container.getConnectionUri(),
       synchronize: false,
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity,
-        VfsTrashEntity, VfsTrashEntryEntity],
+      entities: [
+        NamespaceEntity,
+        VfsNodeEntity,
+        BlobEntity,
+        IdempotencyKeyEntity,
+        VfsTrashEntity,
+        VfsTrashEntryEntity,
+      ],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();

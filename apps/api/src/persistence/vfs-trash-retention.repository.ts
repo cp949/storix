@@ -12,18 +12,22 @@ export interface PrunedTrashBatch {
 
 @Injectable()
 export class VfsTrashRetentionRepository {
-  constructor(private readonly dataSource: DataSource, private readonly nodes: VfsNodeRepository) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly nodes: VfsNodeRepository,
+  ) {}
 
   async pruneExpiredBatch(limit: number): Promise<PrunedTrashBatch> {
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error('Invalid trash prune limit');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new Error('Invalid trash prune limit');
     const sqlite = isSqliteDataSource(this.dataSource.options);
-    const rows = await this.dataSource.query(
+    const rows = (await this.dataSource.query(
       `SELECT id, namespace_id AS "namespaceId", CAST(node_count AS TEXT) AS "nodeCount",
         CAST(logical_bytes AS TEXT) AS "logicalBytes" FROM vfs_trash
        WHERE expires_at <= ${sqlite ? "strftime('%Y-%m-%d %H:%M:%f', 'now')" : 'clock_timestamp()'}
        ORDER BY expires_at ASC, namespace_id ASC, id ASC LIMIT ${sqlite ? '?' : '$1'}`,
       [limit],
-    ) as Array<{ id: string; namespaceId: string; nodeCount: string; logicalBytes: string }>;
+    )) as Array<{ id: string; namespaceId: string; nodeCount: string; logicalBytes: string }>;
     const selectedNodes = rows.reduce((total, row) => total + BigInt(row.nodeCount), 0n);
     if (selectedNodes > BigInt(Number.MAX_SAFE_INTEGER))
       throw new Error('Trash prune node count exceeds safe integer');

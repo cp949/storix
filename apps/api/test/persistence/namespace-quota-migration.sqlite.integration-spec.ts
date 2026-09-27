@@ -37,7 +37,10 @@ describe('namespace logical quota migration (SQLite)', () => {
       const rootId = randomUUID();
       const fileId = randomUUID();
       const blobId = randomUUID();
-      await dataSource.query('INSERT INTO namespace (id, name) VALUES (?, ?)', [namespaceId, 'quota-backfill']);
+      await dataSource.query('INSERT INTO namespace (id, name) VALUES (?, ?)', [
+        namespaceId,
+        'quota-backfill',
+      ]);
       await dataSource.query(
         `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,

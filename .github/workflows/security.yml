@@ -40,7 +40,7 @@ jobs:
         with:
           image-ref: storix-api:security
           format: table
-          exit-code: '1'
+          exit-code: "1"
           ignore-unfixed: false
           vuln-type: os,library
           severity: HIGH,CRITICAL

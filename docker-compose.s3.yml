@@ -38,9 +38,9 @@
 
 x-s3-env: &s3-env
   STORIX_STORAGE_ENDPOINT: s3.amazonaws.com
-  STORIX_STORAGE_PORT: '443'
-  STORIX_STORAGE_USE_SSL: 'true'
-  STORIX_STORAGE_PATH_STYLE: 'false'
+  STORIX_STORAGE_PORT: "443"
+  STORIX_STORAGE_USE_SSL: "true"
+  STORIX_STORAGE_PATH_STYLE: "false"
 
 services:
   app:
@@ -49,8 +49,8 @@ services:
       # presigned URL도 같은 엔드포인트를 그대로 쓴다 — S3는 애초에 외부에서
       # 접근 가능한 주소라 내부/외부 구분(STORIX_STORAGE_PUBLIC_*)이 필요 없다.
       STORIX_STORAGE_PUBLIC_ENDPOINT: s3.amazonaws.com
-      STORIX_STORAGE_PUBLIC_PORT: '443'
-      STORIX_STORAGE_PUBLIC_USE_SSL: 'true'
+      STORIX_STORAGE_PUBLIC_PORT: "443"
+      STORIX_STORAGE_PUBLIC_USE_SSL: "true"
 
   gc:
     environment: *s3-env

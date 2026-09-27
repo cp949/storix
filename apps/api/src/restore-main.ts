@@ -20,7 +20,9 @@ async function bootstrap(): Promise<void> {
   } catch (error) {
     logger.error('Restore job 실패', error instanceof Error ? error.stack : String(error));
     const errorReporter = app?.get<ErrorReporter>(ERROR_REPORTER, { strict: false });
-    errorReporter?.report(error instanceof Error ? error : new Error(String(error)), { operation: 'RestoreJob.run' });
+    errorReporter?.report(error instanceof Error ? error : new Error(String(error)), {
+      operation: 'RestoreJob.run',
+    });
     process.exitCode = 1;
   } finally {
     // 실패 경로에서도 반드시 닫는다 — 열린 DB/MinIO 연결이 event loop를 붙잡아

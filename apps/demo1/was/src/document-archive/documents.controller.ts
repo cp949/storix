@@ -1,9 +1,25 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import type { DemoUser } from './demo-user.js';
 import type {
-  FileEntry, UploadSessionCompleteResult, UploadSessionCreateRequest, UploadSessionStatus,
+  FileEntry,
+  UploadSessionCompleteResult,
+  UploadSessionCreateRequest,
+  UploadSessionStatus,
 } from '../storix-client/storix-client.types.js';
 import { StorixClient } from '../storix-client/storix-client.service.js';
 import { StorixApiError } from '../storix-client/storix-client.errors.js';
@@ -24,13 +40,13 @@ function parseUploadSessionCreateRequest(body: unknown): UploadSessionCreateRequ
   const hasIfAbsent = Object.hasOwn(request, 'ifAbsent');
   const hasIfRevision = Object.hasOwn(request, 'ifRevision');
   if (
-    typeof request.path !== 'string'
-    || typeof request.sizeBytes !== 'string'
-    || typeof request.mimeType !== 'string'
-    || (request.sha256 !== undefined && typeof request.sha256 !== 'string')
-    || hasIfAbsent === hasIfRevision
-    || (hasIfAbsent && request.ifAbsent !== true)
-    || (hasIfRevision && typeof request.ifRevision !== 'string')
+    typeof request.path !== 'string' ||
+    typeof request.sizeBytes !== 'string' ||
+    typeof request.mimeType !== 'string' ||
+    (request.sha256 !== undefined && typeof request.sha256 !== 'string') ||
+    hasIfAbsent === hasIfRevision ||
+    (hasIfAbsent && request.ifAbsent !== true) ||
+    (hasIfRevision && typeof request.ifRevision !== 'string')
   ) {
     throw new UploadSessionInvalidRequestError();
   }
@@ -62,7 +78,11 @@ export class DocumentsController {
   ) {
     const user = parseDemoUser(demoUserHeader);
     const internalPath = resolveInternalPath(user, firstQueryValue(path) ?? '');
-    const page = await this.storixClient.find(internalPath, firstQueryValue(name) ?? '', firstQueryValue(cursor));
+    const page = await this.storixClient.find(
+      internalPath,
+      firstQueryValue(name) ?? '',
+      firstQueryValue(cursor),
+    );
     return { items: page.items.map((entry) => toExternalEntry(user, entry)), nextCursor: page.nextCursor };
   }
 
@@ -96,7 +116,11 @@ export class DocumentsController {
     const user = parseDemoUser(demoUserHeader);
     const request = parseUploadSessionCreateRequest(body);
     const path = resolveInternalPath(user, request.path);
-    return this.storixClient.createUploadSession({ ...request, path }, idempotencyKey, `demo1-was:upload:${user}`);
+    return this.storixClient.createUploadSession(
+      { ...request, path },
+      idempotencyKey,
+      `demo1-was:upload:${user}`,
+    );
   }
 
   @Get('upload-sessions/:sessionId')
@@ -120,7 +144,11 @@ export class DocumentsController {
     const user = parseDemoUser(demoUserHeader);
     await this.ownSession(user, sessionId);
     return this.storixClient.putUploadSessionPart(
-      sessionId, index, Readable.toWeb(req) as ReadableStream, contentLength, contentType,
+      sessionId,
+      index,
+      Readable.toWeb(req) as ReadableStream,
+      contentLength,
+      contentType,
     );
   }
 
@@ -152,7 +180,11 @@ export class DocumentsController {
     try {
       session = await this.storixClient.getUploadSession(sessionId);
     } catch (error) {
-      if (error instanceof StorixApiError && error.status === 404 && error.code === 'VFS_UPLOAD_SESSION_NOT_FOUND') {
+      if (
+        error instanceof StorixApiError &&
+        error.status === 404 &&
+        error.code === 'VFS_UPLOAD_SESSION_NOT_FOUND'
+      ) {
         throw new UploadSessionNotFoundError();
       }
       throw error;
@@ -181,7 +213,10 @@ export class DocumentsController {
     };
   }
 
-  private toExternalCompleteResult(user: DemoUser, result: UploadSessionCompleteResult): UploadSessionCompleteResult {
+  private toExternalCompleteResult(
+    user: DemoUser,
+    result: UploadSessionCompleteResult,
+  ): UploadSessionCompleteResult {
     const userRoot = resolveInternalPath(user, '/');
     return {
       ...result,

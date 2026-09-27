@@ -68,27 +68,41 @@ describe('capability 시작 설정', () => {
 
   it('지정 파일을 읽을 수 없으면 실패한다', async () => {
     await expect(
-      loadCapabilityConfig(new ConfigService({ STORIX_VFS_CAPABILITIES_CONFIG_PATH: join(dir, 'missing.json') })),
+      loadCapabilityConfig(
+        new ConfigService({ STORIX_VFS_CAPABILITIES_CONFIG_PATH: join(dir, 'missing.json') }),
+      ),
     ).rejects.toThrow(/capabilit|설정/i);
   });
 
   it('잘못된 JSON이면 실패한다', async () => {
     const path = join(dir, 'invalid.json');
     await writeFile(path, '{');
-    await expect(loadCapabilityConfig(new ConfigService({ STORIX_VFS_CAPABILITIES_CONFIG_PATH: path }))).rejects.toThrow(
-      /JSON/,
-    );
+    await expect(
+      loadCapabilityConfig(new ConfigService({ STORIX_VFS_CAPABILITIES_CONFIG_PATH: path })),
+    ).rejects.toThrow(/JSON/);
   });
 
   it.each([
-    [{ globalAllowedCapabilities: [], namespaceAllowedCapabilities: {}, extra: true }, '알 수 없는 최상위 key'],
+    [
+      { globalAllowedCapabilities: [], namespaceAllowedCapabilities: {}, extra: true },
+      '알 수 없는 최상위 key',
+    ],
     [{ globalAllowedCapabilities: 'content-search', namespaceAllowedCapabilities: {} }, '전역 목록 타입'],
     [{ globalAllowedCapabilities: [1], namespaceAllowedCapabilities: {} }, '전역 항목 타입'],
-    [{ globalAllowedCapabilities: ['Content-Search'], namespaceAllowedCapabilities: {} }, 'capability 식별자 형식'],
+    [
+      { globalAllowedCapabilities: ['Content-Search'], namespaceAllowedCapabilities: {} },
+      'capability 식별자 형식',
+    ],
     [{ globalAllowedCapabilities: [], namespaceAllowedCapabilities: [] }, 'namespace map 타입'],
     [{ globalAllowedCapabilities: [], namespaceAllowedCapabilities: { invalid: [] } }, 'namespace UUID 형식'],
-    [{ globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NAMESPACE_ID]: 'content-search' } }, 'namespace 목록 타입'],
-    [{ globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NAMESPACE_ID]: [1] } }, 'namespace 항목 타입'],
+    [
+      { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NAMESPACE_ID]: 'content-search' } },
+      'namespace 목록 타입',
+    ],
+    [
+      { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NAMESPACE_ID]: [1] } },
+      'namespace 항목 타입',
+    ],
     [{ globalAllowedCapabilities: [] }, '필수 key 누락'],
   ])('%s 설정은 거부한다: %s', async (value, _reason) => {
     await expect(loadFile(value)).rejects.toThrow();

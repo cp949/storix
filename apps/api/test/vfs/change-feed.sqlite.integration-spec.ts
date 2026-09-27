@@ -31,7 +31,10 @@ describe('Change feed HTTP contract (SQLite)', () => {
     });
     const module = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule],
-    }).overrideProvider(CapabilityService).useValue(capabilities).compile();
+    })
+      .overrideProvider(CapabilityService)
+      .useValue(capabilities)
+      .compile();
     const next = module.createNestApplication();
     await next.init();
     return next;
@@ -41,22 +44,38 @@ describe('Change feed HTTP contract (SQLite)', () => {
     if (process.env.STORIX_DB_DRIVER !== 'sqlite') throw new Error('Run with STORIX_DB_DRIVER=sqlite');
     directory = await mkdtemp(join(tmpdir(), 'storix-change-feed-'));
     Object.assign(process.env, {
-      STORIX_DB_SQLITE_PATH: join(directory, 'feed.sqlite'), STORIX_API_KEY: API_KEY,
+      STORIX_DB_SQLITE_PATH: join(directory, 'feed.sqlite'),
+      STORIX_API_KEY: API_KEY,
       STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64),
-      STORIX_STORAGE_ENDPOINT: '127.0.0.1', STORIX_STORAGE_PORT: '9000',
-      STORIX_STORAGE_ACCESS_KEY: 'test-access', STORIX_STORAGE_SECRET_KEY: 'test-secret',
+      STORIX_STORAGE_ENDPOINT: '127.0.0.1',
+      STORIX_STORAGE_PORT: '9000',
+      STORIX_STORAGE_ACCESS_KEY: 'test-access',
+      STORIX_STORAGE_SECRET_KEY: 'test-secret',
       STORIX_STORAGE_BUCKET: 'change-feed-test',
     });
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
-    const migration = new DataSource({ type: 'better-sqlite3',
-      database: join(directory, 'feed.sqlite'), migrations: ALL_MIGRATIONS,
-      migrationsTransactionMode: 'each' });
+    const migration = new DataSource({
+      type: 'better-sqlite3',
+      database: join(directory, 'feed.sqlite'),
+      migrations: ALL_MIGRATIONS,
+      migrationsTransactionMode: 'each',
+    });
     await migration.initialize();
-    try { await migration.runMigrations(); } finally { await migration.destroy(); }
+    try {
+      await migration.runMigrations();
+    } finally {
+      await migration.destroy();
+    }
     app = await bootstrap();
-    const create = async () => (await request(app.getHttpServer()).post('/api/v2/namespaces')
-      .set('Authorization', `Bearer ${API_KEY}`).set('Idempotency-Key', randomUUID())
-      .send({ name: randomUUID() }).expect(201)).body.id as string;
+    const create = async () =>
+      (
+        await request(app.getHttpServer())
+          .post('/api/v2/namespaces')
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({ name: randomUUID() })
+          .expect(201)
+      ).body.id as string;
     enabledId = await create();
     otherId = await create();
     disabledId = await create();

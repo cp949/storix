@@ -36,9 +36,18 @@ describe('DocumentsController — upload sessions', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [DocumentsController],
-      providers: [{ provide: StorixClient, useValue: {
-        createUploadSession, getUploadSession, putUploadSessionPart, completeUploadSession, cancelUploadSession,
-      } }],
+      providers: [
+        {
+          provide: StorixClient,
+          useValue: {
+            createUploadSession,
+            getUploadSession,
+            putUploadSessionPart,
+            completeUploadSession,
+            cancelUploadSession,
+          },
+        },
+      ],
     }).compile();
     app = moduleRef.createNestApplication({ bodyParser: false });
     configureBodyParsers(app);
@@ -53,15 +62,25 @@ describe('DocumentsController — upload sessions', () => {
   afterAll(async () => app.close());
 
   beforeEach(() => {
-    for (const mock of [createUploadSession, getUploadSession, putUploadSessionPart, completeUploadSession, cancelUploadSession]) {
+    for (const mock of [
+      createUploadSession,
+      getUploadSession,
+      putUploadSessionPart,
+      completeUploadSession,
+      cancelUploadSession,
+    ]) {
       mock.mockReset();
     }
   });
 
   it('생성 경로를 사용자 내부 경로로 바꾸고 사용자별 mutation scope를 보낸다', async () => {
     createUploadSession.mockResolvedValue({
-      sessionId: id, state: 'OPEN', partSizeBytes: 4, partCount: 1,
-      expiresAt: session.expiresAt, maxExpiresAt: session.maxExpiresAt,
+      sessionId: id,
+      state: 'OPEN',
+      partSizeBytes: 4,
+      partCount: 1,
+      expiresAt: session.expiresAt,
+      maxExpiresAt: session.maxExpiresAt,
     });
     await request(app.getHttpServer())
       .post('/demo-api/documents/upload-sessions')
@@ -70,8 +89,14 @@ describe('DocumentsController — upload sessions', () => {
       .send({ path: '/large.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true })
       .expect(201);
     expect(createUploadSession).toHaveBeenCalledWith(
-      { path: '/documents/alice/large.bin', sizeBytes: '4', mimeType: 'application/octet-stream', ifAbsent: true },
-      id, 'demo1-was:upload:alice',
+      {
+        path: '/documents/alice/large.bin',
+        sizeBytes: '4',
+        mimeType: 'application/octet-stream',
+        ifAbsent: true,
+      },
+      id,
+      'demo1-was:upload:alice',
     );
   });
 
@@ -95,7 +120,10 @@ describe('DocumentsController — upload sessions', () => {
     getUploadSession.mockResolvedValue(session);
     cancelUploadSession.mockResolvedValue({ ...session, state: 'CANCELLED' });
     const status = await request(app.getHttpServer()).get(route).set('X-Demo-User', 'alice').expect(200);
-    const cancelled = await request(app.getHttpServer()).delete(route).set('X-Demo-User', 'alice').expect(200);
+    const cancelled = await request(app.getHttpServer())
+      .delete(route)
+      .set('X-Demo-User', 'alice')
+      .expect(200);
     expect(status.body.path).toBe('/large.bin');
     expect(cancelled.body.path).toBe('/large.bin');
     expect(getUploadSession).toHaveBeenCalledTimes(2);
@@ -105,7 +133,11 @@ describe('DocumentsController — upload sessions', () => {
     getUploadSession.mockResolvedValue(session);
     const requests = [
       () => request(app.getHttpServer()).get(route),
-      () => request(app.getHttpServer()).put(`${route}/parts/0`).set('Content-Type', 'application/octet-stream').send(Buffer.from('test')),
+      () =>
+        request(app.getHttpServer())
+          .put(`${route}/parts/0`)
+          .set('Content-Type', 'application/octet-stream')
+          .send(Buffer.from('test')),
       () => request(app.getHttpServer()).post(`${route}/complete`),
       () => request(app.getHttpServer()).delete(route),
     ];
@@ -128,9 +160,9 @@ describe('DocumentsController — upload sessions', () => {
   it('없는 세션과 타 사용자 세션은 동일한 404 응답이다', async () => {
     getUploadSession.mockResolvedValueOnce(session);
     const otherUser = await request(app.getHttpServer()).get(route).set('X-Demo-User', 'bob').expect(404);
-    getUploadSession.mockRejectedValueOnce(new StorixApiError(
-      404, 'VFS_UPLOAD_SESSION_NOT_FOUND', 'upstream session absent', 'upstream-1',
-    ));
+    getUploadSession.mockRejectedValueOnce(
+      new StorixApiError(404, 'VFS_UPLOAD_SESSION_NOT_FOUND', 'upstream session absent', 'upstream-1'),
+    );
     const absent = await request(app.getHttpServer()).get(route).set('X-Demo-User', 'bob').expect(404);
     expect(absent.body).toEqual(otherUser.body);
   });
@@ -159,8 +191,17 @@ describe('DocumentsController — upload sessions', () => {
     completeUploadSession.mockResolvedValue({
       status: 201,
       body: {
-        resource: { path: session.path, name: 'large.bin', type: 'FILE', size: 4, mimeType: session.mimeType,
-          createdAt: '', updatedAt: '', version: 1, revision: 'r1.test' },
+        resource: {
+          path: session.path,
+          name: 'large.bin',
+          type: 'FILE',
+          size: 4,
+          mimeType: session.mimeType,
+          createdAt: '',
+          updatedAt: '',
+          version: 1,
+          revision: 'r1.test',
+        },
         affectedRevisions: [
           { path: '/', revision: 'r1.root' },
           { path: '/documents', revision: 'r1.documents' },
@@ -169,24 +210,35 @@ describe('DocumentsController — upload sessions', () => {
         ],
       },
     });
-    const response = await request(app.getHttpServer()).post(`${route}/complete`).set('X-Demo-User', 'alice').expect(201);
+    const response = await request(app.getHttpServer())
+      .post(`${route}/complete`)
+      .set('X-Demo-User', 'alice')
+      .expect(201);
     expect(response.body.resource.path).toBe('/large.bin');
-    expect(response.body.affectedRevisions.map((entry: { path: string }) => entry.path)).toEqual(['/', '/large.bin']);
+    expect(response.body.affectedRevisions.map((entry: { path: string }) => entry.path)).toEqual([
+      '/',
+      '/large.bin',
+    ]);
   });
 
   it('Storix 오류 상태와 코드를 그대로 전달한다', async () => {
     getUploadSession.mockResolvedValue(session);
-    putUploadSessionPart.mockRejectedValue(new StorixApiError(409, 'VFS_UPLOAD_PART_CONFLICT', 'conflict', 'upstream-1'));
+    putUploadSessionPart.mockRejectedValue(
+      new StorixApiError(409, 'VFS_UPLOAD_PART_CONFLICT', 'conflict', 'upstream-1'),
+    );
     const response = await request(app.getHttpServer())
-      .put(`${route}/parts/0`).set('X-Demo-User', 'alice').set('Content-Type', 'application/octet-stream')
-      .send(Buffer.from('test')).expect(409);
+      .put(`${route}/parts/0`)
+      .set('X-Demo-User', 'alice')
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('test'))
+      .expect(409);
     expect(response.body.code).toBe('VFS_UPLOAD_PART_CONFLICT');
   });
 
   it('Storix 429의 Retry-After를 WAS 응답에 전달한다', async () => {
-    createUploadSession.mockRejectedValue(new StorixApiError(
-      429, 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', 'limit', 'upstream-1', '1',
-    ));
+    createUploadSession.mockRejectedValue(
+      new StorixApiError(429, 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', 'limit', 'upstream-1', '1'),
+    );
     const response = await request(app.getHttpServer())
       .post('/demo-api/documents/upload-sessions')
       .set('X-Demo-User', 'alice')

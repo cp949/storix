@@ -17,7 +17,7 @@
 services:
   nginx-cert-init:
     image: alpine:3.21
-    entrypoint: ['/bin/sh', '-c']
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         apk add --no-cache openssl &&
@@ -32,7 +32,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - '${STORIX_NGINX_PUBLIC_PORT:-8443}:443'
+      - "${STORIX_NGINX_PUBLIC_PORT:-8443}:443"
     volumes:
       - nginx-certs:/etc/nginx/certs:ro
       - ./docs/deployment/nginx-reverse-proxy.conf:/etc/nginx/conf.d/default.conf:ro

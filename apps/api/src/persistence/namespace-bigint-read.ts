@@ -25,16 +25,22 @@ export async function withExactNamespaceBigints(
   const exact = new Map<string, ExactNamespaceCounters>();
   for (let start = 0; start < namespaces.length; start += ID_BATCH_SIZE) {
     const ph = new DialectPlaceholders(isSqliteDataSource(manager.connection.options));
-    const ids = namespaces.slice(start, start + ID_BATCH_SIZE).map((namespace) => ph.bind(namespace.id)).join(', ');
+    const ids = namespaces
+      .slice(start, start + ID_BATCH_SIZE)
+      .map((namespace) => ph.bind(namespace.id))
+      .join(', ');
     let rows: ExactNamespaceCounters[];
     try {
-      rows = await manager.query(`SELECT id,
+      rows = (await manager.query(
+        `SELECT id,
     CAST(max_total_logical_bytes AS TEXT) AS "maxTotalLogicalBytes",
     CAST(live_file_byte_count AS TEXT) AS "liveFileByteCount",
     CAST(retained_snapshot_byte_count AS TEXT) AS "retainedSnapshotByteCount",
     CAST(retained_trash_byte_count AS TEXT) AS "retainedTrashByteCount",
     CAST(retained_trash_node_count AS TEXT) AS "retainedTrashNodeCount"
-    FROM namespace WHERE id IN (${ids})`, ph.params) as ExactNamespaceCounters[];
+    FROM namespace WHERE id IN (${ids})`,
+        ph.params,
+      )) as ExactNamespaceCounters[];
     } catch (error) {
       throw classifyPersistenceFailure(error) ?? error;
     }

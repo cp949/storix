@@ -3,7 +3,10 @@ import { DataSource } from 'typeorm';
 import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { NamespaceAlreadyExistsError } from '../namespace/namespace.errors.js';
-import { NamespaceCreationReceiptInput, NamespaceCreationReceiptWriter } from './namespace-creation-receipt.writer.js';
+import {
+  NamespaceCreationReceiptInput,
+  NamespaceCreationReceiptWriter,
+} from './namespace-creation-receipt.writer.js';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 
@@ -11,10 +14,12 @@ function isUniqueViolation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const candidate = error as { code?: unknown; driverError?: { code?: unknown }; message?: unknown };
   const code = candidate.code ?? candidate.driverError?.code;
-  return code === POSTGRES_UNIQUE_VIOLATION ||
+  return (
+    code === POSTGRES_UNIQUE_VIOLATION ||
     code === 'SQLITE_CONSTRAINT_UNIQUE' ||
     code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
-    (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message));
+    (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message))
+  );
 }
 
 @Injectable()

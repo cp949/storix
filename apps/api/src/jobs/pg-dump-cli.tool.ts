@@ -56,7 +56,18 @@ export class PgDumpCliTool implements DbDumpTool {
   async dump(outFile: string): Promise<void> {
     await runProcess(
       'pg_dump',
-      ['-h', this.conn.host, '-p', String(this.conn.port), '-U', this.conn.username, '-Fc', '-f', outFile, this.conn.database],
+      [
+        '-h',
+        this.conn.host,
+        '-p',
+        String(this.conn.port),
+        '-U',
+        this.conn.username,
+        '-Fc',
+        '-f',
+        outFile,
+        this.conn.database,
+      ],
       this.conn.password,
     );
   }
@@ -68,7 +79,19 @@ export class PgDumpCliTool implements DbDumpTool {
   async restore(inFile: string): Promise<void> {
     await runProcess(
       'pg_restore',
-      ['-h', this.conn.host, '-p', String(this.conn.port), '-U', this.conn.username, '-d', this.conn.database, '--clean', '--if-exists', inFile],
+      [
+        '-h',
+        this.conn.host,
+        '-p',
+        String(this.conn.port),
+        '-U',
+        this.conn.username,
+        '-d',
+        this.conn.database,
+        '--clean',
+        '--if-exists',
+        inFile,
+      ],
       this.conn.password,
     );
   }

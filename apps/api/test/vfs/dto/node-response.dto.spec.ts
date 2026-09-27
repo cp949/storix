@@ -1,5 +1,9 @@
 import { VfsNodeRecord } from '../../../src/persistence/vfs-node.repository.js';
-import { toConditionalContentResponse, toNodeResponse, toPreconditionCurrent } from '../../../src/vfs/dto/node-response.dto.js';
+import {
+  toConditionalContentResponse,
+  toNodeResponse,
+  toPreconditionCurrent,
+} from '../../../src/vfs/dto/node-response.dto.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
 
 function makeRecord(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {

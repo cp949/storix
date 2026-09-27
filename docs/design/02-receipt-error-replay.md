@@ -66,14 +66,14 @@ claim이 `owner`인 요청의 보류된 입력 오류(restore/delete의 snapshot
 `DomainError` 중 status 400–499이며 아래 제외 항목에 없는 것이다. 같은 key에 완료 receipt가 있으면 재생 또는
 `MUTATION_KEY_REUSED`, 진행 중이면 `MUTATION_IN_PROGRESS`가 보류한 요청 오류보다 우선한다.
 
-| 종류                    | 예                                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 요청 형식·경로 오류 400 | `VFS_INVALID_PATH`(NFC 아닌 경로 포함), `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`                             |
+| 종류                    | 예                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 요청 형식·경로 오류 400 | `VFS_INVALID_PATH`(NFC 아닌 경로 포함), `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`                                   |
 | 대상 부재 404           | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 내부 entry 부재), `VFS_SNAPSHOT_NOT_FOUND`(snapshot 부재 또는 잘못된 snapshot UUID 형식) |
-| 상태 충돌 409           | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등   |
-| 조건 불일치 412         | `VFS_PRECONDITION_FAILED`(`current` 포함)                                                                                  |
-| 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                                      |
-| 조건 누락 428           | `VFS_PRECONDITION_REQUIRED`                                                                                                |
+| 상태 충돌 409           | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등         |
+| 조건 불일치 412         | `VFS_PRECONDITION_FAILED`(`current` 포함)                                                                                        |
+| 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                                            |
+| 조건 누락 428           | `VFS_PRECONDITION_REQUIRED`                                                                                                      |
 
 - 같은 key와 같은 fingerprint의 재시도는 그 사이 VFS 상태가 바뀌었어도 최초 status·body·`X-Request-Id`를 재생한다.
   완료 시점부터 30일이 지나 만료된 receipt는 claim 시 삭제되고 새로 평가한다.
@@ -118,14 +118,14 @@ content 업로드의 파일 크기 상한 413은 request body를 끝까지 해�
 
 ### 3.4 호출자 규칙
 
-| 응답                                                               | 같은 key 재시도                                           |
-| ------------------------------------------------------------------ | --------------------------------------------------------- |
-| 503 `DB_BUSY`, `STORAGE_UNAVAILABLE`                                | 같은 요청·같은 key로 재시도한다. 5xx receipt는 저장하지 않으므로 기존 완료 receipt가 있으면 재생하고, 없으면 요청을 다시 평가한다. `Retry-After`가 있으면 그 시간만큼 기다린다. |
-| 500 `STORAGE_FAILURE`, `INTERNAL_ERROR` 및 그 밖의 미분류 5xx       | 자동 재시도하지 않고 운영자/호출자가 원인을 조사한다. 변경 결과가 불명확한 경우 같은 key 재요청은 receipt가 있으면 재생하고 없으면 다시 평가하므로, 안전성을 확인한 뒤 결정한다. |
-| 응답 헤더 전송 뒤 연결 끊김                                        | JSON 오류 코드로 바꿀 수 없다. 전체 파일이면 `Content-Length`와 `X-Storix-Sha256`으로 완전성을 검사하고, 불완전하면 자동 재시도하지 말고 조사 후 다시 조회한다. |
-| 409 `MUTATION_IN_PROGRESS`                                         | `Retry-After` 뒤 가능                                     |
-| 404·412·413(상한)·400·409·428을 받은 뒤 상태 또는 입력을 고친 경우 | 최초 오류가 재생되거나 `MUTATION_KEY_REUSED`. 새 key 사용 |
-| 3.3의 오류                                                         | 입력을 고쳐 재시도. 재생 보장 없음                        |
+| 응답                                                               | 같은 key 재시도                                                                                                                                                                  |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 503 `DB_BUSY`, `STORAGE_UNAVAILABLE`                               | 같은 요청·같은 key로 재시도한다. 5xx receipt는 저장하지 않으므로 기존 완료 receipt가 있으면 재생하고, 없으면 요청을 다시 평가한다. `Retry-After`가 있으면 그 시간만큼 기다린다.  |
+| 500 `STORAGE_FAILURE`, `INTERNAL_ERROR` 및 그 밖의 미분류 5xx      | 자동 재시도하지 않고 운영자/호출자가 원인을 조사한다. 변경 결과가 불명확한 경우 같은 key 재요청은 receipt가 있으면 재생하고 없으면 다시 평가하므로, 안전성을 확인한 뒤 결정한다. |
+| 응답 헤더 전송 뒤 연결 끊김                                        | JSON 오류 코드로 바꿀 수 없다. 전체 파일이면 `Content-Length`와 `X-Storix-Sha256`으로 완전성을 검사하고, 불완전하면 자동 재시도하지 말고 조사 후 다시 조회한다.                  |
+| 409 `MUTATION_IN_PROGRESS`                                         | `Retry-After` 뒤 가능                                                                                                                                                            |
+| 404·412·413(상한)·400·409·428을 받은 뒤 상태 또는 입력을 고친 경우 | 최초 오류가 재생되거나 `MUTATION_KEY_REUSED`. 새 key 사용                                                                                                                        |
+| 3.3의 오류                                                         | 입력을 고쳐 재시도. 재생 보장 없음                                                                                                                                               |
 
 `STORAGE_FAILURE`는 식별된 영구 저장 오류이며, `INTERNAL_ERROR`는 원인을 분류하지 못한 서버 오류다. 두 코드는
 정상적인 호출 재시도 정책으로 해결된다고 약속하지 않는다. 오류 body는 내부 메시지·파일 바이트·키·자격 증명을

@@ -57,7 +57,12 @@ export class PrometheusMetricsRegistry implements MetricsRegistry {
     return created;
   }
 
-  private getOrCreateHistogram(name: string, help: string, buckets: number[], labelNames: string[]): Histogram<string> {
+  private getOrCreateHistogram(
+    name: string,
+    help: string,
+    buckets: number[],
+    labelNames: string[],
+  ): Histogram<string> {
     const existing = this.histograms.get(name);
     if (existing) {
       return existing;

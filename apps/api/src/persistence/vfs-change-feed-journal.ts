@@ -25,21 +25,28 @@ export async function readChangeFeedState(
   sqlite: boolean,
 ): Promise<ChangeFeedState | null> {
   const ph = new DialectPlaceholders(sqlite);
-  const rows = await manager.query(
+  const rows = (await manager.query(
     `SELECT namespace_id, CAST(last_sequence AS TEXT) AS last_sequence,
       CAST(pruned_through AS TEXT) AS pruned_through, has_checkpoint, signing_secret
      FROM vfs_change_feed_state WHERE namespace_id = ${ph.bind(namespaceId)}`,
     ph.params,
-  ) as Array<{ namespace_id: string; last_sequence: string; pruned_through: string;
-    has_checkpoint: boolean | number; signing_secret: string }>;
+  )) as Array<{
+    namespace_id: string;
+    last_sequence: string;
+    pruned_through: string;
+    has_checkpoint: boolean | number;
+    signing_secret: string;
+  }>;
   const row = rows[0];
-  return row ? {
-    namespaceId: row.namespace_id,
-    lastSequence: row.last_sequence,
-    prunedThrough: row.pruned_through,
-    hasCheckpoint: Boolean(row.has_checkpoint),
-    signingSecret: row.signing_secret,
-  } : null;
+  return row
+    ? {
+        namespaceId: row.namespace_id,
+        lastSequence: row.last_sequence,
+        prunedThrough: row.pruned_through,
+        hasCheckpoint: Boolean(row.has_checkpoint),
+        signingSecret: row.signing_secret,
+      }
+    : null;
 }
 
 export interface ChangeFeedEvent {
@@ -67,17 +74,25 @@ export async function readChangeFeedEvents(
 ): Promise<ChangeFeedEvent[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1001) throw new Error('Invalid change feed limit');
   const ph = new DialectPlaceholders(sqlite);
-  const rows = await manager.query(
+  const rows = (await manager.query(
     `SELECT namespace_id, CAST(e.sequence AS TEXT) AS sequence, operation_id, operation_index,
       operation_count, kind, node_id, node_type, path, previous_path, revision, occurred_at
      FROM vfs_change_event e WHERE e.namespace_id = ${ph.bind(namespaceId)}
        AND e.sequence > ${ph.bind(afterSequence)} ORDER BY e.sequence ASC LIMIT ${ph.bind(limit)}`,
     ph.params,
-  ) as Array<{
-    namespace_id: string; sequence: string; operation_id: string; operation_index: number;
-    operation_count: number; kind: VfsChangeKind; node_id: string;
-    node_type: VfsNodeEntity['type']; path: string; previous_path: string | null;
-    revision: string | null; occurred_at: Date | string;
+  )) as Array<{
+    namespace_id: string;
+    sequence: string;
+    operation_id: string;
+    operation_index: number;
+    operation_count: number;
+    kind: VfsChangeKind;
+    node_id: string;
+    node_type: VfsNodeEntity['type'];
+    path: string;
+    previous_path: string | null;
+    revision: string | null;
+    occurred_at: Date | string;
   }>;
   return rows.map((row) => ({
     namespaceId: row.namespace_id,
@@ -91,8 +106,8 @@ export async function readChangeFeedEvents(
     path: row.path,
     previousPath: row.previous_path,
     revision: row.revision,
-    occurredAt: row.occurred_at instanceof Date ? row.occurred_at :
-      new Date(row.occurred_at.replace(' ', 'T') + 'Z'),
+    occurredAt:
+      row.occurred_at instanceof Date ? row.occurred_at : new Date(row.occurred_at.replace(' ', 'T') + 'Z'),
   }));
 }
 
@@ -112,7 +127,7 @@ export async function captureChangeFeedNodes(
   const repo = manager.getRepository(VfsNodeEntity);
   const nodes: VfsNodeEntity[] = [];
   for (let offset = 0; offset < ids.length; offset += 250) {
-    nodes.push(...await repo.find({ where: { namespaceId, id: In(ids.slice(offset, offset + 250)) } }));
+    nodes.push(...(await repo.find({ where: { namespaceId, id: In(ids.slice(offset, offset + 250)) } })));
   }
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const states = new Map<string, ChangeFeedNodeState>();
@@ -122,8 +137,10 @@ export async function captureChangeFeedNodes(
     if (cached) return cached;
     if (resolving.has(node.id)) throw new Error('VFS node parent cycle');
     resolving.add(node.id);
-    const parent = node.parentId === null ? null :
-      (byId.get(node.parentId) ?? await repo.findOneBy({ id: node.parentId, namespaceId }));
+    const parent =
+      node.parentId === null
+        ? null
+        : (byId.get(node.parentId) ?? (await repo.findOneBy({ id: node.parentId, namespaceId })));
     if (node.parentId !== null && !parent) throw new Error('VFS parent node missing');
     if (parent) byId.set(parent.id, parent);
     const segments = parent ? [...(await resolve(parent)).segments, node.name] : [];
@@ -148,8 +165,14 @@ export async function trackChangeFeedBefore(tx: MutationTx, ids: string[]): Prom
 function sameNode(before: ChangeFeedNodeState, after: ChangeFeedNodeState): boolean {
   const a = before.node;
   const b = after.node;
-  return before.path === after.path && a.type === b.type && a.blobId === b.blobId &&
-    a.size === b.size && a.mimeType === b.mimeType && a.version === b.version;
+  return (
+    before.path === after.path &&
+    a.type === b.type &&
+    a.blobId === b.blobId &&
+    a.size === b.size &&
+    a.mimeType === b.mimeType &&
+    a.version === b.version
+  );
 }
 
 export async function appendChangeFeedEvents(
@@ -159,18 +182,25 @@ export async function appendChangeFeedEvents(
   changedIds: string[],
   sqlite: boolean,
 ): Promise<void> {
-  const after = await captureChangeFeedNodes(manager, namespaceId,
-    [...new Set([...before.keys(), ...changedIds])]);
+  const after = await captureChangeFeedNodes(manager, namespaceId, [
+    ...new Set([...before.keys(), ...changedIds]),
+  ]);
   // 자식의 최종 상태가 원상복구돼도 커밋된 조상 listing revision 변화는
   // updated 이벤트다. FILE과 DIRECTORY 모두 최종 version을 비교한다.
   const meaningful = new Set<string>();
   for (const id of new Set([...before.keys(), ...after.keys()])) {
     const oldState = before.get(id);
     const newState = after.get(id);
-    if (!oldState || !newState || oldState.path !== newState.path ||
-        oldState.node.type !== newState.node.type || oldState.node.blobId !== newState.node.blobId ||
-        oldState.node.size !== newState.node.size || oldState.node.mimeType !== newState.node.mimeType ||
-        oldState.node.version !== newState.node.version) {
+    if (
+      !oldState ||
+      !newState ||
+      oldState.path !== newState.path ||
+      oldState.node.type !== newState.node.type ||
+      oldState.node.blobId !== newState.node.blobId ||
+      oldState.node.size !== newState.node.size ||
+      oldState.node.mimeType !== newState.node.mimeType ||
+      oldState.node.version !== newState.node.version
+    ) {
       meaningful.add(id);
     }
   }
@@ -197,11 +227,20 @@ export async function appendChangeFeedEvents(
   for (const id of new Set([...before.keys(), ...after.keys()])) {
     const oldState = before.get(id);
     const newState = after.get(id);
-    if (oldState && newState && (sameNode(oldState, newState) ||
-      (!meaningful.has(id) && !changedAncestors.has(id)))) continue;
+    if (
+      oldState &&
+      newState &&
+      (sameNode(oldState, newState) || (!meaningful.has(id) && !changedAncestors.has(id)))
+    )
+      continue;
     if (!oldState && !newState) continue;
-    const kind: VfsChangeKind = !oldState ? 'created' : !newState ? 'deleted' :
-      oldState.path !== newState.path ? 'moved' : 'updated';
+    const kind: VfsChangeKind = !oldState
+      ? 'created'
+      : !newState
+        ? 'deleted'
+        : oldState.path !== newState.path
+          ? 'moved'
+          : 'updated';
     const state = newState ?? oldState!;
     changes.push({
       kind,
@@ -214,8 +253,10 @@ export async function appendChangeFeedEvents(
     });
   }
   if (changes.length === 0) return;
-  changes.sort((a, b) => compareSegments(a.segments, b.segments) ||
-    (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0));
+  changes.sort(
+    (a, b) =>
+      compareSegments(a.segments, b.segments) || (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0),
+  );
 
   const states = manager.getRepository(VfsChangeFeedStateEntity);
   const state = await readChangeFeedState(manager, namespaceId, sqlite);

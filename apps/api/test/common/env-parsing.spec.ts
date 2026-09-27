@@ -1,4 +1,9 @@
-import { parseBoolean, parseOptionalString, parsePositiveInt, requireEnv } from '../../src/common/env-parsing.js';
+import {
+  parseBoolean,
+  parseOptionalString,
+  parsePositiveInt,
+  requireEnv,
+} from '../../src/common/env-parsing.js';
 
 describe('parsePositiveInt', () => {
   it('값이 없으면 fallback을 반환한다', () => {

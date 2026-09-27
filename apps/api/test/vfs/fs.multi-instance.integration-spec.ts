@@ -105,7 +105,13 @@ describe('공유 PostgreSQL의 다중 API 인스턴스 계약', () => {
       .send(body);
   }
 
-  function conditionalUpload(app: StartedApp, namespaceId: string, key: string, revision: string, bytes: Buffer) {
+  function conditionalUpload(
+    app: StartedApp,
+    namespaceId: string,
+    key: string,
+    revision: string,
+    bytes: Buffer,
+  ) {
     return request(`http://127.0.0.1:${app.port}`)
       .post(`/api/v2/namespaces/${namespaceId}/fs/content/conditional`)
       .query({ path: '/target' })
@@ -221,8 +227,12 @@ describe('공유 PostgreSQL의 다중 API 인스턴스 계약', () => {
       namespaceId,
     ]);
     const pending = [
-      conditionalUpload(first, namespaceId, keys[0], target.revision, payloads[0]).then((response) => response),
-      conditionalUpload(second, namespaceId, keys[1], target.revision, payloads[1]).then((response) => response),
+      conditionalUpload(first, namespaceId, keys[0], target.revision, payloads[0]).then(
+        (response) => response,
+      ),
+      conditionalUpload(second, namespaceId, keys[1], target.revision, payloads[1]).then(
+        (response) => response,
+      ),
     ];
 
     try {

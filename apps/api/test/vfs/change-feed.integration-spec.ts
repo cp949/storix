@@ -30,7 +30,10 @@ describe('Change feed HTTP contract (PostgreSQL)', () => {
     });
     const module = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule],
-    }).overrideProvider(CapabilityService).useValue(capabilities).compile();
+    })
+      .overrideProvider(CapabilityService)
+      .useValue(capabilities)
+      .compile();
     const next = module.createNestApplication();
     await next.init();
     return next;
@@ -39,23 +42,37 @@ describe('Change feed HTTP contract (PostgreSQL)', () => {
   beforeAll(async () => {
     container = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     Object.assign(process.env, {
-      STORIX_DB_HOST: container.getHost(), STORIX_DB_PORT: String(container.getPort()),
-      STORIX_DB_USERNAME: container.getUsername(), STORIX_DB_PASSWORD: container.getPassword(),
-      STORIX_DB_NAME: container.getDatabase(), STORIX_API_KEY: API_KEY,
+      STORIX_DB_HOST: container.getHost(),
+      STORIX_DB_PORT: String(container.getPort()),
+      STORIX_DB_USERNAME: container.getUsername(),
+      STORIX_DB_PASSWORD: container.getPassword(),
+      STORIX_DB_NAME: container.getDatabase(),
+      STORIX_API_KEY: API_KEY,
       STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64),
-      STORIX_STORAGE_ENDPOINT: '127.0.0.1', STORIX_STORAGE_PORT: '9000',
-      STORIX_STORAGE_ACCESS_KEY: 'test-access', STORIX_STORAGE_SECRET_KEY: 'test-secret',
+      STORIX_STORAGE_ENDPOINT: '127.0.0.1',
+      STORIX_STORAGE_PORT: '9000',
+      STORIX_STORAGE_ACCESS_KEY: 'test-access',
+      STORIX_STORAGE_SECRET_KEY: 'test-secret',
       STORIX_STORAGE_BUCKET: 'change-feed-test',
     });
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
-    migration = new DataSource({ type: 'postgres', url: container.getConnectionUri(),
-      migrations: ALL_MIGRATIONS });
+    migration = new DataSource({
+      type: 'postgres',
+      url: container.getConnectionUri(),
+      migrations: ALL_MIGRATIONS,
+    });
     await migration.initialize();
     await migration.runMigrations();
     app = await bootstrap();
-    const create = async () => (await request(app.getHttpServer()).post('/api/v2/namespaces')
-      .set('Authorization', `Bearer ${API_KEY}`).set('Idempotency-Key', randomUUID())
-      .send({ name: randomUUID() }).expect(201)).body.id as string;
+    const create = async () =>
+      (
+        await request(app.getHttpServer())
+          .post('/api/v2/namespaces')
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({ name: randomUUID() })
+          .expect(201)
+      ).body.id as string;
     enabledId = await create();
     otherId = await create();
     disabledId = await create();

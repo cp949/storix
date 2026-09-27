@@ -1,4 +1,4 @@
-import { useErrorReporter } from './ErrorContext';
+import { useErrorReporter } from "./ErrorContext";
 
 export function ErrorPanel() {
   const { error, clearError } = useErrorReporter();

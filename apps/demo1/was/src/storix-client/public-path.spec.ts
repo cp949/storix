@@ -10,7 +10,9 @@ describe('derivePublicPath', () => {
   });
 
   it('사용자가 다르면 같은 파일명이어도 다른 결과를 반환한다(충돌 방지)', () => {
-    expect(derivePublicPath('/documents/alice/report.txt')).not.toBe(derivePublicPath('/documents/bob/report.txt'));
+    expect(derivePublicPath('/documents/alice/report.txt')).not.toBe(
+      derivePublicPath('/documents/bob/report.txt'),
+    );
   });
 
   it('결과에 원본 root prefix나 사용자 이름이 남지 않는다(유출 방지)', () => {

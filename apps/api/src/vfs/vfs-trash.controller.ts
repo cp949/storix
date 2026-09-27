@@ -1,4 +1,16 @@
-import { Controller, Get, Headers, Param, Post, Query, Req, Res, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseFilters,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Audited } from '../audit/audited.decorator.js';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
@@ -20,8 +32,11 @@ export class VfsTrashController {
     @Query('cursor') cursor: unknown,
     @Query('limit') limit: unknown,
   ) {
-    if ((cursor !== undefined && typeof cursor !== 'string') ||
-      (limit !== undefined && typeof limit !== 'string')) throw new VfsInvalidMutationRequestError();
+    if (
+      (cursor !== undefined && typeof cursor !== 'string') ||
+      (limit !== undefined && typeof limit !== 'string')
+    )
+      throw new VfsInvalidMutationRequestError();
     return this.trash.list(namespaceId, cursor, limit);
   }
 
@@ -34,7 +49,14 @@ export class VfsTrashController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.trash.restore(namespaceId, trashId, scope, key, req.body as Buffer | undefined, req.requestId);
+    const result = await this.trash.restore(
+      namespaceId,
+      trashId,
+      scope,
+      key,
+      req.body as Buffer | undefined,
+      req.requestId,
+    );
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
     return result.body;
@@ -52,7 +74,14 @@ export class VfsTrashController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.trash.purge(namespaceId, trashId, scope, key, req.body as Buffer | undefined, req.requestId);
+    const result = await this.trash.purge(
+      namespaceId,
+      trashId,
+      scope,
+      key,
+      req.body as Buffer | undefined,
+      req.requestId,
+    );
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
     return result.body;

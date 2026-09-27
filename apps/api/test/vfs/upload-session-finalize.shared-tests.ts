@@ -85,8 +85,9 @@ export function registerFinalizeTests(context: FinalizeContext): void {
 
     await context.restartDisabled();
 
-    const capabilities = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/capabilities`))
-      .expect(200);
+    const capabilities = await auth(
+      api().get(`/api/v2/namespaces/${context.namespace()}/capabilities`),
+    ).expect(200);
     expect(capabilities.body).toEqual({ capabilities: [] });
     const stat = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/fs/stat`))
       .query({ path })
@@ -103,12 +104,18 @@ export function registerFinalizeTests(context: FinalizeContext): void {
 
   it('keeps creation and completion request IDs separate across both replay routes', async () => {
     const key = randomUUID();
-    const body = { path: '/final-dual-replay-id.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true };
-    const createCall = (requestId: string) => auth(api().post(base()))
-      .set('X-Mutation-Scope', 'finalize')
-      .set('Idempotency-Key', key)
-      .set('X-Request-Id', requestId)
-      .send(body);
+    const body = {
+      path: '/final-dual-replay-id.bin',
+      sizeBytes: '0',
+      mimeType: 'application/octet-stream',
+      ifAbsent: true,
+    };
+    const createCall = (requestId: string) =>
+      auth(api().post(base()))
+        .set('X-Mutation-Scope', 'finalize')
+        .set('Idempotency-Key', key)
+        .set('X-Request-Id', requestId)
+        .send(body);
     const created = await createCall('creation-original').expect(201);
     const id = created.body.sessionId as string;
     const completed = await complete(id).set('X-Request-Id', 'completion-original').expect(201);
@@ -465,7 +472,8 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     const path = `/checksum-good-${randomUUID()}.bin`;
     const sha256 = createHash('sha256').update('abcdxy').digest('hex');
     const created = await auth(api().post(base(ns)))
-      .set('X-Mutation-Scope', 'checksum').set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'checksum')
+      .set('Idempotency-Key', randomUUID())
       .send({ path, sizeBytes: '6', mimeType: 'application/octet-stream', ifAbsent: true, sha256 })
       .expect(201);
     const id = created.body.sessionId as string;
@@ -473,96 +481,125 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     await put(id, 1, 'xy', ns);
     await complete(id, ns).expect(201);
     const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`))
-      .query({ path }).expect(200);
+      .query({ path })
+      .expect(200);
     expect(content.body.toString()).toBe('abcdxy');
   });
 
-  it.each([false, true])('persists mismatch as FAILED, replays 422, and cleans charged parts in %s encryption mode', async (encrypted) => {
-    const ns = encrypted ? context.encryptedNamespace() : context.namespace();
-    const path = `/checksum-bad-${randomUUID()}.bin`;
-    const originalBytes = Buffer.from('original target');
-    const original = await auth(api().post(`/api/v2/namespaces/${ns}/fs/content/conditional`))
-      .query({ path })
-      .set('X-Mutation-Scope', 'checksum-original')
-      .set('Idempotency-Key', randomUUID())
-      .set('X-If-Absent', 'true')
-      .set('Content-Type', 'application/octet-stream')
-      .send(originalBytes)
-      .expect(201);
-    const originalRevision = original.body.resource.revision as string;
-    const key = randomUUID();
-    const body = { path, sizeBytes: '4', mimeType: 'application/octet-stream',
-      sha256: createHash('sha256').update('other').digest('hex') };
-    const createCall = (value: Record<string, unknown>) => auth(api().post(base(ns)))
-      .set('X-Mutation-Scope', 'checksum').set('Idempotency-Key', key).send(value);
-    const sessionBody = { ...body, ifRevision: originalRevision };
-    const invalid = await createCall({ ...sessionBody, sha256: 'A'.repeat(64) }).expect(400);
-    expect(invalid.body.code).toBe('VFS_INVALID_CHECKSUM');
-    const created = await createCall(sessionBody).expect(201);
-    const id = created.body.sessionId as string;
-    expect((await createCall({ ...sessionBody, sha256: 'b'.repeat(64) }).expect(409)).body.code)
-      .toBe('MUTATION_KEY_REUSED');
-    await put(id, 0, 'data', ns);
-    const repo = context.app().get(VfsUploadSessionRepository);
-    const part = await repo.findPart(id, 0);
-    if (!part) throw new Error('stored part missing');
-    const db = context.app().get(DataSource);
-    const storage = context.app().get<BlobStorage>(BLOB_STORAGE);
-    const originalDelete = storage.delete.bind(storage);
-    let failedCount = 0;
-    const deleteSpy = jest.spyOn(storage, 'delete').mockImplementation(async (stagingKey) => {
-      if (stagingKey === part.stagingKey && failedCount < 2) {
-        failedCount++;
-        throw new Error('temporary staging deletion failure');
+  it.each([false, true])(
+    'persists mismatch as FAILED, replays 422, and cleans charged parts in %s encryption mode',
+    async (encrypted) => {
+      const ns = encrypted ? context.encryptedNamespace() : context.namespace();
+      const path = `/checksum-bad-${randomUUID()}.bin`;
+      const originalBytes = Buffer.from('original target');
+      const original = await auth(api().post(`/api/v2/namespaces/${ns}/fs/content/conditional`))
+        .query({ path })
+        .set('X-Mutation-Scope', 'checksum-original')
+        .set('Idempotency-Key', randomUUID())
+        .set('X-If-Absent', 'true')
+        .set('Content-Type', 'application/octet-stream')
+        .send(originalBytes)
+        .expect(201);
+      const originalRevision = original.body.resource.revision as string;
+      const key = randomUUID();
+      const body = {
+        path,
+        sizeBytes: '4',
+        mimeType: 'application/octet-stream',
+        sha256: createHash('sha256').update('other').digest('hex'),
+      };
+      const createCall = (value: Record<string, unknown>) =>
+        auth(api().post(base(ns)))
+          .set('X-Mutation-Scope', 'checksum')
+          .set('Idempotency-Key', key)
+          .send(value);
+      const sessionBody = { ...body, ifRevision: originalRevision };
+      const invalid = await createCall({ ...sessionBody, sha256: 'A'.repeat(64) }).expect(400);
+      expect(invalid.body.code).toBe('VFS_INVALID_CHECKSUM');
+      const created = await createCall(sessionBody).expect(201);
+      const id = created.body.sessionId as string;
+      expect((await createCall({ ...sessionBody, sha256: 'b'.repeat(64) }).expect(409)).body.code).toBe(
+        'MUTATION_KEY_REUSED',
+      );
+      await put(id, 0, 'data', ns);
+      const repo = context.app().get(VfsUploadSessionRepository);
+      const part = await repo.findPart(id, 0);
+      if (!part) throw new Error('stored part missing');
+      const db = context.app().get(DataSource);
+      const storage = context.app().get<BlobStorage>(BLOB_STORAGE);
+      const originalDelete = storage.delete.bind(storage);
+      let failedCount = 0;
+      const deleteSpy = jest.spyOn(storage, 'delete').mockImplementation(async (stagingKey) => {
+        if (stagingKey === part.stagingKey && failedCount < 2) {
+          failedCount++;
+          throw new Error('temporary staging deletion failure');
+        }
+        return originalDelete(stagingKey);
+      });
+      try {
+        const first = await complete(id, ns).set('X-Request-Id', 'mismatch-first').expect(422);
+        expect(first.body.code).toBe('VFS_CHECKSUM_MISMATCH');
+        expect(failedCount).toBe(1); // immediate cleanup attempted
+        const replay = await complete(id, ns).set('X-Request-Id', 'mismatch-retry').expect(422);
+        expect(replay.body).toEqual(first.body);
+        expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+        const creationReplay = await createCall(sessionBody).expect(201);
+        expect(creationReplay.body).toEqual(created.body);
+        expect(creationReplay.headers['x-request-id']).toBe(created.headers['x-request-id']);
+        const status = await auth(api().get(`${base(ns)}/${id}`)).expect(200);
+        expect(status.body).toMatchObject({ state: 'FAILED', failure: { code: 'VFS_CHECKSUM_MISMATCH' } });
+        expect(JSON.stringify(status.body)).not.toMatch(new RegExp(body.sha256));
+        const stat = await auth(api().get(`/api/v2/namespaces/${ns}/fs/stat`))
+          .query({ path })
+          .expect(200);
+        expect(stat.body.revision).toBe(originalRevision);
+        const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`))
+          .query({ path })
+          .expect(200);
+        expect(content.body).toEqual(originalBytes);
+        const row = await db.getRepository(VfsUploadSessionEntity).findOneByOrFail({ id });
+        expect(row.terminalAt).not.toBeNull();
+        expect(row.responseStatus).toBe(422);
+        const usageBefore = await db
+          .getRepository(VfsUploadUsageEntity)
+          .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` });
+        expect(BigInt(usageBefore.stagedBytes)).toBeGreaterThanOrEqual(4n);
+        expect(
+          (await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey),
+        ).toBe(true);
+        await context.app().get(GcJob).run();
+        expect(failedCount).toBe(2);
+        expect(
+          BigInt(
+            (await db.getRepository(VfsUploadUsageEntity).findOneByOrFail({ id: `ns:${ns.toLowerCase()}` }))
+              .stagedBytes,
+          ),
+        ).toBeGreaterThanOrEqual(4n);
+        await context.app().get(GcJob).run();
+        expect(
+          (await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey),
+        ).toBe(false);
+        expect(
+          BigInt(
+            (await db.getRepository(VfsUploadUsageEntity).findOneByOrFail({ id: `ns:${ns.toLowerCase()}` }))
+              .stagedBytes,
+          ),
+        ).toBeLessThan(BigInt(usageBefore.stagedBytes));
+      } finally {
+        deleteSpy.mockRestore();
       }
-      return originalDelete(stagingKey);
-    });
-    try {
-      const first = await complete(id, ns).set('X-Request-Id', 'mismatch-first').expect(422);
-      expect(first.body.code).toBe('VFS_CHECKSUM_MISMATCH');
-      expect(failedCount).toBe(1); // immediate cleanup attempted
-      const replay = await complete(id, ns).set('X-Request-Id', 'mismatch-retry').expect(422);
-      expect(replay.body).toEqual(first.body);
-      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
-      const creationReplay = await createCall(sessionBody).expect(201);
-      expect(creationReplay.body).toEqual(created.body);
-      expect(creationReplay.headers['x-request-id']).toBe(created.headers['x-request-id']);
-      const status = await auth(api().get(`${base(ns)}/${id}`)).expect(200);
-      expect(status.body).toMatchObject({ state: 'FAILED', failure: { code: 'VFS_CHECKSUM_MISMATCH' } });
-      expect(JSON.stringify(status.body)).not.toMatch(new RegExp(body.sha256));
-      const stat = await auth(api().get(`/api/v2/namespaces/${ns}/fs/stat`)).query({ path }).expect(200);
-      expect(stat.body.revision).toBe(originalRevision);
-      const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`)).query({ path }).expect(200);
-      expect(content.body).toEqual(originalBytes);
-      const row = await db.getRepository(VfsUploadSessionEntity).findOneByOrFail({ id });
-      expect(row.terminalAt).not.toBeNull();
-      expect(row.responseStatus).toBe(422);
-      const usageBefore = await db.getRepository(VfsUploadUsageEntity)
-        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` });
-      expect(BigInt(usageBefore.stagedBytes)).toBeGreaterThanOrEqual(4n);
-      expect((await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey))
-        .toBe(true);
-      await context.app().get(GcJob).run();
-      expect(failedCount).toBe(2);
-      expect(BigInt((await db.getRepository(VfsUploadUsageEntity)
-        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` })).stagedBytes)).toBeGreaterThanOrEqual(4n);
-      await context.app().get(GcJob).run();
-      expect((await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey))
-        .toBe(false);
-      expect(BigInt((await db.getRepository(VfsUploadUsageEntity)
-        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` })).stagedBytes))
-        .toBeLessThan(BigInt(usageBefore.stagedBytes));
-    } finally {
-      deleteSpy.mockRestore();
-    }
-    expect((await repo.findForStatus(ns, id))?.session.state).toBe('FAILED');
-    expect(await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000)))
-      .toBe(0);
-    await db.getRepository(VfsUploadSessionEntity).update({ id }, {
-      terminalAt: new Date(Date.now() - 31 * 24 * 3600_000),
-    });
-    expect(await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000)))
-      .toBeGreaterThanOrEqual(1);
-    await auth(api().get(`${base(ns)}/${id}`)).expect(404);
-  });
+      expect((await repo.findForStatus(ns, id))?.session.state).toBe('FAILED');
+      expect(await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000))).toBe(0);
+      await db.getRepository(VfsUploadSessionEntity).update(
+        { id },
+        {
+          terminalAt: new Date(Date.now() - 31 * 24 * 3600_000),
+        },
+      );
+      expect(
+        await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000)),
+      ).toBeGreaterThanOrEqual(1);
+      await auth(api().get(`${base(ns)}/${id}`)).expect(404);
+    },
+  );
 }

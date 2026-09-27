@@ -7,13 +7,13 @@
 
 ## 문서 배치
 
-| 종류 | 위치 | git |
-| --- | --- | --- |
-| 일회성 작업 문서(설계 초안, 구현 계획, checklist, DELTA, 임시 함정·후속 메모) | `_works/<yyyyMMdd>-NN-<제목>/` | 추적하지 않음(`.gitignore`의 `_works/`) |
-| 장기 유지할 설계(현재 시점 내용으로 갱신, 이력은 git) | `docs/design/NN-<주제>.md`, 색인 `docs/design/README.md` | 추적 |
-| 되돌리기 비싼 결정과 대안 | `docs/adr/`, api 한정은 `apps/api/docs/adr/` | 추적 |
-| 작업 중 발견한 함정 | `docs/traps/TRP-NNN-<slug>.md`, 색인 `docs/traps/INDEX.md` | 추적 |
-| 후속 작업 | GitHub issue (`docs/agents/issue-tracker.md`) | — |
+| 종류                                                                          | 위치                                                       | git                                     |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| 일회성 작업 문서(설계 초안, 구현 계획, checklist, DELTA, 임시 함정·후속 메모) | `_works/<yyyyMMdd>-NN-<제목>/`                             | 추적하지 않음(`.gitignore`의 `_works/`) |
+| 장기 유지할 설계(현재 시점 내용으로 갱신, 이력은 git)                         | `docs/design/NN-<주제>.md`, 색인 `docs/design/README.md`   | 추적                                    |
+| 되돌리기 비싼 결정과 대안                                                     | `docs/adr/`, api 한정은 `apps/api/docs/adr/`               | 추적                                    |
+| 작업 중 발견한 함정                                                           | `docs/traps/TRP-NNN-<slug>.md`, 색인 `docs/traps/INDEX.md` | 추적                                    |
+| 후속 작업                                                                     | GitHub issue (`docs/agents/issue-tracker.md`)              | —                                       |
 
 - `docs/` 아래 디렉터리 이름에 특정 스킬·도구 이름(`superpowers` 등)을 쓰지 않는다.
 - 스킬이 설계 문서·구현 계획을 `docs/superpowers/` 등 `docs/` 하위에 쓰라고 안내해도 따르지 않는다. 일회성 문서는
@@ -110,12 +110,12 @@ DELTA 목록은 **확정이 아니다** — 작업 중 언제든 추가·분할�
 컨테이너를 띄우는 통합 테스트와 이미지 빌드는 느리고, podman에서는 컨테이너가 누적돼 `podman ps`가 멈출 수도 있다.
 검증은 아래 4단계로 나눈다. 검증 방법은 **계획 단계에서** 가장 싼 단계부터 고르고 실행 횟수를 적는다.
 
-| 단계 | 수단 | 언제 |
-| --- | --- | --- |
-| L0 | 컨테이너 없는 검증: `pnpm typecheck`, `pnpm lint`, `pnpm test`(단위), `pnpm build` | 모든 변경. 에이전트가 스스로 돌린다 |
-| L1 | 변경 영역의 통합 spec 개별 실행(`pnpm --filter @storix/api test:integration`에 spec 경로 패턴을 준다). SQLite 영역이면 `test:integration:sqlite` | 영속 계층·API 동작을 바꾼 DELTA. 계획서에 spec·횟수를 적고 그 안에서 스스로 돌린다 |
-| L2 | `pnpm test:integration --filter='!@storix/demo1-was'`와 `pnpm --filter @storix/api test:integration:sqlite` | 마무리 시 병합 전 1회. DELTA마다 돌리지 않는다. `@storix/demo1-was` 제외 조건은 `docs/agents/local-verification.md` 참고 |
-| L3 | 이미지 빌드, compose 실기동, CI 스모크 | `Dockerfile`·의존성·compose 파일을 실제로 바꿨을 때만, 필요한 최소 횟수. 그 외에는 사용자 지시 때만 |
+| 단계 | 수단                                                                                                                                             | 언제                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| L0   | 컨테이너 없는 검증: `pnpm typecheck`, `pnpm lint`, `pnpm test`(단위), `pnpm build`                                                               | 모든 변경. 에이전트가 스스로 돌린다                                                                                      |
+| L1   | 변경 영역의 통합 spec 개별 실행(`pnpm --filter @storix/api test:integration`에 spec 경로 패턴을 준다). SQLite 영역이면 `test:integration:sqlite` | 영속 계층·API 동작을 바꾼 DELTA. 계획서에 spec·횟수를 적고 그 안에서 스스로 돌린다                                       |
+| L2   | `pnpm test:integration --filter='!@storix/demo1-was'`와 `pnpm --filter @storix/api test:integration:sqlite`                                      | 마무리 시 병합 전 1회. DELTA마다 돌리지 않는다. `@storix/demo1-was` 제외 조건은 `docs/agents/local-verification.md` 참고 |
+| L3   | 이미지 빌드, compose 실기동, CI 스모크                                                                                                           | `Dockerfile`·의존성·compose 파일을 실제로 바꿨을 때만, 필요한 최소 횟수. 그 외에는 사용자 지시 때만                      |
 
 - 트리 내용이 바뀌지 않았으면 재검증하지 않는다. fast-forward 병합 후에는 빌드·테스트를 다시 돌리지 않는다.
 - L1 안에서 고르는 순서:

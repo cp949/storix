@@ -46,7 +46,7 @@ x-db-env: &db-env
 x-storage-env: &storage-env
   STORIX_STORAGE_ENDPOINT: ${STORIX_STORAGE_ENDPOINT:-}
   STORIX_STORAGE_PORT: ${STORIX_STORAGE_PORT:-9000}
-  STORIX_STORAGE_USE_SSL: '${STORIX_STORAGE_USE_SSL:-false}'
+  STORIX_STORAGE_USE_SSL: "${STORIX_STORAGE_USE_SSL:-false}"
   STORIX_STORAGE_ACCESS_KEY: ${STORIX_STORAGE_ACCESS_KEY:-storix}
   STORIX_STORAGE_SECRET_KEY: ${STORIX_STORAGE_SECRET_KEY:-storix-secret}
   STORIX_STORAGE_BUCKET: ${STORIX_STORAGE_BUCKET:-storix}
@@ -56,13 +56,13 @@ x-storage-env: &storage-env
 services:
   migrate:
     build: *api-build
-    command: ['pnpm', '--filter', '@storix/api', 'run', 'migration:run:prod']
+    command: ["pnpm", "--filter", "@storix/api", "run", "migration:run:prod"]
     environment: *db-env
 
   gc:
     build: *api-build
-    command: ['pnpm', '--filter', '@storix/api', 'run', 'gc:run:prod']
-    profiles: ['gc']
+    command: ["pnpm", "--filter", "@storix/api", "run", "gc:run:prod"]
+    profiles: ["gc"]
     environment:
       <<: [*db-env, *storage-env]
       STORIX_ORPHAN_GRACE_PERIOD: ${STORIX_ORPHAN_GRACE_PERIOD:-86400}
@@ -74,8 +74,8 @@ services:
 
   backup:
     build: *api-build
-    command: ['pnpm', '--filter', '@storix/api', 'run', 'backup:run:prod']
-    profiles: ['backup']
+    command: ["pnpm", "--filter", "@storix/api", "run", "backup:run:prod"]
+    profiles: ["backup"]
     environment:
       <<: [*db-env, *storage-env]
       STORIX_BACKUP_DIR: ${STORIX_BACKUP_DIR:-/backups}
@@ -87,14 +87,14 @@ services:
 
   restore:
     build: *api-build
-    command: ['pnpm', '--filter', '@storix/api', 'run', 'restore:run:prod']
-    profiles: ['restore']
+    command: ["pnpm", "--filter", "@storix/api", "run", "restore:run:prod"]
+    profiles: ["restore"]
     environment:
       <<: [*db-env, *storage-env]
       # `${VAR:?}` 마커를 쓰지 않는 이유는 위 x-db-env 주석과 같다. 미설정(빈
       # 문자열) 검출은 RestoreJob 생성자가 실제 복구 실행 시점에만 담당한다.
       STORIX_RESTORE_SOURCE_DIR: ${STORIX_RESTORE_SOURCE_DIR:-}
-      STORIX_RESTORE_FORCE: '${STORIX_RESTORE_FORCE:-false}'
+      STORIX_RESTORE_FORCE: "${STORIX_RESTORE_FORCE:-false}"
     volumes:
       - ./backups:/backups
     depends_on:
@@ -104,7 +104,7 @@ services:
   app:
     build: *api-build
     ports:
-      - '${STORIX_PUBLISH_HOST:-0.0.0.0}:${STORIX_PUBLISH_PORT:-3000}:3000'
+      - "${STORIX_PUBLISH_HOST:-0.0.0.0}:${STORIX_PUBLISH_PORT:-3000}:3000"
     environment:
       <<: [*db-env, *storage-env]
       # 컨테이너 안의 listen 포트는 3000 고정이다. 호스트 노출 포트는 위 ports의
@@ -112,17 +112,17 @@ services:
       # 숫자 리터럴은 quote한다 — podman-compose는 environment의 unquoted 정수를
       # 같은 서비스 안의 `${VAR}` 치환에 int 그대로 넣어 파싱에 실패한다.
       # 아래 override 파일들의 STORIX_STORAGE_PORT/STORIX_DB_PORT도 같은 이유로 quote한다.
-      STORIX_PORT: '3000'
+      STORIX_PORT: "3000"
       STORIX_STORAGE_PUBLIC_ENDPOINT: ${STORIX_STORAGE_PUBLIC_ENDPOINT:-}
       STORIX_STORAGE_PUBLIC_PORT: ${STORIX_STORAGE_PUBLIC_PORT:-9000}
-      STORIX_STORAGE_PUBLIC_USE_SSL: '${STORIX_STORAGE_PUBLIC_USE_SSL:-false}'
+      STORIX_STORAGE_PUBLIC_USE_SSL: "${STORIX_STORAGE_PUBLIC_USE_SSL:-false}"
       STORIX_MAX_FILE_SIZE_BYTES: ${STORIX_MAX_FILE_SIZE_BYTES:-5368709120}
       STORIX_MAX_TOTAL_LOGICAL_BYTES: ${STORIX_MAX_TOTAL_LOGICAL_BYTES:-53687091200}
       STORIX_MAX_RETAINED_TRASH_NODES: ${STORIX_MAX_RETAINED_TRASH_NODES:-100000}
       STORIX_MAX_SYNC_DELETE_NODES: ${STORIX_MAX_SYNC_DELETE_NODES:-1000}
       STORIX_MAX_SYNC_COPY_NODES: ${STORIX_MAX_SYNC_COPY_NODES:-1000}
       STORIX_PRESIGNED_URL_EXPIRY_SECONDS: ${STORIX_PRESIGNED_URL_EXPIRY_SECONDS:-300}
-      STORIX_API_KEY: '${STORIX_API_KEY:?STORIX_API_KEY must be set — generate with: openssl rand -hex 32}'
+      STORIX_API_KEY: "${STORIX_API_KEY:?STORIX_API_KEY must be set — generate with: openssl rand -hex 32}"
       STORIX_API_KEY_PREVIOUS: ${STORIX_API_KEY_PREVIOUS:-}
       STORIX_ADMIN_API_KEY: ${STORIX_ADMIN_API_KEY:-}
       STORIX_ADMIN_API_KEY_PREVIOUS: ${STORIX_ADMIN_API_KEY_PREVIOUS:-}
@@ -136,9 +136,9 @@ services:
     healthcheck:
       test:
         [
-          'CMD',
-          'node',
-          '-e',
+          "CMD",
+          "node",
+          "-e",
           "fetch('http://localhost:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 30s

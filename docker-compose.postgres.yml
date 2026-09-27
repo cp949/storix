@@ -19,7 +19,7 @@
 
 x-postgres-env: &postgres-env
   STORIX_DB_HOST: postgres
-  STORIX_DB_PORT: '5432'
+  STORIX_DB_PORT: "5432"
 
 x-postgres-deps: &postgres-deps
   postgres:
@@ -33,11 +33,11 @@ services:
       POSTGRES_PASSWORD: ${STORIX_DB_PASSWORD:-storix}
       POSTGRES_DB: ${STORIX_DB_NAME:-storix}
     ports:
-      - '127.0.0.1:${STORIX_DB_PORT:-5432}:5432'
+      - "127.0.0.1:${STORIX_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${STORIX_DB_USERNAME:-storix}']
+      test: ["CMD-SHELL", "pg_isready -U ${STORIX_DB_USERNAME:-storix}"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -15,8 +15,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseCapabilityList(value: unknown, field: string): readonly string[] {
-  if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))) {
-    throw new Error(`Invalid capability configuration: ${field} must be a list of lowercase kebab-case identifiers`);
+  if (
+    !Array.isArray(value) ||
+    !value.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))
+  ) {
+    throw new Error(
+      `Invalid capability configuration: ${field} must be a list of lowercase kebab-case identifiers`,
+    );
   }
   return value;
 }
@@ -25,7 +30,10 @@ function parseCapabilityConfig(value: unknown): CapabilityConfig {
   if (!isRecord(value) || Object.keys(value).sort().join(',') !== CONFIG_KEYS.slice().sort().join(',')) {
     throw new Error(`Invalid capability configuration: expected only ${CONFIG_KEYS.join(' and ')}`);
   }
-  const globalAllowedCapabilities = parseCapabilityList(value.globalAllowedCapabilities, 'globalAllowedCapabilities');
+  const globalAllowedCapabilities = parseCapabilityList(
+    value.globalAllowedCapabilities,
+    'globalAllowedCapabilities',
+  );
   if (!isRecord(value.namespaceAllowedCapabilities)) {
     throw new Error('Invalid capability configuration: namespaceAllowedCapabilities must be an object');
   }

@@ -1,4 +1,8 @@
-import { resolveBinaryColumnType, resolveFixedCharColumnType, resolveTimestampColumnType } from '../../../src/persistence/entities/dialect-column-types.js';
+import {
+  resolveBinaryColumnType,
+  resolveFixedCharColumnType,
+  resolveTimestampColumnType,
+} from '../../../src/persistence/entities/dialect-column-types.js';
 
 describe('resolveBinaryColumnType', () => {
   it("driver가 'sqlite'면 'blob'을 반환한다", () => {

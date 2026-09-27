@@ -25,7 +25,14 @@ import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
-  controllers: [FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController, VfsTrashController],
+  controllers: [
+    FsController,
+    PublicFsController,
+    VfsSnapshotController,
+    UploadSessionController,
+    ChangeFeedController,
+    VfsTrashController,
+  ],
   providers: [
     VfsSnapshotService,
     VfsService,
@@ -45,6 +52,13 @@ export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(RequestContextMiddleware)
-      .forRoutes(FsController, PublicFsController, VfsSnapshotController, UploadSessionController, ChangeFeedController, VfsTrashController);
+      .forRoutes(
+        FsController,
+        PublicFsController,
+        VfsSnapshotController,
+        UploadSessionController,
+        ChangeFeedController,
+        VfsTrashController,
+      );
   }
 }

@@ -13,7 +13,10 @@ export class MetricsInterceptor implements NestInterceptor {
   private readonly transferredBytesCounter: MetricCounter;
 
   constructor(@Inject(METRICS_REGISTRY) registry: MetricsRegistry) {
-    this.requestCounter = registry.counter('storix_http_requests_total', 'HTTP 요청 수', ['operation', 'status']);
+    this.requestCounter = registry.counter('storix_http_requests_total', 'HTTP 요청 수', [
+      'operation',
+      'status',
+    ]);
     this.durationHistogram = registry.histogram(
       'storix_http_request_duration_seconds',
       'HTTP 요청 처리 시간(초)',

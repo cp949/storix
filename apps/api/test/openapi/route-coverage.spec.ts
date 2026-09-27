@@ -379,18 +379,32 @@ it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약�
 it('change feed는 checkpoint, 이벤트, cursor 오류와 보존 만료를 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
   const operation = spec.paths['/api/v2/namespaces/{namespaceId}/fs/changes'].get;
-  expect(operation.parameters).toEqual(expect.arrayContaining([
-    expect.objectContaining({ name: 'cursor', in: 'query', required: false }),
-    expect.objectContaining({ $ref: '#/components/parameters/Limit' }),
-  ]));
-  expect(Object.keys(operation.responses)).toEqual(expect.arrayContaining(['200', '400', '401', '404', '409', '410']));
+  expect(operation.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'cursor', in: 'query', required: false }),
+      expect.objectContaining({ $ref: '#/components/parameters/Limit' }),
+    ]),
+  );
+  expect(Object.keys(operation.responses)).toEqual(
+    expect.arrayContaining(['200', '400', '401', '404', '409', '410']),
+  );
   expect(operation.responses['200'].content['application/json'].schema).toEqual({
     $ref: '#/components/schemas/ChangeFeedPage',
   });
   expect(spec.components.schemas.ChangeFeedPage.required).toEqual(['changes', 'nextCursor', 'hasMore']);
-  expect(spec.components.schemas.ChangeFeedEvent.required).toEqual(expect.arrayContaining([
-    'sequence', 'operationId', 'operationIndex', 'operationCount', 'kind', 'nodeId', 'nodeType', 'path', 'occurredAt',
-  ]));
+  expect(spec.components.schemas.ChangeFeedEvent.required).toEqual(
+    expect.arrayContaining([
+      'sequence',
+      'operationId',
+      'operationIndex',
+      'operationCount',
+      'kind',
+      'nodeId',
+      'nodeType',
+      'path',
+      'occurredAt',
+    ]),
+  );
   expect(spec.components.schemas.ChangeFeedEvent.properties.previousPath).toBeDefined();
   expect(spec.components.schemas.ChangeFeedEvent.properties.revision).toBeDefined();
 });

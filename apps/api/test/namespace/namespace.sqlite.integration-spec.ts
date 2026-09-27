@@ -29,9 +29,10 @@ describe('Namespace HTTP contract (SQLite)', () => {
   }
 
   async function namespaceCounts(name: string) {
-    const namespaces = (await migrationDataSource.query('SELECT COUNT(*) AS count FROM namespace WHERE name = ?', [
-      name,
-    ])) as RowCount[];
+    const namespaces = (await migrationDataSource.query(
+      'SELECT COUNT(*) AS count FROM namespace WHERE name = ?',
+      [name],
+    )) as RowCount[];
     const roots = (await migrationDataSource.query(
       `SELECT COUNT(*) AS count FROM vfs_node n
        INNER JOIN namespace ns ON ns.id = n.namespace_id
@@ -42,9 +43,10 @@ describe('Namespace HTTP contract (SQLite)', () => {
   }
 
   async function receiptCount(key: string): Promise<number> {
-    const rows = (await migrationDataSource.query('SELECT COUNT(*) AS count FROM idempotency_key WHERE key = ?', [
-      key,
-    ])) as RowCount[];
+    const rows = (await migrationDataSource.query(
+      'SELECT COUNT(*) AS count FROM idempotency_key WHERE key = ?',
+      [key],
+    )) as RowCount[];
     return Number(rows[0].count);
   }
 
@@ -103,11 +105,15 @@ describe('Namespace HTTP contract (SQLite)', () => {
       { name: 'namespace-sqlite-concurrent-different-body-b' },
     ];
     const responses = await Promise.all(
-      bodies.map((body) => request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body)),
+      bodies.map((body) =>
+        request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body),
+      ),
     );
 
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 422]);
-    expect(responses.find(({ status }) => status === 422)?.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(responses.find(({ status }) => status === 422)?.body).toMatchObject({
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
     const namespaceNames = await Promise.all(bodies.map(({ name }) => namespaceCounts(name)));
     expect(namespaceNames.reduce((count, rows) => count + rows.namespaces, 0)).toBe(1);
     expect(namespaceNames.reduce((count, rows) => count + rows.roots, 0)).toBe(1);
@@ -149,7 +155,10 @@ describe('Namespace HTTP contract (SQLite)', () => {
     await app.close();
     app = await bootstrap();
 
-    const retry = await request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body);
+    const retry = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', key)
+      .send(body);
     expect({
       failedStatus: failed.status,
       beforeRestart,

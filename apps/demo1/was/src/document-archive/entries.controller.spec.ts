@@ -87,7 +87,10 @@ describe('EntriesController', () => {
   it('recursive 쿼리가 없으면 false로 remove를 호출한다', async () => {
     remove.mockResolvedValue(undefined);
 
-    await request(app.getHttpServer()).delete('/demo-api/entries?path=/a.txt').set('X-Demo-User', 'alice').expect(204);
+    await request(app.getHttpServer())
+      .delete('/demo-api/entries?path=/a.txt')
+      .set('X-Demo-User', 'alice')
+      .expect(204);
 
     expect(remove).toHaveBeenCalledWith('/documents/alice/a.txt', false);
   });

@@ -75,7 +75,11 @@ export class BackupJob {
       // 같은 정상 key(디렉터리를 벗어나지 않음)까지 막혀, 버킷에 Storix가
       // 만들지 않은 object가 섞여 있을 때 백업 전체가 실패한다.
       const relativeDest = path.relative(minioDir, destPath);
-      if (relativeDest === '..' || relativeDest.startsWith(`..${path.sep}`) || path.isAbsolute(relativeDest)) {
+      if (
+        relativeDest === '..' ||
+        relativeDest.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relativeDest)
+      ) {
         throw new Error(`MinIO object key가 백업 디렉터리를 벗어남: ${item.key}`);
       }
       await fs.mkdir(path.dirname(destPath), { recursive: true });

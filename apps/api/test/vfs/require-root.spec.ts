@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { NamespaceResourceLimits, VfsNodeRecord, VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import {
+  NamespaceResourceLimits,
+  VfsNodeRecord,
+  VfsNodeRepository,
+} from '../../src/persistence/vfs-node.repository.js';
 import { requireRoot, requireRootWithLimits } from '../../src/vfs/require-root.js';
 import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
 
@@ -58,9 +62,9 @@ describe('requireRootWithLimits', () => {
         .mockResolvedValue(null),
     } as unknown as VfsNodeRepository;
 
-    await expect(
-      requireRootWithLimits(repo, '11111111-1111-1111-1111-111111111111'),
-    ).rejects.toThrow(VfsNamespaceNotFoundError);
+    await expect(requireRootWithLimits(repo, '11111111-1111-1111-1111-111111111111')).rejects.toThrow(
+      VfsNamespaceNotFoundError,
+    );
   });
 
   it('namespace가 있으면 root와 limits를 함께 반환한다', async () => {

@@ -2522,7 +2522,20 @@ components:
     UploadSessionStatus:
       type: object
       additionalProperties: false
-      required: [sessionId, state, partSizeBytes, partCount, expiresAt, maxExpiresAt, path, sizeBytes, mimeType, condition, parts]
+      required:
+        [
+          sessionId,
+          state,
+          partSizeBytes,
+          partCount,
+          expiresAt,
+          maxExpiresAt,
+          path,
+          sizeBytes,
+          mimeType,
+          condition,
+          parts,
+        ]
       properties:
         sessionId: { type: string, format: uuid }
         state: { type: string, enum: [OPEN, FINALIZING, COMPLETED, CANCELLED, EXPIRED, FAILED] }
@@ -2606,7 +2619,8 @@ components:
         hasMore: { type: boolean, description: 조회 시점의 다음 이벤트 존재 여부 }
     ChangeFeedEvent:
       type: object
-      required: [sequence, operationId, operationIndex, operationCount, kind, nodeId, nodeType, path, occurredAt]
+      required:
+        [sequence, operationId, operationIndex, operationCount, kind, nodeId, nodeType, path, occurredAt]
       properties:
         sequence: { type: string, pattern: '^[0-9]+$', description: namespace 내 십진 순서 번호 }
         operationId: { type: string, format: uuid }
@@ -2666,7 +2680,11 @@ components:
         sourcePath: { type: string }
         sourceRevision: { type: string, description: 캡처 시점 r1. revision }
         rootNodeId:
-          { type: string, format: uuid, description: FILE에서는 캡처된 원본 파일의 안정적인 노드 ID. TREE에서는 원본 디렉터리 노드 ID. }
+          {
+            type: string,
+            format: uuid,
+            description: FILE에서는 캡처된 원본 파일의 안정적인 노드 ID. TREE에서는 원본 디렉터리 노드 ID.,
+          }
         sha256:
           {
             type: string,

@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { classifyPersistenceOperation } from './persistence-failure.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
-import {
-  VfsCopyLimitExceededError,
-} from '../vfs/vfs.errors.js';
+import { VfsCopyLimitExceededError } from '../vfs/vfs.errors.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 import type { VfsNodeRecord, MutationTx, CopySourceRow } from './vfs-node.repository.types.js';

@@ -49,7 +49,9 @@ describe('AuditLogRepository', () => {
       status: 200,
     });
 
-    const rows = await dataSource.getRepository(AuditLogEntity).find({ where: { requestId: 'req-record-full' } });
+    const rows = await dataSource
+      .getRepository(AuditLogEntity)
+      .find({ where: { requestId: 'req-record-full' } });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -88,34 +90,67 @@ describe('AuditLogRepository', () => {
   it('snapshot ID와 null을 선택 필드로 저장한다', async () => {
     const snapshotId = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
     await repository.record({
-      requestId: 'req-record-snapshot', namespaceId, operation: 'SnapshotController.get',
-      path: null, detail: null, caller: null, status: 200, snapshotId,
+      requestId: 'req-record-snapshot',
+      namespaceId,
+      operation: 'SnapshotController.get',
+      path: null,
+      detail: null,
+      caller: null,
+      status: 200,
+      snapshotId,
     });
     await repository.record({
-      requestId: 'req-record-no-snapshot', namespaceId, operation: 'NamespaceController.findAll',
-      path: null, detail: null, caller: null, status: 200, snapshotId: null,
+      requestId: 'req-record-no-snapshot',
+      namespaceId,
+      operation: 'NamespaceController.findAll',
+      path: null,
+      detail: null,
+      caller: null,
+      status: 200,
+      snapshotId: null,
     });
-    const rows = await dataSource.getRepository(AuditLogEntity).findBy([
-      { requestId: 'req-record-snapshot' }, { requestId: 'req-record-no-snapshot' },
-    ]);
-    expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ requestId: 'req-record-snapshot', snapshotId }),
-      expect.objectContaining({ requestId: 'req-record-no-snapshot', snapshotId: null }),
-    ]));
+    const rows = await dataSource
+      .getRepository(AuditLogEntity)
+      .findBy([{ requestId: 'req-record-snapshot' }, { requestId: 'req-record-no-snapshot' }]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ requestId: 'req-record-snapshot', snapshotId }),
+        expect.objectContaining({ requestId: 'req-record-no-snapshot', snapshotId: null }),
+      ]),
+    );
   });
 
   it('trash ID를 저장하고 NULL 기본값을 유지한다', async () => {
     const trashId = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
-    await repository.record({ requestId: 'req-trash', namespaceId, snapshotId: null, trashId,
-      operation: 'VfsTrashController.restore', path: null, detail: null, caller: null, status: 200 });
-    await repository.record({ requestId: 'req-no-trash', namespaceId, snapshotId: null,
-      operation: 'VfsTrashController.list', path: null, detail: null, caller: null, status: 200 });
-    const rows = await dataSource.getRepository(AuditLogEntity).findBy([
-      { requestId: 'req-trash' }, { requestId: 'req-no-trash' },
-    ]);
-    expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ requestId: 'req-trash', trashId }),
-      expect.objectContaining({ requestId: 'req-no-trash', trashId: null }),
-    ]));
+    await repository.record({
+      requestId: 'req-trash',
+      namespaceId,
+      snapshotId: null,
+      trashId,
+      operation: 'VfsTrashController.restore',
+      path: null,
+      detail: null,
+      caller: null,
+      status: 200,
+    });
+    await repository.record({
+      requestId: 'req-no-trash',
+      namespaceId,
+      snapshotId: null,
+      operation: 'VfsTrashController.list',
+      path: null,
+      detail: null,
+      caller: null,
+      status: 200,
+    });
+    const rows = await dataSource
+      .getRepository(AuditLogEntity)
+      .findBy([{ requestId: 'req-trash' }, { requestId: 'req-no-trash' }]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ requestId: 'req-trash', trashId }),
+        expect.objectContaining({ requestId: 'req-no-trash', trashId: null }),
+      ]),
+    );
   });
 });

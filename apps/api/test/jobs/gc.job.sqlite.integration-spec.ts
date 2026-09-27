@@ -40,15 +40,27 @@ describe('GcJob 통합 (SQLite)', () => {
       database: ':memory:',
       synchronize: false,
       migrationsTransactionMode: 'each',
-      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, VfsTrashEntity, VfsTrashEntryEntity],
+      entities: [
+        NamespaceEntity,
+        VfsNodeEntity,
+        BlobEntity,
+        IdempotencyKeyEntity,
+        VfsTrashEntity,
+        VfsTrashEntryEntity,
+      ],
       migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
     blobRepository = new BlobRepository(dataSource);
-    nodeRepository = new VfsNodeRepository(dataSource.getRepository(NamespaceEntity),
-      dataSource.getRepository(VfsNodeEntity), dataSource.getRepository(BlobEntity), dataSource,
-      blobRepository, { get: () => undefined } as never);
+    nodeRepository = new VfsNodeRepository(
+      dataSource.getRepository(NamespaceEntity),
+      dataSource.getRepository(VfsNodeEntity),
+      dataSource.getRepository(BlobEntity),
+      dataSource,
+      blobRepository,
+      { get: () => undefined } as never,
+    );
     trashRetention = new VfsTrashRetentionRepository(dataSource, nodeRepository);
 
     const client = new Client({

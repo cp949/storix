@@ -123,8 +123,18 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' })),
-      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
+      new PgDumpCliTool(
+        makeConfig({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: backupDir,
+          STORIX_RESTORE_FORCE: 'false',
+        }),
+      ),
+      makeConfig({
+        ...baseConfigValues(),
+        STORIX_RESTORE_SOURCE_DIR: backupDir,
+        STORIX_RESTORE_FORCE: 'false',
+      }),
     );
 
     const result = await job.run();
@@ -148,8 +158,18 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' })),
-      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'false' }),
+      new PgDumpCliTool(
+        makeConfig({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: backupDir,
+          STORIX_RESTORE_FORCE: 'false',
+        }),
+      ),
+      makeConfig({
+        ...baseConfigValues(),
+        STORIX_RESTORE_SOURCE_DIR: backupDir,
+        STORIX_RESTORE_FORCE: 'false',
+      }),
     );
 
     await expect(job.run()).rejects.toThrow(RestoreTargetNotEmptyError);
@@ -167,8 +187,18 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'true' })),
-      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: backupDir, STORIX_RESTORE_FORCE: 'true' }),
+      new PgDumpCliTool(
+        makeConfig({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: backupDir,
+          STORIX_RESTORE_FORCE: 'true',
+        }),
+      ),
+      makeConfig({
+        ...baseConfigValues(),
+        STORIX_RESTORE_SOURCE_DIR: backupDir,
+        STORIX_RESTORE_FORCE: 'true',
+      }),
     );
 
     await job.run();
@@ -214,9 +244,17 @@ describe('RestoreJob 통합', () => {
       storage,
       backupRepository,
       new PgDumpCliTool(
-        makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, STORIX_RESTORE_FORCE: 'false' }),
+        makeConfig({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir,
+          STORIX_RESTORE_FORCE: 'false',
+        }),
       ),
-      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir, STORIX_RESTORE_FORCE: 'false' }),
+      makeConfig({
+        ...baseConfigValues(),
+        STORIX_RESTORE_SOURCE_DIR: emptyBackupResult.backupDir,
+        STORIX_RESTORE_FORCE: 'false',
+      }),
     );
 
     await expect(job.run()).resolves.toEqual(expect.objectContaining({ restoredObjectCount: 0 }));
@@ -238,8 +276,18 @@ describe('RestoreJob 통합', () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
-      new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: missingSourceDir, STORIX_RESTORE_FORCE: 'true' })),
-      makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: missingSourceDir, STORIX_RESTORE_FORCE: 'true' }),
+      new PgDumpCliTool(
+        makeConfig({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: missingSourceDir,
+          STORIX_RESTORE_FORCE: 'true',
+        }),
+      ),
+      makeConfig({
+        ...baseConfigValues(),
+        STORIX_RESTORE_SOURCE_DIR: missingSourceDir,
+        STORIX_RESTORE_FORCE: 'true',
+      }),
     );
 
     await expect(job.run()).rejects.toThrow('ENOENT');
@@ -262,7 +310,13 @@ describe('RestoreJob 통합', () => {
         new RestoreJob(
           storage,
           backupRepository,
-          new PgDumpCliTool(makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' })),
+          new PgDumpCliTool(
+            makeConfig({
+              ...baseConfigValues(),
+              STORIX_RESTORE_SOURCE_DIR: '',
+              STORIX_RESTORE_FORCE: 'false',
+            }),
+          ),
           makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }),
         ),
     ).toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');

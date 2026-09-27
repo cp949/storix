@@ -15,7 +15,11 @@ async function bootstrap(): Promise<void> {
   let app: INestApplicationContext | undefined;
   let gcLock: GcLock | undefined;
   try {
-    const { GcAppModule, GcJob, GcLock: GcLockClass } = await bootstrapWithEnv(() => import('./gc-app.module.js'));
+    const {
+      GcAppModule,
+      GcJob,
+      GcLock: GcLockClass,
+    } = await bootstrapWithEnv(() => import('./gc-app.module.js'));
 
     // abortOnError 기본값(true)이면 DI 초기화 실패 시 Nest가 내부적으로
     // process.exit(1)을 직접 호출해 이 catch 블록과 아래 logger.error를
@@ -43,7 +47,9 @@ async function bootstrap(): Promise<void> {
     logger.error('GC job 실패', error instanceof Error ? error.stack : String(error));
     // app 생성 자체가 실패하면 DI로 ErrorReporter를 얻을 수 없어 리포팅을 건너뛴다.
     const errorReporter = app?.get<ErrorReporter>(ERROR_REPORTER, { strict: false });
-    errorReporter?.report(error instanceof Error ? error : new Error(String(error)), { operation: 'GcJob.run' });
+    errorReporter?.report(error instanceof Error ? error : new Error(String(error)), {
+      operation: 'GcJob.run',
+    });
     process.exitCode = 1;
   } finally {
     // 락을 못 얻었거나 이미 반납한 상태에서도 안전한 no-op이다(GcLock.release 참고).

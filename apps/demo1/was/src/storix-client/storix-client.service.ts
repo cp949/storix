@@ -2,8 +2,16 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import type {
-  EntryPage, FileEntry, PresignedDownload, PublicLink, UploadMetadata, UploadPartResult,
-  UploadSessionCompletion, UploadSessionCreated, UploadSessionCreateRequest, UploadSessionStatus,
+  EntryPage,
+  FileEntry,
+  PresignedDownload,
+  PublicLink,
+  UploadMetadata,
+  UploadPartResult,
+  UploadSessionCompletion,
+  UploadSessionCreated,
+  UploadSessionCreateRequest,
+  UploadSessionStatus,
   UploadSessionCompleteResult,
 } from './storix-client.types.js';
 import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
@@ -25,8 +33,9 @@ export class StorixClient implements StorixClientPort {
   ) {}
 
   async ensureDemoNamespace(): Promise<string> {
-    this.demoNamespaceId = this.config.namespaceId
-      ?? await this.createNamespace(this.config.namespaceName, 'PRIVATE', 'demo-was:namespace:private');
+    this.demoNamespaceId =
+      this.config.namespaceId ??
+      (await this.createNamespace(this.config.namespaceName, 'PRIVATE', 'demo-was:namespace:private'));
     return this.demoNamespaceId;
   }
 
@@ -120,11 +129,18 @@ export class StorixClient implements StorixClientPort {
     });
   }
 
-  async createUploadSession(request: UploadSessionCreateRequest, idempotencyKey: string | undefined, scope: string): Promise<UploadSessionCreated> {
+  async createUploadSession(
+    request: UploadSessionCreateRequest,
+    idempotencyKey: string | undefined,
+    scope: string,
+  ): Promise<UploadSessionCreated> {
     return this.http.requestJson<UploadSessionCreated>({
       method: 'POST',
       path: this.uploadSessionsPath(),
-      headers: { ...(idempotencyKey === undefined ? {} : { 'idempotency-key': idempotencyKey }), 'x-mutation-scope': scope },
+      headers: {
+        ...(idempotencyKey === undefined ? {} : { 'idempotency-key': idempotencyKey }),
+        'x-mutation-scope': scope,
+      },
       json: request,
     });
   }
@@ -208,7 +224,10 @@ export class StorixClient implements StorixClientPort {
       duplex: 'half',
     });
 
-    const url = new URL(`/api/v2/public/${this.requirePublicNamespaceId()}/fs/download`, this.config.publicUrlBase);
+    const url = new URL(
+      `/api/v2/public/${this.requirePublicNamespaceId()}/fs/download`,
+      this.config.publicUrlBase,
+    );
     url.searchParams.set('path', publicPath);
 
     return { url: url.toString(), publicPath };
@@ -243,9 +262,19 @@ export interface StorixClientPort {
   list(path: string, cursor?: string): Promise<EntryPage>;
   createDirectory(path: string): Promise<void>;
   upload(path: string, body: ReadableStream, metadata: UploadMetadata): Promise<FileEntry>;
-  createUploadSession(request: UploadSessionCreateRequest, idempotencyKey: string | undefined, scope: string): Promise<UploadSessionCreated>;
+  createUploadSession(
+    request: UploadSessionCreateRequest,
+    idempotencyKey: string | undefined,
+    scope: string,
+  ): Promise<UploadSessionCreated>;
   getUploadSession(sessionId: string): Promise<UploadSessionStatus>;
-  putUploadSessionPart(sessionId: string, index: string, body: ReadableStream, contentLength: string | undefined, contentType: string | undefined): Promise<UploadPartResult>;
+  putUploadSessionPart(
+    sessionId: string,
+    index: string,
+    body: ReadableStream,
+    contentLength: string | undefined,
+    contentType: string | undefined,
+  ): Promise<UploadPartResult>;
   completeUploadSession(sessionId: string): Promise<UploadSessionCompletion>;
   cancelUploadSession(sessionId: string): Promise<UploadSessionStatus>;
   move(source: string, destination: string): Promise<void>;

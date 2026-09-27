@@ -14,7 +14,7 @@ describe('GcLock', () => {
   function makeDataSource(queryRunner: ReturnType<typeof makeQueryRunner>): DataSource {
     return {
       options: { type: 'postgres' },
-      createQueryRunner: () => queryRunner as unknown as QueryRunner
+      createQueryRunner: () => queryRunner as unknown as QueryRunner,
     } as unknown as DataSource;
   }
 
@@ -79,9 +79,7 @@ describe('GcLock', () => {
 
     await gcLock.markCompleted();
 
-    expect(queryRunner.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO gc_state'),
-    );
+    expect(queryRunner.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO gc_state'));
   });
 
   it('release는 advisory unlock 후 커넥션을 반납한다', async () => {

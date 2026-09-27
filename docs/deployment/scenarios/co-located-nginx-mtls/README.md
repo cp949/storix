@@ -53,14 +53,14 @@ WAS 인증서를 소유하지 않는다.
 
 ## 신뢰 경계
 
-| 구간 | 보호 수단 | 비고 |
-| --- | --- | --- |
-| 외부 → 회사 LB/Nginx | 회사의 공개 TLS 정책 | 이 시나리오의 mTLS 범위 밖 |
-| WAS → 기존 Nginx `:9443` | mTLS | Nginx가 WAS 인증서를 검증 |
-| Nginx → Storix `127.0.0.1:3000` | loopback + Storix API key | Nginx는 API key를 주입하지 않음 |
-| Storix → VersityGW | 호스트 내부 연결 + S3 SigV4 | 운영 데이터는 공통 NAS에 저장 |
-| Storix A/B → PostgreSQL | DB TLS·계정 정책 | WAS 업무 DB와 별도 DB/user 권장 |
-| 외부 → 기존 Nginx `/api/v2/public/` | 없음(무인증) | `accessPolicy=PUBLIC` namespace의 다운로드 전용. Storix가 정책을 검증하고 그 외에는 404 |
+| 구간                                | 보호 수단                   | 비고                                                                                    |
+| ----------------------------------- | --------------------------- | --------------------------------------------------------------------------------------- |
+| 외부 → 회사 LB/Nginx                | 회사의 공개 TLS 정책        | 이 시나리오의 mTLS 범위 밖                                                              |
+| WAS → 기존 Nginx `:9443`            | mTLS                        | Nginx가 WAS 인증서를 검증                                                               |
+| Nginx → Storix `127.0.0.1:3000`     | loopback + Storix API key   | Nginx는 API key를 주입하지 않음                                                         |
+| Storix → VersityGW                  | 호스트 내부 연결 + S3 SigV4 | 운영 데이터는 공통 NAS에 저장                                                           |
+| Storix A/B → PostgreSQL             | DB TLS·계정 정책            | WAS 업무 DB와 별도 DB/user 권장                                                         |
+| 외부 → 기존 Nginx `/api/v2/public/` | 없음(무인증)                | `accessPolicy=PUBLIC` namespace의 다운로드 전용. Storix가 정책을 검증하고 그 외에는 404 |
 
 Storix의 기존 `Authorization: Bearer <STORIX_API_KEY>` 검증은 mTLS 뒤에서도
 유지한다. mTLS는 호출 머신을 인증하고 API key는 Storix 애플리케이션 경계를 한

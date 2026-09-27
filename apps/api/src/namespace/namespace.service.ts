@@ -160,7 +160,10 @@ export class NamespaceService {
       throw new NamespaceNotFoundError(id);
     }
 
-    return toNamespaceResponse((await withExactNamespaceBigints(this.namespaceRepo.manager, [namespace]))[0], this.globalLimits);
+    return toNamespaceResponse(
+      (await withExactNamespaceBigints(this.namespaceRepo.manager, [namespace]))[0],
+      this.globalLimits,
+    );
   }
 
   async findAll(): Promise<NamespaceResponseDto[]> {
@@ -169,8 +172,9 @@ export class NamespaceService {
       order: { name: 'ASC', id: 'ASC' },
     });
 
-    return (await withExactNamespaceBigints(this.namespaceRepo.manager, namespaces))
-      .map((namespace) => toNamespaceResponse(namespace, this.globalLimits));
+    return (await withExactNamespaceBigints(this.namespaceRepo.manager, namespaces)).map((namespace) =>
+      toNamespaceResponse(namespace, this.globalLimits),
+    );
   }
 
   private async recordIdempotency(

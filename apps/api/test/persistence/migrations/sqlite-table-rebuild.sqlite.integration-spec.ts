@@ -1,5 +1,8 @@
 import { DataSource, QueryRunner } from 'typeorm';
-import { rebuildSqliteTable, withSqliteTableRebuild } from '../../../src/persistence/migrations/sqlite-table-rebuild.js';
+import {
+  rebuildSqliteTable,
+  withSqliteTableRebuild,
+} from '../../../src/persistence/migrations/sqlite-table-rebuild.js';
 
 // AddNamespaceResourceLimits/AddEncryptionSupport 마이그레이션이 실제로 쓰는
 // "CREATE 새 이름 → INSERT...SELECT → DROP → RENAME (+ 인덱스)"와 그걸
@@ -19,7 +22,9 @@ describe('rebuildSqliteTable/withSqliteTableRebuild', () => {
   beforeEach(async () => {
     dataSource = new DataSource({ type: 'better-sqlite3', database: ':memory:', synchronize: false });
     await dataSource.initialize();
-    await dataSource.query(`CREATE TABLE "widget" ("id" varchar(36) PRIMARY KEY, "name" varchar(64) NOT NULL)`);
+    await dataSource.query(
+      `CREATE TABLE "widget" ("id" varchar(36) PRIMARY KEY, "name" varchar(64) NOT NULL)`,
+    );
     await dataSource.query(`INSERT INTO "widget" ("id", "name") VALUES ('1', 'a')`);
     queryRunner = dataSource.createQueryRunner();
   });

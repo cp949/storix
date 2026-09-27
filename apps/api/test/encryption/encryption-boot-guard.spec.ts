@@ -11,7 +11,10 @@ describe('EncryptionBootGuard', () => {
   });
 
   it('마스터 키가 있으면 ENCRYPTED namespace 존재 여부를 확인하지 않고 통과한다', async () => {
-    const guard = new EncryptionBootGuard(namespaceRepo as unknown as Repository<NamespaceEntity>, Buffer.alloc(32));
+    const guard = new EncryptionBootGuard(
+      namespaceRepo as unknown as Repository<NamespaceEntity>,
+      Buffer.alloc(32),
+    );
 
     await expect(guard.onApplicationBootstrap()).resolves.toBeUndefined();
     expect(namespaceRepo.count).not.toHaveBeenCalled();

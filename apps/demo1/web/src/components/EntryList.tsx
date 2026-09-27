@@ -1,4 +1,4 @@
-import type { FileEntry, PublicLink } from '../api/types';
+import type { FileEntry, PublicLink } from "../api/types";
 
 export interface EntryListProps {
   readonly items: FileEntry[];
@@ -32,13 +32,15 @@ export function EntryList({
   onCopyLink,
 }: EntryListProps) {
   const selectedItem = items.find((item) => item.path === selectedPath) ?? null;
-  const publishedLink = selectedItem ? publishedLinks[selectedItem.path] : undefined;
+  const publishedLink = selectedItem
+    ? publishedLinks[selectedItem.path]
+    : undefined;
 
   return (
     <div>
       {selectedItem && (
         <div role="toolbar" aria-label="선택 항목 작업">
-          {selectedItem.type === 'DIRECTORY' && (
+          {selectedItem.type === "DIRECTORY" && (
             <button type="button" onClick={() => onOpenDirectory(selectedItem)}>
               열기
             </button>
@@ -52,12 +54,12 @@ export function EntryList({
           <button type="button" onClick={() => onRemove(selectedItem)}>
             삭제
           </button>
-          {selectedItem.type === 'FILE' && (
+          {selectedItem.type === "FILE" && (
             <button type="button" onClick={() => onDownload(selectedItem)}>
               다운로드
             </button>
           )}
-          {selectedItem.type === 'FILE' &&
+          {selectedItem.type === "FILE" &&
             (publishedLink ? (
               <button type="button" onClick={() => onUnpublish(selectedItem)}>
                 발행 취소
@@ -101,9 +103,9 @@ export function EntryList({
                 onClick={() => onSelect(item)}
               >
                 <td>
-                  {item.type === 'DIRECTORY' ? '📁' : '📄'} {item.name}
+                  {item.type === "DIRECTORY" ? "📁" : "📄"} {item.name}
                 </td>
-                <td>{item.type === 'DIRECTORY' ? '폴더' : '파일'}</td>
+                <td>{item.type === "DIRECTORY" ? "폴더" : "파일"}</td>
               </tr>
             ))}
           </tbody>

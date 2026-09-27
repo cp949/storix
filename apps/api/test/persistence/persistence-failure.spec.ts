@@ -1,5 +1,8 @@
 import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors.js';
-import { classifyPersistenceFailure, classifyPersistenceOperation } from '../../src/persistence/persistence-failure.js';
+import {
+  classifyPersistenceFailure,
+  classifyPersistenceOperation,
+} from '../../src/persistence/persistence-failure.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import type { ConfigService } from '@nestjs/config';
 import type { DataSource, EntityManager } from 'typeorm';

@@ -1,5 +1,8 @@
 import { encodeRevision } from '../../../src/vfs/revision.js';
-import { parseSnapshotCreateRequest, parseSnapshotRestoreRequest } from '../../../src/vfs/dto/snapshot-request.dto.js';
+import {
+  parseSnapshotCreateRequest,
+  parseSnapshotRestoreRequest,
+} from '../../../src/vfs/dto/snapshot-request.dto.js';
 
 const revision = encodeRevision({ id: '00000000-0000-4000-8000-000000000001', version: 1 });
 

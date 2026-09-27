@@ -16,7 +16,10 @@ export function resolveValidApiKeys(current: string, previous: string | undefine
     {
       provide: VALID_API_KEYS,
       useFactory: (config: ConfigService) =>
-        resolveValidApiKeys(config.getOrThrow<string>('STORIX_API_KEY'), config.get<string>('STORIX_API_KEY_PREVIOUS')),
+        resolveValidApiKeys(
+          config.getOrThrow<string>('STORIX_API_KEY'),
+          config.get<string>('STORIX_API_KEY_PREVIOUS'),
+        ),
       inject: [ConfigService],
     },
     { provide: APP_GUARD, useClass: ApiKeyGuard },

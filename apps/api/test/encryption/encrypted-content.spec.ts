@@ -1,7 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { PassThrough, Readable } from 'node:stream';
 import type { BlobRange, BlobStorage } from '../../src/storage/blob-storage.js';
-import { EncryptingPutTarget, getEncrypted, incrementCounter } from '../../src/encryption/encrypted-content.js';
+import {
+  EncryptingPutTarget,
+  getEncrypted,
+  incrementCounter,
+} from '../../src/encryption/encrypted-content.js';
 
 function streamToBuffer(stream: Readable): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -87,7 +91,9 @@ describe('incrementCounter', () => {
   it('여러 바이트에 걸친 carry도 올바르게 계산한다', () => {
     const iv = Buffer.concat([Buffer.alloc(13, 0), Buffer.from([0x00, 0xff, 0xff])]);
 
-    expect(incrementCounter(iv, 1)).toEqual(Buffer.concat([Buffer.alloc(13, 0), Buffer.from([0x01, 0x00, 0x00])]));
+    expect(incrementCounter(iv, 1)).toEqual(
+      Buffer.concat([Buffer.alloc(13, 0), Buffer.from([0x01, 0x00, 0x00])]),
+    );
   });
 
   it('블록 수가 0이면 원본과 동일하다', () => {
@@ -206,7 +212,10 @@ describe('getEncrypted 스트림 오류 전파', () => {
   it('반환 스트림을 파괴하면 source도 함께 파괴된다(다운로드 중단 시 소켓 누수 방지)', async () => {
     const storage = new FailingBlobStorage(null);
 
-    const decrypted = await getEncrypted(storage, 'blobs/00/aborted', iv, masterKey, { start: 10, end: 4000 });
+    const decrypted = await getEncrypted(storage, 'blobs/00/aborted', iv, masterKey, {
+      start: 10,
+      end: 4000,
+    });
     decrypted.resume();
     decrypted.destroy();
     await new Promise((resolve) => setTimeout(resolve, 10));

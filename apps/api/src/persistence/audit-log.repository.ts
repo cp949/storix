@@ -20,6 +20,8 @@ export class AuditLogRepository {
 
   async record(entry: AuditLogEntry): Promise<void> {
     const repo = this.dataSource.getRepository(AuditLogEntity);
-    await repo.insert(repo.create({ ...entry, trashId: entry.trashId ?? null }) as QueryDeepPartialEntity<AuditLogEntity>);
+    await repo.insert(
+      repo.create({ ...entry, trashId: entry.trashId ?? null }) as QueryDeepPartialEntity<AuditLogEntity>,
+    );
   }
 }

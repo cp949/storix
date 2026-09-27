@@ -8,7 +8,10 @@ import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation
 import { StorageKeyGenerator } from '../../src/storage/storage-key-generator.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { ConditionalContentService } from '../../src/vfs/conditional-content.service.js';
-import type { VfsConditionalContentResourceDto, VfsPreconditionCurrentDto } from '../../src/vfs/dto/node-response.dto.js';
+import type {
+  VfsConditionalContentResourceDto,
+  VfsPreconditionCurrentDto,
+} from '../../src/vfs/dto/node-response.dto.js';
 import { errorResponse } from '../../src/vfs/mutation-receipt.js';
 import { hashParts } from '../../src/vfs/mutation.service.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';

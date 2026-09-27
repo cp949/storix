@@ -13,9 +13,20 @@ import { UploadSessionService } from '../../src/vfs/upload-session.service.js';
 describe('UploadSessionService lifecycle', () => {
   const namespaceId = randomUUID();
   const key = randomUUID();
-  const request = { path: '/parent/file.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true };
+  const request = {
+    path: '/parent/file.bin',
+    sizeBytes: '0',
+    mimeType: 'application/octet-stream',
+    ifAbsent: true,
+  };
   const policy: UploadSessionPolicy = {
-    global: { maxStagedBytes: 1000n, maxActiveSessions: 2, partSizeBytes: 4, inactivitySeconds: 60, maxLifetimeSeconds: 120 },
+    global: {
+      maxStagedBytes: 1000n,
+      maxActiveSessions: 2,
+      partSizeBytes: 4,
+      inactivitySeconds: 60,
+      maxLifetimeSeconds: 120,
+    },
     namespaces: { [namespaceId]: { maxStagedBytes: 1000n, maxActiveSessions: 1 } },
   };
 
@@ -23,15 +34,27 @@ describe('UploadSessionService lifecycle', () => {
     const sessions = new Map<string, VfsUploadSessionEntity>();
     const repo = {
       createSession: async (input: CreateUploadSessionInput) => {
-        const existing = [...sessions.values()].find((row) => row.creationKey === input.creationKey && row.scope === input.scope);
-        if (existing) return existing.fingerprint === input.fingerprint
-          ? { kind: 'replay', session: existing } : { kind: 'conflict' };
+        const existing = [...sessions.values()].find(
+          (row) => row.creationKey === input.creationKey && row.scope === input.scope,
+        );
+        if (existing)
+          return existing.fingerprint === input.fingerprint
+            ? { kind: 'replay', session: existing }
+            : { kind: 'conflict' };
         if (sessions.size >= 1) return { kind: 'limit' };
         const session: VfsUploadSessionEntity = {
-          ...input, sha256: input.sha256 ?? null, state: 'OPEN', requestId: input.requestId ?? null,
+          ...input,
+          sha256: input.sha256 ?? null,
+          state: 'OPEN',
+          requestId: input.requestId ?? null,
           creationRequestId: input.requestId ?? null,
-          leaseExpiresAt: null, leaseToken: null, terminalAt: null, responseStatus: null,
-          responseBody: null, createdAt: input.now, updatedAt: input.now,
+          leaseExpiresAt: null,
+          leaseToken: null,
+          terminalAt: null,
+          responseStatus: null,
+          responseBody: null,
+          createdAt: input.now,
+          updatedAt: input.now,
           creationExpiresAt: input.expiresAt,
         };
         sessions.set(input.id, session);
@@ -41,7 +64,20 @@ describe('UploadSessionService lifecycle', () => {
         [...sessions.values()].find((row) => row.scope === scope && row.creationKey === creationKey) ?? null,
       findForStatus: async (_ns: string, id: string) => {
         const session = sessions.get(id);
-        return session ? { session, parts: [{ partIndex: 0, sizeBytes: '4', digest: 'secret', stagingKey: 'upload-staging/private', state: 'STORED' }] } : null;
+        return session
+          ? {
+              session,
+              parts: [
+                {
+                  partIndex: 0,
+                  sizeBytes: '4',
+                  digest: 'secret',
+                  stagingKey: 'upload-staging/private',
+                  state: 'STORED',
+                },
+              ],
+            }
+          : null;
       },
       claimTerminalTransition: async (_ns: string, id: string, next: VfsUploadSessionState) => {
         const session = sessions.get(id);
@@ -59,14 +95,29 @@ describe('UploadSessionService lifecycle', () => {
         return null;
       },
     };
-    const capability = { requireEnabled: () => { if (!enabled) throw Object.assign(new Error('disabled'), { code: 'VFS_FEATURE_DISABLED' }); } };
+    const capability = {
+      requireEnabled: () => {
+        if (!enabled) throw Object.assign(new Error('disabled'), { code: 'VFS_FEATURE_DISABLED' });
+      },
+    };
     const service = new UploadSessionService(
-      new PathResolver(), nodes as unknown as VfsNodeRepository,
+      new PathResolver(),
+      nodes as unknown as VfsNodeRepository,
       repo as unknown as VfsUploadSessionRepository,
-      capability as unknown as CapabilityService, policy,
+      capability as unknown as CapabilityService,
+      policy,
       { get: () => '8' } as unknown as ConfigService,
     );
-    return { service, sessions, setEnabled: (value: boolean) => { enabled = value; }, setParentExists: (value: boolean) => { parentExists = value; } };
+    return {
+      service,
+      sessions,
+      setEnabled: (value: boolean) => {
+        enabled = value;
+      },
+      setParentExists: (value: boolean) => {
+        parentExists = value;
+      },
+    };
   }
 
   it('replays the same creation and rejects a changed body for the same key', async () => {
@@ -74,29 +125,43 @@ describe('UploadSessionService lifecycle', () => {
     const first = await service.create(namespaceId, 'scope', key, request, 'first-request');
     const replay = await service.create(namespaceId, 'scope', key, request, 'second-request');
     expect(replay.body).toEqual(first.body);
-    await expect(service.create(namespaceId, 'scope', key, { ...request, mimeType: 'text/plain' }, 'third')).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED', status: 409 });
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, mimeType: 'text/plain' }, 'third'),
+    ).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED', status: 409 });
     await service.cancel(namespaceId, (first.body as { sessionId: string }).sessionId);
     expect((await service.create(namespaceId, 'scope', key, request, 'fourth')).body).toEqual(first.body);
   });
 
   it('validates optional checksum before creating a session and binds it to the creation key', async () => {
     const { service, sessions } = setup();
-    await expect(service.create(namespaceId, 'scope', key,
-      { ...request, sha256: 'A'.repeat(64) }, 'bad')).rejects.toMatchObject({
-      code: 'VFS_INVALID_CHECKSUM', status: 400,
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, sha256: 'A'.repeat(64) }, 'bad'),
+    ).rejects.toMatchObject({
+      code: 'VFS_INVALID_CHECKSUM',
+      status: 400,
     });
     expect(sessions.size).toBe(0);
     const checksum = 'a'.repeat(64);
-    const created = await service.create(namespaceId, 'scope', key,
-      { ...request, sha256: checksum }, 'created');
-    expect((sessions.get((created.body as { sessionId: string }).sessionId) as unknown as
-      { sha256?: string })?.sha256).toBe(checksum);
-    await expect(service.create(namespaceId, 'scope', key,
-      { ...request, sha256: 'b'.repeat(64) }, 'changed')).rejects.toMatchObject({
-      code: 'MUTATION_KEY_REUSED', status: 409,
+    const created = await service.create(
+      namespaceId,
+      'scope',
+      key,
+      { ...request, sha256: checksum },
+      'created',
+    );
+    expect(
+      (sessions.get((created.body as { sessionId: string }).sessionId) as unknown as { sha256?: string })
+        ?.sha256,
+    ).toBe(checksum);
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, sha256: 'b'.repeat(64) }, 'changed'),
+    ).rejects.toMatchObject({
+      code: 'MUTATION_KEY_REUSED',
+      status: 409,
     });
     await expect(service.create(namespaceId, 'scope', key, request, 'removed')).rejects.toMatchObject({
-      code: 'MUTATION_KEY_REUSED', status: 409,
+      code: 'MUTATION_KEY_REUSED',
+      status: 409,
     });
   });
 
@@ -131,9 +196,12 @@ describe('UploadSessionService lifecycle', () => {
     const created = await service.create(namespaceId, 'scope', key, request, 'first-request');
     setEnabled(false);
     expect((await service.create(namespaceId, 'scope', key, request, 'replay')).body).toEqual(created.body);
-    await expect(service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '1' }, 'changed'))
-      .rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED' });
-    await expect(service.create(namespaceId, 'scope', randomUUID(), request, 'second')).rejects.toMatchObject({ code: 'VFS_FEATURE_DISABLED' });
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '1' }, 'changed'),
+    ).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED' });
+    await expect(service.create(namespaceId, 'scope', randomUUID(), request, 'second')).rejects.toMatchObject(
+      { code: 'VFS_FEATURE_DISABLED' },
+    );
     const id = (created.body as { sessionId: string }).sessionId;
     expect((await service.status(namespaceId, id)).state).toBe('OPEN');
     expect((await service.cancel(namespaceId, id)).state).toBe('CANCELLED');
@@ -142,9 +210,13 @@ describe('UploadSessionService lifecycle', () => {
   it('requires an existing parent and enforces the file-size boundary including zero bytes', async () => {
     const { service, setParentExists } = setup();
     setParentExists(false);
-    await expect(service.create(namespaceId, 'scope', key, request, 'first')).rejects.toMatchObject({ code: 'VFS_NODE_NOT_FOUND' });
+    await expect(service.create(namespaceId, 'scope', key, request, 'first')).rejects.toMatchObject({
+      code: 'VFS_NODE_NOT_FOUND',
+    });
     setParentExists(true);
-    await expect(service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'first')).rejects.toMatchObject({ status: 413 });
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'first'),
+    ).rejects.toMatchObject({ status: 413 });
     const created = await service.create(namespaceId, 'scope', key, request, 'first');
     expect(created.body).toMatchObject({ state: 'OPEN', partCount: 0, partSizeBytes: 4 });
   });
@@ -153,14 +225,20 @@ describe('UploadSessionService lifecycle', () => {
     const { service } = setup();
     const created = await service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '4' }, 'first');
     const status = await service.status(namespaceId, (created.body as { sessionId: string }).sessionId);
-    expect(status).toMatchObject({ path: '/parent/file.bin', sizeBytes: '4', parts: [{ index: 0, sizeBytes: '4' }] });
+    expect(status).toMatchObject({
+      path: '/parent/file.bin',
+      sizeBytes: '4',
+      parts: [{ index: 0, sizeBytes: '4' }],
+    });
     expect(JSON.stringify(status)).not.toMatch(/secret|upload-staging/);
   });
 
   it('enforces active session caps and cancels only OPEN once', async () => {
     const { service } = setup();
     const first = await service.create(namespaceId, 'scope', key, request, 'first');
-    await expect(service.create(namespaceId, 'scope', randomUUID(), request, 'second')).rejects.toMatchObject({ status: 429, retryAfterSeconds: 1 });
+    await expect(service.create(namespaceId, 'scope', randomUUID(), request, 'second')).rejects.toMatchObject(
+      { status: 429, retryAfterSeconds: 1 },
+    );
     const id = (first.body as { sessionId: string }).sessionId;
     expect((await service.cancel(namespaceId, id)).state).toBe('CANCELLED');
     expect((await service.cancel(namespaceId, id)).state).toBe('CANCELLED');

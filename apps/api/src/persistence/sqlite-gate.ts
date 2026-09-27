@@ -182,7 +182,8 @@ export function installSqliteGate(dataSource: DataSource, options: SqliteGateOpt
       if (scope && !scope.done && scope.runner && gate.owner === scope.runner) return scope.runner;
       const runner = new Gated(dataSource.driver);
       const { databaseConnection } = dataSource.driver as unknown as { databaseConnection: object };
-      (runner as unknown as { stmtCache: Map<string, unknown> }).stmtCache = statementCacheFor(databaseConnection);
+      (runner as unknown as { stmtCache: Map<string, unknown> }).stmtCache =
+        statementCacheFor(databaseConnection);
       void mode;
       return runner;
     },

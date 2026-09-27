@@ -23,7 +23,10 @@ describe('resolveErrorReporter', () => {
     const reporter = resolveErrorReporter('https://public@example.sentry.io/1', client);
 
     expect(reporter).toBeInstanceOf(SentryErrorReporter);
-    expect(client.init).toHaveBeenCalledWith({ dsn: 'https://public@example.sentry.io/1', sendDefaultPii: false });
+    expect(client.init).toHaveBeenCalledWith({
+      dsn: 'https://public@example.sentry.io/1',
+      sendDefaultPii: false,
+    });
   });
 
   it('STORIX_SENTRY_DSN이 없으면 NoopErrorReporter를 반환한다', () => {

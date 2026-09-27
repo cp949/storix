@@ -27,15 +27,15 @@
   무관하게 "멈춤"으로 판정한다(containers/podman-compose#1481, 2026-07 main
   수정). `migrate` 실패가 `app` 기동으로 가려질 수 있다.
 - podman 3.x는 `condition: service_healthy`를 무시한다(`WARNING: Ignored …
-  condition check`). 기동 순서 검증은 Podman 4 이상 또는 Docker에서 한다.
+condition check`). 기동 순서 검증은 Podman 4 이상 또는 Docker에서 한다.
 
 ## 실 기동 검증은 CI에서
 
 - 이 WSL 환경에서는 podman-compose가 만드는 기본 네트워크의 서비스명 DNS가
   동작하지 않는다(`Error validating CNI config … plugin firewall does not
-  support config version "1.0.0"`, `containernetworking-plugins` 0.9.1과 podman
+support config version "1.0.0"`, `containernetworking-plugins` 0.9.1과 podman
   3.4.4 불일치, 업그레이드 경로 없음). `migrate`가 `getaddrinfo ENOTFOUND
-  postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다.
+postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다.
 - 따라서 compose 실 기동은 `dev` push 시
   `.github/workflows/versity-demo-smoke.yml`(실 Docker Compose)이 검증한다.
   로컬에서는 `config` 병합 확인 + 통합 테스트로 대신한다.

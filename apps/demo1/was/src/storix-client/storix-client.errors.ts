@@ -6,7 +6,13 @@ export class StorixApiError extends DomainError {
   readonly upstreamRequestId: string | undefined;
   readonly retryAfter: string | undefined;
 
-  constructor(status: number, code: string, message: string, upstreamRequestId: string | undefined, retryAfter?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    upstreamRequestId: string | undefined,
+    retryAfter?: string,
+  ) {
     super(`Storix 요청 실패(${status} ${code}): ${message}`);
     this.status = status;
     this.code = code;

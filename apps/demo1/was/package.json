@@ -4,7 +4,9 @@
   "description": "Storix 공개 HTTP API만 사용하는 데모용 외부 소비자 WAS",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.18" },
+  "engines": {
+    "node": ">=24.18"
+  },
   "scripts": {
     "build": "nest build",
     "start": "nest start",

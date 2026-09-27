@@ -25,14 +25,14 @@ cp .env.example .env
 
 이 조합에서 실제로 읽히는 값:
 
-| 변수 | 값 | 비고 |
-|---|---|---|
-| `STORIX_API_KEY` | `openssl rand -hex 32` 출력 | 필수. 비어 있으면 compose가 즉시 실패 |
-| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY` | 임의 값 | app 접속 자격증명이자 MinIO root 자격증명(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`). MinIO 제약: user 3자 이상, password 8자 이상 |
-| `STORIX_STORAGE_BUCKET` | 버킷 이름 | `minio-init`이 기동 시 생성 |
-| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
-| `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL` | 클라이언트가 접근 가능한 MinIO 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패 |
-| `STORIX_STORAGE_REGION` | 예: `us-east-1` | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결) |
+| 변수                                                                                                 | 값                                  | 비고                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `STORIX_API_KEY`                                                                                     | `openssl rand -hex 32` 출력         | 필수. 비어 있으면 compose가 즉시 실패                                                                                            |
+| `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY`                                            | 임의 값                             | app 접속 자격증명이자 MinIO root 자격증명(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`). MinIO 제약: user 3자 이상, password 8자 이상 |
+| `STORIX_STORAGE_BUCKET`                                                                              | 버킷 이름                           | `minio-init`이 기동 시 생성                                                                                                      |
+| `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보             | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의                                                    |
+| `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL`    | 클라이언트가 접근 가능한 MinIO 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패                                                                               |
+| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                     | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결)                                                                          |
 
 override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
 `STORIX_STORAGE_USE_SSL`(`minio` / `9000` / `false`로 고정).
@@ -138,8 +138,8 @@ presigned URL은 클라이언트가 MinIO에 직접 접근하는 주소로 서�
 services:
   minio:
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - "9000:9000"
+      - "9001:9001"
 ```
 
 ```bash

@@ -19,7 +19,9 @@ export class DomainErrorFilter implements ExceptionFilter {
       }
       if (exception.shouldReport) {
         const internalPathSuffix =
-          exception instanceof ExternalPathResolutionError ? ` (internalPath: ${exception.internalPath})` : '';
+          exception instanceof ExternalPathResolutionError
+            ? ` (internalPath: ${exception.internalPath})`
+            : '';
         this.logger.error(`${exception.message}${internalPathSuffix}`, exception.stack);
       }
       response.status(exception.status).json({

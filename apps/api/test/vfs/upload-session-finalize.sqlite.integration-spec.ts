@@ -45,7 +45,13 @@ describe('upload finalize (SQLite + MinIO)', () => {
   }
   async function bootstrap(enabled: boolean) {
     const builder = Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule, GcJobModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        AuthModule,
+        NamespaceModule,
+        VfsModule,
+        GcJobModule,
+      ],
     });
     if (plainId) {
       builder.overrideProvider(CapabilityService).useValue(

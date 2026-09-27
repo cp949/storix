@@ -11,22 +11,28 @@ export class AddUploadChecksumFailure1791700000005 implements MigrationInterface
 
   private async rebuildSqlite(runner: QueryRunner, from: string, to: string): Promise<void> {
     await withSqliteTableRebuild(runner, async (tx) => {
-      const rows = await tx.query(
+      const rows = (await tx.query(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'vfs_upload_session'",
-      ) as Array<{ sql: string }>;
+      )) as Array<{ sql: string }>;
       if (rows.length !== 1 || !rows[0].sql.includes(from))
         throw new Error('Upload session state constraint not found');
-      const columns = await tx.query('PRAGMA table_info("vfs_upload_session")') as Array<{ name: string }>;
+      const columns = (await tx.query('PRAGMA table_info("vfs_upload_session")')) as Array<{ name: string }>;
       const names = columns.map((column) => `"${column.name}"`).join(', ');
       const create = rows[0].sql
         .replace('"vfs_upload_session"', '"vfs_upload_session_new"')
         .replace(from, to);
       await tx.query(create);
-      await tx.query(`INSERT INTO "vfs_upload_session_new" (${names}) SELECT ${names} FROM "vfs_upload_session"`);
+      await tx.query(
+        `INSERT INTO "vfs_upload_session_new" (${names}) SELECT ${names} FROM "vfs_upload_session"`,
+      );
       await tx.query('DROP TABLE "vfs_upload_session"');
       await tx.query('ALTER TABLE "vfs_upload_session_new" RENAME TO "vfs_upload_session"');
-      await tx.query('CREATE INDEX "idx_vfs_upload_session_state_expires" ON "vfs_upload_session" ("state", "expires_at")');
-      await tx.query('CREATE INDEX "idx_vfs_upload_session_terminal" ON "vfs_upload_session" ("terminal_at")');
+      await tx.query(
+        'CREATE INDEX "idx_vfs_upload_session_state_expires" ON "vfs_upload_session" ("state", "expires_at")',
+      );
+      await tx.query(
+        'CREATE INDEX "idx_vfs_upload_session_terminal" ON "vfs_upload_session" ("terminal_at")',
+      );
     });
   }
 
@@ -42,7 +48,9 @@ export class AddUploadChecksumFailure1791700000005 implements MigrationInterface
   }
 
   async down(runner: QueryRunner): Promise<void> {
-    const failed = await runner.query('SELECT "id" FROM "vfs_upload_session" WHERE "state" = \'FAILED\' LIMIT 1') as unknown[];
+    const failed = (await runner.query(
+      'SELECT "id" FROM "vfs_upload_session" WHERE "state" = \'FAILED\' LIMIT 1',
+    )) as unknown[];
     if (failed.length > 0) throw new Error('Cannot remove upload failure state while FAILED sessions remain');
     await runner.query('ALTER TABLE "vfs_upload_session" DROP COLUMN "sha256"');
     if (runner.connection.options.type === 'better-sqlite3') {

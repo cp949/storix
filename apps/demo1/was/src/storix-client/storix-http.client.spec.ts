@@ -36,7 +36,11 @@ describe('StorixHttpClient', () => {
 
   it('query 파라미터를 URL에 반영한다', async () => {
     const spy = mockFetchOnce(200, {});
-    await client.requestJson({ method: 'GET', path: '/api/v2/probe', query: { path: '/a b', empty: undefined } });
+    await client.requestJson({
+      method: 'GET',
+      path: '/api/v2/probe',
+      query: { path: '/a b', empty: undefined },
+    });
 
     const [url] = spy.mock.calls[0] as [URL];
     expect(url.toString()).toBe('http://storix.test/api/v2/probe?path=%2Fa+b');
@@ -53,7 +57,11 @@ describe('StorixHttpClient', () => {
   });
 
   it('429 Retry-After 헤더를 StorixApiError에 보존한다', async () => {
-    mockFetchOnce(429, { code: 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', message: 'limit', requestId: 'req-2' }, { 'retry-after': '1' });
+    mockFetchOnce(
+      429,
+      { code: 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', message: 'limit', requestId: 'req-2' },
+      { 'retry-after': '1' },
+    );
     await expect(client.requestJson({ method: 'POST', path: '/api/v2/probe' })).rejects.toMatchObject({
       status: 429,
       code: 'VFS_UPLOAD_SESSION_LIMIT_EXCEEDED',

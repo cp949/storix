@@ -35,7 +35,10 @@ function toSafeRetainedNodeCount(value: string | undefined): number {
 }
 
 // globalLimits는 강제 경로와 같은 값을 쓰도록 호출 서비스가 ConfigService에서 해석해 넘긴다
-export function toNamespaceResponse(entity: NamespaceEntity, globalLimits: NamespaceGlobalLimits): NamespaceResponseDto {
+export function toNamespaceResponse(
+  entity: NamespaceEntity,
+  globalLimits: NamespaceGlobalLimits,
+): NamespaceResponseDto {
   return {
     id: entity.id,
     name: entity.name,
@@ -45,10 +48,15 @@ export function toNamespaceResponse(entity: NamespaceEntity, globalLimits: Names
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
     limits: {
-      maxFileSizeBytes: String(resolveMaxFileSizeBytes(entity.maxFileSizeBytes, globalLimits.maxFileSizeBytes)),
+      maxFileSizeBytes: String(
+        resolveMaxFileSizeBytes(entity.maxFileSizeBytes, globalLimits.maxFileSizeBytes),
+      ),
     },
     quota: {
-      limitBytes: resolveNamespaceQuota(entity.maxTotalLogicalBytes ?? null, globalLimits.maxTotalLogicalBytes).toString(),
+      limitBytes: resolveNamespaceQuota(
+        entity.maxTotalLogicalBytes ?? null,
+        globalLimits.maxTotalLogicalBytes,
+      ).toString(),
       usedBytes: resolveTotalLogicalBytes(
         String(entity.liveFileByteCount ?? '0'),
         String(entity.retainedSnapshotByteCount ?? '0'),

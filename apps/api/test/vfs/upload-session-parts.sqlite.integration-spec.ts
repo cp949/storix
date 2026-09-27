@@ -42,27 +42,45 @@ describe('upload parts (SQLite + MinIO)', () => {
   let failureNamespaceId: string;
 
   function policy(): UploadSessionPolicy {
-    return { global: { maxStagedBytes: 8n, maxActiveSessions: 8, partSizeBytes: 4,
-      inactivitySeconds: 60, maxLifetimeSeconds: 120 }, namespaces: {
-      [namespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
-      [encryptedId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
-      [raceNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
-      [failureNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
-    } };
+    return {
+      global: {
+        maxStagedBytes: 8n,
+        maxActiveSessions: 8,
+        partSizeBytes: 4,
+        inactivitySeconds: 60,
+        maxLifetimeSeconds: 120,
+      },
+      namespaces: {
+        [namespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [encryptedId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [raceNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [failureNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+      },
+    };
   }
 
   async function bootstrap(enabled: boolean) {
     const builder = Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule, GcJobModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        AuthModule,
+        NamespaceModule,
+        VfsModule,
+        GcJobModule,
+      ],
     });
     if (enabled) {
-      builder.overrideProvider(CapabilityService).useValue(new CapabilityService({
-        globalAllowedCapabilities: ['resumable-upload'],
-        namespaceAllowedCapabilities: {
-          [namespaceId]: ['resumable-upload'], [encryptedId]: ['resumable-upload'],
-          [raceNamespaceId]: ['resumable-upload'], [failureNamespaceId]: ['resumable-upload'],
-        },
-      }));
+      builder.overrideProvider(CapabilityService).useValue(
+        new CapabilityService({
+          globalAllowedCapabilities: ['resumable-upload'],
+          namespaceAllowedCapabilities: {
+            [namespaceId]: ['resumable-upload'],
+            [encryptedId]: ['resumable-upload'],
+            [raceNamespaceId]: ['resumable-upload'],
+            [failureNamespaceId]: ['resumable-upload'],
+          },
+        }),
+      );
       builder.overrideProvider(UPLOAD_SESSION_POLICY).useValue(policy());
     }
     const moduleRef = await builder.compile();
@@ -72,18 +90,28 @@ describe('upload parts (SQLite + MinIO)', () => {
     return next;
   }
 
-  function http(target = app) { return request(target.getHttpServer()); }
-  function base(ns = namespaceId) { return `/api/v2/namespaces/${ns}/fs/upload-sessions`; }
+  function http(target = app) {
+    return request(target.getHttpServer());
+  }
+  function base(ns = namespaceId) {
+    return `/api/v2/namespaces/${ns}/fs/upload-sessions`;
+  }
   async function create(path: string, size: string, ns = namespaceId) {
-    const response = await http().post(base(ns)).set('Authorization', `Bearer ${API_KEY}`)
-      .set('X-Mutation-Scope', 'parts').set('Idempotency-Key', randomUUID())
-      .send({ path, sizeBytes: size, mimeType: 'application/octet-stream', ifAbsent: true }).expect(201);
+    const response = await http()
+      .post(base(ns))
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('X-Mutation-Scope', 'parts')
+      .set('Idempotency-Key', randomUUID())
+      .send({ path, sizeBytes: size, mimeType: 'application/octet-stream', ifAbsent: true })
+      .expect(201);
     return response.body.sessionId as string;
   }
   function put(id: string, index: number, body: string, target = app, ns = namespaceId) {
-    return http(target).put(`${base(ns)}/${id}/parts/${index}`)
+    return http(target)
+      .put(`${base(ns)}/${id}/parts/${index}`)
       .set('Authorization', `Bearer ${API_KEY}`)
-      .set('Content-Type', 'application/octet-stream').send(Buffer.from(body));
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from(body));
   }
   async function clear(id: string, ns: string, indices: number[]) {
     const repo = app.get(VfsUploadSessionRepository);
@@ -103,30 +131,58 @@ describe('upload parts (SQLite + MinIO)', () => {
     process.env.STORIX_DB_SQLITE_PATH = join(directory, 'upload-parts.sqlite');
     Object.assign(process.env, {
       STORIX_STORAGE_ENDPOINT: minio.getHost(),
-      STORIX_STORAGE_PORT: String(minio.getPort()), STORIX_STORAGE_USE_SSL: 'false',
-      STORIX_STORAGE_ACCESS_KEY: minio.getUsername(), STORIX_STORAGE_SECRET_KEY: minio.getPassword(),
-      STORIX_STORAGE_BUCKET: 'storix-upload-parts', STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64),
+      STORIX_STORAGE_PORT: String(minio.getPort()),
+      STORIX_STORAGE_USE_SSL: 'false',
+      STORIX_STORAGE_ACCESS_KEY: minio.getUsername(),
+      STORIX_STORAGE_SECRET_KEY: minio.getPassword(),
+      STORIX_STORAGE_BUCKET: 'storix-upload-parts',
+      STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64),
       STORIX_API_KEY: API_KEY,
     });
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
-    const client = new MinioClient({ endPoint: minio.getHost(), port: minio.getPort(), useSSL: false,
-      accessKey: minio.getUsername(), secretKey: minio.getPassword() });
+    const client = new MinioClient({
+      endPoint: minio.getHost(),
+      port: minio.getPort(),
+      useSSL: false,
+      accessKey: minio.getUsername(),
+      secretKey: minio.getPassword(),
+    });
     await client.makeBucket('storix-upload-parts');
-    migrations = new DataSource({ type: 'better-sqlite3', database: process.env.STORIX_DB_SQLITE_PATH,
-      migrations: ALL_MIGRATIONS, migrationsTransactionMode: 'each' });
+    migrations = new DataSource({
+      type: 'better-sqlite3',
+      database: process.env.STORIX_DB_SQLITE_PATH,
+      migrations: ALL_MIGRATIONS,
+      migrationsTransactionMode: 'each',
+    });
     await migrations.initialize();
     await migrations.runMigrations();
     await migrations.destroy();
     app = await bootstrap(false);
-    const plain = await http().post('/api/v2/namespaces').set('Authorization', `Bearer ${API_KEY}`)
-      .set('Idempotency-Key', randomUUID()).send({ name: 'upload-parts' }).expect(201);
-    const encrypted = await http().post('/api/v2/namespaces').set('Authorization', `Bearer ${API_KEY}`)
-      .set('Idempotency-Key', randomUUID()).send({ name: 'upload-parts-encrypted', encryptionPolicy: 'ENCRYPTED' }).expect(201);
-    const race = await http().post('/api/v2/namespaces').set('Authorization', `Bearer ${API_KEY}`)
-      .set('Idempotency-Key', randomUUID()).send({ name: 'upload-parts-race' }).expect(201);
-    const failure = await http().post('/api/v2/namespaces').set('Authorization', `Bearer ${API_KEY}`)
-      .set('Idempotency-Key', randomUUID()).send({ name: 'upload-parts-failure' }).expect(201);
+    const plain = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts' })
+      .expect(201);
+    const encrypted = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts-encrypted', encryptionPolicy: 'ENCRYPTED' })
+      .expect(201);
+    const race = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts-race' })
+      .expect(201);
+    const failure = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts-failure' })
+      .expect(201);
     namespaceId = plain.body.id as string;
     encryptedId = encrypted.body.id as string;
     raceNamespaceId = race.body.id as string;
@@ -161,10 +217,18 @@ describe('upload parts (SQLite + MinIO)', () => {
     expect((await sessionRows.findOneByOrFail({ id })).expiresAt).toEqual(maxExpiresAt);
     expect((await put(id, 0, 'wxyz').expect(409)).body.code).toBe('VFS_UPLOAD_PART_CONFLICT');
     const status = await http().get(`${base()}/${id}`).set('Authorization', `Bearer ${API_KEY}`).expect(200);
-    expect(status.body.parts).toEqual([{ index: 0, sizeBytes: '4' }, { index: 1, sizeBytes: '2' }]);
-    await http().get(`/api/v2/namespaces/${namespaceId}/fs/stat`).set('Authorization', `Bearer ${API_KEY}`)
-      .query({ path: '/parts.bin' }).expect(404);
-    expect((await app.get(VfsUploadSessionRepository).findPart(id, 0))?.stagingKey).toMatch(/^upload-staging\/[0-9a-f-]{36}$/);
+    expect(status.body.parts).toEqual([
+      { index: 0, sizeBytes: '4' },
+      { index: 1, sizeBytes: '2' },
+    ]);
+    await http()
+      .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path: '/parts.bin' })
+      .expect(404);
+    expect((await app.get(VfsUploadSessionRepository).findPart(id, 0))?.stagingKey).toMatch(
+      /^upload-staging\/[0-9a-f-]{36}$/,
+    );
     await clear(id, namespaceId, [0, 1]);
   });
 
@@ -211,7 +275,9 @@ describe('upload parts (SQLite + MinIO)', () => {
     ]);
     expect(sameResults.map((result) => result.status).sort()).toEqual([200, 409]);
     const acceptedResponse = sameResults.find((result) => result.status === 200)!;
-    expect((await app.get(VfsUploadSessionRepository).findPart(sameIndex, 0))?.digest).toBe(acceptedResponse.body.sha256);
+    expect((await app.get(VfsUploadSessionRepository).findPart(sameIndex, 0))?.digest).toBe(
+      acceptedResponse.body.sha256,
+    );
     await clear(sameIndex, raceNamespaceId, [0]);
   });
 
@@ -219,9 +285,11 @@ describe('upload parts (SQLite + MinIO)', () => {
     const id = await create('/expired-at-reserve.bin', '4', raceNamespaceId);
     const sessions = app.get(DataSource).getRepository(VfsUploadSessionEntity);
     await sessions.update({ id }, { expiresAt: new Date(Date.now() - 1000) });
-    const result = await app.get(VfsUploadSessionRepository).reservePart(id, 0, '4',
-      `upload-staging/${randomUUID()}`, {
-        global: policy().global, namespace: policy().namespaces[raceNamespaceId],
+    const result = await app
+      .get(VfsUploadSessionRepository)
+      .reservePart(id, 0, '4', `upload-staging/${randomUUID()}`, {
+        global: policy().global,
+        namespace: policy().namespaces[raceNamespaceId],
       });
     expect(result.kind).toBe('closed');
     expect(await app.get(VfsUploadSessionRepository).findPart(id, 0)).toBeNull();
@@ -232,18 +300,27 @@ describe('upload parts (SQLite + MinIO)', () => {
     const storage = app.get<BlobStorage>(BLOB_STORAGE);
     const originalPut = storage.put.bind(storage);
     let entered!: () => void;
-    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     let resume!: () => void;
-    const released = new Promise<void>((resolve) => { resume = resolve; });
-    const spy = jest.spyOn(storage, 'put').mockImplementationOnce(async (key, stream, type) => {
-      entered();
-      await released;
-      await originalPut(key, stream, type);
-    }).mockImplementation(originalPut);
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const spy = jest
+      .spyOn(storage, 'put')
+      .mockImplementationOnce(async (key, stream, type) => {
+        entered();
+        await released;
+        await originalPut(key, stream, type);
+      })
+      .mockImplementation(originalPut);
     try {
       const pending = put(id, 0, 'data', app, raceNamespaceId).then((response) => response);
       await started;
-      await app.get(DataSource).getRepository(VfsUploadSessionEntity)
+      await app
+        .get(DataSource)
+        .getRepository(VfsUploadSessionEntity)
         .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
       resume();
       const response = await pending;
@@ -252,7 +329,10 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(await app.get(VfsUploadSessionRepository).findPart(id, 0)).toBeNull();
       const usage = app.get(DataSource).getRepository(VfsUploadUsageEntity);
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
-    } finally { resume(); spy.mockRestore(); }
+    } finally {
+      resume();
+      spy.mockRestore();
+    }
   });
 
   it('keeps a late PUT charged after GC retires its expired reservation', async () => {
@@ -263,30 +343,44 @@ describe('upload parts (SQLite + MinIO)', () => {
     const originalPut = storage.put.bind(storage);
     const originalDelete = storage.delete.bind(storage);
     let entered!: () => void;
-    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     let resume!: () => void;
-    const released = new Promise<void>((resolve) => { resume = resolve; });
-    const putSpy = jest.spyOn(storage, 'put').mockImplementationOnce(async (key, stream, type) => {
-      entered();
-      await released;
-      await originalPut(key, stream, type);
-    }).mockImplementation(originalPut);
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const putSpy = jest
+      .spyOn(storage, 'put')
+      .mockImplementationOnce(async (key, stream, type) => {
+        entered();
+        await released;
+        await originalPut(key, stream, type);
+      })
+      .mockImplementation(originalPut);
     let deleteSpy: ReturnType<typeof jest.spyOn> | undefined;
     try {
       const pending = put(id, 0, 'data', app, raceNamespaceId).then((response) => response);
       await started;
       const reserved = await repo.findPart(id, 0);
       expect(reserved?.state).toBe('RESERVED');
-      await app.get(DataSource).getRepository(VfsUploadSessionEntity)
+      await app
+        .get(DataSource)
+        .getRepository(VfsUploadSessionEntity)
         .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
-      await app.get(DataSource).getRepository(VfsUploadPartEntity)
+      await app
+        .get(DataSource)
+        .getRepository(VfsUploadPartEntity)
         .update({ sessionId: id, partIndex: 0 }, { leaseExpiresAt: new Date(Date.now() - 1000) });
       const gcResult = await app.get(GcJob).run();
       expect(gcResult.deletedStagingObjects).toBeGreaterThanOrEqual(1);
       expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
-      deleteSpy = jest.spyOn(storage, 'delete')
-        .mockImplementationOnce(async () => { throw new Error('cleanup unavailable'); })
+      deleteSpy = jest
+        .spyOn(storage, 'delete')
+        .mockImplementationOnce(async () => {
+          throw new Error('cleanup unavailable');
+        })
         .mockImplementation(originalDelete);
       resume();
       const response = await pending;
@@ -302,7 +396,11 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
       await expect(storage.get(reserved!.stagingKey)).rejects.toThrow();
-    } finally { resume(); putSpy.mockRestore(); deleteSpy?.mockRestore(); }
+    } finally {
+      resume();
+      putSpy.mockRestore();
+      deleteSpy?.mockRestore();
+    }
   });
 
   it('keeps a retired key charged until its late PUT settles and deletion succeeds', async () => {
@@ -313,32 +411,52 @@ describe('upload parts (SQLite + MinIO)', () => {
     const originalPut = storage.put.bind(storage);
     const originalDelete = storage.delete.bind(storage);
     let putEntered!: () => void;
-    const putStarted = new Promise<void>((resolve) => { putEntered = resolve; });
+    const putStarted = new Promise<void>((resolve) => {
+      putEntered = resolve;
+    });
     let resumePut!: () => void;
-    const putReleased = new Promise<void>((resolve) => { resumePut = resolve; });
-    const putSpy = jest.spyOn(storage, 'put').mockImplementationOnce(async (key, stream, type) => {
-      putEntered();
-      await putReleased;
-      await originalPut(key, stream, type);
-    }).mockImplementation(originalPut);
+    const putReleased = new Promise<void>((resolve) => {
+      resumePut = resolve;
+    });
+    const putSpy = jest
+      .spyOn(storage, 'put')
+      .mockImplementationOnce(async (key, stream, type) => {
+        putEntered();
+        await putReleased;
+        await originalPut(key, stream, type);
+      })
+      .mockImplementation(originalPut);
     let gcDeleteEntered!: () => void;
-    const gcDeleteStarted = new Promise<void>((resolve) => { gcDeleteEntered = resolve; });
+    const gcDeleteStarted = new Promise<void>((resolve) => {
+      gcDeleteEntered = resolve;
+    });
     let resumeGcDelete!: () => void;
-    const gcDeleteReleased = new Promise<void>((resolve) => { resumeGcDelete = resolve; });
-    const deleteSpy = jest.spyOn(storage, 'delete').mockImplementationOnce(async (key) => {
-      await originalDelete(key);
-      gcDeleteEntered();
-      await gcDeleteReleased;
-    }).mockImplementationOnce(async () => { throw new Error('service cleanup unavailable'); })
+    const gcDeleteReleased = new Promise<void>((resolve) => {
+      resumeGcDelete = resolve;
+    });
+    const deleteSpy = jest
+      .spyOn(storage, 'delete')
+      .mockImplementationOnce(async (key) => {
+        await originalDelete(key);
+        gcDeleteEntered();
+        await gcDeleteReleased;
+      })
+      .mockImplementationOnce(async () => {
+        throw new Error('service cleanup unavailable');
+      })
       .mockImplementation(originalDelete);
     try {
       const pending = put(id, 0, 'data', app, raceNamespaceId).then((response) => response);
       await putStarted;
       const reserved = await repo.findPart(id, 0);
       expect(reserved?.state).toBe('RESERVED');
-      await app.get(DataSource).getRepository(VfsUploadSessionEntity)
+      await app
+        .get(DataSource)
+        .getRepository(VfsUploadSessionEntity)
         .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
-      await app.get(DataSource).getRepository(VfsUploadPartEntity)
+      await app
+        .get(DataSource)
+        .getRepository(VfsUploadPartEntity)
         .update({ sessionId: id, partIndex: 0 }, { leaseExpiresAt: new Date(Date.now() - 1000) });
       const gcPending = app.get(GcJob).run();
       await gcDeleteStarted;
@@ -357,7 +475,12 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
       await expect(storage.get(reserved!.stagingKey)).rejects.toThrow();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
-    } finally { resumePut(); resumeGcDelete(); putSpy.mockRestore(); deleteSpy.mockRestore(); }
+    } finally {
+      resumePut();
+      resumeGcDelete();
+      putSpy.mockRestore();
+      deleteSpy.mockRestore();
+    }
   });
 
   it('keeps an uncertain write charged until key-specific cleanup, then retries with a fresh key', async () => {
@@ -366,9 +489,17 @@ describe('upload parts (SQLite + MinIO)', () => {
     const repo = app.get(VfsUploadSessionRepository);
     const originalPut = storage.put.bind(storage);
     const originalDelete = storage.delete.bind(storage);
-    const putSpy = jest.spyOn(storage, 'put').mockImplementationOnce(async () => { throw new Error('put unavailable'); })
+    const putSpy = jest
+      .spyOn(storage, 'put')
+      .mockImplementationOnce(async () => {
+        throw new Error('put unavailable');
+      })
       .mockImplementation(originalPut);
-    const deleteSpy = jest.spyOn(storage, 'delete').mockImplementationOnce(async () => { throw new Error('delete unavailable'); })
+    const deleteSpy = jest
+      .spyOn(storage, 'delete')
+      .mockImplementationOnce(async () => {
+        throw new Error('delete unavailable');
+      })
       .mockImplementation(originalDelete);
     try {
       await put(id, 0, 'data', app, failureNamespaceId).expect(500);
@@ -385,7 +516,10 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(accepted?.digest).toBe(sha('data'));
       expect(accepted?.stagingKey).not.toBe(failed?.stagingKey);
       expect(await repo.markStagingObjectDeleted(id, 0, failed!.stagingKey, 'CLEANUP')).toBe(false);
-    } finally { putSpy.mockRestore(); deleteSpy.mockRestore(); }
+    } finally {
+      putSpy.mockRestore();
+      deleteSpy.mockRestore();
+    }
   });
 
   it('keeps encrypted staging ciphertext and records plaintext digest and IV', async () => {

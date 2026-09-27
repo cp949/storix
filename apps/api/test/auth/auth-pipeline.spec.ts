@@ -53,7 +53,10 @@ describe('서비스 간 인증 파이프라인 (ApiKeyGuard 전역 적용)', () 
   });
 
   it('Authorization 헤더 없이 보호된 라우트에 접근하면 401을 반환한다', async () => {
-    const response = await request(app.getHttpServer()).get('/probe/protected').set('X-Request-Id', 'missing-key-request').expect(401);
+    const response = await request(app.getHttpServer())
+      .get('/probe/protected')
+      .set('X-Request-Id', 'missing-key-request')
+      .expect(401);
     expect(response.body).toMatchObject({ code: 'UNAUTHORIZED', requestId: 'missing-key-request' });
     expect(response.headers['x-request-id']).toBe('missing-key-request');
   });
@@ -78,6 +81,8 @@ describe('서비스 간 인증 파이프라인 (ApiKeyGuard 전역 적용)', () 
       .set('Authorization', 'Bearer wrong-key')
       .set('X-Request-Id', 'wrong-key-request')
       .expect(401)
-      .expect(({ body }) => expect(body).toMatchObject({ code: 'UNAUTHORIZED', requestId: 'wrong-key-request' }));
+      .expect(({ body }) =>
+        expect(body).toMatchObject({ code: 'UNAUTHORIZED', requestId: 'wrong-key-request' }),
+      );
   });
 });

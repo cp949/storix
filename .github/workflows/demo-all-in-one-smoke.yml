@@ -4,24 +4,24 @@ on:
   push:
     branches: [dev]
     paths:
-      - 'docker-compose.yml'
-      - 'docker-compose.versitygw.yml'
-      - 'docker-compose.postgres.yml'
-      - 'apps/api/**'
-      - 'apps/demo1/was/**'
-      - 'apps/demo1/web/**'
-      - 'docs/deployment/scenarios/demo-all-in-one/**'
-      - '.github/workflows/demo-all-in-one-smoke.yml'
+      - "docker-compose.yml"
+      - "docker-compose.versitygw.yml"
+      - "docker-compose.postgres.yml"
+      - "apps/api/**"
+      - "apps/demo1/was/**"
+      - "apps/demo1/web/**"
+      - "docs/deployment/scenarios/demo-all-in-one/**"
+      - ".github/workflows/demo-all-in-one-smoke.yml"
   pull_request:
     paths:
-      - 'docker-compose.yml'
-      - 'docker-compose.versitygw.yml'
-      - 'docker-compose.postgres.yml'
-      - 'apps/api/**'
-      - 'apps/demo1/was/**'
-      - 'apps/demo1/web/**'
-      - 'docs/deployment/scenarios/demo-all-in-one/**'
-      - '.github/workflows/demo-all-in-one-smoke.yml'
+      - "docker-compose.yml"
+      - "docker-compose.versitygw.yml"
+      - "docker-compose.postgres.yml"
+      - "apps/api/**"
+      - "apps/demo1/was/**"
+      - "apps/demo1/web/**"
+      - "docs/deployment/scenarios/demo-all-in-one/**"
+      - ".github/workflows/demo-all-in-one-smoke.yml"
   workflow_dispatch:
 
 permissions:

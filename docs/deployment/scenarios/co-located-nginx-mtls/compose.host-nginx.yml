@@ -5,4 +5,4 @@
 services:
   versitygw:
     ports:
-      - '127.0.0.1:${STORIX_SCENARIO_VERSITYGW_PORT:-7070}:7070'
+      - "127.0.0.1:${STORIX_SCENARIO_VERSITYGW_PORT:-7070}:7070"

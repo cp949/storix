@@ -69,9 +69,10 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
         namespace.maxSyncDeleteNodes,
         parsePositiveInt(process.env.STORIX_MAX_SYNC_DELETE_NODES, 1000),
       );
-      const trashId = target.type === 'DIRECTORY' && !command.recursive
-        ? await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx)
-        : await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
+      const trashId =
+        target.type === 'DIRECTORY' && !command.recursive
+          ? await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx)
+          : await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
       return { status: 200, resource: null, trashId };
     }
 

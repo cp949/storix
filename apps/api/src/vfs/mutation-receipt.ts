@@ -99,10 +99,7 @@ export async function storeErrorReceipt(
       owner.requestBodyBytes,
     );
   } catch (completionError) {
-    if (
-      completionError instanceof Error &&
-      completionError.message === 'VFS mutation claim lost'
-    ) {
+    if (completionError instanceof Error && completionError.message === 'VFS mutation claim lost') {
       try {
         if (!(await receipts.namespaceExists(owner.identity.namespaceId))) {
           throw new VfsNamespaceNotFoundError(owner.identity.namespaceId);

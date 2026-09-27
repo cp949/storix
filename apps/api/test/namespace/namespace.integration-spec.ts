@@ -71,9 +71,10 @@ describe('Namespace HTTP contract', () => {
   }
 
   async function receiptCount(key: string): Promise<number> {
-    const rows = (await migrationDataSource.query('SELECT COUNT(*)::text AS count FROM idempotency_key WHERE key = $1', [
-      key,
-    ])) as RowCount[];
+    const rows = (await migrationDataSource.query(
+      'SELECT COUNT(*)::text AS count FROM idempotency_key WHERE key = $1',
+      [key],
+    )) as RowCount[];
     return Number(rows[0].count);
   }
 
@@ -94,13 +95,20 @@ describe('Namespace HTTP contract', () => {
 
   it('동일 key·상이 body 동시 요청은 하나의 201과 IDEMPOTENCY_KEY_REUSED 422를 반환한다', async () => {
     const key = 'namespace-concurrent-different-body';
-    const bodies = [{ name: 'namespace-concurrent-different-body-a' }, { name: 'namespace-concurrent-different-body-b' }];
+    const bodies = [
+      { name: 'namespace-concurrent-different-body-a' },
+      { name: 'namespace-concurrent-different-body-b' },
+    ];
     const responses = await Promise.all(
-      bodies.map((body) => request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body)),
+      bodies.map((body) =>
+        request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body),
+      ),
     );
 
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 422]);
-    expect(responses.find(({ status }) => status === 422)?.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(responses.find(({ status }) => status === 422)?.body).toMatchObject({
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
     const namespaceNames = await Promise.all(bodies.map(({ name }) => namespaceCounts(name)));
     expect(namespaceNames.reduce((count, rows) => count + rows.namespaces, 0)).toBe(1);
     expect(namespaceNames.reduce((count, rows) => count + rows.roots, 0)).toBe(1);
@@ -127,7 +135,10 @@ describe('Namespace HTTP contract', () => {
     app = moduleRef.createNestApplication();
     await app.init();
 
-    const retry = await request(app.getHttpServer()).post('/api/v2/namespaces').set('Idempotency-Key', key).send(body);
+    const retry = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', key)
+      .send(body);
     expect({
       failedStatus: failed.status,
       beforeRestart,
@@ -148,10 +159,7 @@ describe('Namespace HTTP contract', () => {
   });
 
   it('Idempotency-Key 헤더가 없으면 400을 반환한다', async () => {
-    await request(app.getHttpServer())
-      .post('/api/v2/namespaces')
-      .send({ name: 'no-key-ns' })
-      .expect(400);
+    await request(app.getHttpServer()).post('/api/v2/namespaces').send({ name: 'no-key-ns' }).expect(400);
   });
 
   it('name만으로 namespace를 생성하면 201과 함께 NONE/ACTIVE 상태를 반환한다', async () => {
@@ -168,8 +176,11 @@ describe('Namespace HTTP contract', () => {
       status: 'ACTIVE',
     });
     expect(response.body.id).toEqual(expect.any(String));
-    expect(response.body.quota).toEqual({ limitBytes: '53687091200', usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
+    expect(response.body.quota).toEqual({
+      limitBytes: '53687091200',
+      usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+    });
   });
 
   it('namespace 생성 시 더 낮은 logical quota를 지정하고 응답·조회에 노출한다', async () => {
@@ -179,11 +190,19 @@ describe('Namespace HTTP contract', () => {
       .send({ name: 'quota-create', maxTotalLogicalBytes: '1024' })
       .expect(201);
 
-    expect(created.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
-    const fetched = await request(app.getHttpServer()).get(`/api/v2/namespaces/${created.body.id}`).expect(200);
-    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
+    expect(created.body.quota).toEqual({
+      limitBytes: '1024',
+      usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+    });
+    const fetched = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${created.body.id}`)
+      .expect(200);
+    expect(fetched.body.quota).toEqual({
+      limitBytes: '1024',
+      usedBytes: '0',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+    });
   });
 
   it('namespace 조회는 유효 파일 한도와 live·snapshot 논리 사용량을 문자열로 반환한다', async () => {
@@ -202,8 +221,11 @@ describe('Namespace HTTP contract', () => {
       .get(`/api/v2/namespaces/${created.body.id}`)
       .expect(200);
     expect(fetched.body.limits).toEqual({ maxFileSizeBytes: '512' });
-    expect(fetched.body.quota).toEqual({ limitBytes: '1024', usedBytes: '17',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 } });
+    expect(fetched.body.quota).toEqual({
+      limitBytes: '1024',
+      usedBytes: '17',
+      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+    });
   });
 
   it('namespace 조회는 인증 누락과 잘못된 키를 거부한다', async () => {
@@ -218,14 +240,22 @@ describe('Namespace HTTP contract', () => {
       await securedApp.init();
       const url = '/api/v2/namespaces/11111111-1111-1111-1111-111111111111';
       expect((await request(securedApp.getHttpServer()).get(url).expect(401)).body.code).toBe('UNAUTHORIZED');
-      expect((await request(securedApp.getHttpServer())
-        .get(url)
-        .set('Authorization', 'Bearer wrong-key')
-        .expect(401)).body.code).toBe('UNAUTHORIZED');
-      expect((await request(securedApp.getHttpServer())
-        .get(url)
-        .set('Authorization', 'Bearer namespace-details-key')
-        .expect(404)).body.code).toBe('NAMESPACE_NOT_FOUND');
+      expect(
+        (
+          await request(securedApp.getHttpServer())
+            .get(url)
+            .set('Authorization', 'Bearer wrong-key')
+            .expect(401)
+        ).body.code,
+      ).toBe('UNAUTHORIZED');
+      expect(
+        (
+          await request(securedApp.getHttpServer())
+            .get(url)
+            .set('Authorization', 'Bearer namespace-details-key')
+            .expect(404)
+        ).body.code,
+      ).toBe('NAMESPACE_NOT_FOUND');
     } finally {
       await securedApp?.close();
       if (previous === undefined) delete process.env.STORIX_API_KEY;
