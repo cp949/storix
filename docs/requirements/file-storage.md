@@ -240,8 +240,8 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 
 ### RQ-029 namespace 변경 feed
 
-- [ ] **진행 상태:** 코드·공개 계약 작성, PostgreSQL/SQLite 검증 대기
-- **판정 근거:** `GET /api/v2/namespaces/{namespaceId}/fs/changes`, namespace별 journal·checkpoint·cursor·GC와 OpenAPI 계약이 작성됐다. PostgreSQL 및 SQLite 검증 spec도 작성됐으나 실행하지 않았다. L1/L2 runtime gate, 실제 운영 활성화, 소비자 동기화 및 production 복구는 확인하지 않았다. 현재 자동 통과 근거는 없다.
+- [x] **진행 상태:** 구현·공개 계약 및 PostgreSQL/SQLite 로컬 검증 완료
+- **판정 근거:** `GET /api/v2/namespaces/{namespaceId}/fs/changes`, namespace별 journal·checkpoint·cursor·GC와 OpenAPI 계약을 PostgreSQL·SQLite L1/L2에서 확인했다. PostgreSQL 전체 L2 첫 실행은 36 suites/514 tests 중 34 suites/504 tests 통과, VFS node·receipt 2 suites 실패였다. 하위 시작 디렉터리 ID 회귀를 수정한 뒤 실패 suite 2개를 재실행해 131/131 통과했다. receipt의 retry-after 60초 기대값이 첫 실행에서 61초로 나온 1회성 차이는 재실행에서 재현되지 않았다. SQLite L2는 22 suites/307 tests, API unit은 88 suites/875 tests 통과했고 typecheck·lint·build도 통과했다. 실제 운영 활성화, 소비자 동기화 및 production 복구는 확인하지 않았다.
 - 호출자는 cursor 없이 먼저 checkpoint를 발급받고 기존 `ls` API로 namespace 전체를 열거한 뒤 checkpoint 이후의 변경을 재생할 수 있어야 한다. 열거 중 목록 cursor가 무효화되면 checkpoint를 보존하고 열거를 다시 시작한다. 기존 파일 바이트 이력은 feed가 제공하지 않으며 변경된 파일의 현재 상태를 다시 읽는다.
 - 성공한 파일·디렉터리 mutation과 journal 항목은 같은 DB transaction에서 확정된다. namespace별 `sequence`는 커밋 순서로 증가하며 한 transaction의 같은 노드는 최초·최종 상태를 비교해 net 이벤트 하나만 낸다. 이벤트는 `created`·`updated`·`moved`·`deleted`이며 이동의 이전 경로와 삭제의 마지막 경로를 제공한다. subtree 이동·복사·재귀 삭제는 영향받은 노드별로 기록하고 snapshot 생성·목록·삭제는 제외한다. snapshot 복원으로 파일이 바뀌면 `updated`를 기록한다.
 - 각 이벤트의 `operationId`·`operationIndex`·`operationCount`는 같은 transaction의 항목을 묶는다. 페이지는 transaction 중간에서 끝날 수 있다. 소비자는 응답 변경의 적용과 `nextCursor` 저장을 원자적으로 수행하고, 재조회 시 `sequence`로 중복을 제거한다. 빈 페이지의 cursor는 polling에 재사용한다. 기본 limit는 100, 최대는 1000이며 `hasMore`는 조회 시점의 다음 페이지 존재 여부다.

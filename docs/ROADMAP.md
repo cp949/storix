@@ -211,13 +211,18 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       short-lease 사례 1건이 일시 실패했으나 단독·파일 전체 재실행에서 재현되지 않았고 후속 전체 L2에서 통과했다.
       실패 원인은 특정하지 않았다. 운영 활성화와 실제 소비자 연동 검증은 제외 범위다.
       요구사항 판정은 [RQ-028](./requirements/file-storage.md)을 참고한다.
-- [ ] VFS-04: **namespace 변경 feed** — 최초 전체 열거와 이후 파일/디렉터리 변경
+- [x] VFS-04: **namespace 변경 feed** — 최초 전체 열거와 이후 파일/디렉터리 변경
       동기화를 위한 기본 비활성 `change-feed`와 checkpoint·cursor API를 구현했다.
       namespace 순서의 transaction net 이벤트는 추가·수정·이동·삭제와 tombstone,
       operation 묶음 정보를 담는다. 기본 30일 보존, 410 만료 시 전체 재동기화,
       빈 페이지 polling 및 중복 재생 경계는 [RQ-029](./requirements/file-storage.md)와
-      [설계](./design/08-namespace-change-feed.md)를 따른다. PostgreSQL/SQLite
-      검증 spec은 작성됐으나 아직 실행하지 않았고 L1/L2 gate가 남아 있어 미완료다.
+      [설계](./design/08-namespace-change-feed.md)를 따른다. PostgreSQL L2는 36 suites 중
+      34 suites/504 tests가 첫 실행에서 통과했다. 실패한 VFS node·receipt 2 suites는
+      하위 시작 디렉터리 ID 회귀를 수정한 뒤 재실행해 131/131 통과했다. receipt의
+      Retry-After 60초 기대값은 첫 실행에서 61초로 어긋났으나 재현되지 않았다.
+      SQLite L2 22 suites/307 tests, API L0 88 suites/875 tests, typecheck·lint·build도
+      통과했다. 초기 checkpoint/mutation, 같은 namespace 직렬화, namespace별 독립
+      sequence를 barrier/shared-spec에서 확인했다. 실제 운영 활성화와 소비자 동기화·복구는 제외한다.
 - [ ] VFS-05: **revision 이력과 삭제 복구 정책** — 현재 snapshot 기능과 매 변경
       revision 이력, 복구 가능한 삭제(휴지통)를 분리해 설계한다. 보존 기한·수량,
       명시적/자동 영구 삭제, quota 산정, 복구 시 파일 ID와 revision 의미를 정한다.

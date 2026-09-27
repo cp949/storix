@@ -82,9 +82,9 @@ cursor를 버리고 새 checkpoint와 전체 열거로 재동기화한다.
 
 ## 검증 범위
 
-PostgreSQL·SQLite의 checkpoint 전후 순차 변경, net 이벤트, rollback, 페이지 재생,
-capability 전환, GC/page 경합과 namespace 삭제를 다루는 spec이 작성됐다.
-초기 checkpoint와 mutation 경합, 같은 namespace의 동시 mutation 커밋 순서,
-다른 namespace의 동시 mutation sequence 독립성에 대한 coverage는 남아 있다.
-작성된 spec과 L1/L2 runtime gate는 아직 실행되지 않았다. 운영 활성화, 특정 소비자
-동기화, production 장애 복구는 검증 범위 밖이다.
+PostgreSQL·SQLite의 순차 변경, net 이벤트, rollback, 페이지 재생, capability 전환,
+GC/page 경합과 namespace 삭제를 integration spec으로 검증했다. barrier 기반 공유
+spec은 최초 checkpoint와 진행 중 mutation의 직렬화, 같은 namespace 경쟁 mutation의
+실행·sequence 순서, namespace별 sequence 독립성을 확인한다. PostgreSQL·SQLite L1/L2와
+API L0를 통과했다. 실제 운영 활성화, 특정 소비자 동기화, production 장애 복구는
+검증 범위 밖이다.
