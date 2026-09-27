@@ -15,7 +15,7 @@ presigned download URL(STORAGE-02)은 발급 시점 Client의 host/port/scheme�
   필수 구성이 아니라 루트 `docker-compose*` 목록에 두지 않는다.
 
 이 샘플은 `proxy_pass http://minio:9000`으로 고정된 MinIO 전용 구성이라
-`docker-compose.minio.yml` 조합에서만 동작한다.
+`docker-compose.minio.yml` 조합에서만 동작한다. 서명 검증 재현을 위해 `location /`의 GET을 MinIO로 전달하므로, 운영에서 공개할 bucket 경로를 한정하는 설정 예시는 아니다. 운영 공개 listener는 실제 presigned URL의 bucket 경로만 라우팅하고, Storix 보호 API는 WAS 전용 내부 경로에 둔다. nginx의 GET 제한은 서명 검증을 대체하지 않으며 bucket은 비공개로 유지한다. 자세한 사용처 경계는 [WAS 다운로드 가이드](../guides/was-file-download-patterns.md)를 따른다.
 
 ## 로컬 재현 (docker-compose)
 

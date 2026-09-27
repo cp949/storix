@@ -409,6 +409,9 @@ pnpm --filter @cp949/storix-api test:integration   # testcontainers — Docker/P
 
 ## 문서
 
+- WAS에서 업무 데이터와 파일 저장하기: [두 가지 업로드 사용 패턴](docs/guides/was-file-upload-patterns.md)
+- WAS에서 파일 다운로드 제공하기: [권한 확인과 직접 다운로드 사용 패턴](docs/guides/was-file-download-patterns.md)
+- WAS와 Storix의 서비스 간 신뢰: [인증과 네트워크 구성 방법](docs/guides/was-storix-service-trust.md)
 - 컨텍스트 목록: `CONTEXT-MAP.md`
 - api 도메인 용어: `apps/api/CONTEXT.md`
 - API 계약(OpenAPI, 초안): `apps/api/openapi.yaml`
