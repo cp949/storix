@@ -17,11 +17,12 @@ function nodeRepository(transaction: (work: () => Promise<unknown>) => Promise<u
       return this;
     },
     async getOne() {
-      return { type: 'DIRECTORY' };
+      return { id: 'root', type: 'DIRECTORY' };
     },
   };
   const manager = {
     createQueryBuilder: () => query,
+    query: async () => [],
     getRepository: () => ({}),
   } as unknown as EntityManager;
   const dataSource = {

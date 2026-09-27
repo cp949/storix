@@ -238,6 +238,17 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 - raw의 422 receipt는 본문 해시와 기대 checksum에 결합해 동일 key의 동일 요청에서 재생한다. 재개 생성 fingerprint도 checksum에 결합한다. 재개 완료 불일치는 `FAILED`와 최초 422 결과를 보존해 반복 완료에서 재생하고, 상태 조회는 `failure.code`만 공개한다. 실패 세션 결과는 종결 뒤 최소 30일 보존하며, staging 객체는 삭제 확인 전까지 임시 사용량에 포함한다.
 - **수용 조건:** 평문·ENCRYPTED namespace에서 정상 checksum은 완료되고 불일치는 기존 파일·revision을 유지한다. malformed 입력, key 재사용·결과 재생, FAILED 상태 조회, 30일 보존과 조각 정리·사용량 회계를 PostgreSQL/MinIO 및 SQLite 검증에서 확인한다.
 
+### RQ-029 namespace 변경 feed
+
+- [ ] **진행 상태:** 코드·공개 계약 작성, PostgreSQL/SQLite 검증 대기
+- **판정 근거:** `GET /api/v2/namespaces/{namespaceId}/fs/changes`, namespace별 journal·checkpoint·cursor·GC와 OpenAPI 계약이 작성됐다. PostgreSQL 및 SQLite 검증 spec도 작성됐으나 실행하지 않았다. L1/L2 runtime gate, 실제 운영 활성화, 소비자 동기화 및 production 복구는 확인하지 않았다. 현재 자동 통과 근거는 없다.
+- 호출자는 cursor 없이 먼저 checkpoint를 발급받고 기존 `ls` API로 namespace 전체를 열거한 뒤 checkpoint 이후의 변경을 재생할 수 있어야 한다. 열거 중 목록 cursor가 무효화되면 checkpoint를 보존하고 열거를 다시 시작한다. 기존 파일 바이트 이력은 feed가 제공하지 않으며 변경된 파일의 현재 상태를 다시 읽는다.
+- 성공한 파일·디렉터리 mutation과 journal 항목은 같은 DB transaction에서 확정된다. namespace별 `sequence`는 커밋 순서로 증가하며 한 transaction의 같은 노드는 최초·최종 상태를 비교해 net 이벤트 하나만 낸다. 이벤트는 `created`·`updated`·`moved`·`deleted`이며 이동의 이전 경로와 삭제의 마지막 경로를 제공한다. subtree 이동·복사·재귀 삭제는 영향받은 노드별로 기록하고 snapshot 생성·목록·삭제는 제외한다. snapshot 복원으로 파일이 바뀌면 `updated`를 기록한다.
+- 각 이벤트의 `operationId`·`operationIndex`·`operationCount`는 같은 transaction의 항목을 묶는다. 페이지는 transaction 중간에서 끝날 수 있다. 소비자는 응답 변경의 적용과 `nextCursor` 저장을 원자적으로 수행하고, 재조회 시 `sequence`로 중복을 제거한다. 빈 페이지의 cursor는 polling에 재사용한다. 기본 limit는 100, 최대는 1000이며 `hasMore`는 조회 시점의 다음 페이지 존재 여부다.
+- 잘못되거나 다른 namespace의 cursor는 400 `VFS_INVALID_CURSOR`, 보존 경계 이전 cursor는 410 `VFS_CHANGE_CURSOR_EXPIRED`다. 만료 시 새 checkpoint를 발급받아 전체 열거부터 재동기화한다. `change-feed` capability는 기본 비활성이며 비활성 요청은 409 `VFS_FEATURE_DISABLED`다. 최초 checkpoint 뒤에는 capability가 꺼져도 journal 기록을 계속해 재활성화 후 보존 기간 안의 cursor를 유지한다. 기본 보존 기간은 30일이고 GC는 DB 시각으로 오래된 이벤트와 경계를 같은 transaction에서 정리한다.
+- **수용 조건:** PostgreSQL·SQLite에서 초기 checkpoint와 mutation 경합에도 열거와 재생 사이 변경이 누락되지 않는다. 성공·롤백·다중 연산의 net 이벤트, subtree tombstone, operation metadata, 페이지 재조회·polling, capability off/on, cursor 오류·만료, GC/page 경합과 namespace 삭제 정리를 검증한다.
+- **관련 계약:** [변경 feed 설계](../design/08-namespace-change-feed.md), `GET /api/v2/namespaces/{namespaceId}/fs/changes`, `GET /api/v2/namespaces/{namespaceId}/fs/ls`, `STORIX_VFS_CHANGE_RETENTION_DAYS`.
+
 ## 소비자 어댑터 책임과 범위 제외
 
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.

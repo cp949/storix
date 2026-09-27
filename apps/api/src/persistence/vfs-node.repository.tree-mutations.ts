@@ -12,6 +12,7 @@ import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 import type { VfsNodeRecord, MutationTx, CopySourceRow } from './vfs-node.repository.types.js';
 import { assertSubtreeDestinationPaths, toRecord, joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryFileMutations } from './vfs-node.repository.file-mutations.js';
+import { trackChangeFeedBefore } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutations {
   @classifyPersistenceOperation
@@ -33,7 +34,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     const nodeRepo = manager.getRepository(VfsNodeEntity);
     const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
     const name = segments[segments.length - 1];
-    const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const target = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
 
     if (!target) {
       throw new VfsNodeNotFoundError(joinSegments(segments));
@@ -74,6 +75,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     if (subtreeRows.length > maxSyncDeleteNodes) {
       throw new VfsDeleteLimitExceededError(maxSyncDeleteNodes);
     }
+    await trackChangeFeedBefore(tx, subtreeRows.map((row) => row.id));
 
     const ids = subtreeRows.map((row) => row.id);
     let removedBytes = 0n;

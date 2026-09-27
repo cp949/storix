@@ -6,8 +6,35 @@ import type { BlobRepository, OrphanBlobRow } from '../../src/persistence/blob.r
 import type { BlobObjectInfo, BlobStorage } from '../../src/storage/blob-storage.js';
 import type { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
 import type { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
+import { resolveChangeFeedRetentionDays } from '../../src/persistence/vfs-change-feed-retention.repository.js';
+import type { VfsChangeFeedRetentionRepository } from '../../src/persistence/vfs-change-feed-retention.repository.js';
 
 describe('GcJob', () => {
+  it('change feed retention은 기본 30일과 엄격한 양의 안전 정수만 허용한다', () => {
+    expect(resolveChangeFeedRetentionDays(undefined)).toBe(30);
+    expect(resolveChangeFeedRetentionDays('1')).toBe(1);
+    for (const invalid of ['', '0', '-1', '1.5', '1e2', ' 2', '2 ', '9007199254740992']) {
+      expect(() => resolveChangeFeedRetentionDays(invalid)).toThrow();
+    }
+  });
+
+  it('선택적 retention repository를 배치가 빌 때까지 호출하고 삭제 수를 집계한다', async () => {
+    const pruneExpiredBatch = jest.fn<(days: number, batchSize: number) => Promise<number>>()
+      .mockResolvedValueOnce(500).mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+    const storage = { async *list() {}, delete: async () => undefined } as unknown as BlobStorage;
+    const blobs = {
+      findAllStorageKeys: async () => new Set<string>(),
+      findOrphanBlobs: async () => [],
+      deleteBlobRows: async () => undefined,
+    } as unknown as BlobRepository;
+    const config = { get: (key: string) => key === 'STORIX_VFS_CHANGE_RETENTION_DAYS' ? '7' : '3600' } as unknown as ConfigService;
+    const job = new GcJob(storage, blobs, config, undefined, undefined,
+      { pruneExpiredBatch } as unknown as VfsChangeFeedRetentionRepository);
+    expect((await job.run()).prunedChangeEvents).toBe(502);
+    expect(pruneExpiredBatch).toHaveBeenCalledTimes(3);
+    expect(pruneExpiredBatch).toHaveBeenCalledWith(7, 500);
+  });
+
   function makeConfig(gracePeriodSeconds: number): ConfigService {
     return { get: () => String(gracePeriodSeconds) } as unknown as ConfigService;
   }

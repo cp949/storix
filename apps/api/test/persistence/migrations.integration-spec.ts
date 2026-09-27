@@ -10,6 +10,7 @@ import { AddBlobZeroSince1788800000000 } from '../../src/persistence/migrations/
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
+import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -31,6 +32,57 @@ describe('Migration: InitSchema', () => {
   afterAll(async () => {
     await dataSource.destroy();
     await container.stop();
+  });
+
+  it('change feed migration down/up은 기존 VFS 노드를 보존한다', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'feed-migration-pg' });
+    const node = await dataSource.getRepository(VfsNodeEntity).save({
+      namespaceId: namespace.id, parentId: null, type: 'DIRECTORY', name: '',
+    });
+    const migration = new AddVfsChangeFeed1791700000006();
+    const runner = dataSource.createQueryRunner();
+    try {
+      const columns = await runner.query(`SELECT table_name, column_name, data_type
+        FROM information_schema.columns WHERE table_name IN ('vfs_change_feed_state', 'vfs_change_event')`);
+      expect(columns).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table_name: 'vfs_change_feed_state', column_name: 'namespace_id', data_type: 'uuid' }),
+        expect.objectContaining({ table_name: 'vfs_change_feed_state', column_name: 'signing_secret', data_type: 'character varying' }),
+        expect.objectContaining({ table_name: 'vfs_change_event', column_name: 'occurred_at', data_type: 'timestamp with time zone' }),
+      ]));
+      await runner.query('INSERT INTO vfs_change_feed_state (namespace_id, has_checkpoint, signing_secret) VALUES ($1, true, $2)', [namespace.id, 'a'.repeat(64)]);
+      await runner.query(`INSERT INTO vfs_change_event
+        (namespace_id, sequence, operation_id, operation_index, operation_count, kind, node_id, node_type, path, revision)
+        VALUES ($1, 1, $2, 0, 1, 'created', $3, 'DIRECTORY', '/', 'r1')`,
+        [namespace.id, node.id, node.id]);
+      await migration.down(runner);
+      expect(await runner.query(`SELECT to_regclass('vfs_change_event') AS event, to_regclass('vfs_change_feed_state') AS state`))
+        .toEqual([{ event: null, state: null }]);
+      expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: node.id })).not.toBeNull();
+      await migration.up(runner);
+      const indexes = await runner.query(`SELECT indexname FROM pg_indexes WHERE tablename = 'vfs_change_event'`);
+      expect(indexes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ indexname: 'idx_vfs_change_event_occurred_at' }),
+      ]));
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('change feed FK는 namespace 삭제 시 event와 signing secret 상태를 함께 제거한다', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: `feed-fk-${randomUUID()}` });
+    await dataSource.query(`INSERT INTO vfs_change_feed_state
+      (namespace_id, last_sequence, has_checkpoint, signing_secret) VALUES ($1, 1, true, $2)`,
+    [namespace.id, 'b'.repeat(64)]);
+    await dataSource.query(`INSERT INTO vfs_change_event
+      (namespace_id, sequence, operation_id, operation_index, operation_count,
+       kind, node_id, node_type, path, revision)
+      VALUES ($1, 1, $2, 0, 1, 'created', $3, 'DIRECTORY', '/', 'r1')`,
+    [namespace.id, randomUUID(), randomUUID()]);
+    await dataSource.getRepository(NamespaceEntity).delete({ id: namespace.id });
+    expect(await dataSource.query('SELECT * FROM vfs_change_feed_state WHERE namespace_id = $1', [namespace.id]))
+      .toEqual([]);
+    expect(await dataSource.query('SELECT * FROM vfs_change_event WHERE namespace_id = $1', [namespace.id]))
+      .toEqual([]);
   });
 
   it('snapshot 목록 인덱스 migration은 up/down이 가역이다', async () => {

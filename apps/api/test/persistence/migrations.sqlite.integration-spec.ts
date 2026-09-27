@@ -6,6 +6,7 @@ import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
+import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 
@@ -37,7 +38,59 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('15개 마이그레이션이 전부 적용된다', async () => {
+  it('change feed migration down/up은 기존 VFS 노드를 보존한다', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'feed-migration-sqlite' });
+    const node = await dataSource.getRepository(VfsNodeEntity).save({
+      namespaceId: namespace.id, parentId: null, type: 'DIRECTORY', name: '',
+    });
+    const migration = new AddVfsChangeFeed1791700000006();
+    const runner = dataSource.createQueryRunner();
+    try {
+      const stateColumns = await runner.query('PRAGMA table_info(vfs_change_feed_state)');
+      const eventColumns = await runner.query('PRAGMA table_info(vfs_change_event)');
+      expect(stateColumns).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'namespace_id', type: 'varchar(36)' }),
+        expect.objectContaining({ name: 'signing_secret', type: 'varchar(64)' }),
+      ]));
+      expect(eventColumns).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'occurred_at', type: 'datetime' }),
+      ]));
+      const foreignKeys = await runner.query('PRAGMA foreign_key_list(vfs_change_event)');
+      expect(foreignKeys).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: 'namespace', on_delete: 'CASCADE' }),
+      ]));
+      await runner.query('INSERT INTO vfs_change_feed_state (namespace_id, has_checkpoint, signing_secret) VALUES (?, 1, ?)', [namespace.id, 'a'.repeat(64)]);
+      await migration.down(runner);
+      expect(await runner.query(`SELECT name FROM sqlite_master WHERE name IN ('vfs_change_feed_state', 'vfs_change_event')`))
+        .toEqual([]);
+      expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: node.id })).not.toBeNull();
+      await migration.up(runner);
+      expect(await runner.query('PRAGMA index_list(vfs_change_event)')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'idx_vfs_change_event_occurred_at' }),
+      ]));
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('change feed FK는 namespace 삭제 시 event와 signing secret 상태를 함께 제거한다', async () => {
+    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: `feed-fk-${randomUUID()}` });
+    await dataSource.query(`INSERT INTO vfs_change_feed_state
+      (namespace_id, last_sequence, has_checkpoint, signing_secret) VALUES (?, 1, 1, ?)`,
+    [namespace.id, 'b'.repeat(64)]);
+    await dataSource.query(`INSERT INTO vfs_change_event
+      (namespace_id, sequence, operation_id, operation_index, operation_count,
+       kind, node_id, node_type, path, revision)
+      VALUES (?, 1, ?, 0, 1, 'created', ?, 'DIRECTORY', '/', 'r1')`,
+    [namespace.id, randomUUID(), randomUUID()]);
+    await dataSource.getRepository(NamespaceEntity).delete({ id: namespace.id });
+    expect(await dataSource.query('SELECT * FROM vfs_change_feed_state WHERE namespace_id = ?', [namespace.id]))
+      .toEqual([]);
+    expect(await dataSource.query('SELECT * FROM vfs_change_event WHERE namespace_id = ?', [namespace.id]))
+      .toEqual([]);
+  });
+
+  it('17개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -56,6 +109,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddUploadCreationRequestId1791700000003',
       'AddUploadPartLease1791700000004',
       'AddUploadChecksumFailure1791700000005',
+      'AddVfsChangeFeed1791700000006',
     ]);
   });
 

@@ -4,6 +4,7 @@ import { parsePositiveInt } from '../common/env-parsing.js';
 import { BlobRepository } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
+import { VfsChangeFeedRetentionRepository, resolveChangeFeedRetentionDays } from '../persistence/vfs-change-feed-retention.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
@@ -18,12 +19,14 @@ export interface GcResult {
   readonly recoveredUploadSessions: number;
   readonly deletedStagingObjects: number;
   readonly prunedUploadSessions: number;
+  readonly prunedChangeEvents: number;
 }
 
 @Injectable()
 export class GcJob {
   private readonly logger = new Logger(GcJob.name);
   private readonly gracePeriodSeconds: number;
+  private readonly changeRetentionDays: number;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
@@ -31,8 +34,10 @@ export class GcJob {
     config: ConfigService,
     @Optional() private readonly receiptRepository?: VfsMutationReceiptRepository,
     @Optional() private readonly uploadSessions?: VfsUploadSessionRepository,
+    @Optional() private readonly changeFeedRetention?: VfsChangeFeedRetentionRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
+    this.changeRetentionDays = resolveChangeFeedRetentionDays(config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'));
   }
 
   async run(): Promise<GcResult> {
@@ -99,12 +104,21 @@ export class GcJob {
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
     const prunedUploadSessions = (await this.uploadSessions?.pruneTerminalSessions(
       new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
+    let prunedChangeEvents = 0;
+    if (this.changeFeedRetention) {
+      while (true) {
+        const count = await this.changeFeedRetention.pruneExpiredBatch(this.changeRetentionDays, CLEANUP_BATCH_SIZE);
+        if (count === 0) break;
+        prunedChangeEvents += count;
+      }
+    }
 
     this.logger.log(
       `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
     );
     return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts,
-      expiredUploadSessions, recoveredUploadSessions, deletedStagingObjects, prunedUploadSessions };
+      expiredUploadSessions, recoveredUploadSessions, deletedStagingObjects, prunedUploadSessions,
+      prunedChangeEvents };
   }
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을

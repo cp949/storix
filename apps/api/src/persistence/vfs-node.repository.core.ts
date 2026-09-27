@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'node:crypto';
 import { DataSource, EntityManager, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { classifyPersistenceFailure } from './persistence-failure.js';
 import { isSqliteDataSource } from '../common/db-driver.js';
@@ -17,6 +18,9 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import type { VfsNodeType } from './entities/vfs-node.entity.js';
 import type { MutationTx, AffectedRevision } from './vfs-node.repository.types.js';
 import { joinSegments } from './vfs-node.repository.helpers.js';
+import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
+import { appendChangeFeedEvents, readChangeFeedEvents, readChangeFeedState, trackChangeFeedBefore } from './vfs-change-feed-journal.js';
+import type { ChangeFeedState } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryCore {
   protected readonly maxTotalLogicalBytes: bigint;
@@ -60,19 +64,19 @@ export class VfsNodeRepositoryCore {
     let callbackError: unknown;
     try {
       return await this.dataSource.transaction(async (manager) => {
-        const root = await this.applyRowLockIfSupported(
-          manager
-            .createQueryBuilder(VfsNodeEntity, 'n')
-            .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
-        ).getOne();
-        if (!root || root.type !== 'DIRECTORY') {
-          throw new VfsNodeNotFoundError('/');
+        const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
+        if (namespaceRoot.id !== rootId) {
+          const startingNode = await manager.getRepository(VfsNodeEntity).findOneBy({ id: rootId, namespaceId });
+          if (!startingNode || startingNode.type !== 'DIRECTORY') throw new VfsNodeNotFoundError('/');
         }
+        const feedState = await readChangeFeedState(manager, namespaceId, this.isSqlite);
+        const before = feedState?.hasCheckpoint ? new Map() : null;
         const tx: MutationTx = {
           manager,
           namespaceId,
           rootId,
           changed: new Map(),
+          feedBefore: before,
           liveFileByteDelta: 0n,
           logicalByteDelta: 0n,
         };
@@ -93,6 +97,7 @@ export class VfsNodeRepositoryCore {
             throw error;
           }
         }
+        if (before) await appendChangeFeedEvents(manager, namespaceId, before, [...tx.changed.keys()], this.isSqlite);
         return { value, affectedRevisions };
       });
     } catch (error) {
@@ -101,6 +106,67 @@ export class VfsNodeRepositoryCore {
       if (error === callbackError && !(error as { driverError?: unknown })?.driverError) throw error;
       throw classifyPersistenceFailure(error) ?? error;
     }
+  }
+
+  // DELTA-03의 cursor 없는 요청은 mutation과 같은 namespace 직렬화 지점에서 발급한다.
+  async createChangeFeedCheckpoint(namespaceId: string, rootId: string): Promise<string> {
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
+        if (namespaceRoot.id !== rootId) throw new VfsNodeNotFoundError('/');
+        const states = manager.getRepository(VfsChangeFeedStateEntity);
+        const state = await readChangeFeedState(manager, namespaceId, this.isSqlite);
+        if (!state) {
+          await states.insert({ namespaceId, lastSequence: '0', prunedThrough: '0', hasCheckpoint: true,
+            signingSecret: randomBytes(32).toString('hex') });
+        } else if (!state.hasCheckpoint) {
+          await states.update({ namespaceId }, { hasCheckpoint: true });
+        }
+        return state?.lastSequence ?? '0';
+      });
+    } catch (error) {
+      throw classifyPersistenceFailure(error) ?? error;
+    }
+  }
+
+  async getChangeFeedState(namespaceId: string) {
+    return readChangeFeedState(this.dataSource.manager, namespaceId, this.isSqlite);
+  }
+
+  async listChangeFeedEvents(namespaceId: string, afterSequence: string, limit: number) {
+    return readChangeFeedEvents(this.dataSource.manager, namespaceId, afterSequence, limit, this.isSqlite);
+  }
+
+  // PostgreSQL READ COMMITTED에서는 state와 events가 다른 snapshot일 수 있다.
+  // REPEATABLE READ에서 첫 state 조회부터 event 조회까지 한 snapshot을 유지한다.
+  // SQLite에서는 transaction이 단일 프로세스 query gate를 끝까지 점유한다.
+  async readChangeFeedPage(
+    namespaceId: string,
+    limit: number,
+    resolveSequence: (state: ChangeFeedState | null) => string | Promise<string>,
+  ) {
+    const read = async (manager: EntityManager) => {
+      const state = await readChangeFeedState(manager, namespaceId, this.isSqlite);
+      const sequence = await resolveSequence(state);
+      if (!state) throw new Error('Change feed state missing after cursor validation');
+      const events = await readChangeFeedEvents(manager, namespaceId, sequence, limit, this.isSqlite);
+      return { state, events };
+    };
+    try {
+      return this.isSqlite ? await this.dataSource.transaction(read) :
+        await this.dataSource.transaction('REPEATABLE READ', read);
+    } catch (error) {
+      throw classifyPersistenceFailure(error) ?? error;
+    }
+  }
+
+  private async lockNamespaceRoot(manager: EntityManager, namespaceId: string): Promise<VfsNodeEntity> {
+    const root = await this.applyRowLockIfSupported(
+      manager.createQueryBuilder(VfsNodeEntity, 'n')
+        .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
+    ).getOne();
+    if (!root || root.type !== 'DIRECTORY') throw new VfsNodeNotFoundError('/');
+    return root;
   }
 
   protected recordLiveByteDelta(tx: MutationTx, delta: bigint): void {
@@ -147,12 +213,13 @@ export class VfsNodeRepositoryCore {
     const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
     let currentId: string | null = id;
     while (currentId) {
-      this.markChanged(tx, currentId, true);
       const current: VfsNodeEntity | null = await nodeRepo.findOneBy({
         id: currentId,
         namespaceId: tx.namespaceId,
       });
       if (!current) throw new VfsNodeNotFoundError('/');
+      await trackChangeFeedBefore(tx, [current.id]);
+      this.markChanged(tx, currentId, true);
       currentId = current.parentId;
     }
   }
@@ -227,6 +294,7 @@ export class VfsNodeRepositoryCore {
       await this.applyRowLockIfSupported(
         manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
       ).getOne();
+      if (tx) await trackChangeFeedBefore(tx, [parentId]);
 
       let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
       if (!child) {
@@ -251,6 +319,7 @@ export class VfsNodeRepositoryCore {
     await this.applyRowLockIfSupported(
       manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
     ).getOne();
+    if (tx) await trackChangeFeedBefore(tx, [parentId]);
 
     if (tx && markAncestors) {
       await this.markAncestorChain(tx, parentId);
@@ -279,13 +348,16 @@ export class VfsNodeRepositoryCore {
     namespaceId: string,
     parentId: string,
     name: string,
+    tx?: MutationTx,
   ): Promise<VfsNodeEntity | null> {
-    return this.applyRowLockIfSupported(
+    const node = await this.applyRowLockIfSupported(
       manager
         .createQueryBuilder(VfsNodeEntity, 'n')
         .where('n.namespace_id = :namespaceId', { namespaceId })
         .andWhere('n.parent_id = :parentId', { parentId })
         .andWhere('n.name = :name', { name }),
     ).getOne();
+    if (node && tx) await trackChangeFeedBefore(tx, [node.id]);
+    return node;
   }
 }

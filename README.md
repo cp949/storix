@@ -34,6 +34,48 @@ live FILE과 보존 snapshot FILE entry의 논리 크기 합계다. 두 quota �
 단위 10진 문자열이다. namespace 생성·목록·quota 변경 응답도 같은 `limits`·`quota`
 필드를 포함한다.
 
+### namespace 변경 feed
+
+`GET /api/v2/namespaces/{namespaceId}/fs/changes`는 서비스 Bearer key로 인증된
+ACTIVE namespace의 파일·디렉터리 변경을 반환한다. `change-feed` capability는 기본
+비활성이다. namespace 생성 후 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`의 시작 JSON
+설정에서 전역과 해당 namespace에 `change-feed`를 허용하고 app을 재시작한다. 예:
+
+```json
+{
+  "globalAllowedCapabilities": ["change-feed"],
+  "namespaceAllowedCapabilities": {
+    "11111111-1111-4111-8111-111111111111": ["change-feed"]
+  }
+}
+```
+
+서비스 Bearer key로 `GET /api/v2/namespaces/{id}/capabilities`를 조회해 활성화를
+확인한다. 비활성이면 feed 요청은 409 `VFS_FEATURE_DISABLED`이고 일반 파일 API는
+계속 사용할 수 있다. 처음 checkpoint를 받은 namespace는 capability를 나중에
+꺼도 journal 기록을 이어가므로 재활성화 후 보존 기간 안의 cursor를 재사용할 수 있다.
+
+전체 동기화는 **cursor 없이 feed 호출 → 반환된 `nextCursor` 보존 → 기존 `ls`로
+전체 열거 → 보존한 cursor로 변경 페이지 조회** 순서다. 열거 중 `ls` cursor가
+무효화되면 feed checkpoint를 유지하고 열거를 처음부터 다시 한다. 이벤트는
+namespace 순서 번호의 오름차순이며 `created`·`updated`·`moved`·`deleted`를
+포함한다. 이동에는 이전 경로가, 삭제에는 마지막 경로가 들어간다. 응답의
+`operationId`·`operationIndex`·`operationCount`는 한 transaction의 이벤트를
+식별하며 페이지 경계가 그 transaction을 나눌 수 있다.
+
+`cursor`와 선택적 `limit`(기본 100, 최대 1000)으로 다음 페이지를 받는다.
+각 페이지의 변경 적용과 `nextCursor` 저장은 소비자 DB에서 원자적으로 처리하고,
+재조회로 겹치는 이벤트는 `sequence`로 중복 제거한다. `hasMore`는 조회 시점의
+다음 페이지 존재 여부다. 빈 페이지의 `nextCursor`로 계속 polling할 수 있다.
+cursor는 내부 값을 해석하지 않는 불투명 토큰이다. 잘못되거나 다른 namespace의
+cursor는 400 `VFS_INVALID_CURSOR`다. GC가 DB 시각으로 오래된 이벤트를 정리하는
+기본 보존 기간은 30일(`STORIX_VFS_CHANGE_RETENTION_DAYS`)이다. cursor가 보존
+경계 이전이면 410 `VFS_CHANGE_CURSOR_EXPIRED`이므로 새 checkpoint를 받고 전체
+열거부터 다시 한다. compose의 `gc` 서비스는 `.env`의 이 값을 전달하며, 값을
+바꾸면 다음 GC 실행부터 적용된다. 실제 운영 활성화, 특정 소비자 연동, production 복구는 이
+변경에서 검증하지 않았다. 상세 계약은 [설계 문서](docs/design/08-namespace-change-feed.md)와
+[OpenAPI](apps/api/openapi.yaml)를 따른다.
+
 ### Blob-level Copy-on-Write
 
 같은 namespace 안에서 `cp`는 파일 콘텐츠를 복사하지 않는다. 새 VFS Node가
@@ -164,7 +206,7 @@ base가 정의하는 운영 잡 4종 중 `migrate`는 위처럼 `up`마다 자�
 
 | profile = 서비스 | 하는 일 | 상세 |
 |---|---|---|
-| `gc` | 참조가 0이 된 지 `STORIX_ORPHAN_GRACE_PERIOD`(기본 1일)를 넘긴 Blob과 metadata 없는 orphan object 회수 | `apps/api/docs/adr/0006-gc-zero-since-grace-period.md` |
+| `gc` | 참조가 0이 된 지 `STORIX_ORPHAN_GRACE_PERIOD`(기본 1일)를 넘긴 Blob과 metadata 없는 orphan object 회수, 변경 feed 보존 기간 경과 이벤트 정리 | `apps/api/docs/adr/0006-gc-zero-since-grace-period.md` |
 | `backup` | Postgres dump + 스토리지 버킷 미러를 `STORIX_BACKUP_DIR/<타임스탬프>/`에 저장 | `docs/deployment/backup-restore.md` |
 | `restore` | `STORIX_RESTORE_SOURCE_DIR`의 백업으로 복구. 대상에 데이터가 있으면 `STORIX_RESTORE_FORCE=true` 없이는 거부 | `docs/deployment/backup-restore.md` |
 
@@ -202,7 +244,8 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_PUBLISH_PORT` | 선택 | `3000` | compose | `app` 컨테이너를 호스트에 노출하는 포트 |
 | `STORIX_PORT` | 선택 | `3000` | app | app의 listen 포트. 컨테이너 안은 3000 고정, 호스트 직접 실행에서만 바꾼다 |
 | `STORIX_MAX_TOTAL_LOGICAL_BYTES` | 선택 | `53687091200` | app | Namespace 논리 사용량 전역 상한(50 GiB). namespace별 override는 이 값 이하여야 한다 |
-| `STORIX_VFS_CAPABILITIES_CONFIG_PATH` | 선택 | — | app | 시작 시 읽는 선택 VFS capability JSON 파일 경로. 비우면 선택 기능 전부 비활성. JSON은 `globalAllowedCapabilities` 문자열 목록과 `namespaceAllowedCapabilities`(namespace UUID를 키로 하는 문자열 목록 객체)만 허용하며, 파일·구문·schema·namespace 존재·미등록 capability 검증 실패 시 시작을 거부한다. `resumable-upload`가 기본 비활성으로 등록되어 있으며, 활성 상태는 서비스 Bearer 인증이 필요한 `GET /api/v2/namespaces/{id}/capabilities`에서 조회한다 |
+| `STORIX_VFS_CAPABILITIES_CONFIG_PATH` | 선택 | — | app | 시작 시 읽는 선택 VFS capability JSON 파일 경로. 비우면 선택 기능 전부 비활성. JSON은 `globalAllowedCapabilities` 문자열 목록과 `namespaceAllowedCapabilities`(namespace UUID를 키로 하는 문자열 목록 객체)만 허용하며, 파일·구문·schema·namespace 존재·미등록 capability 검증 실패 시 시작을 거부한다. `resumable-upload`와 `change-feed`가 기본 비활성으로 등록되어 있으며, 활성 상태는 서비스 Bearer 인증이 필요한 `GET /api/v2/namespaces/{id}/capabilities`에서 조회한다 |
+| `STORIX_VFS_CHANGE_RETENTION_DAYS` | 선택 | `30` | gc | 변경 feed 이벤트 보존 기간(양의 정수 일수). GC가 DB 시각으로 오래된 이벤트를 정리하고 보존 경계를 전진시킨다. 만료 cursor는 410과 전체 재동기화가 필요하다 |
 | `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH` | 조건부 | — | app | 재개 업로드 정책 JSON 경로. `resumable-upload`를 전역 또는 namespace에서 허용하면 필수다. 엄격한 schema·기본값·활성 순서는 아래 참고 |
 | `STORIX_ADMIN_API_KEY` | 선택 | — | app | `/api/v2/admin/*` 전용 관리자 Bearer key. 비우면 관리자 API는 모두 401 |
 | `STORIX_ADMIN_API_KEY_PREVIOUS` | 선택 | — | app | 관리자 키 교체 기간에만 허용하는 이전 Bearer key |

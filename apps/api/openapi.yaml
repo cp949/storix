@@ -184,7 +184,7 @@ info:
     | `STORAGE_FAILURE` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
     | `INTERNAL_ERROR` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
 
-    `VFS_FEATURE_DISABLED`의 메시지에는 비활성 capability ID가 포함된다. 현재 등록된 선택 capability는 기본 비활성 `resumable-upload`이며, 활성 상태는 `GET /api/v2/namespaces/{id}/capabilities`로 조회한다.
+    `VFS_FEATURE_DISABLED`의 메시지에는 비활성 capability ID가 포함된다. 현재 등록된 선택 capability는 기본 비활성 `resumable-upload`, `change-feed`이며, 활성 상태는 `GET /api/v2/namespaces/{id}/capabilities`로 조회한다.
 
     5xx body의 `message`는 고정된 안전 문구이며 내부 예외 메시지, 저장소 주소, 파일 바이트, 키·자격 증명을 포함하지
     않는다. 미분류 예외는 `INTERNAL_ERROR`다. 다운로드 객체를 열기 전 실패는 표의 JSON 오류다. 응답 헤더/바이트 전송
@@ -1574,6 +1574,51 @@ paths:
                   revision: { type: string, pattern: '^r1\.' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/v2/namespaces/{namespaceId}/fs/changes:
+    get:
+      operationId: listNamespaceChanges
+      summary: namespace 변경 checkpoint 발급 및 변경 feed 페이지 조회
+      description: |
+        `change-feed` capability가 활성인 ACTIVE namespace에서만 조회한다. cursor 없이
+        호출하면 현재 sequence의 checkpoint와 빈 changes를 반환한다. 이 checkpoint를
+        전체 `ls` 열거 전에 보존하고, 열거 후 같은 cursor로 변경을 재생한다. cursor가
+        있으면 해당 sequence 이후의 이벤트를 오름차순으로 반환한다. 각 페이지의
+        `nextCursor`는 마지막 이벤트를 가리키고 빈 페이지에서는 입력 cursor를 유지한다.
+        소비자는 페이지 적용과 cursor 저장을 원자적으로 처리하며 sequence로 중복을 제거한다.
+        만료된 cursor는 버리고 checkpoint부터 전체 열거를 다시 한다.
+      tags: [fs]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: cursor
+          in: query
+          required: false
+          description: 이전 응답의 불투명 nextCursor. 내부 형식을 해석하지 않는다.
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: checkpoint 또는 변경 페이지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeFeedPage' }
+        '400':
+          description: 잘못되거나 변조된 cursor 또는 다른 namespace cursor (`VFS_INVALID_CURSOR`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: change-feed capability 비활성 (`VFS_FEATURE_DISABLED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '410':
+          description: 보존 경계 이전 cursor (`VFS_CHANGE_CURSOR_EXPIRED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /api/v2/namespaces/{namespaceId}/fs/ls:
     get:
       operationId: ls
@@ -2422,6 +2467,30 @@ components:
           required: [snapshotId]
           properties:
             snapshotId: { type: string, format: uuid }
+    ChangeFeedPage:
+      type: object
+      required: [changes, nextCursor, hasMore]
+      properties:
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/ChangeFeedEvent' }
+        nextCursor: { type: string, description: 불투명 재개 cursor }
+        hasMore: { type: boolean, description: 조회 시점의 다음 이벤트 존재 여부 }
+    ChangeFeedEvent:
+      type: object
+      required: [sequence, operationId, operationIndex, operationCount, kind, nodeId, nodeType, path, occurredAt]
+      properties:
+        sequence: { type: string, pattern: '^[0-9]+$', description: namespace 내 십진 순서 번호 }
+        operationId: { type: string, format: uuid }
+        operationIndex: { type: integer, minimum: 0 }
+        operationCount: { type: integer, minimum: 1 }
+        kind: { type: string, enum: [created, updated, moved, deleted] }
+        nodeId: { type: string, format: uuid }
+        nodeType: { type: string, enum: [FILE, DIRECTORY] }
+        path: { type: string, description: 삭제 이벤트에서는 삭제 직전 경로 }
+        previousPath: { type: string, description: moved 이벤트에서만 존재 }
+        revision: { type: string, description: 살아 있는 노드 이벤트에서만 존재 }
+        occurredAt: { type: string, format: date-time }
     SnapshotEntryPage:
       type: object
       required: [items, nextCursor]

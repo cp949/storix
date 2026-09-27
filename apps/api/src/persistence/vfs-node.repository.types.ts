@@ -1,6 +1,7 @@
 import { EntityManager } from 'typeorm';
 import { AccessPolicy, EncryptionPolicy } from './entities/namespace.entity.js';
 import { VfsNodeType } from './entities/vfs-node.entity.js';
+import type { ChangeFeedNodeState } from './vfs-change-feed-journal.js';
 
 export interface VfsNodeRecord {
   readonly id: string;
@@ -63,6 +64,7 @@ export interface MutationTx {
   readonly namespaceId: string;
   readonly rootId: string;
   readonly changed: Map<string, { path: string; increment: boolean }>;
+  readonly feedBefore: Map<string, ChangeFeedNodeState> | null;
   liveFileByteDelta: bigint;
   logicalByteDelta: bigint;
 }

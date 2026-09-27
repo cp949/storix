@@ -7,6 +7,7 @@ import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { parse } from 'yaml';
 import { FsController } from '../../src/vfs/fs.controller.js';
+import { ChangeFeedController } from '../../src/vfs/change-feed.controller.js';
 import { PublicFsController } from '../../src/vfs/public-fs.controller.js';
 import { UploadSessionController } from '../../src/vfs/upload-session.controller.js';
 import { NamespaceController } from '../../src/namespace/namespace.controller.js';
@@ -69,6 +70,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
       ...controllerRoutes(NamespaceController),
       ...controllerRoutes(NamespaceQuotaController),
       ...controllerRoutes(FsController),
+      ...controllerRoutes(ChangeFeedController),
       ...controllerRoutes(VfsSnapshotController),
       ...controllerRoutes(PublicFsController),
       ...controllerRoutes(UploadSessionController),
@@ -370,6 +372,25 @@ it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약�
     $ref: '#/components/schemas/ErrorResponse',
   });
   expect(operation.responses['500']).toEqual({ $ref: '#/components/responses/InternalError' });
+});
+
+it('change feed는 checkpoint, 이벤트, cursor 오류와 보존 만료를 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const operation = spec.paths['/api/v2/namespaces/{namespaceId}/fs/changes'].get;
+  expect(operation.parameters).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'cursor', in: 'query', required: false }),
+    expect.objectContaining({ $ref: '#/components/parameters/Limit' }),
+  ]));
+  expect(Object.keys(operation.responses)).toEqual(expect.arrayContaining(['200', '400', '401', '404', '409', '410']));
+  expect(operation.responses['200'].content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/ChangeFeedPage',
+  });
+  expect(spec.components.schemas.ChangeFeedPage.required).toEqual(['changes', 'nextCursor', 'hasMore']);
+  expect(spec.components.schemas.ChangeFeedEvent.required).toEqual(expect.arrayContaining([
+    'sequence', 'operationId', 'operationIndex', 'operationCount', 'kind', 'nodeId', 'nodeType', 'path', 'occurredAt',
+  ]));
+  expect(spec.components.schemas.ChangeFeedEvent.properties.previousPath).toBeDefined();
+  expect(spec.components.schemas.ChangeFeedEvent.properties.revision).toBeDefined();
 });
 
 it('다섯 Range 조회의 206 식별·구간 헤더와 416 오류 헤더를 공개한다', () => {

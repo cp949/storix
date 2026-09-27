@@ -17,8 +17,11 @@ const feature: CapabilityDefinition = {
 };
 
 describe('capability registry', () => {
-  it('resumable-upload는 기본 비활성 namespace capability로 등록된다', () => {
-    expect(CAPABILITY_REGISTRY).toEqual([{ ...feature, id: 'resumable-upload' }]);
+  it('resumable-upload와 change-feed는 기본 비활성 namespace capability로 등록된다', () => {
+    expect(CAPABILITY_REGISTRY).toEqual([
+      { ...feature, id: 'change-feed' },
+      { ...feature, id: 'resumable-upload' },
+    ]);
     const namespaceId = '11111111-1111-4111-8111-111111111111';
     const disabled = new CapabilityService({
       globalAllowedCapabilities: [],
@@ -26,12 +29,13 @@ describe('capability registry', () => {
     });
     expect(disabled.listEnabled(namespaceId)).toEqual([]);
     expect(disabled.isEnabled(namespaceId, 'resumable-upload')).toBe(false);
+    expect(disabled.isEnabled(namespaceId, 'change-feed')).toBe(false);
     expect(() => disabled.requireEnabled(namespaceId, 'resumable-upload')).toThrow(/resumable-upload/);
     const enabled = new CapabilityService({
-      globalAllowedCapabilities: ['resumable-upload'],
-      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload'] },
+      globalAllowedCapabilities: ['resumable-upload', 'change-feed'],
+      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload', 'change-feed'] },
     });
-    expect(enabled.listEnabled(namespaceId)).toEqual(['resumable-upload']);
+    expect(enabled.listEnabled(namespaceId)).toEqual(['change-feed', 'resumable-upload']);
   });
 
   it('필수 메타데이터 누락과 잘못된 값을 거부한다', () => {

@@ -165,7 +165,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTreeMutation
     const path = joinSegments(segments);
     const parentId = await this.lockParentChain(tx.manager, tx.namespaceId, tx.rootId, segments, false, tx);
     const name = segments[segments.length - 1];
-    const existing = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, name);
+    const existing = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, name, tx);
     if (existing?.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
     if ('ifAbsent' in condition) {
       if (existing) throw new VfsPreconditionFailedError(path, this.currentOf(existing, path));

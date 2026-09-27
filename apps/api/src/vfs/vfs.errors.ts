@@ -97,6 +97,24 @@ export class VfsInvalidCursorError extends DomainError {
   }
 }
 
+export class VfsInvalidChangeCursorError extends DomainError {
+  readonly code = 'VFS_INVALID_CURSOR';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 change feed cursor');
+  }
+}
+
+export class VfsChangeCursorExpiredError extends DomainError {
+  readonly code = 'VFS_CHANGE_CURSOR_EXPIRED';
+  readonly status = 410;
+
+  constructor() {
+    super('change feed cursor 보존 기간 만료');
+  }
+}
+
 export class VfsNamespaceNotFoundError extends DomainError {
   readonly code = 'NAMESPACE_NOT_FOUND';
   readonly status = 404;

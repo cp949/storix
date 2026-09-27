@@ -116,7 +116,7 @@ describe('Capability discovery HTTP contract (PostgreSQL)', () => {
     expect(invalid.body.code).toBe('UNAUTHORIZED');
   });
 
-  it('ACTIVE namespace는 등록된 resumable-upload가 기본 비활성일 때 빈 배열과 no-store를 반환한다', async () => {
+  it('ACTIVE namespace는 등록된 선택 기능이 기본 비활성일 때 빈 배열과 no-store를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
       .set('Authorization', `Bearer ${API_KEY}`)
@@ -125,19 +125,19 @@ describe('Capability discovery HTTP contract (PostgreSQL)', () => {
     expect(response.headers['cache-control']).toBe('no-store');
   });
 
-  it('production registry의 resumable-upload가 전역·namespace 허용 시에만 조회된다', async () => {
+  it('production registry의 두 기능이 전역·namespace 허용 시에만 조회된다', async () => {
     await app.close();
     app = await bootstrap(
       new CapabilityService({
-        globalAllowedCapabilities: ['resumable-upload'],
-        namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload'] },
+        globalAllowedCapabilities: ['resumable-upload', 'change-feed'],
+        namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload', 'change-feed'] },
       }),
     );
     const enabled = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
       .set('Authorization', `Bearer ${API_KEY}`)
       .expect(200);
-    expect(enabled.body).toEqual({ capabilities: ['resumable-upload'] });
+    expect(enabled.body).toEqual({ capabilities: ['change-feed', 'resumable-upload'] });
     const other = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${otherNamespaceId}/capabilities`)
       .set('Authorization', `Bearer ${API_KEY}`)

@@ -21,6 +21,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddUploadCreationRequestId1791700000003',
       'AddUploadPartLease1791700000004',
       'AddUploadChecksumFailure1791700000005',
+      'AddVfsChangeFeed1791700000006',
     ]);
   });
 });

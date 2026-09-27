@@ -26,6 +26,9 @@ import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
 import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 import { VfsUploadSessionRepository } from './vfs-upload-session.repository.js';
+import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
+import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
+import { VfsChangeFeedRetentionRepository } from './vfs-change-feed-retention.repository.js';
 
 const ENTITIES = [
   NamespaceEntity,
@@ -40,6 +43,8 @@ const ENTITIES = [
   VfsUploadPartEntity,
   VfsUploadStagingCleanupEntity,
   VfsUploadUsageEntity,
+  VfsChangeFeedStateEntity,
+  VfsChangeEventEntity,
 ];
 
 // SQLite는 기본적으로 ASCII 대소문자 무시로 LIKE를 평가한다(Postgres는 대소문자
@@ -105,6 +110,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsMutationReceiptRepository,
     VfsSnapshotRepository,
     VfsUploadSessionRepository,
+    VfsChangeFeedRetentionRepository,
     SqliteCaseSensitiveLikeInitializer,
   ],
   exports: [
@@ -119,6 +125,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsMutationReceiptRepository,
     VfsSnapshotRepository,
     VfsUploadSessionRepository,
+    VfsChangeFeedRetentionRepository,
   ],
 })
 export class PersistenceModule {}

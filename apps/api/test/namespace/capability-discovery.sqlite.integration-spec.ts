@@ -108,13 +108,31 @@ describe('Capability discovery HTTP contract (SQLite)', () => {
     expect(invalid.body.code).toBe('UNAUTHORIZED');
   });
 
-  it('ACTIVE namespace는 production registry가 비어 있을 때 빈 배열과 no-store를 반환한다', async () => {
+  it('ACTIVE namespace는 등록된 선택 기능이 기본 비활성일 때 빈 배열과 no-store를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
       .set('Authorization', `Bearer ${API_KEY}`)
       .expect(200);
     expect(response.body).toEqual({ capabilities: [] });
     expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('change-feed는 전역·namespace 허용 시에만 discovery에 나타난다', async () => {
+    await app.close();
+    app = await bootstrap(new CapabilityService({
+      globalAllowedCapabilities: ['change-feed'],
+      namespaceAllowedCapabilities: { [namespaceId]: ['change-feed'] },
+    }));
+    const enabled = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${namespaceId}/capabilities`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
+    expect(enabled.body).toEqual({ capabilities: ['change-feed'] });
+    const other = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${otherNamespaceId}/capabilities`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .expect(200);
+    expect(other.body).toEqual({ capabilities: [] });
   });
 
   it.each([

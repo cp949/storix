@@ -16,6 +16,16 @@ export const CAPABILITY_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
   {
+    id: 'change-feed',
+    scope: 'namespace',
+    defaultEnabled: false,
+    precedence: 'global-ceiling-then-namespace-opt-in',
+    dependencies: [],
+    disabledBehavior: 'VFS_FEATURE_DISABLED',
+    dataHandling: 'preserve-query-export-recover-delete',
+    discoveryVisibility: 'effective-state',
+  },
+  {
     id: 'resumable-upload',
     scope: 'namespace',
     defaultEnabled: false,

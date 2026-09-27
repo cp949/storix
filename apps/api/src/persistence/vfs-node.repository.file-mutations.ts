@@ -29,6 +29,7 @@ import {
   compareSegments,
 } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositorySnapshots } from './vfs-node.repository.snapshots.js';
+import { trackChangeFeedBefore } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
   @classifyPersistenceOperation
@@ -113,7 +114,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents, tx);
     const name = segments[segments.length - 1];
 
-    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
 
     if (existing) {
       if (existing.type === 'DIRECTORY') {
@@ -173,7 +174,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, parents, tx);
     const name = segments[segments.length - 1];
 
-    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const existing = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
 
     if (existing) {
       if (existing.type === 'DIRECTORY') {
@@ -253,7 +254,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
         markSourceAncestors,
       );
       const name = sourceSegments[sourceSegments.length - 1];
-      const node = await this.lockTargetNode(manager, namespaceId, parentId, name);
+      const node = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
       if (!node) {
         throw new VfsNodeNotFoundError(joinSegments(sourceSegments));
       }
@@ -291,7 +292,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     const destinationName =
       destinationSegments.length === 0 ? null : destinationSegments[destinationSegments.length - 1];
     const destinationTarget = destinationName
-      ? await this.lockTargetNode(manager, namespaceId, destinationParentId, destinationName)
+      ? await this.lockTargetNode(manager, namespaceId, destinationParentId, destinationName, tx)
       : null;
 
     // exact는 `/`를 항상 존재하는 목적지로 본다. 기존 FILE·DIRECTORY 충돌은 아래 non-nest 분기가
@@ -329,7 +330,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     }
 
     if (nestUnderDirectory) {
-      const collision = await this.lockTargetNode(manager, namespaceId, finalParentId, finalName);
+      const collision = await this.lockTargetNode(manager, namespaceId, finalParentId, finalName, tx);
       if (collision) {
         throw new VfsAlreadyExistsError(joinSegments(finalSegments));
       }
@@ -390,6 +391,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
          ) SELECT id, parent_id, name FROM subtree`,
       ph.params,
     );
+    await trackChangeFeedBefore(tx, descendants.map((descendant) => descendant.id));
     assertSubtreeDestinationPaths(sourceNode.id, finalSegments, descendants);
 
     sourceNode.parentId = finalParentId;
@@ -417,7 +419,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     const manager = tx.manager;
     const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
     const name = segments[segments.length - 1];
-    const target = await this.lockTargetNode(manager, namespaceId, parentId, name);
+    const target = await this.lockTargetNode(manager, namespaceId, parentId, name, tx);
 
     if (!target) {
       throw new VfsNodeNotFoundError(joinSegments(segments));

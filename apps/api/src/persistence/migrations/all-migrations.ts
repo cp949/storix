@@ -15,6 +15,7 @@ import { AddUploadFinalizeLeaseToken1791700000002 } from './1791700000002-AddUpl
 import { AddUploadCreationRequestId1791700000003 } from './1791700000003-AddUploadCreationRequestId.js';
 import { AddUploadPartLease1791700000004 } from './1791700000004-AddUploadPartLease.js';
 import { AddUploadChecksumFailure1791700000005 } from './1791700000005-AddUploadChecksumFailure.js';
+import { AddVfsChangeFeed1791700000006 } from './1791700000006-AddVfsChangeFeed.js';
 
 type MigrationClass = new () => MigrationInterface;
 
@@ -41,4 +42,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddUploadCreationRequestId1791700000003,
   AddUploadPartLease1791700000004,
   AddUploadChecksumFailure1791700000005,
+  AddVfsChangeFeed1791700000006,
 ];
