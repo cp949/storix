@@ -69,7 +69,8 @@ export class UploadSessionService {
     const resolved = this.paths.resolveConditional(parsed.path);
     if (resolved.segments.length === 0) throw new VfsInvalidMutationRequestError();
     const fingerprint = hashParts(['POST', 'upload-sessions', resolved.canonical,
-      parsed.sizeBytes, parsed.mimeType, parsed.ifAbsent ? 'ABSENT' : parsed.ifRevision!]);
+      parsed.sizeBytes, parsed.mimeType, parsed.ifAbsent ? 'ABSENT' : parsed.ifRevision!,
+      ...(parsed.sha256 === undefined ? [] : [parsed.sha256])]);
     if (existing) {
       if (existing.fingerprint !== fingerprint)
         throw new UploadSessionError('MUTATION_KEY_REUSED', 409, '다른 요청에 사용한 mutation key');
@@ -103,6 +104,7 @@ export class UploadSessionService {
     const outcome = await this.sessions.createSession({
       id: randomUUID(), namespaceId, scope: identity.scope, creationKey: identity.key,
       fingerprint, targetPath: resolved.canonical, sizeBytes: parsed.sizeBytes,
+      sha256: parsed.sha256 ?? null,
       mimeType: parsed.mimeType, conditionType: parsed.ifAbsent ? 'ABSENT' : 'REVISION',
       conditionRevision: parsed.ifRevision ?? null, partSizeBytes: this.policy.global.partSizeBytes,
       partCount, now, expiresAt, maxExpiresAt, requestId,
@@ -128,6 +130,8 @@ export class UploadSessionService {
       parts: parts.map((part) => ({ index: part.partIndex, sizeBytes: String(part.sizeBytes) })),
       ...(session.state === 'COMPLETED' && session.responseBody
         ? { result: JSON.parse(session.responseBody) as unknown } : {}),
+      ...(session.state === 'FAILED'
+        ? { failure: { code: 'VFS_CHECKSUM_MISMATCH' } } : {}),
     };
   }
 

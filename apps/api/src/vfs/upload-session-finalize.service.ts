@@ -15,7 +15,7 @@ import { uploadStream } from '../storage/stream-upload.js';
 import type { MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
-import { VfsNamespaceNotFoundError } from './vfs.errors.js';
+import { VfsChecksumMismatchError, VfsNamespaceNotFoundError } from './vfs.errors.js';
 
 class UploadFinalizeError extends DomainError {
   constructor(
@@ -92,6 +92,27 @@ export class UploadSessionFinalizeService {
       )
         throw new Error('Upload finalize claim lost');
       if (BigInt(uploaded.size) !== BigInt(session.sizeBytes)) throw new Error('Final upload size mismatch');
+      if (session.sha256 && uploaded.sha256 !== session.sha256) {
+        const mismatch = new VfsChecksumMismatchError();
+        const body = { code: mismatch.code, message: mismatch.message, requestId };
+        if (!(await this.sessions.failFinalize(namespaceId, sessionId, token, JSON.stringify(body), requestId)))
+          throw new Error('Upload finalize claim lost');
+        // No node mutation has run. If deletion fails, ordinary orphan GC will retry.
+        await this.storage.delete(storageKey).catch(() => undefined);
+        // Once FAILED is durable, each staging part is eligible for deletion. A
+        // failed delete or accounting update remains visible to the regular GC.
+        for (const part of parts) {
+          try {
+            await this.storage.delete(part.stagingKey);
+            await this.sessions.markStagingObjectDeleted(
+              sessionId, part.partIndex, part.stagingKey, 'STORED',
+            );
+          } catch {
+            // The FAILED result is already committed; retry cleanup in GC.
+          }
+        }
+        return { status: mismatch.status, body, headers: { 'x-request-id': requestId } };
+      }
       const resolved = this.paths.resolveConditional(session.targetPath);
       const condition =
         session.conditionType === 'ABSENT'

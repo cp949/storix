@@ -37,7 +37,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
-  it('14개 마이그레이션이 전부 적용된다', async () => {
+  it('15개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -55,6 +55,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddUploadFinalizeLeaseToken1791700000002',
       'AddUploadCreationRequestId1791700000003',
       'AddUploadPartLease1791700000004',
+      'AddUploadChecksumFailure1791700000005',
     ]);
   });
 

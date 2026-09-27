@@ -20,6 +20,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddUploadFinalizeLeaseToken1791700000002',
       'AddUploadCreationRequestId1791700000003',
       'AddUploadPartLease1791700000004',
+      'AddUploadChecksumFailure1791700000005',
     ]);
   });
 });

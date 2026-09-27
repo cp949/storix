@@ -4,6 +4,7 @@ import { AddVfsUploadSessions1791700000000 } from './migrations/1791700000000-Ad
 import { AddUploadCreationExpiry1791700000001 } from './migrations/1791700000001-AddUploadCreationExpiry.js';
 import { AddUploadCreationRequestId1791700000003 } from './migrations/1791700000003-AddUploadCreationRequestId.js';
 import { AddUploadPartLease1791700000004 } from './migrations/1791700000004-AddUploadPartLease.js';
+import { AddUploadChecksumFailure1791700000005 } from './migrations/1791700000005-AddUploadChecksumFailure.js';
 
 describe('upload session migration (SQLite)', () => {
   let db: DataSource;
@@ -13,6 +14,7 @@ describe('upload session migration (SQLite)', () => {
       type: 'better-sqlite3',
       database: ':memory:',
       synchronize: false,
+      migrationsTransactionMode: 'each',
       migrations: ALL_MIGRATIONS,
     }).initialize();
     await db.runMigrations();
@@ -34,6 +36,7 @@ describe('upload session migration (SQLite)', () => {
       expect.arrayContaining(['idx_vfs_upload_session_state_expires', 'idx_vfs_upload_part_state']),
     );
     const runner = db.createQueryRunner();
+    await new AddUploadChecksumFailure1791700000005().down(runner);
     await new AddUploadPartLease1791700000004().down(runner);
     const migration = new AddVfsUploadSessions1791700000000();
     await migration.down(runner);
@@ -46,6 +49,34 @@ describe('upload session migration (SQLite)', () => {
     expect((await db.query("SELECT * FROM vfs_upload_usage WHERE id = 'global'")) as unknown[]).toHaveLength(
       1,
     );
+    await runner.release();
+  });
+
+  it('rebuilds the state constraint for FAILED and rolls back only after failure rows are gone', async () => {
+    const migration = new AddUploadChecksumFailure1791700000005();
+    const runner = db.createQueryRunner();
+    const columns = await db.query('PRAGMA table_info(vfs_upload_session)') as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain('sha256');
+    const namespaceId = '123e4567-e89b-42d3-a456-426614174012';
+    const sessionId = '223e4567-e89b-42d3-a456-426614174012';
+    await db.query('INSERT INTO namespace (id, name) VALUES (?, ?)', [namespaceId, 'failure-state']);
+    await db.query(`INSERT INTO vfs_upload_session
+      (id, namespace_id, scope, creation_key, fingerprint, target_path, size_bytes, sha256, mime_type,
+       condition_type, part_size_bytes, part_count, state, expires_at, max_expires_at, terminal_at,
+       response_status, response_body, created_at, updated_at)
+      VALUES (?, ?, 'scope', ?, ?, '/file', 0, ?, 'text/plain', 'ABSENT', 4, 0, 'FAILED', ?, ?, ?,
+        422, '{"code":"VFS_CHECKSUM_MISMATCH"}', ?, ?)`, [
+      sessionId, namespaceId, '323e4567-e89b-42d3-a456-426614174012', 'a'.repeat(64),
+      'b'.repeat(64), '2026-09-27 01:00:00', '2026-09-28 00:00:00',
+      '2026-09-27 00:00:00', '2026-09-27 00:00:00', '2026-09-27 00:00:00',
+    ]);
+    await expect(migration.down(runner)).rejects.toThrow('FAILED sessions remain');
+    await db.query('DELETE FROM vfs_upload_session WHERE id = ?', [sessionId]);
+    await migration.down(runner);
+    expect((await db.query('PRAGMA table_info(vfs_upload_session)') as Array<{ name: string }>)
+      .map((column) => column.name)).not.toContain('sha256');
+    await migration.up(runner);
+    expect((await db.query('PRAGMA foreign_key_check') as unknown[])).toEqual([]);
     await runner.release();
   });
 

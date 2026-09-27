@@ -17,6 +17,7 @@ describe('AuditLogRepository (SQLite)', () => {
       type: 'better-sqlite3', database: ':memory:', synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
       migrations: ALL_MIGRATIONS,
+      migrationsTransactionMode: 'each',
     });
     await dataSource.initialize();
     await dataSource.runMigrations();

@@ -22,6 +22,7 @@ export interface CreateUploadSessionInput {
   readonly fingerprint: string;
   readonly targetPath: string;
   readonly sizeBytes: string;
+  readonly sha256?: string | null;
   readonly mimeType: string;
   readonly conditionType: 'ABSENT' | 'REVISION';
   readonly conditionRevision: string | null;
@@ -401,7 +402,7 @@ export class VfsUploadSessionRepository {
       const session = await sessions.findOneBy({ id: sessionId, namespaceId });
       if (!session) return { kind: 'not-found' };
       const now = new Date();
-      if (session.state === 'COMPLETED') return { kind: 'complete', session };
+      if (session.state === 'COMPLETED' || session.state === 'FAILED') return { kind: 'complete', session };
       if (session.state === 'FINALIZING') return { kind: 'busy' };
       if (session.state !== 'OPEN' || session.expiresAt <= now || session.maxExpiresAt <= now)
         return { kind: 'closed' };
@@ -472,6 +473,23 @@ export class VfsUploadSessionRepository {
     if (completed.affected !== 1) throw new Error('Upload finalize claim lost');
     const usage = await this.lockUsage(manager, namespaceId);
     await this.changeUsage(manager, usage, 'activeSessions', -1n);
+  }
+
+  @classifyPersistenceOperation
+  async failFinalize(namespaceId: string, sessionId: string, token: string,
+    body: string, requestId: string): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const usage = await this.lockUsage(manager, namespaceId);
+      const now = new Date();
+      const failed = await manager.getRepository(VfsUploadSessionEntity).createQueryBuilder().update()
+        .set({ state: 'FAILED', leaseToken: null, leaseExpiresAt: null, terminalAt: now,
+          responseStatus: 422, responseBody: body, requestId, updatedAt: now })
+        .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND lease_token = :token AND lease_expires_at > :now',
+          { sessionId, namespaceId, state: 'FINALIZING', token, now }).execute();
+      if (failed.affected !== 1) return false;
+      await this.changeUsage(manager, usage, 'activeSessions', -1n);
+      return true;
+    });
   }
 
   @classifyPersistenceOperation
@@ -580,7 +598,7 @@ export class VfsUploadSessionRepository {
       .innerJoin(VfsUploadSessionEntity, 'session', 'session.id = part.session_id')
       .select(['part.sessionId', 'part.partIndex', 'part.stagingKey', 'part.state'])
       .where(`(part.state = :cleanup OR (session.state IN (:...states) AND part.state = :stored))`, {
-        cleanup: 'CLEANUP', states: ['COMPLETED', 'CANCELLED', 'EXPIRED'], stored: 'STORED',
+        cleanup: 'CLEANUP', states: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'], stored: 'STORED',
       })
       .orderBy('part.sessionId', 'ASC')
       .addOrderBy('part.partIndex', 'ASC')
@@ -680,7 +698,7 @@ export class VfsUploadSessionRepository {
       .getRepository(VfsUploadSessionEntity)
       .createQueryBuilder('session')
       .where('session.state IN (:...states) AND session.terminal_at < :before', {
-        states: ['COMPLETED', 'CANCELLED', 'EXPIRED'],
+        states: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'],
         before,
       })
       .andWhere(`NOT EXISTS (SELECT 1 FROM "vfs_upload_part" part
@@ -708,7 +726,7 @@ export class VfsUploadSessionRepository {
           .where('id = :id AND terminal_at < :before AND state IN (:...states)', {
             id: session.id,
             before,
-            states: ['COMPLETED', 'CANCELLED', 'EXPIRED'],
+            states: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'],
           })
           .execute();
         if (result.affected === 1) deleted++;

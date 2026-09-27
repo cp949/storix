@@ -12,6 +12,7 @@ import { DataSource } from 'typeorm';
 import { AuthModule } from '../auth/auth.module.js';
 import { CapabilityService } from '../capability/capability.service.js';
 import { configureBodyParsers } from '../common/body-parser.js';
+import { GcJobModule } from '../jobs/gc-job.module.js';
 import { NamespaceModule } from '../namespace/namespace.module.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
@@ -44,7 +45,7 @@ describe('upload finalize (SQLite + MinIO)', () => {
   }
   async function bootstrap(enabled: boolean) {
     const builder = Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, NamespaceModule, VfsModule, GcJobModule],
     });
     if (plainId) {
       builder.overrideProvider(CapabilityService).useValue(

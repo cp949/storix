@@ -26,7 +26,8 @@ export function runCapabilityConfigBootTests(driver: 'postgres' | 'sqlite'): voi
     directory = await mkdtemp(join(tmpdir(), 'storix-capability-boot-'));
     if (sqlite) {
       process.env.STORIX_DB_SQLITE_PATH = join(directory, 'storix.sqlite');
-      dataSource = new DataSource({ type: 'better-sqlite3', database: process.env.STORIX_DB_SQLITE_PATH, migrations: ALL_MIGRATIONS });
+      dataSource = new DataSource({ type: 'better-sqlite3', database: process.env.STORIX_DB_SQLITE_PATH,
+        migrations: ALL_MIGRATIONS, migrationsTransactionMode: 'each' });
     } else {
       container = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
       Object.assign(process.env, {

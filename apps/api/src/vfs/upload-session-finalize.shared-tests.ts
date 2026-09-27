@@ -1,12 +1,14 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { GcJob } from '../jobs/gc.job.js';
 import { BlobEntity } from '../persistence/entities/blob.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { VfsUploadSessionEntity } from '../persistence/entities/vfs-upload-session.entity.js';
+import { VfsUploadUsageEntity } from '../persistence/entities/vfs-upload-usage.entity.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
@@ -428,5 +430,111 @@ export function registerFinalizeTests(context: FinalizeContext): void {
         .getRepository(BlobEntity)
         .count({ where: { namespaceId: context.namespace(), referenceCount: 1 } }),
     ).toBe(before + 1);
+  });
+
+  it.each([false, true])('verifies the full plaintext checksum in %s encryption mode', async (encrypted) => {
+    const ns = encrypted ? context.encryptedNamespace() : context.namespace();
+    const path = `/checksum-good-${randomUUID()}.bin`;
+    const sha256 = createHash('sha256').update('abcdxy').digest('hex');
+    const created = await auth(api().post(base(ns)))
+      .set('X-Mutation-Scope', 'checksum').set('Idempotency-Key', randomUUID())
+      .send({ path, sizeBytes: '6', mimeType: 'application/octet-stream', ifAbsent: true, sha256 })
+      .expect(201);
+    const id = created.body.sessionId as string;
+    await put(id, 0, 'abcd', ns);
+    await put(id, 1, 'xy', ns);
+    await complete(id, ns).expect(201);
+    const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`))
+      .query({ path }).expect(200);
+    expect(content.body.toString()).toBe('abcdxy');
+  });
+
+  it.each([false, true])('persists mismatch as FAILED, replays 422, and cleans charged parts in %s encryption mode', async (encrypted) => {
+    const ns = encrypted ? context.encryptedNamespace() : context.namespace();
+    const path = `/checksum-bad-${randomUUID()}.bin`;
+    const originalBytes = Buffer.from('original target');
+    const original = await auth(api().post(`/api/v2/namespaces/${ns}/fs/content/conditional`))
+      .query({ path })
+      .set('X-Mutation-Scope', 'checksum-original')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-If-Absent', 'true')
+      .set('Content-Type', 'application/octet-stream')
+      .send(originalBytes)
+      .expect(201);
+    const originalRevision = original.body.resource.revision as string;
+    const key = randomUUID();
+    const body = { path, sizeBytes: '4', mimeType: 'application/octet-stream',
+      sha256: createHash('sha256').update('other').digest('hex') };
+    const createCall = (value: Record<string, unknown>) => auth(api().post(base(ns)))
+      .set('X-Mutation-Scope', 'checksum').set('Idempotency-Key', key).send(value);
+    const sessionBody = { ...body, ifRevision: originalRevision };
+    const invalid = await createCall({ ...sessionBody, sha256: 'A'.repeat(64) }).expect(400);
+    expect(invalid.body.code).toBe('VFS_INVALID_CHECKSUM');
+    const created = await createCall(sessionBody).expect(201);
+    const id = created.body.sessionId as string;
+    expect((await createCall({ ...sessionBody, sha256: 'b'.repeat(64) }).expect(409)).body.code)
+      .toBe('MUTATION_KEY_REUSED');
+    await put(id, 0, 'data', ns);
+    const repo = context.app().get(VfsUploadSessionRepository);
+    const part = await repo.findPart(id, 0);
+    if (!part) throw new Error('stored part missing');
+    const db = context.app().get(DataSource);
+    const storage = context.app().get<BlobStorage>(BLOB_STORAGE);
+    const originalDelete = storage.delete.bind(storage);
+    let failedCount = 0;
+    const deleteSpy = jest.spyOn(storage, 'delete').mockImplementation(async (stagingKey) => {
+      if (stagingKey === part.stagingKey && failedCount < 2) {
+        failedCount++;
+        throw new Error('temporary staging deletion failure');
+      }
+      return originalDelete(stagingKey);
+    });
+    try {
+      const first = await complete(id, ns).set('X-Request-Id', 'mismatch-first').expect(422);
+      expect(first.body.code).toBe('VFS_CHECKSUM_MISMATCH');
+      expect(failedCount).toBe(1); // immediate cleanup attempted
+      const replay = await complete(id, ns).set('X-Request-Id', 'mismatch-retry').expect(422);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      const creationReplay = await createCall(sessionBody).expect(201);
+      expect(creationReplay.body).toEqual(created.body);
+      expect(creationReplay.headers['x-request-id']).toBe(created.headers['x-request-id']);
+      const status = await auth(api().get(`${base(ns)}/${id}`)).expect(200);
+      expect(status.body).toMatchObject({ state: 'FAILED', failure: { code: 'VFS_CHECKSUM_MISMATCH' } });
+      expect(JSON.stringify(status.body)).not.toMatch(new RegExp(body.sha256));
+      const stat = await auth(api().get(`/api/v2/namespaces/${ns}/fs/stat`)).query({ path }).expect(200);
+      expect(stat.body.revision).toBe(originalRevision);
+      const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`)).query({ path }).expect(200);
+      expect(content.body).toEqual(originalBytes);
+      const row = await db.getRepository(VfsUploadSessionEntity).findOneByOrFail({ id });
+      expect(row.terminalAt).not.toBeNull();
+      expect(row.responseStatus).toBe(422);
+      const usageBefore = await db.getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` });
+      expect(BigInt(usageBefore.stagedBytes)).toBeGreaterThanOrEqual(4n);
+      expect((await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey))
+        .toBe(true);
+      await context.app().get(GcJob).run();
+      expect(failedCount).toBe(2);
+      expect(BigInt((await db.getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` })).stagedBytes)).toBeGreaterThanOrEqual(4n);
+      await context.app().get(GcJob).run();
+      expect((await repo.findCleanupParts()).some((candidate) => candidate.stagingKey === part.stagingKey))
+        .toBe(false);
+      expect(BigInt((await db.getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${ns.toLowerCase()}` })).stagedBytes))
+        .toBeLessThan(BigInt(usageBefore.stagedBytes));
+    } finally {
+      deleteSpy.mockRestore();
+    }
+    expect((await repo.findForStatus(ns, id))?.session.state).toBe('FAILED');
+    expect(await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000)))
+      .toBe(0);
+    await db.getRepository(VfsUploadSessionEntity).update({ id }, {
+      terminalAt: new Date(Date.now() - 31 * 24 * 3600_000),
+    });
+    expect(await repo.pruneTerminalSessions(new Date(Date.now() - 30 * 24 * 3600_000)))
+      .toBeGreaterThanOrEqual(1);
+    await auth(api().get(`${base(ns)}/${id}`)).expect(404);
   });
 }

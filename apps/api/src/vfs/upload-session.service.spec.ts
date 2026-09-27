@@ -28,7 +28,7 @@ describe('UploadSessionService lifecycle', () => {
           ? { kind: 'replay', session: existing } : { kind: 'conflict' };
         if (sessions.size >= 1) return { kind: 'limit' };
         const session: VfsUploadSessionEntity = {
-          ...input, state: 'OPEN', requestId: input.requestId ?? null,
+          ...input, sha256: input.sha256 ?? null, state: 'OPEN', requestId: input.requestId ?? null,
           creationRequestId: input.requestId ?? null,
           leaseExpiresAt: null, leaseToken: null, terminalAt: null, responseStatus: null,
           responseBody: null, createdAt: input.now, updatedAt: input.now,
@@ -77,6 +77,27 @@ describe('UploadSessionService lifecycle', () => {
     await expect(service.create(namespaceId, 'scope', key, { ...request, mimeType: 'text/plain' }, 'third')).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED', status: 409 });
     await service.cancel(namespaceId, (first.body as { sessionId: string }).sessionId);
     expect((await service.create(namespaceId, 'scope', key, request, 'fourth')).body).toEqual(first.body);
+  });
+
+  it('validates optional checksum before creating a session and binds it to the creation key', async () => {
+    const { service, sessions } = setup();
+    await expect(service.create(namespaceId, 'scope', key,
+      { ...request, sha256: 'A'.repeat(64) }, 'bad')).rejects.toMatchObject({
+      code: 'VFS_INVALID_CHECKSUM', status: 400,
+    });
+    expect(sessions.size).toBe(0);
+    const checksum = 'a'.repeat(64);
+    const created = await service.create(namespaceId, 'scope', key,
+      { ...request, sha256: checksum }, 'created');
+    expect((sessions.get((created.body as { sessionId: string }).sessionId) as unknown as
+      { sha256?: string })?.sha256).toBe(checksum);
+    await expect(service.create(namespaceId, 'scope', key,
+      { ...request, sha256: 'b'.repeat(64) }, 'changed')).rejects.toMatchObject({
+      code: 'MUTATION_KEY_REUSED', status: 409,
+    });
+    await expect(service.create(namespaceId, 'scope', key, request, 'removed')).rejects.toMatchObject({
+      code: 'MUTATION_KEY_REUSED', status: 409,
+    });
   });
 
   it('keeps the creation request ID when completion stores its own request ID', async () => {

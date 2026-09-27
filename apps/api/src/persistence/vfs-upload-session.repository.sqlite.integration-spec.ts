@@ -28,6 +28,7 @@ describe('upload session repository (SQLite)', () => {
       entities: [NamespaceEntity, VfsUploadSessionEntity, VfsUploadPartEntity,
         VfsUploadStagingCleanupEntity, VfsUploadUsageEntity],
       migrations: ALL_MIGRATIONS,
+      migrationsTransactionMode: 'each',
     }).initialize();
     await db.runMigrations();
     installSqliteGate(db);

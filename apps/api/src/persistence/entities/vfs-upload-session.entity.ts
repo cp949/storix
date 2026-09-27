@@ -1,7 +1,7 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
-export type VfsUploadSessionState = 'OPEN' | 'FINALIZING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+export type VfsUploadSessionState = 'OPEN' | 'FINALIZING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
 
 @Entity('vfs_upload_session')
 export class VfsUploadSessionEntity {
@@ -12,6 +12,7 @@ export class VfsUploadSessionEntity {
   @Column({ type: 'varchar', length: 64 }) fingerprint: string;
   @Column({ name: 'target_path', type: 'text' }) targetPath: string;
   @Column({ name: 'size_bytes', type: 'bigint' }) sizeBytes: string;
+  @Column({ type: 'varchar', length: 64, nullable: true }) sha256: string | null;
   @Column({ name: 'mime_type', type: 'varchar', length: 255 }) mimeType: string;
   @Column({ name: 'condition_type', type: 'varchar', length: 16 }) conditionType: 'ABSENT' | 'REVISION';
   @Column({ name: 'condition_revision', type: 'varchar', length: 128, nullable: true }) conditionRevision:
