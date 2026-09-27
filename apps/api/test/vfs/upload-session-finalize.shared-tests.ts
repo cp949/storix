@@ -73,6 +73,34 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     await context.restartEnabled();
   });
 
+  it('keeps files published by resumable upload readable after disabling the capability', async () => {
+    const path = '/final-readable-after-disable.bin';
+    const id = await create(path, '9');
+    await put(id, 0, 'reta');
+    await put(id, 1, 'ined');
+    await put(id, 2, '!');
+    const published = await complete(id).expect(201);
+    const resourceId = published.body.resource.id as string;
+    const revision = published.body.resource.revision as string;
+
+    await context.restartDisabled();
+
+    const capabilities = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/capabilities`))
+      .expect(200);
+    expect(capabilities.body).toEqual({ capabilities: [] });
+    const stat = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/fs/stat`))
+      .query({ path })
+      .expect(200);
+    expect(stat.body.id).toBe(resourceId);
+    expect(stat.body.revision).toBe(revision);
+    const content = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/fs/content`))
+      .query({ path })
+      .expect(200);
+    expect(content.body.toString()).toBe('retained!');
+
+    await context.restartEnabled();
+  });
+
   it('keeps creation and completion request IDs separate across both replay routes', async () => {
     const key = randomUUID();
     const body = { path: '/final-dual-replay-id.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true };

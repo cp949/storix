@@ -227,15 +227,17 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       revision 이력, 복구 가능한 삭제(휴지통)를 분리해 설계한다. 보존 기한·수량,
       명시적/자동 영구 삭제, quota 산정, 복구 시 파일 ID와 revision 의미를 정한다.
       실제 복구 가능성은 백업/복구 `OPS-02`와 별도로 검증한다.
-- [ ] VFS-06: **선택 capability 설정과 비활성 동작** — 이후 추가되는 선택 기능을 완결된
+- [x] VFS-06: **선택 capability 설정과 비활성 동작** — 이후 추가되는 선택 기능을 완결된
       capability 단위로 설정한다. 설정 기반은 완료했다: 시작 시 JSON 검증, 정적 registry,
       전역 상한·namespace 명시적 허용, 기본 비활성, 의존성 검증, 409
       `VFS_FEATURE_DISABLED`와 조건부 receipt 재생 경계를 구현했다. 기존 파일 API는
       계속 활성이고 저장 데이터의 조회·내보내기·복구·삭제 경계는 선택 기능 추가 시
       지켜야 한다. 활성 capability 조회 계약·구현은 VFS-07에서 완료했다. 현재
-      production registry에는 기본 비활성 `resumable-upload`가 있고 로컬에서는
-      비활성화 뒤 기존 세션 조회·취소·완료 경로를 검증했다. VFS-06과 RQ-027의
-      전체 완료 판정은 별도로 남겨 둔다. 현재 설계는
+      production registry에는 기본 비활성 `resumable-upload`가 있다. PostgreSQL/MinIO와
+      SQLite에서 기능 활성 중 완료한 파일을 재시작 후 비활성 상태에서도 capability 목록에서
+      숨기고 기존 VFS `stat`/`content` API로 읽을 수 있음을 검증했다. 세부 근거는
+      [RQ-027](./requirements/file-storage.md)을 참고한다. 실제 배포 설정·소비자 검증은 제외한다.
+      현재 설계는
       [06-vfs-capabilities.md](./design/06-vfs-capabilities.md)에 기록한다.
 - [x] VFS-07: **활성 capability 조회** — `GET /api/v2/namespaces/{id}/capabilities`를
       전역 서비스 Bearer key로 보호하고 ACTIVE namespace에서 실제 활성 선택 ID를
