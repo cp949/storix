@@ -1,9 +1,17 @@
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 import { randomUUID } from 'node:crypto';
 import { BlobEntity } from '../../../src/persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
+import type { VfsNodeResponseDto } from '../../../src/vfs/dto/node-response.dto.js';
 import { toPreconditionCurrent } from '../../../src/vfs/dto/node-response.dto.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
 import { VfsNodeNotFoundError, VfsPreconditionFailedError } from '../../../src/vfs/vfs.errors.js';
+
+type ConditionalMutationResult = {
+  status: 200 | 201;
+  resource: VfsNodeResponseDto | null;
+  trashId?: string;
+};
 
 export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpers): void {
   const {
@@ -45,7 +53,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
         }
         const before = await captureState(namespace.id);
         const attempt = () =>
-          getRepo().withMutation(namespace.id, root.id, (tx) => {
+          getRepo().withMutation<ConditionalMutationResult>(namespace.id, root.id, async (tx) => {
             if (kind === 'create') {
               return getRepo().applyConditionalMutation(tx, {
                 kind: 'mkdir',
@@ -158,7 +166,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
         const aBefore = (await getRepo().resolvePath(namespace.id, root.id, ['a']))!;
         const bBefore = (await getRepo().resolvePath(namespace.id, root.id, ['b']))!;
         const attempt = () =>
-          getRepo().withMutation(namespace.id, root.id, (tx) => {
+          getRepo().withMutation<ConditionalMutationResult>(namespace.id, root.id, async (tx) => {
             if (kind === 'create')
               return getRepo().applyConditionalMutation(tx, {
                 kind: 'mkdir',
@@ -219,7 +227,10 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
           expect(blobs.map((blob) => blob.referenceCount).sort()).toEqual([0, 1]);
         } else if (kind === 'delete') {
           expect(atSource).toBeNull();
-          expect(blobs.map((blob) => blob.referenceCount)).toEqual([1]);
+          expect(
+            (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id })).trashEnabled,
+          ).toBe(false);
+          expect(blobs.map((blob) => blob.referenceCount)).toEqual([0]);
         } else {
           expect(atSource).toBeNull();
           expect(await getRepo().resolvePath(namespace.id, root.id, ['b', 'source'])).toMatchObject({
@@ -421,6 +432,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
 
     it('rejects a stale revision after delete and recreate of the same path', async () => {
       const namespace = await createNamespace('conditional-recreate-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
       const root = (await getRepo().getRoot(namespace.id))!;
       const old = await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
       const oldRevision = encodeRevision(old.node);

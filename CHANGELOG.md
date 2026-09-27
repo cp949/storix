@@ -10,6 +10,7 @@
 
 ### Changed
 
+- 휴지통은 namespace별 설정이며 기본 OFF다. OFF 삭제는 즉시 영구 삭제하고 `X-Trash-Id`/`trashId`를 반환하지 않는다. OFF 전환 전 휴지통 항목은 계속 복원할 수 있다.
 - 모든 워크스페이스 패키지 이름을 `@storix/*`에서 `@cp949/storix-*`로 변경했다.
 
 ### Added

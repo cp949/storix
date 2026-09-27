@@ -122,6 +122,13 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
         .send({ name: `trash-expiry-${randomUUID()}` })
         .expect(201)
     ).body.id as string;
+    process.env.STORIX_ADMIN_API_KEY = 'trash-admin-test-key';
+    await http()
+      .patch(`/api/v2/admin/namespaces/${namespaceId}/trash`)
+      .set('Authorization', 'Bearer trash-admin-test-key')
+      .set('Idempotency-Key', randomUUID())
+      .send({ enabled: true })
+      .expect(200);
     const base = `/api/v2/namespaces/${namespaceId}/fs`;
     await http().post(`${base}/touch`).send({ path: '/expired' }).expect(201);
     const trashId = (await http().post(`${base}/rm`).query({ path: '/expired' }).expect(204)).headers[

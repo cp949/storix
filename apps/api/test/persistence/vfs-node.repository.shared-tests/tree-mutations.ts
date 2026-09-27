@@ -1,6 +1,7 @@
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 import { randomUUID } from 'node:crypto';
 import { BlobEntity } from '../../../src/persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
 import {
   VfsAlreadyExistsError,
@@ -19,6 +20,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
 
     it('FILE을 삭제하면 Blob 참조를 휴지통에 보존한다', async () => {
       const namespace = await createNamespace('rm-file-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
       const root = await getRepo().getRoot(namespace.id);
       const file = await createFile(namespace.id, root!.id, 'a.txt');
 
@@ -44,6 +46,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
 
     it('recursive=true면 하위 트리를 휴지통으로 옮기고 각 file의 Blob 참조를 보존한다', async () => {
       const namespace = await createNamespace('rm-recursive-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
       const root = await getRepo().getRoot(namespace.id);
       const a = await getRepo().ensureDirectory(namespace.id, root!.id, ['a'], false);
       const c = await getRepo().ensureDirectory(namespace.id, root!.id, ['a', 'c'], false);
@@ -64,6 +67,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
 
     it('같은 Blob을 여러 Node가 참조하면 recursive delete가 감소량을 합산한다', async () => {
       const namespace = await createNamespace('rm-shared-blob-ns');
+      await getDs().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
       const root = await getRepo().getRoot(namespace.id);
       const dir = await getRepo().ensureDirectory(namespace.id, root!.id, ['a'], false);
       const nodeRepo = getDs().getRepository(VfsNodeEntity);

@@ -24,6 +24,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddVfsChangeFeed1791700000006',
       'AddVfsTrash1791700000007',
       'AddAuditLogTrashId1791700000008',
+      'AddNamespaceTrashEnabled1791700000009',
     ]);
   });
 });

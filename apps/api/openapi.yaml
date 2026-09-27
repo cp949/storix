@@ -368,6 +368,52 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /api/v2/admin/namespaces/{namespaceId}/trash:
+    patch:
+      operationId: updateNamespaceTrashPolicy
+      summary: Namespace 휴지통 정책 변경
+      description: 별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. 기본값은 OFF다.
+      security:
+        - AdminApiKeyAuth: []
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: 변경 또는 동일 키 응답 재생
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Namespace' }
+        '400':
+          description: 요청 형식 오류 `NAMESPACE_INVALID_TRASH_POLICY` 또는 Idempotency-Key 누락 `IDEMPOTENCY_KEY_REQUIRED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: namespace가 없음 (`NAMESPACE_NOT_FOUND`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: 같은 key를 다른 요청에 재사용함 (`IDEMPOTENCY_KEY_REUSED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /api/v2/namespaces/{namespaceId}/fs/mutations:
     post:
       operationId: conditionalMutation
@@ -652,9 +698,13 @@ paths:
             type: string
       responses:
         '204':
-          description: 빈 디렉터리를 30일 휴지통으로 이동
+          description: >-
+            삭제 성공. 휴지통이 활성화된 namespace에서는 30일 보존 manifest로 이동하고
+            `X-Trash-Id`를 반환한다. 비활성 namespace에서는 즉시 영구 삭제하며 header가 없다.
           headers:
-            X-Trash-Id: { schema: { type: string, format: uuid } }
+            X-Trash-Id:
+              description: 휴지통 활성 상태에서 보존한 manifest ID. 정책 OFF 삭제에는 없다.
+              schema: { type: string, format: uuid }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -696,9 +746,13 @@ paths:
             default: false
       responses:
         '204':
-          description: 파일 또는 디렉터리 subtree를 30일 휴지통으로 이동
+          description: >-
+            삭제 성공. 휴지통이 활성화된 namespace에서는 subtree를 30일 보존 manifest로 이동하고
+            `X-Trash-Id`를 반환한다. 비활성 namespace에서는 즉시 영구 삭제하며 header가 없다.
           headers:
-            X-Trash-Id: { schema: { type: string, format: uuid } }
+            X-Trash-Id:
+              description: 휴지통 활성 상태에서 보존한 manifest ID. 정책 OFF 삭제에는 없다.
+              schema: { type: string, format: uuid }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2813,8 +2867,10 @@ components:
               description: live FILE, 보존 snapshot FILE entry, purge 전 휴지통 FILE entry의 논리 크기 합.
             trash:
               type: object
-              required: [retainedNodeCount, maxRetainedNodes]
+              required: [enabled, retainedNodeCount, maxRetainedNodes]
               properties:
+                enabled:
+                  { type: boolean, description: 기본값은 false이며 namespace 관리자 정책으로 변경한다. }
                 retainedNodeCount: { type: integer, minimum: 0 }
                 maxRetainedNodes: { type: integer, minimum: 1, default: 100000 }
         createdAt:

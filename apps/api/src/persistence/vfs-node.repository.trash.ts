@@ -13,6 +13,7 @@ import {
 import { decodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import { assertPathSegments } from '../vfs/path-resolver.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import { NamespaceEntity } from './entities/namespace.entity.js';
 import type { MutationTx, SnapshotSourceRow, VfsNodeRecord } from './vfs-node.repository.types.js';
 import { joinSegments, toRecord } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryTreeMutations } from './vfs-node.repository.tree-mutations.js';
@@ -141,7 +142,7 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     recursive: boolean,
     maxSyncDeleteNodes: number,
     tx?: MutationTx,
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (!tx)
       return (
         await this.withMutation(namespaceId, rootId, (inner) =>
@@ -171,7 +172,7 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     rootId: string,
     segments: string[],
     tx?: MutationTx,
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (!tx)
       return (
         await this.withMutation(namespaceId, rootId, (inner) =>
@@ -192,12 +193,12 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     tx: MutationTx,
     segments: string[],
     rows: readonly SnapshotSourceRow[],
-  ): Promise<string> {
+  ): Promise<string | null> {
     await trackChangeFeedBefore(
       tx,
       rows.map((row) => row.id),
     );
-    const trashId = await this.trashRepository.capture(tx, joinSegments(segments), rows);
+    const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: tx.namespaceId });
     const blobCounts = new Map<string, number>();
     let removedBytes = 0n;
     for (const row of rows) {
@@ -207,6 +208,15 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
       }
     }
     const sorted = [...blobCounts].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    if (!namespace.trashEnabled) {
+      await tx.manager.getRepository(VfsNodeEntity).delete(rows.map((row) => row.id));
+      this.recordLiveByteDelta(tx, -removedBytes);
+      for (const [blobId, count] of sorted)
+        await this.blobRepository.decrementReferenceCount(tx.manager, blobId, count);
+      return null;
+    }
+
+    const trashId = await this.trashRepository.capture(tx, joinSegments(segments), rows);
     for (const [blobId, count] of sorted) {
       if (!(await this.blobRepository.incrementLiveReferenceCount(tx.manager, tx.namespaceId, blobId, count)))
         throw new Error('Trash source Blob is not live');

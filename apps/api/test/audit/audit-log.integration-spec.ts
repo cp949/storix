@@ -108,7 +108,7 @@ describe('감사 로그 end-to-end', () => {
 
     app = moduleRef.createNestApplication({ bodyParser: false });
     configureBodyParsers(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
     httpServer = app.getHttpServer();
   }, 180000);
 
@@ -302,6 +302,13 @@ describe('감사 로그 end-to-end', () => {
       .set('Idempotency-Key', `ns-${name}`)
       .send({ name })
       .expect(201);
+    process.env.STORIX_ADMIN_API_KEY = 'trash-admin-test-key';
+    await request(httpServer)
+      .patch(`/api/v2/admin/namespaces/${ns.body.id}/trash`)
+      .set('Authorization', 'Bearer trash-admin-test-key')
+      .set('Idempotency-Key', randomUUID())
+      .send({ enabled: true })
+      .expect(200);
     const base = `/api/v2/namespaces/${ns.body.id}/fs`;
     await request(httpServer).post(`${base}/touch`).send({ path: '/first' }).expect(201);
     const deleted = await request(httpServer).post(`${base}/rm`).query({ path: '/first' }).expect(204);
@@ -339,6 +346,20 @@ describe('감사 로그 end-to-end', () => {
     } finally {
       delete process.env.STORIX_ADMIN_API_KEY;
     }
+  });
+
+  it('휴지통 OFF의 영구 삭제 감사 row는 trash_id가 null이다', async () => {
+    const name = `audit-trash-off-${randomUUID()}`;
+    const created = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-${name}`)
+      .send({ name })
+      .expect(201);
+    const base = `/api/v2/namespaces/${created.body.id}/fs`;
+    await request(httpServer).post(`${base}/touch`).send({ path: '/permanent' }).expect(201);
+    const deleted = await request(httpServer).post(`${base}/rm`).query({ path: '/permanent' }).expect(204);
+    const row = await findAuditLogByRequestId(deleted.headers['x-request-id'] as string);
+    expect(row?.trash_id).toBeNull();
   });
 
   it('누락·오류 API key를 HTTP 요청 ID로 조회하고 자기신고 주체와 비밀은 저장하지 않는다', async () => {

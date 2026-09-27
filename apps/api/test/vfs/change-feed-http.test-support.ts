@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { jest } from '@jest/globals';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
@@ -218,5 +218,49 @@ export function registerChangeFeedHttpContract(get: () => Context): void {
     ).body;
     expect(Array.isArray(listed.body.items)).toBe(true);
     expect(page.changes.some((event: Change) => event.path === '/race')).toBe(true);
+  });
+
+  it('OFF 영구 삭제는 deleted event를 남기고 삭제 상한 거절은 feed를 바꾸지 않는다', async () => {
+    const { app, enabledId, apiKey } = get();
+    const http = () => request(app.getHttpServer());
+    const auth = { Authorization: `Bearer ${apiKey}` };
+    const base = `/api/v2/namespaces/${enabledId}/fs`;
+    const namespace = app.get(DataSource).getRepository(NamespaceEntity);
+    expect((await namespace.findOneByOrFail({ id: enabledId })).trashEnabled).toBe(false);
+    const path = `/trash-off-${randomUUID()}`;
+    await http().post(`${base}/mkdir`).set(auth).send({ path }).expect(201);
+    const checkpoint = (await http().get(`${base}/changes`).set(auth).expect(200)).body.nextCursor as string;
+    const deleted = await http().post(`${base}/rm`).set(auth).query({ path, recursive: true }).expect(204);
+    expect(deleted.headers).not.toHaveProperty('x-trash-id');
+    const deleteEvents = (
+      await http().get(`${base}/changes`).set(auth).query({ cursor: checkpoint }).expect(200)
+    ).body.changes as Change[];
+    expect(deleteEvents).toContainEqual(expect.objectContaining({ kind: 'deleted', path }));
+
+    const beforePolicy = await namespace.findOneByOrFail({ id: enabledId });
+    await namespace.update({ id: enabledId }, { maxSyncDeleteNodes: 2 });
+    try {
+      const limitPath = `/trash-limit-${randomUUID()}`;
+      await http().post(`${base}/mkdir`).set(auth).send({ path: limitPath }).expect(201);
+      await http()
+        .post(`${base}/mkdir`)
+        .set(auth)
+        .send({ path: `${limitPath}/a` })
+        .expect(201);
+      await http()
+        .post(`${base}/mkdir`)
+        .set(auth)
+        .send({ path: `${limitPath}/b` })
+        .expect(201);
+      const beforeRejectedDelete = (await http().get(`${base}/changes`).set(auth).expect(200)).body
+        .nextCursor as string;
+      await http().post(`${base}/rm`).set(auth).query({ path: limitPath, recursive: true }).expect(413);
+      const afterRejectedDelete = (
+        await http().get(`${base}/changes`).set(auth).query({ cursor: beforeRejectedDelete }).expect(200)
+      ).body.changes;
+      expect(afterRejectedDelete).toEqual([]);
+    } finally {
+      await namespace.update({ id: enabledId }, { maxSyncDeleteNodes: beforePolicy.maxSyncDeleteNodes });
+    }
   });
 }

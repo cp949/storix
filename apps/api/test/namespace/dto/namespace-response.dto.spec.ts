@@ -34,7 +34,11 @@ describe('toNamespaceResponse', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       limits: { maxFileSizeBytes: '5368709120' },
-      quota: { limitBytes: '20', usedBytes: '24', trash: { retainedNodeCount: 3, maxRetainedNodes: 100000 } },
+      quota: {
+        limitBytes: '20',
+        usedBytes: '24',
+        trash: { enabled: false, retainedNodeCount: 3, maxRetainedNodes: 100000 },
+      },
     });
   });
 
@@ -63,7 +67,7 @@ describe('toNamespaceResponse', () => {
       expect(response.quota).toEqual({
         limitBytes: '20',
         usedBytes: '17',
-        trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+        trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
       });
     },
   );

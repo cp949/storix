@@ -13,6 +13,7 @@ import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
+import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
 
 type RowCount = { count: string };
 
@@ -77,6 +78,19 @@ describe('Namespace HTTP contract', () => {
     )) as RowCount[];
     return Number(rows[0].count);
   }
+
+  registerNamespaceTrashPolicyHttpTests({
+    app: () => app,
+    adminKey: 'quota-admin-secret',
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
+        .expect(201);
+      return response.body.id as string;
+    },
+  });
 
   it('동일 key·동일 body 동시 요청은 최초 201 body와 namespace/root/receipt 하나를 반환한다', async () => {
     const key = 'namespace-concurrent-same-body';
@@ -179,7 +193,7 @@ describe('Namespace HTTP contract', () => {
     expect(response.body.quota).toEqual({
       limitBytes: '53687091200',
       usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
     });
   });
 
@@ -193,7 +207,7 @@ describe('Namespace HTTP contract', () => {
     expect(created.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
     });
     const fetched = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${created.body.id}`)
@@ -201,7 +215,7 @@ describe('Namespace HTTP contract', () => {
     expect(fetched.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '0',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
     });
   });
 
@@ -224,7 +238,7 @@ describe('Namespace HTTP contract', () => {
     expect(fetched.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '17',
-      trash: { retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
     });
   });
 

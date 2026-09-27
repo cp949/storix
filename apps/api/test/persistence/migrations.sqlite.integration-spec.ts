@@ -10,6 +10,7 @@ import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
+import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -101,6 +102,30 @@ describe('마이그레이션 체인 (SQLite)', () => {
       await expect(
         runner.query('UPDATE namespace SET retained_trash_byte_count = -1 WHERE id = ?', [namespace.id]),
       ).rejects.toThrow();
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('namespace trash policy migration defaults existing and new namespaces to OFF and reverses its column', async () => {
+    const namespace = await dataSource
+      .getRepository(NamespaceEntity)
+      .save({ name: `trash-policy-migration-${randomUUID()}` });
+    const migration = new AddNamespaceTrashEnabled1791700000009();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await migration.down(runner);
+      expect(await runner.query("PRAGMA table_info('namespace')")).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'trash_enabled' })]),
+      );
+      await migration.up(runner);
+      expect(await runner.query('SELECT trash_enabled FROM namespace WHERE id = ?', [namespace.id])).toEqual([
+        { trash_enabled: 0 },
+      ]);
+      await runner.query('INSERT INTO namespace (name) VALUES (?)', [`trash-policy-new-${randomUUID()}`]);
+      expect(
+        await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE ?', ['trash-policy-new-%']),
+      ).toEqual([{ trash_enabled: 0 }]);
     } finally {
       await runner.release();
     }
@@ -205,7 +230,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     ).toEqual([]);
   });
 
-  it('19개 마이그레이션이 전부 적용된다', async () => {
+  it('20개 마이그레이션이 전부 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -227,6 +252,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddVfsChangeFeed1791700000006',
       'AddVfsTrash1791700000007',
       'AddAuditLogTrashId1791700000008',
+      'AddNamespaceTrashEnabled1791700000009',
     ]);
   });
 

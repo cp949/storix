@@ -7,15 +7,19 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { NamespaceController } from './namespace.controller.js';
 import { NamespaceQuotaController } from './namespace-quota.controller.js';
 import { NamespaceQuotaService } from './namespace-quota.service.js';
+import { NamespaceTrashPolicyController } from './namespace-trash-policy.controller.js';
+import { NamespaceTrashPolicyService } from './namespace-trash-policy.service.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Module({
   imports: [PersistenceModule, EncryptionModule, CapabilityModule],
-  controllers: [NamespaceController, NamespaceQuotaController],
-  providers: [NamespaceService, NamespaceQuotaService, AdminApiKeyGuard],
+  controllers: [NamespaceController, NamespaceQuotaController, NamespaceTrashPolicyController],
+  providers: [NamespaceService, NamespaceQuotaService, NamespaceTrashPolicyService, AdminApiKeyGuard],
 })
 export class NamespaceModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware).forRoutes(NamespaceController, NamespaceQuotaController);
+    consumer
+      .apply(RequestContextMiddleware)
+      .forRoutes(NamespaceController, NamespaceQuotaController, NamespaceTrashPolicyController);
   }
 }

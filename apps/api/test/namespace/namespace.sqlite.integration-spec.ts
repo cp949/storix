@@ -10,6 +10,7 @@ import { DataSource } from 'typeorm';
 import { NamespaceCreationReceiptWriter } from '../../src/persistence/namespace-creation-receipt.writer.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
+import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
 
 type RowCount = { count: number };
 
@@ -49,6 +50,19 @@ describe('Namespace HTTP contract (SQLite)', () => {
     )) as RowCount[];
     return Number(rows[0].count);
   }
+
+  registerNamespaceTrashPolicyHttpTests({
+    app: () => app,
+    adminKey: 'namespace-admin-secret',
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
+        .expect(201);
+      return response.body.id as string;
+    },
+  });
 
   beforeAll(async () => {
     if (process.env.STORIX_DB_DRIVER !== 'sqlite') throw new Error('Run with STORIX_DB_DRIVER=sqlite');

@@ -253,6 +253,13 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       `200 { "capabilities": [] }`이며 `Cache-Control: no-store`다. 잘못된 UUID·없는
       namespace·ACTIVE가 아닌 namespace는 404다. OpenAPI와 route coverage가 같은 계약을 확인한다.
       실제 선택 기능 및 해당 데이터의 비활성화 후 접근 가능성 검증은 포함하지 않는다.
+- [x] VFS-08: **namespace 휴지통 opt-out** — 기본 OFF에서 legacy `/fs/rm`·`/fs/rmdir`와
+      조건부 delete는 휴지통 manifest 없이 영구 삭제한다. 관리자 PATCH로 namespace별 정책을
+      바꾸며, 정책 변경과 삭제는 동일 namespace mutation lock으로 직렬화한다. OFF 전환 뒤에도
+      기존 휴지통 항목은 목록·복원·purge 가능하고, 조건부 receipt는 최초 결과를 재생한다.
+      PostgreSQL/MinIO·SQLite focused race/receipt/audit 및 OpenAPI 검증을 완료한 뒤 L0/L2
+      게이트와 로컬 closeout 판정을 기록한다. 세부 계약은 [RQ-024](./requirements/file-storage.md)와
+      [설계](./design/09-vfs-trash-and-recovery.md)를 따른다. 외부 consumer·production 검증은 제외한다.
 
 ## 3. 운영 성숙도
 

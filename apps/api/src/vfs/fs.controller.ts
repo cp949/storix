@@ -151,8 +151,11 @@ export class FsController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    req.auditTrashId = await this.vfsService.rmdir(namespaceId, path ?? '');
-    res.setHeader('X-Trash-Id', req.auditTrashId);
+    const trashId = await this.vfsService.rmdir(namespaceId, path ?? '');
+    if (trashId) {
+      req.auditTrashId = trashId;
+      res.setHeader('X-Trash-Id', trashId);
+    }
   }
 
   @Post('rm')
@@ -164,8 +167,11 @@ export class FsController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    req.auditTrashId = await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true');
-    res.setHeader('X-Trash-Id', req.auditTrashId);
+    const trashId = await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true');
+    if (trashId) {
+      req.auditTrashId = trashId;
+      res.setHeader('X-Trash-Id', trashId);
+    }
   }
 
   @Post('content')

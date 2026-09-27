@@ -22,6 +22,13 @@ export function registerFsFileSnapshotRestContract(
   async function restoreFixture(name: string) {
     const ns = await ctx.createNamespace(name);
     const base = `/api/v2/namespaces/${ns}/fs`;
+    process.env.STORIX_ADMIN_API_KEY = 'trash-admin-test-key';
+    await request(ctx.httpServer)
+      .patch(`/api/v2/admin/namespaces/${ns}/trash`)
+      .set('Authorization', 'Bearer trash-admin-test-key')
+      .set('Idempotency-Key', randomUUID())
+      .send({ enabled: true })
+      .expect(200);
     const bytes = Buffer.from([0, 255, 128, 65]);
     await request(ctx.httpServer)
       .post(`${base}/content`)

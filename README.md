@@ -159,7 +159,7 @@ cp .env.example .env
 | `docker-compose.minio.yml`     | MinIO 컨테이너 + 버킷 초기화                                                                                  | `README.minio.md`        |
 | `docker-compose.s3.yml`        | AWS S3. 컨테이너 없음, 엔드포인트/TLS/path-style만 고정                                                       | `README.s3.md`           |
 | `docker-compose.postgres.yml`  | 개발·검증용 Postgres 컨테이너                                                                                 | 위 세 문서의 "개발" 명령 |
-| `docker-compose.sqlite.yml`    | SQLite 드라이버 설정. DB 컨테이너 없이 named volume의 파일을 사용하며 단일 프로세스 배포 전제                | `README.sqlite.md`       |
+| `docker-compose.sqlite.yml`    | SQLite 드라이버 설정. DB 컨테이너 없이 named volume의 파일을 사용하며 단일 프로세스 배포 전제                 | `README.sqlite.md`       |
 
 백엔드별 문서는 `.env` 설정, 기동, 동작 확인 curl 시퀀스, 운영 잡, 문제 해결까지
 복사·붙여넣기로 따라갈 수 있게 자기완결로 쓰여 있다. 배치 결정 배경:

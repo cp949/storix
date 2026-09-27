@@ -34,6 +34,9 @@ export class NamespaceEntity {
   @Column({ type: 'varchar', length: 16, default: 'ACTIVE' })
   status: NamespaceStatus;
 
+  @Column({ name: 'trash_enabled', type: 'boolean', default: false })
+  trashEnabled: boolean;
+
   @Column({ name: 'max_file_size_bytes', type: 'bigint', nullable: true })
   maxFileSizeBytes: string | null;
 

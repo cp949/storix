@@ -81,6 +81,15 @@ export class NamespaceInvalidTotalLogicalBytesError extends DomainError {
   }
 }
 
+export class NamespaceInvalidTrashPolicyError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_TRASH_POLICY';
+  readonly status = 400;
+
+  constructor() {
+    super('trash 정책 요청은 enabled boolean 필드만 포함해야 함');
+  }
+}
+
 export class NamespaceQuotaLimitExceedsGlobalError extends DomainError {
   readonly code = 'NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL';
   readonly status = 400;

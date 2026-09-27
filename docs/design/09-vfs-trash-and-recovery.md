@@ -1,5 +1,13 @@
 # VFS 휴지통과 삭제 복구
 
+## Namespace 정책
+
+휴지통은 namespace별 `trashEnabled` 정책이며 기본값은 OFF다. 관리자 PATCH로 변경하고 namespace 조회 응답의 `quota.trash.enabled`에서 현재 값을 확인한다. 정책 변경은 삭제와 같은 namespace root mutation lock 및 DB transaction을 사용하므로 동시 변경·삭제는 lock 획득 순서에 따라 한 정책으로 처리된다.
+
+정책 ON에서는 기존처럼 삭제를 manifest로 보존한다. OFF에서는 `/fs/rm`, `/fs/rmdir`, 조건부 `kind: delete`가 manifest 없이 원자적으로 영구 삭제한다. 이때 live byte와 live Blob 참조를 감소시키고 `deleted` change-feed net event를 기록한다. 다른 live·snapshot 참조는 그대로 유지한다. OFF 삭제의 조건부 receipt는 정책이 나중에 바뀌어도 최초 응답을 재생하며, 즉시 삭제에는 `trashId`, `X-Trash-Id`, 감사 `trash_id`가 없다.
+
+OFF 전환은 이미 만들어진 trash item을 제거하거나 숨기지 않는다. 항목은 기존 만료·목록·복원·purge 규칙을 따르며, 복원은 live/trash quota와 Blob 참조를 기존 규칙대로 이동한다.
+
 ## 상태와 수명
 
 현재 live node의 `revision`은 조건부 변경을 위한 불투명 비교 토큰이며 과거 본문 이력이 아니다. 과거 바이트를 독립적으로 보존하려면 FILE 또는 TREE snapshot을 명시적으로 만든다. 일반 삭제는 한 파일 또는 한 디렉터리 subtree를 휴지통 manifest 한 건으로 옮긴다. Manifest는 원래 node ID·revision·상대 경로·유형·파일 metadata·Blob 참조와 원래 root 경로를 가진다. 삭제된 live 경로는 즉시 비워지므로 같은 경로에 새 node를 만들 수 있다.

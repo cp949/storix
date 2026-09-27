@@ -13,6 +13,7 @@ import { PublicFsController } from '../../src/vfs/public-fs.controller.js';
 import { UploadSessionController } from '../../src/vfs/upload-session.controller.js';
 import { NamespaceController } from '../../src/namespace/namespace.controller.js';
 import { NamespaceQuotaController } from '../../src/namespace/namespace-quota.controller.js';
+import { NamespaceTrashPolicyController } from '../../src/namespace/namespace-trash-policy.controller.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +21,28 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 // 라우트 집합과 일부 공개 API의 필수 파라미터·응답 계약을 검증한다.
 
 type ControllerClass = new (...args: never[]) => object;
+
+type OpenApiSchema = {
+  type?: string;
+  required?: string[];
+  properties?: Record<string, OpenApiSchema>;
+  additionalProperties?: boolean;
+};
+
+type OpenApiOperation = {
+  security?: unknown;
+  parameters?: unknown[];
+  requestBody?: { content: Record<string, { schema?: OpenApiSchema }> };
+  responses: Record<string, { description?: string; headers?: Record<string, { description?: string }> }>;
+};
+
+type OpenApiDocument = {
+  paths: Record<string, { patch?: OpenApiOperation; post?: OpenApiOperation }>;
+  components: {
+    parameters: Record<string, { name?: string; in?: string; required?: boolean }>;
+    schemas: Record<string, OpenApiSchema>;
+  };
+};
 
 function normalize(path: string): string {
   const collapsed = `/${path}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
@@ -70,6 +93,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     const codeRoutes = [
       ...controllerRoutes(NamespaceController),
       ...controllerRoutes(NamespaceQuotaController),
+      ...controllerRoutes(NamespaceTrashPolicyController),
       ...controllerRoutes(FsController),
       ...controllerRoutes(ChangeFeedController),
       ...controllerRoutes(VfsSnapshotController),
@@ -79,6 +103,48 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     ].sort();
 
     expect(specRoutes().sort()).toEqual(codeRoutes);
+  });
+
+  it('namespace 휴지통 정책 변경 경로의 관리자 인증·body·응답 계약을 명시한다', () => {
+    const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as OpenApiDocument;
+    const operation = spec.paths['/api/v2/admin/namespaces/{namespaceId}/trash'].patch!;
+    expect(operation.security).toEqual([{ AdminApiKeyAuth: [] }]);
+    expect(operation.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'namespaceId', in: 'path', required: true }),
+        expect.objectContaining({ $ref: '#/components/parameters/IdempotencyKeyHeader' }),
+      ]),
+    );
+    expect(spec.components.parameters.IdempotencyKeyHeader).toMatchObject({
+      name: 'Idempotency-Key',
+      in: 'header',
+      required: true,
+    });
+    expect(operation.requestBody!.content['application/json'].schema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['enabled'],
+      properties: { enabled: { type: 'boolean' } },
+    });
+    expect(Object.keys(operation.responses)).toEqual(
+      expect.arrayContaining(['200', '400', '401', '404', '422']),
+    );
+    expect(operation.responses['400'].description).toContain('NAMESPACE_INVALID_TRASH_POLICY');
+    expect(operation.responses['404'].description).toContain('NAMESPACE_NOT_FOUND');
+    expect(operation.responses['422'].description).toContain('IDEMPOTENCY_KEY_REUSED');
+    const namespace = spec.components.schemas.Namespace;
+    expect(namespace.properties!.quota.properties!.trash.required).toContain('enabled');
+    expect(namespace.properties!.quota.properties!.trash.properties!.enabled.type).toBe('boolean');
+  });
+
+  it('legacy 삭제의 X-Trash-Id는 휴지통 활성 namespace 응답에만 존재할 수 있다고 명시한다', () => {
+    const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as OpenApiDocument;
+    const base = '/api/v2/namespaces/{namespaceId}/fs';
+    for (const path of ['/rm', '/rmdir']) {
+      const response = spec.paths[`${base}${path}`].post!.responses['204'];
+      expect(response.description).toContain('비활성 namespace에서는 즉시 영구 삭제');
+      expect(response.headers!['X-Trash-Id'].description).toContain('OFF 삭제에는 없다');
+    }
   });
 
   it('조건부 변경과 revision 조회의 필수 입력 및 응답을 명시한다', () => {

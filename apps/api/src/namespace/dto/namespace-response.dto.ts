@@ -23,7 +23,11 @@ export interface NamespaceResponseDto {
 export interface NamespaceQuotaDto {
   readonly limitBytes: string;
   readonly usedBytes: string;
-  readonly trash: { readonly retainedNodeCount: number; readonly maxRetainedNodes: number };
+  readonly trash: {
+    readonly enabled: boolean;
+    readonly retainedNodeCount: number;
+    readonly maxRetainedNodes: number;
+  };
 }
 
 function toSafeRetainedNodeCount(value: string | undefined): number {
@@ -63,6 +67,7 @@ export function toNamespaceResponse(
         String(entity.retainedTrashByteCount ?? '0'),
       ).toString(),
       trash: {
+        enabled: entity.trashEnabled ?? false,
         retainedNodeCount: toSafeRetainedNodeCount(entity.retainedTrashNodeCount),
         maxRetainedNodes: globalLimits.maxRetainedTrashNodes,
       },

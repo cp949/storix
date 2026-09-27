@@ -12,6 +12,7 @@ import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migr
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
+import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -118,6 +119,32 @@ describe('Migration: InitSchema', () => {
       await expect(
         runner.query('UPDATE namespace SET retained_trash_byte_count = -1 WHERE id = $1', [namespace.id]),
       ).rejects.toThrow();
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('namespace trash policy migration defaults existing and new namespaces to OFF and reverses its column', async () => {
+    const namespace = await dataSource
+      .getRepository(NamespaceEntity)
+      .save({ name: `trash-policy-migration-${randomUUID()}` });
+    const migration = new AddNamespaceTrashEnabled1791700000009();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await migration.down(runner);
+      expect(
+        await runner.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'namespace' AND column_name = 'trash_enabled'",
+        ),
+      ).toEqual([]);
+      await migration.up(runner);
+      expect(await runner.query('SELECT trash_enabled FROM namespace WHERE id = $1', [namespace.id])).toEqual(
+        [{ trash_enabled: false }],
+      );
+      await runner.query('INSERT INTO namespace (name) VALUES ($1)', [`trash-policy-new-${randomUUID()}`]);
+      expect(
+        await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE $1', ['trash-policy-new-%']),
+      ).toEqual([{ trash_enabled: false }]);
     } finally {
       await runner.release();
     }

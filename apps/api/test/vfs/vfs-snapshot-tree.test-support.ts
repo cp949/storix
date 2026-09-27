@@ -166,6 +166,13 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
 
     it('원본을 휴지통에 보관하면 snapshot 삭제와 GC 후에도 Blob row와 object를 보존한다', async () => {
       const { app, http, base, namespaceId, upload } = await fixture();
+      process.env.STORIX_ADMIN_API_KEY = 'trash-admin-test-key';
+      await http()
+        .patch(`/api/v2/admin/namespaces/${namespaceId}/trash`)
+        .set('Authorization', 'Bearer trash-admin-test-key')
+        .set('Idempotency-Key', randomUUID())
+        .send({ enabled: true })
+        .expect(200);
       const bytes = Buffer.from([0, 255, 128, 65]);
       await upload('/source', bytes).expect(201);
       const captured = await snapshotPost(app, base, '', { kind: 'file', path: '/source' }).expect(201);

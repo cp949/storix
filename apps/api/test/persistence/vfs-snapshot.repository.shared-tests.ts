@@ -127,6 +127,7 @@ export function runSnapshotRepositoryTests(
       const same = new Date('2026-09-26T01:02:03.004Z');
       await ds().getRepository(VfsSnapshotEntity).update([first.id, second.id, tree.id], { createdAt: same });
     }
+    await ds().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
     await context().nodes.removeNode(namespace.id, root.id, ['listed'], false, 1000);
 
     const p1 = await context().snapshots.listFileSnapshots(namespace.id, node.id, null, 1);
@@ -276,12 +277,14 @@ export function runSnapshotRepositoryTests(
   });
   it('delete releases grouped occurrences once and timestamps the transition to zero', async () => {
     const { namespace, root } = await fixture();
+    await ds().getRepository(NamespaceEntity).update(namespace.id, { trashEnabled: true });
     const { blob } = await file(namespace.id, root.id, 'a');
     await file(namespace.id, root.id, 'b', blob);
     await ds().getRepository(BlobEntity).update(blob.id, { referenceCount: 2 });
     const snapshot = await capture(namespace.id, root.id, [], 'TREE');
     const trashedA = await context().nodes.removeNode(namespace.id, root.id, ['a'], false, 1000);
     const trashedB = await context().nodes.removeNode(namespace.id, root.id, ['b'], false, 1000);
+    if (!trashedA || !trashedB) throw new Error('Trash must be enabled for purge coverage');
     await context().nodes.withMutation(namespace.id, root.id, async (tx) => {
       const locked = (await context().snapshots.findForUpdate(tx, namespace.id, snapshot.id))!;
       await context().snapshots.remove(tx, locked);

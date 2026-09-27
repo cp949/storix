@@ -73,7 +73,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
         target.type === 'DIRECTORY' && !command.recursive
           ? await this.removeEmptyDirectory(namespaceId, rootId, command.segments, tx)
           : await this.removeNode(namespaceId, rootId, command.segments, command.recursive, max, tx);
-      return { status: 200, resource: null, trashId };
+      return { status: 200, resource: null, ...(trashId ? { trashId } : {}) };
     }
 
     const source = await this.resolvePathInManager(tx.manager, namespaceId, rootId, command.sourceSegments);
