@@ -13,7 +13,7 @@ Storix API를 실사용 시나리오로 검증하는 레퍼런스 예제. `web`(
 ## 구성
 
 - `web/` — `@storix/demo1-web`. React 19 + Vite 8 SPA. 문서 아카이브 UI
-  (업로드, 디렉터리 생성·이동·복사·삭제, 인가된 다운로드, 공개 발행/취소).
+  (일반·재개 업로드, 디렉터리 생성·이동·복사·삭제, 인가된 다운로드, 공개 발행/취소).
 - `was/` — `@storix/demo1-was`. NestJS. Storix 공개 HTTP API만 사용하는
   외부 소비자 WAS 예제(document-archive 도메인).
 
@@ -137,3 +137,51 @@ namespace UUID가 이미 존재하는지 확인하므로 다음 순서로 준비
    DEMO_WAS_STORIX_API_KEY="$STORIX_API_KEY" \
    pnpm --filter @storix/demo1-was dev
    ```
+
+### 재개 업로드 사용
+
+웹의 **재개 업로드 파일**에서 파일을 고르면 브라우저가 WAS에서 세션을 만들고,
+서버가 반환한 `partSizeBytes`로 파일을 나눠 순서대로 보낸다. **중단**을 누르거나
+브라우저를 다시 연 뒤에는 같은 사용자·경로에서 **같은 파일을 다시 선택**한다.
+브라우저는 세션 ID를 복원하고 WAS에서 저장된 조각 index를 조회해 누락된 조각만
+보낸다. **세션 취소**는 서버 세션을 종료하고 브라우저 참조를 지운다. 만료되거나
+종료된 세션은 같은 파일을 다시 선택해 새 세션으로 시작한다. 기존 일반 업로드도
+계속 사용할 수 있다.
+
+브라우저는 Storix 서비스 키를 받지 않는다. 아래 경로는 모두 `X-Demo-User`를
+요구하며, WAS가 사용자 폴더 안의 경로와 세션 소유 범위를 확인한 뒤 Storix 공개
+API로 전달한다.
+
+| 작업 | WAS 경로 | 주요 요청·응답 |
+| --- | --- | --- |
+| 세션 생성 | `POST /demo-api/documents/upload-sessions` | `Idempotency-Key` UUID와 JSON `path`, `sizeBytes`(10진 문자열), `mimeType`, `ifAbsent: true` 또는 `ifRevision`, 선택적 `sha256`; `201`에 `sessionId`, `partSizeBytes`, `partCount` |
+| 상태 조회 | `GET /demo-api/documents/upload-sessions/{sessionId}` | `200`에 저장된 `parts`의 index·크기와 사용자 기준 `path` |
+| 조각 저장·동일 재전송 | `PUT /demo-api/documents/upload-sessions/{sessionId}/parts/{index}` | `Content-Type: application/octet-stream`, 정확한 `Content-Length`, 원시 바이트; `200`에 `replayed`와 조각 SHA-256 |
+| 완료 | `POST /demo-api/documents/upload-sessions/{sessionId}/complete` | 본문 없음; 새 파일 `201`, 기존 파일 교체 `200` |
+| 취소 | `DELETE /demo-api/documents/upload-sessions/{sessionId}` | 열린 세션 `200` |
+
+생성 전에 대상 부모 디렉터리가 있어야 한다. 웹에서는 현재 폴더에 파일을 만들므로
+폴더를 먼저 생성한다. 저장된 조각은 세션 상태 조회의 `parts`에서 확인한다.
+완료된 파일은 문서 목록과 인가된 다운로드(`GET /demo-api/documents`,
+`POST /demo-api/documents/download`)로 확인한다.
+
+### 실제 Storix 소비자 검증
+
+실행 전 `DEMO_WAS_STORIX_BASE_URL`, `DEMO_WAS_STORIX_API_KEY`를 설정하고 위
+절차대로 활성화한 private namespace UUID를 `DEMO_WAS_NAMESPACE_ID`로 지정한다.
+`GET /api/v2/namespaces/{id}/capabilities`가 `resumable-upload`를 반환해야 한다.
+테스트는 전용 폴더를 만들고 2개 조각을 저장하므로 세션 정책의
+`partSizeBytes`는 1~33554432, 전역 및 namespace의 staging 한도와 namespace
+파일 한도는 모두 최소 `partSizeBytes + 1`바이트를 허용해야 한다. 공개 다운로드를 포함한 기존
+vertical-slice 시나리오도 같은 suite에서 실행한다.
+
+```bash
+DEMO_WAS_STORIX_BASE_URL=http://localhost:3000 \
+DEMO_WAS_STORIX_API_KEY="$STORIX_API_KEY" \
+DEMO_WAS_NAMESPACE_ID="$DEMO_WAS_NAMESPACE_ID" \
+pnpm --filter @storix/demo1-was test:integration --runTestsByPath src/vertical-slice.integration-spec.ts
+```
+
+설정이 없으면 suite가 누락된 환경변수를 명시하며 실패한다. capability가 비활성이면
+재개 업로드 시나리오가 사전 조건 오류로 실패한다. 이 suite는 실제 Storix 인스턴스와
+저장소를 사용하므로, 실행하지 않은 환경에서는 연동 성공으로 간주하지 않는다.

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { readUploadSession, saveUploadSession, uploadSessionStorageKey } from './upload-session-storage';
+import { normalizeExternalPath, readUploadSession, saveUploadSession, uploadSessionStorageKey } from './upload-session-storage';
 
 describe('uploadSessionStorageKey', () => {
   beforeEach(() => localStorage.clear());
@@ -17,5 +17,15 @@ describe('uploadSessionStorageKey', () => {
     expect(readUploadSession(uploadSessionStorageKey('alice', '/other/large.bin', base))).toBeNull();
     expect(readUploadSession(uploadSessionStorageKey('alice', '/large.bin', changed))).toBeNull();
     expect(readUploadSession(uploadSessionStorageKey('alice', '/large.bin', bigger))).toBeNull();
+  });
+
+  it('분해형 유니코드 파일명을 Storix 정규 경로와 같은 NFC 경로로 맞춘다', () => {
+    const decomposedName = 'cafe\u0301.bin';
+    const composedName = 'café.bin';
+    const file = new File(['abc'], decomposedName, { lastModified: 10 });
+
+    expect(normalizeExternalPath(`/${decomposedName}`)).toBe(`/${composedName}`);
+    expect(uploadSessionStorageKey('alice', `/${decomposedName}`, file))
+      .toBe(uploadSessionStorageKey('alice', `/${composedName}`, file));
   });
 });

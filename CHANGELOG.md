@@ -10,6 +10,8 @@
 
 ### Added
 
+- `demo1-was`와 `demo1-web`에 재개 업로드를 추가했다. WAS가 사용자별 세션 생성·상태 조회·조각 저장·완료·취소를 Storix에 중계하고, 웹은 중단 후 같은 파일을 다시 선택하면 저장된 조각을 건너뛰어 이어 보낸다. 데모 설정·HTTP 경로와 실제 Storix 소비자 검증 절차를 문서화했다.
+
 - raw 조건부 업로드의 `X-Content-Sha256`과 재개 업로드 세션 생성의 `sha256`으로 전체 평문 파일 SHA-256 검증을 추가했다. 잘못된 값은 400, 불일치는 파일·revision 변경 없이 422다. raw receipt는 본문과 기대 checksum에 결합하고 재개 불일치는 `FAILED` 결과로 보존·재생하며 staging 정리를 시작한다.
 
 - 기본 비활성 `resumable-upload` capability로 생성·조각 저장·상태 조회·완료·취소 API를 추가했다. 같은 조각의 평문 SHA-256 재전송, 활동 기반 만료 갱신, 전역·namespace 임시 저장량 및 활성 세션 한도, 암호화 staging, GC 정리를 지원한다. 완전 업로드된 기존 세션은 capability를 끈 뒤에도 완료할 수 있다.
