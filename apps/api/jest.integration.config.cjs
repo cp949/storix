@@ -6,7 +6,7 @@
 const testPathIgnorePatterns =
   process.env.STORIX_DB_DRIVER === 'sqlite'
     ? ['/node_modules/']
-    : ['/node_modules/', 'src/.*\\.sqlite\\.integration-spec\\.ts$'];
+    : ['/node_modules/', 'test/.*\\.sqlite\\.integration-spec\\.ts$'];
 
 /** @type {import('jest').Config} */
 module.exports = {
@@ -17,9 +17,9 @@ module.exports = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {
-    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.json' }],
+    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.test.json' }],
   },
-  testRegex: 'src/.*\\.integration-spec\\.ts$',
+  testRegex: 'test/.*\\.integration-spec\\.ts$',
   testPathIgnorePatterns,
   moduleFileExtensions: ['js', 'json', 'ts'],
   testTimeout: 120000,

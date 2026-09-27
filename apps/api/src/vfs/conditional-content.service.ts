@@ -156,7 +156,7 @@ export class ConditionalContentService {
           if (claim.kind === 'complete') {
             return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
           }
-          if (lease?.lost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
+          if (lease?.lost || !(await this.receipts.renew(identity, claim.generation))) {
             throw new Error('VFS mutation claim lost');
           }
           return await storeErrorReceipt(
@@ -206,7 +206,7 @@ export class ConditionalContentService {
         if (expectedSha256 !== undefined && uploaded.sha256 !== expectedSha256) {
           throw new VfsChecksumMismatchError();
         }
-        if (lease.lost || !(await this.receipts.renew(identity, claim.generation, new Date()))) {
+        if (lease.lost || !(await this.receipts.renew(identity, claim.generation))) {
           throw new Error('VFS mutation claim lost');
         }
         const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
@@ -264,7 +264,7 @@ export class ConditionalContentService {
       () => {
         if (renewal) return;
         renewal = this.receipts
-          .renew(identity, generation, new Date())
+          .renew(identity, generation)
           .then((ok) => {
             if (!ok) lost = true;
           })

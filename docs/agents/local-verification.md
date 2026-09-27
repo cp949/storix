@@ -49,7 +49,7 @@
 - `GenericContainer` + 커스텀 `Network()`는 이 환경에서 CNI 버전 불일치로
   실패한다. 회피: 커스텀 네트워크 대신 `container.getNetworkNames()[0]`과
   `getIpAddress()`로 기본 네트워크의 IP를 얻어 `withExtraHosts()`로 주입한다
-  (`apps/api/src/vfs/nginx-reverse-proxy.integration-spec.ts` 참고).
+  (`apps/api/test/vfs/nginx-reverse-proxy.integration-spec.ts` 참고).
 - 이미지가 `EXPOSE`하는 포트를 전부 `.withExposedPorts()`에 넣고, 준비 판정은
   `Wait.forLogMessage()`로 한다. podman의 docker-compat API가 요청하지 않은
   EXPOSE 포트를 `PortBindings`에 끼워 넣어 기본 대기 전략이 타임아웃된다.

@@ -15,6 +15,6 @@ SDK 코드생성이나 계약 테스트가 아니므로, 그 비용을 지금 �
 ## Consequences
 
 - 코드와 스펙이 별개 파일이라 drift 위험이 있다 — 컨트롤러 라우트 목록과 스펙 `paths`가
-  어긋나지 않는지만 가벼운 테스트(`src/openapi/route-coverage.spec.ts`)로 자동 검증하고,
+  어긋나지 않는지만 가벼운 테스트(`test/openapi/route-coverage.spec.ts`)로 자동 검증하고,
   파라미터·스키마 세부 정합성은 사람 리뷰에 맡긴다.
 - SDK 코드생성이나 계약 테스트가 나중에 필요해지면 이 결정을 재검토해야 한다.

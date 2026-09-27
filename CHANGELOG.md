@@ -119,6 +119,7 @@
 - namespace·파일 API에서 발생한 500 오류가 `STORIX_SENTRY_DSN`을 설정해도 Sentry로 보고되지 않던 문제를 고쳤다. 컨트롤러 단위 예외 필터에 오류 보고기가 주입되지 않았다.
 - admin quota 변경(`PATCH /api/v2/admin/namespaces/{namespaceId}/quota`) 요청이 감사 기록에 남지 않던 문제를 고쳤다. admin 키 거부뿐 아니라 성공·실패 결과도 기록한다.
 - 조건부 content 요청의 파싱 오류로 receipt를 저장할 때 긴 본문 해시 중 lease가 만료되던 문제를 고쳤다. 해시와 오류 receipt 저장이 끝날 때까지 claim을 갱신한다.
+- 짧은 mutation receipt lease가 시스템 시계 점프나 갱신 지연으로 만료된 뒤, 다른 요청이 아직 인수하지 않은 경우 기존 owner가 갱신을 회복할 수 있게 했다. 만료 시각과 갱신 시각은 DB 시계로 계산하고, 통합 테스트의 lease·대기 시간에도 여유를 뒀다.
 - SQLite 드라이버에서 동시 요청의 트랜잭션·쿼리가 직렬화·격리되지 않던 결함을 고쳤다(#5). 같은 틱에 시작한 트랜잭션은
   `cannot start a transaction within a transaction`으로 실패했고, 뒤늦게 겹친 트랜잭션은 앞 트랜잭션의 롤백에 함께 사라졌으며
   트랜잭션 밖 쿼리는 열린 트랜잭션에 섞였다. 스냅샷 본문 조회가 스토리지를 기다리다 실패하면 그동안 `201`을 받은 다른 요청의

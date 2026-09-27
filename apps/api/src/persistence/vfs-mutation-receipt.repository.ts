@@ -34,6 +34,16 @@ function expiresAfter(now: Date, ms: number): Date {
   return new Date(now.getTime() + ms);
 }
 
+function databaseNowExpression(sqlite: boolean): string {
+  return sqlite ? "strftime('%Y-%m-%d %H:%M:%f', 'now')" : 'clock_timestamp()';
+}
+
+function databaseExpiryExpression(sqlite: boolean, seconds: string): string {
+  return sqlite
+    ? `strftime('%Y-%m-%d %H:%M:%f', 'now', '+' || ${seconds} || ' seconds')`
+    : `(clock_timestamp() + (${seconds} * INTERVAL '1 second'))`;
+}
+
 function keyOf(
   identity: ReceiptIdentity,
 ): Pick<VfsMutationReceiptEntity, 'namespaceId' | 'scope' | 'idempotencyKey'> {
@@ -51,14 +61,16 @@ export class VfsMutationReceiptRepository {
   @classifyPersistenceOperation
   async claim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim> {
     const sqlite = isSqliteDataSource(this.dataSource.options);
-    const leaseMs = mutationLeaseSeconds() * 1000;
+    const leaseSeconds = mutationLeaseSeconds();
     const toSqlTime = (date: Date): string =>
       sqlite ? date.toISOString().replace('T', ' ').replace('Z', '') : date.toISOString();
+    const leaseExpiry = databaseExpiryExpression(sqlite, sqlite ? '?' : '$4');
+    const expiresAt = sqlite ? '?' : '$5';
     const params = [
       identity.namespaceId,
       identity.scope,
       identity.key,
-      toSqlTime(expiresAfter(now, leaseMs)),
+      leaseSeconds,
       toSqlTime(expiresAfter(now, RECEIPT_DAYS * 86400_000)),
     ];
     const placeholders = params.map((_, index) => (sqlite ? '?' : `$${index + 1}`));
@@ -66,7 +78,7 @@ export class VfsMutationReceiptRepository {
       `
       INSERT INTO vfs_mutation_receipt
         (namespace_id, scope, idempotency_key, state, generation, lease_expires_at, expires_at)
-      VALUES (${placeholders[0]}, ${placeholders[1]}, ${placeholders[2]}, 'RESERVED', 1, ${placeholders[3]}, ${placeholders[4]})
+      VALUES (${placeholders[0]}, ${placeholders[1]}, ${placeholders[2]}, 'RESERVED', 1, ${leaseExpiry}, ${expiresAt})
       ON CONFLICT (namespace_id, scope, idempotency_key) DO NOTHING
       RETURNING generation
     `,
@@ -79,11 +91,12 @@ export class VfsMutationReceiptRepository {
       .update(VfsMutationReceiptEntity)
       .set({
         generation: () => 'generation + 1',
-        leaseExpiresAt: expiresAfter(now, leaseMs),
-        updatedAt: now,
+        leaseExpiresAt: () => databaseExpiryExpression(sqlite, ':leaseSeconds'),
+        updatedAt: () => databaseNowExpression(sqlite),
       })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
-      .andWhere("state = 'RESERVED' AND lease_expires_at <= :now", { now })
+      .andWhere(`state = 'RESERVED' AND lease_expires_at <= ${databaseNowExpression(sqlite)}`)
+      .setParameter('leaseSeconds', leaseSeconds)
       .execute();
     if (expiredClaim.affected === 1) {
       const row = await this.repo.findOneByOrFail(keyOf(identity));
@@ -111,17 +124,20 @@ export class VfsMutationReceiptRepository {
   }
 
   @classifyPersistenceOperation
-  async renew(identity: ReceiptIdentity, generation: number, now: Date): Promise<boolean> {
-    const leaseMs = mutationLeaseSeconds() * 1000;
+  async renew(identity: ReceiptIdentity, generation: number): Promise<boolean> {
+    const sqlite = isSqliteDataSource(this.dataSource.options);
     const result = await this.repo
       .createQueryBuilder()
       .update(VfsMutationReceiptEntity)
-      .set({ leaseExpiresAt: expiresAfter(now, leaseMs), updatedAt: now })
-      .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
-      .andWhere("state = 'RESERVED' AND generation = :generation AND lease_expires_at > :now", {
-        generation,
-        now,
+      .set({
+        leaseExpiresAt: () => databaseExpiryExpression(sqlite, ':leaseSeconds'),
+        updatedAt: () => databaseNowExpression(sqlite),
       })
+      .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
+      // 만료 시각만 지난 같은 generation owner는 아직 takeover되지 않았다면 갱신할 수 있다.
+      // 동시 takeover가 먼저 이기면 generation이 바뀌어 이전 owner의 갱신은 계속 막힌다.
+      .andWhere("state = 'RESERVED' AND generation = :generation", { generation })
+      .setParameter('leaseSeconds', mutationLeaseSeconds())
       .execute();
     return result.affected === 1;
   }
@@ -180,7 +196,7 @@ export class VfsMutationReceiptRepository {
     response: ReceiptResponse,
     requestBodyBytes: number | undefined,
   ): Promise<void> {
-    const now = new Date();
+    const sqlite = isSqliteDataSource(this.dataSource.options);
     const result = await manager
       .getRepository(VfsMutationReceiptEntity)
       .createQueryBuilder()
@@ -188,20 +204,20 @@ export class VfsMutationReceiptRepository {
       .set({
         state: 'COMPLETE',
         leaseExpiresAt: null,
-        expiresAt: expiresAfter(now, RECEIPT_DAYS * 86400_000),
+        expiresAt: () => databaseExpiryExpression(sqlite, ':receiptSeconds'),
         method,
         fingerprint,
         responseStatus: response.status,
         responseBody: JSON.stringify(response.body),
         responseHeaders: JSON.stringify(response.headers),
         requestBodyBytes: requestBodyBytes === undefined ? null : String(requestBodyBytes),
-        updatedAt: now,
+        updatedAt: () => databaseNowExpression(sqlite),
       })
       .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
-      .andWhere("state = 'RESERVED' AND generation = :generation AND lease_expires_at > :now", {
+      .andWhere(`state = 'RESERVED' AND generation = :generation AND lease_expires_at > ${databaseNowExpression(sqlite)}`, {
         generation,
-        now,
       })
+      .setParameter('receiptSeconds', RECEIPT_DAYS * 86400)
       .execute();
     if (result.affected !== 1) throw new Error('VFS mutation claim lost');
   }

@@ -12,7 +12,9 @@
 - 세 서비스(`mutation.service.ts`, `conditional-content.service.ts`, `vfs-snapshot.service.ts`)는 저장·재생 규칙을
   `vfs/mutation-receipt.ts` 한 모듈에서 공유한다. 서비스별로 다른 규칙을 두지 않는다.
 - receipt 상태는 `RESERVED`(claim 소유 중, lease 보유)와 `COMPLETE`(응답 확정)다. `RESERVED` lease 기본값은 60초
-  (`STORIX_MUTATION_LEASE_SECONDS`)다. 보존 기한은 **완료 시점부터** 30일이다(claim 시점이 아니다).
+  (`STORIX_MUTATION_LEASE_SECONDS`)다. lease의 만료 비교와 새 만료 시각은 DB 시계로 계산한다. lease 시간이 지났어도
+  generation이 그대로인 owner는 갱신할 수 있고, takeover와 경합하면 먼저 성공한 쪽이 generation fencing으로 승리한다.
+  보존 기한은 **완료 시점부터** 30일이다(claim 시점이 아니다).
 - `current`: 412 응답 body에 실리는 충돌 시점의 노드 metadata와 `revision`(4절).
 
 ## 2. 저장 경계
@@ -40,8 +42,10 @@
 
 - 별도 트랜잭션을 쓰는 이유: PostgreSQL에서 오류가 난 트랜잭션은 abort 상태라 재사용할 수 없고, 변경은 롤백돼야 하므로
   오류 receipt를 같은 트랜잭션에 넣을 수 없다.
-- fencing: `completeAfterRollback`은 성공 경로의 `complete`와 같은 조건(`state = 'RESERVED'`, `generation` 일치,
-  `lease_expires_at > now`)으로 갱신한다. 조건이 맞지 않으면(claim을 잃음) `Error('VFS mutation claim lost')`를 던진다.
+- fencing: lease timestamp의 생성·만료 판정은 DB 시계를 쓴다. heartbeat는 state와 generation이 유지되는 동안 lease를
+  갱신할 수 있어 일시적인 시계 점프나 타이머 지연에서 복구한다. takeover와 heartbeat는 원자 갱신으로 경합하고, takeover가
+  먼저 generation을 올리면 이전 owner의 갱신은 실패한다. `complete`와 `completeAfterRollback`은 `state = 'RESERVED'`,
+  generation 일치, 미만료 lease를 모두 확인한다. 조건이 맞지 않으면(claim을 잃음) `Error('VFS mutation claim lost')`를 던진다.
   오류 receipt 확정 중 이 오류가 발생하면 namespace 존재를 확인한다. 이미 삭제된 경우 저장 불가한 `NAMESPACE_NOT_FOUND`
   404를 반환하고 receipt는 남기지 않는다. namespace가 있거나 존재 여부를 확인하지 못하면 원래 claim-lost 오류를 전파해
   기존처럼 500으로 끝낸다. 새 owner의 claim은 지우지 않는다.

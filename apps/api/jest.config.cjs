@@ -7,9 +7,9 @@ module.exports = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {
-    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.json' }],
+    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.test.json' }],
   },
-  testRegex: 'src/.*\\.spec\\.ts$',
+  testRegex: 'test/.*\\.spec\\.ts$',
   moduleFileExtensions: ['js', 'json', 'ts'],
   collectCoverageFrom: ['src/**/*.(t|j)s'],
 };
