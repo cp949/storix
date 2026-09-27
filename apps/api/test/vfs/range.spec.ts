@@ -45,4 +45,22 @@ describe('parseRange', () => {
   it('size가 0이면 항상 거부한다', () => {
     expect(() => parseRange('bytes=0-0', 0)).toThrow(VfsRangeNotSatisfiableError);
   });
+
+  it.each([
+    ['유효하지 않은 문법', 'bytes=abc-def', 10],
+    ['복수 범위', 'bytes=0-1,3-4', 10],
+    ['빈 범위', 'bytes=-', 10],
+    ['역순 범위', 'bytes=5-2', 10],
+    ['파일 끝 밖 범위', 'bytes=10-15', 10],
+    ['빈 파일', 'bytes=0-0', 0],
+  ])('%s 거부 오류에 요청 범위와 표현 크기를 담는다', (_reason, header, size) => {
+    expect(() => parseRange(header, size)).toThrow(
+      expect.objectContaining({
+        code: 'VFS_RANGE_NOT_SATISFIABLE',
+        status: 416,
+        range: header,
+        representationSize: size,
+      }),
+    );
+  });
 });

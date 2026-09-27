@@ -425,6 +425,10 @@ describe('ContentService', () => {
 
       expect(result).toMatchObject({ status: 206, contentLength: 3, contentRange: 'bytes 2-4/10' });
       expect(result.identity).toBeUndefined();
+      expect(result.partialIdentity).toEqual({
+        fileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        revision: 'r1.qqqqqqqqSqqKqqqqqqqqqgAAAAAAAAAB',
+      });
       expect(blobStorage.get).toHaveBeenCalledWith('blobs/00/key', { start: 2, end: 4 });
     });
 

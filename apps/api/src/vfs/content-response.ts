@@ -27,6 +27,13 @@ export async function sendContent(res: Response, payload: ContentPayload, downlo
     res.setHeader('X-Storix-Revision', payload.identity.revision);
     res.setHeader('X-Storix-Sha256', payload.identity.sha256);
   }
+  if (payload.status === 206 && payload.partialIdentity) {
+    res.setHeader('X-Storix-File-Id', payload.partialIdentity.fileId);
+    res.setHeader('X-Storix-Revision', payload.partialIdentity.revision);
+    if (payload.partialIdentity.snapshotId) {
+      res.setHeader('X-Storix-Snapshot-Id', payload.partialIdentity.snapshotId);
+    }
+  }
   if (download) {
     res.setHeader('Content-Disposition', buildContentDisposition(payload.name));
   }

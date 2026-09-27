@@ -115,6 +115,9 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.headers['accept-ranges']).toBe('bytes');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    expect(response.headers['x-storix-file-id']).toBeUndefined();
+    expect(response.headers['x-storix-revision']).toBeUndefined();
+    expect(response.headers['x-storix-sha256']).toBeUndefined();
   });
 
   it('content는 Content-Disposition을 설정하지 않는다', async () => {
@@ -126,6 +129,9 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.headers['content-disposition']).toBeUndefined();
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    expect(response.headers['x-storix-file-id']).toBeUndefined();
+    expect(response.headers['x-storix-revision']).toBeUndefined();
+    expect(response.headers['x-storix-sha256']).toBeUndefined();
   });
 
   it('공개 파일 읽기도 정규 경로 alias를 해석하고 NFD를 거부한다', async () => {
@@ -148,13 +154,48 @@ describe('public namespace 다운로드 HTTP 계약', () => {
   });
 
   it('Range 요청에 206과 Content-Range를 반환한다', async () => {
+    const stat = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${publicNamespaceId}/fs/stat`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path: '/docs/hello.txt' })
+      .expect(200);
     const response = await request(app.getHttpServer())
       .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
       .set('Range', 'bytes=0-5')
       .expect(206);
 
     expect(response.headers['content-range']).toBe(`bytes 0-5/${FILE_BODY.length}`);
+    expect(response.headers['content-length']).toBe('6');
+    expect(response.headers['accept-ranges']).toBe('bytes');
+    expect(response.headers['x-storix-file-id']).toBe(stat.body.id);
+    expect(response.headers['x-storix-revision']).toBe(stat.body.revision);
+    expect(response.headers['x-storix-sha256']).toBeUndefined();
     expect(response.text).toBe(FILE_BODY.slice(0, 6));
+    const download = await request(app.getHttpServer())
+      .get(`/api/v2/public/${publicNamespaceId}/fs/download?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .set('Range', 'bytes=0-5')
+      .expect(206);
+    expect(download.text).toBe(FILE_BODY.slice(0, 6));
+    expect(download.headers['content-range']).toBe(`bytes 0-5/${FILE_BODY.length}`);
+    expect(download.headers['content-length']).toBe('6');
+    expect(download.headers['accept-ranges']).toBe('bytes');
+    expect(download.headers['x-storix-file-id']).toBe(stat.body.id);
+    expect(download.headers['x-storix-revision']).toBe(stat.body.revision);
+    expect(download.headers['x-storix-sha256']).toBeUndefined();
+  });
+
+  it('공개 파일의 복수 Range는 416과 전체 길이를 반환한다', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
+      .set('Range', 'bytes=0-1,3-4')
+      .expect(416);
+
+    expect(response.headers['content-range']).toBe(`bytes */${FILE_BODY.length}`);
+    expect(response.body).toEqual({
+      code: 'VFS_RANGE_NOT_SATISFIABLE',
+      message: '처리할 수 없는 Range: bytes=0-1,3-4',
+      requestId: response.headers['x-request-id'],
+    });
   });
 
   it('PRIVATE namespace를 공개 경로로 요청하면 404를 반환한다', async () => {

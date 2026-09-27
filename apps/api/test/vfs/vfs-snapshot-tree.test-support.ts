@@ -206,16 +206,29 @@ export function treeSnapshotContract(getApp: () => INestApplication) {
         await snapshotPost(app, base, '', { kind: 'tree', path: '/dir/a/b' }).expect(409);
         const captured = await snapshotPost(app, base, '', { kind: 'tree', path: '/dir' }).expect(201);
         const url = `${base}/snapshots/${captured.body.snapshotId}/content`;
+        const entries = await http().get(`${base}/snapshots/${captured.body.snapshotId}/entries`).expect(200);
+        const sourceEntry = entries.body.items.find(
+          (item: { relativePath: string }) => item.relativePath === 'a/b',
+        );
         await upload('/dir/a/b', Buffer.from('changed')).expect(200);
         for (const path of ['a/b', 'a//./b', '%2e%2e', 'a%2Fb', '\u00e9']) {
           const response = await http().get(url).query({ path }).expect(200);
           expect(response.body).toEqual(bytes);
           expect(response.headers['content-type']).toBe('application/octet-stream');
+          expect(response.headers['x-storix-snapshot-id']).toBeUndefined();
+          expect(response.headers['x-storix-file-id']).toBeUndefined();
+          expect(response.headers['x-storix-revision']).toBeUndefined();
         }
         expect((await http().get(`${url}?path=a%2Fb`).expect(200)).body).toEqual(bytes);
         const range = await http().get(url).query({ path: 'a/b' }).set('Range', 'bytes=1-3').expect(206);
         expect(range.body).toEqual(Buffer.from([255, 128, 65]));
         expect(range.headers['content-range']).toBe('bytes 1-3/6');
+        expect(range.headers['content-length']).toBe('3');
+        expect(range.headers['accept-ranges']).toBe('bytes');
+        expect(range.headers['x-storix-snapshot-id']).toBe(captured.body.snapshotId);
+        expect(range.headers['x-storix-file-id']).toBe(sourceEntry.sourceNodeId);
+        expect(range.headers['x-storix-revision']).toBe(sourceEntry.sourceRevision);
+        expect(range.headers['x-storix-sha256']).toBeUndefined();
         await http().get(url).query({ path: 'a/b' }).set('Range', 'bytes=99-').expect(416);
         await http().get(url).expect(400);
         for (const path of ['', '.', '././', 'a'])

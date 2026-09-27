@@ -146,7 +146,10 @@ export class VfsRangeNotSatisfiableError extends DomainError {
   readonly code = 'VFS_RANGE_NOT_SATISFIABLE';
   readonly status = 416;
 
-  constructor(readonly range: string) {
+  constructor(
+    readonly range: string,
+    readonly representationSize: number,
+  ) {
     super(`처리할 수 없는 Range: ${range}`);
   }
 }

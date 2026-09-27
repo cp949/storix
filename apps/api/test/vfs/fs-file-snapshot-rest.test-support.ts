@@ -442,16 +442,31 @@ export function registerFsFileSnapshotRestContract(
     const read = await request(ctx.httpServer).get(`${base}/snapshots/${id}/content`).expect(200);
     expect(read.body).toEqual(bytes);
     expect(read.headers['content-type']).toBe('application/octet-stream');
+    expect(read.headers['x-storix-snapshot-id']).toBeUndefined();
+    expect(read.headers['x-storix-file-id']).toBeUndefined();
+    expect(read.headers['x-storix-revision']).toBeUndefined();
     const range = await request(ctx.httpServer)
       .get(`${base}/snapshots/${id}/content`)
       .set('Range', 'bytes=1-3')
       .expect(206);
     expect(range.body).toEqual(bytes.subarray(1, 4));
     expect(range.headers['content-range']).toBe('bytes 1-3/6');
-    await request(ctx.httpServer)
+    expect(range.headers['content-length']).toBe('3');
+    expect(range.headers['accept-ranges']).toBe('bytes');
+    expect(range.headers['x-storix-snapshot-id']).toBe(id);
+    expect(range.headers['x-storix-file-id']).toBe(first.body.rootNodeId);
+    expect(range.headers['x-storix-revision']).toBe(first.body.sourceRevision);
+    expect(range.headers['x-storix-sha256']).toBeUndefined();
+    const unsatisfiable = await request(ctx.httpServer)
       .get(`${base}/snapshots/${id}/content`)
       .set('Range', 'bytes=99-100')
       .expect(416);
+    expect(unsatisfiable.headers['content-range']).toBe('bytes */6');
+    expect(unsatisfiable.body).toEqual({
+      code: 'VFS_RANGE_NOT_SATISFIABLE',
+      message: '처리할 수 없는 Range: bytes=99-100',
+      requestId: unsatisfiable.headers['x-request-id'],
+    });
     const other = await ctx.createNamespace('snapshot-file-other');
     const otherBase = `/api/v2/namespaces/${other}/fs`;
     await request(ctx.httpServer).get(`${otherBase}/snapshots/${id}`).expect(404);

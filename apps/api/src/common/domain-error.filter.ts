@@ -8,6 +8,7 @@ import { ERROR_REPORTER } from '../observability/observability.constants.js';
 import { InvalidApiKeyError } from '../auth/auth.errors.js';
 import type { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../persistence/audit-log.tokens.js';
+import { VfsRangeNotSatisfiableError } from '../vfs/vfs.errors.js';
 
 interface DomainErrorShape {
   readonly code?: unknown;
@@ -137,6 +138,9 @@ export class DomainErrorFilter implements ExceptionFilter {
 
     const retryAfterSeconds = resolveRetryAfterSeconds(exception);
     if (retryAfterSeconds !== undefined) response.setHeader('Retry-After', String(retryAfterSeconds));
+    if (exception instanceof VfsRangeNotSatisfiableError) {
+      response.setHeader('Content-Range', `bytes */${exception.representationSize}`);
+    }
 
     response.status(status).json({
       code: resolveErrorCode(exception, status),

@@ -50,6 +50,11 @@ export interface ContentPayload {
   readonly contentRange?: string;
   readonly stream: Readable;
   readonly identity?: { readonly fileId: string; readonly revision: string; readonly sha256: string };
+  readonly partialIdentity?: {
+    readonly fileId: string;
+    readonly revision: string;
+    readonly snapshotId?: string;
+  };
 }
 
 export interface PresignedDownloadPayload {
@@ -268,6 +273,7 @@ export class ContentService {
       contentRange: `bytes ${range.start}-${range.end}/${totalSize}`,
       contentLength: range.end - range.start + 1,
       stream,
+      partialIdentity: { fileId: target.id, revision: encodeRevision(target) },
     };
   }
 

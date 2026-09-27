@@ -312,6 +312,15 @@ export class VfsSnapshotService {
           status: range ? 206 : 200,
           contentLength: range ? range.end - range.start + 1 : totalSize,
           ...(range ? { contentRange: `bytes ${range.start}-${range.end}/${totalSize}` } : {}),
+          ...(range
+            ? {
+                partialIdentity: {
+                  snapshotId: id,
+                  fileId: snapshot.kind === 'FILE' ? snapshot.rootNodeId : entry.sourceNodeId,
+                  revision: snapshot.kind === 'FILE' ? snapshot.sourceRevision : entry.sourceRevision,
+                },
+              }
+            : {}),
           stream,
         };
       });

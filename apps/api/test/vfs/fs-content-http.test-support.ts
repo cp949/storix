@@ -47,9 +47,26 @@ export function registerFsContentHttpContract(ctx: FsHttpContext) {
         .query({ path: '/a.txt' })
         .set('Range', 'bytes=0-4')
         .expect(206);
-      expect(range.headers['x-storix-file-id']).toBeUndefined();
-      expect(range.headers['x-storix-revision']).toBeUndefined();
+      expect(range.text).toBe('hello');
+      expect(range.headers['content-range']).toBe('bytes 0-4/12');
+      expect(range.headers['content-length']).toBe('5');
+      expect(range.headers['accept-ranges']).toBe('bytes');
+      expect(range.headers['x-storix-file-id']).toBe(stat.body.id);
+      expect(range.headers['x-storix-revision']).toBe(stat.body.revision);
       expect(range.headers['x-storix-sha256']).toBeUndefined();
+
+      const rangeDownload = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/download`)
+        .query({ path: '/a.txt' })
+        .set('Range', 'bytes=0-4')
+        .expect(206);
+      expect(rangeDownload.text).toBe('hello');
+      expect(rangeDownload.headers['content-range']).toBe('bytes 0-4/12');
+      expect(rangeDownload.headers['content-length']).toBe('5');
+      expect(rangeDownload.headers['accept-ranges']).toBe('bytes');
+      expect(rangeDownload.headers['x-storix-file-id']).toBe(stat.body.id);
+      expect(rangeDownload.headers['x-storix-revision']).toBe(stat.body.revision);
+      expect(rangeDownload.headers['x-storix-sha256']).toBeUndefined();
 
       const download = await request(ctx.httpServer)
         .get(`/api/v2/namespaces/${namespaceId}/fs/download`)
@@ -133,6 +150,72 @@ export function registerFsContentHttpContract(ctx: FsHttpContext) {
       expect(current.headers['x-storix-revision']).not.toBe(oldStat.revision);
       expect(current.headers['x-storix-sha256']).toBe(createHash('sha256').update(newBytes).digest('hex'));
       expect(current.headers['x-storix-sha256']).toBe(currentStat.sha256);
+    });
+
+    it('Range 읽기 캡처 뒤 교체되어도 206 bytes와 ID/revision이 구 버전을 가리킨다', async () => {
+      const namespaceId = await ctx.createNamespace('content-range-replace-race');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const path = '/range-race.txt';
+      await request(ctx.httpServer)
+        .post(`${base}/content`)
+        .query({ path })
+        .set('Content-Type', 'text/plain')
+        .send('old content')
+        .expect(201);
+      const oldStat = (await request(ctx.httpServer).get(`${base}/stat`).query({ path }).expect(200)).body;
+
+      const repo = ctx.app.get(VfsNodeRepository);
+      const originalRead = repo.readContentFile.bind(repo);
+      let signalCaptured!: () => void;
+      let releaseRead!: () => void;
+      const captured = new Promise<void>((resolve) => {
+        signalCaptured = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+      let pauseOnce = true;
+      const readSpy = jest
+        .spyOn(repo, 'readContentFile')
+        .mockImplementation(async (readNamespaceId, rootId, segments) => {
+          const result = await originalRead(readNamespaceId, rootId, segments);
+          if (pauseOnce && readNamespaceId === namespaceId && segments.join('/') === 'range-race.txt') {
+            pauseOnce = false;
+            signalCaptured();
+            await held;
+          }
+          return result;
+        });
+      const pendingGet = request(ctx.httpServer)
+        .get(`${base}/content`)
+        .query({ path })
+        .set('Range', 'bytes=0-2')
+        .then((response) => response);
+      try {
+        await captured;
+        await request(ctx.httpServer)
+          .post(`${base}/content`)
+          .query({ path, force: 'true' })
+          .set('Content-Type', 'text/plain')
+          .send('new content')
+          .expect(200);
+      } finally {
+        releaseRead();
+        readSpy.mockRestore();
+      }
+
+      const raced = await pendingGet;
+      expect(raced.status).toBe(206);
+      expect(raced.text).toBe('old');
+      expect(raced.headers['content-range']).toBe('bytes 0-2/11');
+      expect(raced.headers['content-length']).toBe('3');
+      expect(raced.headers['accept-ranges']).toBe('bytes');
+      expect(raced.headers['x-storix-file-id']).toBe(oldStat.id);
+      expect(raced.headers['x-storix-revision']).toBe(oldStat.revision);
+      expect(raced.headers['x-storix-sha256']).toBeUndefined();
+      const currentStat = (await request(ctx.httpServer).get(`${base}/stat`).query({ path }).expect(200))
+        .body;
+      expect(currentStat.revision).not.toBe(oldStat.revision);
     });
 
     it('GET content 응답에 nosniff와 CSP 헤더가 포함된다', async () => {
@@ -502,6 +585,30 @@ export function registerFsContentHttpContract(ctx: FsHttpContext) {
         .expect(416);
 
       expect(response.body.code).toBe('VFS_RANGE_NOT_SATISFIABLE');
+      expect(response.headers['content-range']).toBe('bytes */10');
+      expect(response.body).toEqual({
+        code: 'VFS_RANGE_NOT_SATISFIABLE',
+        message: '처리할 수 없는 Range: bytes=0-1,3-4',
+        requestId: response.headers['x-request-id'],
+      });
+    });
+
+    it('유효하지 않은 Range 문법은 416과 전체 길이를 반환한다', async () => {
+      const namespaceId = await ctx.createNamespace('range-malformed-ns');
+      await putText(namespaceId, '/a.txt', '0123456789');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .set('Range', 'bytes=abc-def')
+        .expect(416);
+
+      expect(response.headers['content-range']).toBe('bytes */10');
+      expect(response.body).toEqual({
+        code: 'VFS_RANGE_NOT_SATISFIABLE',
+        message: '처리할 수 없는 Range: bytes=abc-def',
+        requestId: response.headers['x-request-id'],
+      });
     });
 
     it('범위를 벗어난 range는 416을 반환한다', async () => {
@@ -515,6 +622,12 @@ export function registerFsContentHttpContract(ctx: FsHttpContext) {
         .expect(416);
 
       expect(response.body.code).toBe('VFS_RANGE_NOT_SATISFIABLE');
+      expect(response.headers['content-range']).toBe('bytes */10');
+      expect(response.body).toEqual({
+        code: 'VFS_RANGE_NOT_SATISFIABLE',
+        message: '처리할 수 없는 Range: bytes=100-200',
+        requestId: response.headers['x-request-id'],
+      });
     });
   });
 
