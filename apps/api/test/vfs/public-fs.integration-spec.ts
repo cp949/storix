@@ -184,6 +184,58 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(download.headers['x-storix-sha256']).toBeUndefined();
   });
 
+  it('인증한 PRIVATE content/download 206은 원본 식별자를 보내고 200 헤더 정책을 유지한다', async () => {
+    const base = `/api/v2/namespaces/${privateNamespaceId}/fs`;
+    const path = '/docs/hello.txt';
+    const stat = await request(app.getHttpServer())
+      .get(`${base}/stat`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path })
+      .expect(200);
+
+    for (const route of ['content', 'download']) {
+      await request(app.getHttpServer())
+        .get(`${base}/${route}`)
+        .query({ path })
+        .set('Range', 'bytes=0-5')
+        .expect(401);
+
+      const ranged = await request(app.getHttpServer())
+        .get(`${base}/${route}`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .query({ path })
+        .set('Range', 'bytes=0-5')
+        .expect(206);
+      expect(ranged.text).toBe(FILE_BODY.slice(0, 6));
+      expect(ranged.headers['content-range']).toBe(`bytes 0-5/${FILE_BODY.length}`);
+      expect(ranged.headers['content-length']).toBe('6');
+      expect(ranged.headers['accept-ranges']).toBe('bytes');
+      expect(ranged.headers['x-storix-file-id']).toBe(stat.body.id);
+      expect(ranged.headers['x-storix-revision']).toBe(stat.body.revision);
+      expect(ranged.headers['x-storix-sha256']).toBeUndefined();
+    }
+
+    const inline = await request(app.getHttpServer())
+      .get(`${base}/content`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path })
+      .expect(200);
+    expect(inline.text).toBe(FILE_BODY);
+    expect(inline.headers['x-storix-file-id']).toBe(stat.body.id);
+    expect(inline.headers['x-storix-revision']).toBe(stat.body.revision);
+    expect(inline.headers['x-storix-sha256']).toBe(stat.body.sha256);
+
+    const fullDownload = await request(app.getHttpServer())
+      .get(`${base}/download`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path })
+      .expect(200);
+    expect(fullDownload.text).toBe(FILE_BODY);
+    expect(fullDownload.headers['x-storix-file-id']).toBeUndefined();
+    expect(fullDownload.headers['x-storix-revision']).toBeUndefined();
+    expect(fullDownload.headers['x-storix-sha256']).toBeUndefined();
+  });
+
   it('공개 파일의 복수 Range는 416과 전체 길이를 반환한다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)
@@ -194,6 +246,53 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.body).toEqual({
       code: 'VFS_RANGE_NOT_SATISFIABLE',
       message: '처리할 수 없는 Range: bytes=0-1,3-4',
+      requestId: response.headers['x-request-id'],
+    });
+  });
+
+  it.each(['bytes=abc-def', 'bytes=0-1,3-4', 'bytes=100-200', `bytes=${FILE_BODY.length}-`])(
+    '인증한 PRIVATE 파일의 Range %s 거부는 416과 전체 길이를 반환한다',
+    async (range) => {
+      const path = `/api/v2/namespaces/${privateNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`;
+
+      await request(app.getHttpServer()).get(path).set('Range', range).expect(401);
+
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('Range', range)
+        .expect(416);
+
+      expect(response.headers['content-range']).toBe(`bytes */${FILE_BODY.length}`);
+      expect(response.body).toEqual({
+        code: 'VFS_RANGE_NOT_SATISFIABLE',
+        message: `처리할 수 없는 Range: ${range}`,
+        requestId: response.headers['x-request-id'],
+      });
+    },
+  );
+
+  it('인증한 빈 PRIVATE 파일의 Range는 416과 전체 길이 0을 반환한다', async () => {
+    const base = `/api/v2/namespaces/${privateNamespaceId}/fs`;
+    const path = '/empty-range.bin';
+    const created = await request(app.getHttpServer())
+      .post(`${base}/touch`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .send({ path })
+      .expect(201);
+    expect(created.body.size).toBe(0);
+
+    const response = await request(app.getHttpServer())
+      .get(`${base}/content`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .query({ path })
+      .set('Range', 'bytes=0-0')
+      .expect(416);
+
+    expect(response.headers['content-range']).toBe('bytes */0');
+    expect(response.body).toEqual({
+      code: 'VFS_RANGE_NOT_SATISFIABLE',
+      message: '처리할 수 없는 Range: bytes=0-0',
       requestId: response.headers['x-request-id'],
     });
   });

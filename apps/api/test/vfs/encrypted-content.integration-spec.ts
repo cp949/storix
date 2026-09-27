@@ -200,6 +200,11 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       .send(plaintext)
       .expect(201);
 
+    const stat = await request(httpServer)
+      .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+      .query({ path: '/range.txt' })
+      .expect(200);
+
     const response = await request(httpServer)
       .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
       .query({ path: '/range.txt' })
@@ -207,9 +212,11 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
       .expect(206);
 
     expect(response.headers['content-range']).toBe('bytes 10-4009/5000');
+    expect(response.headers['content-length']).toBe('4000');
+    expect(response.headers['accept-ranges']).toBe('bytes');
     expect(response.text).toBe(plaintext.slice(10, 4010));
-    expect(response.headers['x-storix-file-id']).toBeUndefined();
-    expect(response.headers['x-storix-revision']).toBeUndefined();
+    expect(response.headers['x-storix-file-id']).toBe(stat.body.id);
+    expect(response.headers['x-storix-revision']).toBe(stat.body.revision);
     expect(response.headers['x-storix-sha256']).toBeUndefined();
   });
 
