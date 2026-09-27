@@ -38,4 +38,17 @@ describe('AuditLogRepository (SQLite)', () => {
       expect.objectContaining({ requestId: 'sqlite-no-snapshot', snapshotId: null }),
     ]));
   });
+
+  it('trash ID를 저장하고 다른 요청의 null과 구분한다', async () => {
+    const trashId = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
+    await repository.record({ requestId: 'sqlite-trash', namespaceId: null, snapshotId: null, trashId,
+      operation: 'VfsTrashController.purge', path: null, detail: null, caller: null, status: 200 });
+    await repository.record({ requestId: 'sqlite-no-trash', namespaceId: null, snapshotId: null,
+      operation: 'VfsTrashController.list', path: null, detail: null, caller: null, status: 200 });
+    const rows = await dataSource.getRepository(AuditLogEntity).find();
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: 'sqlite-trash', trashId }),
+      expect.objectContaining({ requestId: 'sqlite-no-trash', trashId: null }),
+    ]));
+  });
 });

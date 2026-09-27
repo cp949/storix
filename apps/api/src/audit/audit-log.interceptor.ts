@@ -60,6 +60,7 @@ export class AuditLogInterceptor implements NestInterceptor {
           requestId: request.requestId,
           namespaceId: this.resolveNamespaceId(request),
           snapshotId: this.resolveSnapshotId(request),
+          trashId: this.resolveTrashId(request),
           operation,
           path: this.resolvePath(request),
           detail: this.resolveDetail(request),
@@ -76,6 +77,11 @@ export class AuditLogInterceptor implements NestInterceptor {
 
   private resolveSnapshotId(request: Request): string | null {
     const value = request.params.snapshotId ?? request.auditSnapshotId;
+    return typeof value === 'string' && isUuid(value) ? value : null;
+  }
+
+  private resolveTrashId(request: Request): string | null {
+    const value = request.params.trashId ?? request.auditTrashId;
     return typeof value === 'string' && isUuid(value) ? value : null;
   }
 

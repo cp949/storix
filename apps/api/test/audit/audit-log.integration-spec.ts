@@ -125,6 +125,7 @@ describe('감사 로그 end-to-end', () => {
           detail: unknown;
           caller: string | null;
           snapshot_id: string | null;
+          trash_id: string | null;
           status: number;
         };
       }
@@ -245,6 +246,34 @@ describe('감사 로그 end-to-end', () => {
     }
     const listRow = await findAuditLogByRequestId(list.headers['x-request-id'] as string);
     expect(listRow?.snapshot_id).toBeNull();
+  });
+
+  it('삭제·복원·purge는 같은 trash ID를 기록하고 목록은 null을 기록한다', async () => {
+    const name = `audit-trash-${randomUUID()}`;
+    const ns = await request(httpServer).post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-${name}`).send({ name }).expect(201);
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
+    await request(httpServer).post(`${base}/touch`).send({ path: '/first' }).expect(201);
+    const deleted = await request(httpServer).post(`${base}/rm`).query({ path: '/first' }).expect(204);
+    const trashId = deleted.headers['x-trash-id'] as string;
+    const listed = await request(httpServer).get(`${base}/trash`).expect(200);
+    const restored = await request(httpServer).post(`${base}/trash/${trashId}/restore`)
+      .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test').send({}).expect(200);
+    await request(httpServer).post(`${base}/touch`).send({ path: '/second' }).expect(201);
+    const second = await request(httpServer).post(`${base}/rm`).query({ path: '/second' }).expect(204);
+    const secondId = second.headers['x-trash-id'] as string;
+    process.env.STORIX_ADMIN_API_KEY = 'audit-trash-admin-key';
+    try {
+      const purged = await request(httpServer).post(`${base}/trash/${secondId}/purge`)
+        .set('Authorization', 'Bearer audit-trash-admin-key')
+        .set('Idempotency-Key', randomUUID()).set('X-Mutation-Scope', 'audit-test').send({}).expect(200);
+      for (const [response, id] of [[deleted, trashId], [restored, trashId], [second, secondId], [purged, secondId]] as const) {
+        expect((await findAuditLogByRequestId(response.headers['x-request-id'] as string))?.trash_id).toBe(id);
+      }
+      expect((await findAuditLogByRequestId(listed.headers['x-request-id'] as string))?.trash_id).toBeNull();
+    } finally {
+      delete process.env.STORIX_ADMIN_API_KEY;
+    }
   });
 
   it('누락·오류 API key를 HTTP 요청 ID로 조회하고 자기신고 주체와 비밀은 저장하지 않는다', async () => {

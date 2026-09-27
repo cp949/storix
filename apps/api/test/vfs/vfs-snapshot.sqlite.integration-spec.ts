@@ -101,6 +101,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     () => app,
     async (name) => (await request(app.getHttpServer()).post('/api/v2/namespaces')
       .set('Idempotency-Key', randomUUID()).send({ name }).expect(201)).body.id as string,
+    async () => { await app.close(); app = await bootstrap(); },
   );
 
   it('휴지통 항목을 expiresAt 정각 밀리초부터 목록에서 제외한다', async () => {

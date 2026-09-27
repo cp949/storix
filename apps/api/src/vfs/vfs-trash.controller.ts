@@ -1,4 +1,8 @@
-import { Controller, Get, Param, Query, UseFilters, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Post, Query, Req, Res, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { Audited } from '../audit/audited.decorator.js';
+import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
+import { Public } from '../auth/public.decorator.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
 import { VfsInvalidMutationRequestError } from './vfs.errors.js';
@@ -19,5 +23,38 @@ export class VfsTrashController {
     if ((cursor !== undefined && typeof cursor !== 'string') ||
       (limit !== undefined && typeof limit !== 'string')) throw new VfsInvalidMutationRequestError();
     return this.trash.list(namespaceId, cursor, limit);
+  }
+
+  @Post(':trashId/restore')
+  async restore(
+    @Param('namespaceId') namespaceId: string,
+    @Param('trashId') trashId: string,
+    @Headers('x-mutation-scope') scope: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.trash.restore(namespaceId, trashId, scope, key, req.body as Buffer | undefined, req.requestId);
+    res.status(result.status);
+    for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+    return result.body;
+  }
+
+  @Public()
+  @Audited()
+  @UseGuards(AdminApiKeyGuard)
+  @Post(':trashId/purge')
+  async purge(
+    @Param('namespaceId') namespaceId: string,
+    @Param('trashId') trashId: string,
+    @Headers('x-mutation-scope') scope: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.trash.purge(namespaceId, trashId, scope, key, req.body as Buffer | undefined, req.requestId);
+    res.status(result.status);
+    for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+    return result.body;
   }
 }

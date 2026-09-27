@@ -128,6 +128,7 @@ describe('AuditLogInterceptor', () => {
           detail: null,
           caller: null,
           snapshotId: null,
+          trashId: null,
           status: 200,
         });
         done();

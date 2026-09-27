@@ -103,4 +103,19 @@ describe('AuditLogRepository', () => {
       expect.objectContaining({ requestId: 'req-record-no-snapshot', snapshotId: null }),
     ]));
   });
+
+  it('trash ID를 저장하고 NULL 기본값을 유지한다', async () => {
+    const trashId = '0195f6a0-7c1b-7d3e-8a4f-1234567890ab';
+    await repository.record({ requestId: 'req-trash', namespaceId, snapshotId: null, trashId,
+      operation: 'VfsTrashController.restore', path: null, detail: null, caller: null, status: 200 });
+    await repository.record({ requestId: 'req-no-trash', namespaceId, snapshotId: null,
+      operation: 'VfsTrashController.list', path: null, detail: null, caller: null, status: 200 });
+    const rows = await dataSource.getRepository(AuditLogEntity).findBy([
+      { requestId: 'req-trash' }, { requestId: 'req-no-trash' },
+    ]);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: 'req-trash', trashId }),
+      expect.objectContaining({ requestId: 'req-no-trash', trashId: null }),
+    ]));
+  });
 });

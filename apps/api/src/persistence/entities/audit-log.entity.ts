@@ -15,6 +15,9 @@ export class AuditLogEntity {
   @Column({ name: 'snapshot_id', type: 'uuid', nullable: true })
   snapshotId: string | null;
 
+  @Column({ name: 'trash_id', type: 'uuid', nullable: true })
+  trashId: string | null;
+
   @Column({ type: 'varchar', length: 128 })
   operation: string;
 

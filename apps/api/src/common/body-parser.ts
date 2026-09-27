@@ -20,7 +20,8 @@ export function isMutationJsonRoute(req: Pick<Request, 'method' | 'path'>): bool
 
 export function isSnapshotJsonMutationRoute(req: Pick<Request, 'method' | 'path'>): boolean {
   const path = req.path.toLowerCase().replace(/\/+$/, '');
-  return req.method.toUpperCase() === 'POST' && /\/fs\/snapshots(?:\/[^/]+\/(?:restore|delete))?$/.test(path);
+  return req.method.toUpperCase() === 'POST' && (/\/fs\/snapshots(?:\/[^/]+\/(?:restore|delete))?$/.test(path)
+    || /\/fs\/trash\/[^/]+\/(?:restore|purge)$/.test(path));
 }
 
 // JSON/urlencoded 요청은 제어 데이터만 다루므로 namespace별 조정 대신 고정 상한으로

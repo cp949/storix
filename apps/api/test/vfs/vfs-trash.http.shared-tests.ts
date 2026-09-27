@@ -7,10 +7,12 @@ import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.
 import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 
 export function registerVfsTrashHttpContract(
   getApp: () => INestApplication,
   createNamespace: (name: string) => Promise<string>,
+  restartApp: () => Promise<void>,
 ) {
   const http = () => request(getApp().getHttpServer());
   const namespace = (id: string) => `/api/v2/namespaces/${id}/fs`;
@@ -93,5 +95,144 @@ export function registerVfsTrashHttpContract(
       if (previousLimit === undefined) delete process.env.STORIX_MAX_RETAINED_TRASH_NODES;
       else process.env.STORIX_MAX_RETAINED_TRASH_NODES = previousLimit;
     }
+  });
+
+  it('FILE을 원래 ID와 새 revision으로 복원하고 snapshot 및 receipt를 보존한다', async () => {
+    const id = await createNamespace(`trash-restore-file-${randomUUID()}`);
+    const base = namespace(id);
+    await http().post(`${base}/content`).query({ path: '/doc' }).set('Content-Type', 'text/plain')
+      .send('original').expect(201);
+    const before = (await http().get(`${base}/stat`).query({ path: '/doc' }).expect(200)).body;
+    const snapshot = (await http().post(`${base}/snapshots`).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID()).send({ kind: 'file', path: '/doc' }).expect(201)).body;
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/doc' }).expect(204))
+      .headers['x-trash-id'] as string;
+    const key = randomUUID();
+    const route = `${base}/trash/${trashId}/restore`;
+    const first = await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', key).send({}).expect(200);
+    expect(first.body.trashId).toBe(trashId);
+    expect(first.body.resource).toMatchObject({ id: before.id, path: '/doc', size: 8, mimeType: 'text/plain' });
+    expect(first.body.resource.revision).not.toBe(before.revision);
+    await restartApp();
+    expect((await http().get(`${base}/content`).query({ path: '/doc' }).expect(200)).text).toBe('original');
+    expect((await http().get(`${base}/snapshots/${snapshot.snapshotId}/content`).expect(200)).text).toBe('original');
+    expect((await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', key).send({}).expect(200)).body).toEqual(first.body);
+    expect((await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID()).send({}).expect(404)).body.code)
+      .toBe('VFS_TRASH_ITEM_NOT_FOUND');
+    const counters = await getApp().get(DataSource).getRepository(NamespaceEntity).findOneByOrFail({ id });
+    expect([String(counters.liveFileByteCount), String(counters.retainedTrashByteCount), String(counters.retainedTrashNodeCount)])
+      .toEqual(['8', '0', '0']);
+  });
+
+  it('TREE를 대체 경로에 복원하고 목적지 충돌 및 부모 부재를 거절한다', async () => {
+    const id = await createNamespace(`trash-restore-tree-${randomUUID()}`);
+    const base = namespace(id);
+    await http().post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
+    await http().post(`${base}/content`).query({ path: '/dir/a' }).set('Content-Type', 'text/plain')
+      .send('a').expect(201);
+    const root = (await http().get(`${base}/stat`).query({ path: '/dir' }).expect(200)).body;
+    const child = (await http().get(`${base}/stat`).query({ path: '/dir/a' }).expect(200)).body;
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/dir', recursive: true }).expect(204))
+      .headers['x-trash-id'] as string;
+    const route = `${base}/trash/${trashId}/restore`;
+    const missing = await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID()).send({ targetPath: '/missing/dir' }).expect(404);
+    expect(missing.body.code).toBe('VFS_NODE_NOT_FOUND');
+    await http().post(`${base}/touch`).send({ path: '/dir' }).expect(201);
+    const occupied = await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID()).send({}).expect(412);
+    expect(occupied.body.code).toBe('VFS_PRECONDITION_FAILED');
+    await http().post(`${base}/mkdir`).send({ path: '/other' }).expect(201);
+    const restored = await http().post(route).set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID()).send({ targetPath: '/other/dir' }).expect(200);
+    expect(restored.body.resource).toMatchObject({ id: root.id, path: '/other/dir', type: 'DIRECTORY' });
+    expect(restored.body.resource.revision).not.toBe(root.revision);
+    const after = (await http().get(`${base}/stat`).query({ path: '/other/dir/a' }).expect(200)).body;
+    expect(after.id).toBe(child.id);
+    expect(after.revision).not.toBe(child.revision);
+    expect((await http().get(`${base}/content`).query({ path: '/other/dir/a' }).expect(200)).text).toBe('a');
+  });
+
+  it('만료 item 복원은 410이고 관리자 purge는 Blob 공유를 보존하며 receipt를 재생한다', async () => {
+    const id = await createNamespace(`trash-purge-${randomUUID()}`);
+    const base = namespace(id);
+    const nodes = getApp().get(VfsNodeRepository);
+    const root = await nodes.getRoot(id);
+    await nodes.createChangeFeedCheckpoint(id, root!.id);
+    const previous = process.env.STORIX_ADMIN_API_KEY;
+    process.env.STORIX_ADMIN_API_KEY = 'trash-admin-test-key';
+    try {
+      await http().post(`${base}/content`).query({ path: '/doc' }).set('Content-Type', 'text/plain')
+        .send('shared').expect(201);
+      const snapshot = (await http().post(`${base}/snapshots`).set('X-Mutation-Scope', 'trash-test')
+        .set('Idempotency-Key', randomUUID()).send({ kind: 'file', path: '/doc' }).expect(201)).body;
+      const trashId = (await http().post(`${base}/rm`).query({ path: '/doc' }).expect(204))
+        .headers['x-trash-id'] as string;
+      const ds = getApp().get(DataSource);
+      await ds.getRepository(VfsTrashEntity).update({ id: trashId }, {
+        deletedAt: new Date(Date.now() - 2 * 86400000), expiresAt: new Date(Date.now() - 86400000),
+      });
+      expect((await http().post(`${base}/trash/${trashId}/restore`).set('X-Mutation-Scope', 'trash-test')
+        .set('Idempotency-Key', randomUUID()).send({}).expect(410)).body.code).toBe('VFS_TRASH_ITEM_EXPIRED');
+      const route = `${base}/trash/${trashId}/purge`;
+      await http().post(route).set('Authorization', 'Bearer ordinary-key').set('X-Mutation-Scope', 'trash-test')
+        .set('Idempotency-Key', randomUUID()).send({}).expect(401);
+      const feedBeforePurge = await nodes.listChangeFeedEvents(id, '0', 100);
+      const key = randomUUID();
+      const first = await http().post(route).set('Authorization', 'Bearer trash-admin-test-key')
+        .set('X-Mutation-Scope', 'trash-test').set('Idempotency-Key', key).send({}).expect(200);
+      expect(first.body).toEqual({ trashId, purged: true });
+      expect((await http().post(route).set('Authorization', 'Bearer trash-admin-test-key')
+        .set('X-Mutation-Scope', 'trash-test').set('Idempotency-Key', key).send({}).expect(200)).body)
+        .toEqual(first.body);
+      expect((await http().post(route).set('Authorization', 'Bearer trash-admin-test-key')
+        .set('X-Mutation-Scope', 'trash-test').set('Idempotency-Key', key)
+        .send({ different: true }).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+      expect(await ds.getRepository(VfsTrashEntity).countBy({ id: trashId })).toBe(0);
+      const blob = await ds.getRepository(BlobEntity).findOneByOrFail({ namespaceId: id });
+      expect(blob.referenceCount).toBe(1);
+      expect(await nodes.listChangeFeedEvents(id, '0', 100)).toEqual(feedBeforePurge);
+      expect((await http().get(`${base}/snapshots/${snapshot.snapshotId}/content`).expect(200)).text).toBe('shared');
+    } finally {
+      if (previous === undefined) delete process.env.STORIX_ADMIN_API_KEY;
+      else process.env.STORIX_ADMIN_API_KEY = previous;
+    }
+  });
+
+  it('같은 item 복원 경쟁은 한 번만 소비하고 feed에는 삭제·생성만 남긴다', async () => {
+    const id = await createNamespace(`trash-race-${randomUUID()}`);
+    const base = namespace(id);
+    const nodes = getApp().get(VfsNodeRepository);
+    const root = await nodes.getRoot(id);
+    await nodes.createChangeFeedCheckpoint(id, root!.id);
+    await http().post(`${base}/content`).query({ path: '/race' }).set('Content-Type', 'text/plain')
+      .send('race').expect(201);
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/race' }).expect(204))
+      .headers['x-trash-id'] as string;
+    const route = `${base}/trash/${trashId}/restore`;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const attempt = async () => {
+      await barrier;
+      return http().post(route).set('X-Mutation-Scope', 'trash-race')
+        .set('Idempotency-Key', randomUUID()).send({});
+    };
+    const pair = [attempt(), attempt()];
+    release();
+    const outcomes = await Promise.all(pair);
+    expect(outcomes.map((result) => result.status).sort()).toEqual([200, 404]);
+    expect(outcomes.find((result) => result.status === 404)?.body.code).toBe('VFS_TRASH_ITEM_NOT_FOUND');
+    const ds = getApp().get(DataSource);
+    expect(await ds.getRepository(VfsNodeEntity).countBy({ namespaceId: id, name: 'race' })).toBe(1);
+    expect(await ds.getRepository(VfsTrashEntity).countBy({ id: trashId })).toBe(0);
+    const counters = await ds.getRepository(NamespaceEntity).findOneByOrFail({ id });
+    expect([String(counters.liveFileByteCount), String(counters.retainedTrashByteCount), String(counters.retainedTrashNodeCount)])
+      .toEqual(['4', '0', '0']);
+    const events = await nodes.listChangeFeedEvents(id, '0', 100);
+    expect(events.filter((event) => event.path === '/race').map((event) => event.kind))
+      .toEqual(['created', 'deleted', 'created']);
   });
 }

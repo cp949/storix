@@ -84,6 +84,8 @@ export class FsController {
       req.body as Buffer | undefined,
       req.requestId,
     );
+    const trashId = (result.body as { trashId?: unknown }).trashId;
+    if (typeof trashId === 'string') req.auditTrashId = trashId;
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
     return result.body;
@@ -146,9 +148,11 @@ export class FsController {
   async rmdir(
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    res.setHeader('X-Trash-Id', await this.vfsService.rmdir(namespaceId, path ?? ''));
+    req.auditTrashId = await this.vfsService.rmdir(namespaceId, path ?? '');
+    res.setHeader('X-Trash-Id', req.auditTrashId);
   }
 
   @Post('rm')
@@ -157,9 +161,11 @@ export class FsController {
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,
     @Query('recursive') recursive: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    res.setHeader('X-Trash-Id', await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true'));
+    req.auditTrashId = await this.vfsService.rm(namespaceId, path ?? '', recursive === 'true');
+    res.setHeader('X-Trash-Id', req.auditTrashId);
   }
 
   @Post('content')

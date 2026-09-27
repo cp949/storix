@@ -5,6 +5,7 @@ import { isSqliteDataSource } from '../common/db-driver.js';
 import { resolveTrashRetentionNodeLimit } from '../vfs/trash-policy.js';
 import { snapshotPathKey } from '../vfs/snapshot-path.js';
 import { VfsTrashLimitExceededError } from '../vfs/vfs.errors.js';
+import { VfsTrashItemNotFoundError } from '../vfs/vfs.errors.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import { VfsTrashEntity } from './entities/vfs-trash.entity.js';
@@ -33,9 +34,47 @@ export interface TrashPage {
   readonly nextBoundary: TrashListBoundary | null;
 }
 
+export interface LockedTrashItem {
+  readonly trash: VfsTrashEntity;
+  readonly entries: VfsTrashEntryEntity[];
+  readonly expired: boolean;
+}
+
 @Injectable()
 export class VfsTrashRepository {
   constructor(private readonly dataSource: DataSource) {}
+
+  // 호출자는 namespace root 잠금을 가진 mutation transaction을 전달한다.
+  async findForMutation(tx: MutationTx, trashId: string): Promise<LockedTrashItem> {
+    const trash = await tx.manager.getRepository(VfsTrashEntity).findOneBy({ id: trashId, namespaceId: tx.namespaceId });
+    if (!trash) throw new VfsTrashItemNotFoundError(trashId);
+    const entries = await tx.manager.getRepository(VfsTrashEntryEntity).findBy({ trashId, namespaceId: tx.namespaceId });
+    if (BigInt(entries.length) !== BigInt(String(trash.nodeCount))) throw new Error('Trash manifest node count mismatch');
+    const ph = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
+    const rows = await tx.manager.query(`SELECT expires_at <= ${isSqliteDataSource(this.dataSource.options)
+      ? "strftime('%Y-%m-%d %H:%M:%f', 'now')" : 'clock_timestamp()'} AS expired
+      FROM vfs_trash WHERE namespace_id = ${ph.bind(tx.namespaceId)} AND id = ${ph.bind(trashId)}`,
+    ph.params) as Array<{ expired: boolean | number }>;
+    return { trash, entries, expired: Boolean(rows[0]?.expired) };
+  }
+
+  async consume(tx: MutationTx, item: LockedTrashItem): Promise<void> {
+    const ph = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
+    const rows = await tx.manager.query(
+      `SELECT CAST(retained_trash_node_count AS TEXT) AS nodes,
+        CAST(retained_trash_byte_count AS TEXT) AS bytes FROM namespace WHERE id = ${ph.bind(tx.namespaceId)}`,
+      ph.params,
+    ) as Array<{ nodes: string; bytes: string }>;
+    const nodes = BigInt(rows[0]?.nodes ?? '-1') - BigInt(String(item.trash.nodeCount));
+    const bytes = BigInt(rows[0]?.bytes ?? '-1') - BigInt(String(item.trash.logicalBytes));
+    if (nodes < 0n || bytes < 0n) throw new Error('Trash namespace counter mismatch');
+    await tx.manager.update(NamespaceEntity, { id: tx.namespaceId }, {
+      retainedTrashNodeCount: nodes.toString(), retainedTrashByteCount: bytes.toString(),
+    });
+    const deleted = await tx.manager.getRepository(VfsTrashEntity).delete({ id: item.trash.id, namespaceId: tx.namespaceId });
+    if (deleted.affected !== 1) throw new Error('Trash item changed during mutation');
+    tx.logicalByteDelta -= BigInt(String(item.trash.logicalBytes));
+  }
 
   @classifyPersistenceOperation
   async capture(tx: MutationTx, originalPath: string, rows: readonly SnapshotSourceRow[]): Promise<string> {

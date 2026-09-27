@@ -226,6 +226,24 @@ export class VfsTrashLimitExceededError extends DomainError {
   }
 }
 
+export class VfsTrashItemNotFoundError extends DomainError {
+  readonly code = 'VFS_TRASH_ITEM_NOT_FOUND';
+  readonly status = 404;
+
+  constructor(readonly trashId: string) {
+    super(`존재하지 않는 휴지통 항목: ${trashId}`);
+  }
+}
+
+export class VfsTrashItemExpiredError extends DomainError {
+  readonly code = 'VFS_TRASH_ITEM_EXPIRED';
+  readonly status = 410;
+
+  constructor(readonly trashId: string) {
+    super(`복원 기한이 지난 휴지통 항목: ${trashId}`);
+  }
+}
+
 export class VfsCopyLimitExceededError extends DomainError {
   readonly code = 'VFS_COPY_LIMIT_EXCEEDED';
   readonly status = 413;

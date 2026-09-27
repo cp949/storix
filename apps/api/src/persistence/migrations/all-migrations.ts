@@ -17,6 +17,7 @@ import { AddUploadPartLease1791700000004 } from './1791700000004-AddUploadPartLe
 import { AddUploadChecksumFailure1791700000005 } from './1791700000005-AddUploadChecksumFailure.js';
 import { AddVfsChangeFeed1791700000006 } from './1791700000006-AddVfsChangeFeed.js';
 import { AddVfsTrash1791700000007 } from './1791700000007-AddVfsTrash.js';
+import { AddAuditLogTrashId1791700000008 } from './1791700000008-AddAuditLogTrashId.js';
 
 type MigrationClass = new () => MigrationInterface;
 
@@ -45,4 +46,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddUploadChecksumFailure1791700000005,
   AddVfsChangeFeed1791700000006,
   AddVfsTrash1791700000007,
+  AddAuditLogTrashId1791700000008,
 ];

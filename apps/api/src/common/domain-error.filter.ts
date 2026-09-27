@@ -99,6 +99,7 @@ export class DomainErrorFilter implements ExceptionFilter {
         requestId: request.requestId,
         namespaceId: null,
         snapshotId: null,
+        trashId: null,
         // operation 컬럼은 기존 varchar(128) 계약을 유지하고 전체 경로는 text path에 남긴다.
         operation: `${request.method} ${request.path}`.slice(0, 128),
         path: request.path,

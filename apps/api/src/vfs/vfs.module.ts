@@ -21,6 +21,7 @@ import { ChangeFeedController } from './change-feed.controller.js';
 import { ChangeFeedService } from './change-feed.service.js';
 import { VfsTrashController } from './vfs-trash.controller.js';
 import { VfsTrashService } from './vfs-trash.service.js';
+import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
@@ -37,6 +38,7 @@ import { VfsTrashService } from './vfs-trash.service.js';
     UploadSessionFinalizeService,
     ChangeFeedService,
     VfsTrashService,
+    AdminApiKeyGuard,
   ],
 })
 export class VfsModule implements NestModule {
