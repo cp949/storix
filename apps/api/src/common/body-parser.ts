@@ -10,7 +10,8 @@ import { RequestContextMiddleware } from './request-context.middleware.js';
  */
 export function isRawUploadRoute(req: Pick<Request, 'method' | 'path'>): boolean {
   const path = req.path.toLowerCase().replace(/\/+$/, '');
-  return req.method === 'POST' && (path.endsWith('/fs/content') || path.endsWith('/fs/content/conditional'));
+  return (req.method === 'POST' && (path.endsWith('/fs/content') || path.endsWith('/fs/content/conditional')))
+    || (req.method === 'PUT' && /\/fs\/upload-sessions\/[^/]+\/parts\/[^/]+$/.test(path));
 }
 
 export function isMutationJsonRoute(req: Pick<Request, 'method' | 'path'>): boolean {

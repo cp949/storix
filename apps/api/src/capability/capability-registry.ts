@@ -14,9 +14,22 @@ export interface CapabilityDefinition {
 // capability ID 형식. 시작 설정과 registry가 같은 규칙을 쓴다.
 export const CAPABILITY_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
-export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [];
+export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
+  {
+    id: 'resumable-upload',
+    scope: 'namespace',
+    defaultEnabled: false,
+    precedence: 'global-ceiling-then-namespace-opt-in',
+    dependencies: [],
+    disabledBehavior: 'VFS_FEATURE_DISABLED',
+    dataHandling: 'preserve-query-export-recover-delete',
+    discoveryVisibility: 'effective-state',
+  },
+];
 
-const METADATA: Readonly<Record<Exclude<keyof CapabilityDefinition, 'id' | 'dependencies'>, string | boolean>> = {
+const METADATA: Readonly<
+  Record<Exclude<keyof CapabilityDefinition, 'id' | 'dependencies'>, string | boolean>
+> = {
   scope: 'namespace',
   defaultEnabled: false,
   precedence: 'global-ceiling-then-namespace-opt-in',
@@ -36,9 +49,13 @@ export function validateCapabilityRegistry(registry: readonly unknown[]): void {
       throw new Error('Invalid capability registry metadata: id');
     }
     for (const [key, expected] of Object.entries(METADATA)) {
-      if (value[key] !== expected) throw new Error(`Invalid capability registry metadata: ${value.id}.${key}`);
+      if (value[key] !== expected)
+        throw new Error(`Invalid capability registry metadata: ${value.id}.${key}`);
     }
-    if (!Array.isArray(value.dependencies) || !value.dependencies.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))) {
+    if (
+      !Array.isArray(value.dependencies) ||
+      !value.dependencies.every((id) => typeof id === 'string' && CAPABILITY_ID_PATTERN.test(id))
+    ) {
       throw new Error(`Invalid capability registry metadata: ${value.id}.dependencies`);
     }
     if (definitions.has(value.id)) throw new Error(`Duplicate capability registry ID: ${value.id}`);

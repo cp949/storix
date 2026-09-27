@@ -100,6 +100,13 @@ describe('환경변수 문서 동기화', () => {
     expect(readmeKeys.has(name)).toBe(true);
   });
 
+  it('upload session 설정 파일 경로는 코드와 두 환경 문서에 함께 있다', () => {
+    const name = 'STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH';
+    expect(codeVars.has(name)).toBe(true);
+    expect(exampleKeys.has(name)).toBe(true);
+    expect(readmeKeys.has(name)).toBe(true);
+  });
+
   it('코드가 읽는 STORIX_ 변수는 전부 .env.example에 키로 있다', () => {
     expect(sortedDiff(codeVars, exampleKeys)).toEqual([]);
   });

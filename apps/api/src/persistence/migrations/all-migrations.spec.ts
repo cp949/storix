@@ -15,6 +15,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddNamespaceLogicalQuota1791400000000',
       'AddVfsSnapshotListIndex1791500000000',
       'AddAuditLogSnapshotId1791600000000',
+      'AddVfsUploadSessions1791700000000',
     ]);
   });
 });

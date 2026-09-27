@@ -13,10 +13,14 @@ import { PublicFsController } from './public-fs.controller.js';
 import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
+import { UploadSessionController } from './upload-session.controller.js';
+import { UploadSessionService } from './upload-session.service.js';
+import { UploadSessionPartService } from './upload-session-part.service.js';
+import { UploadSessionFinalizeService } from './upload-session-finalize.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
-  controllers: [FsController, PublicFsController, VfsSnapshotController],
+  controllers: [FsController, PublicFsController, VfsSnapshotController, UploadSessionController],
   providers: [
     VfsSnapshotService,
     VfsService,
@@ -24,12 +28,15 @@ import { ConditionalContentService } from './conditional-content.service.js';
     PathResolver,
     MutationService,
     ConditionalContentService,
+    UploadSessionService,
+    UploadSessionPartService,
+    UploadSessionFinalizeService,
   ],
 })
 export class VfsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(RequestContextMiddleware)
-      .forRoutes(FsController, PublicFsController, VfsSnapshotController);
+      .forRoutes(FsController, PublicFsController, VfsSnapshotController, UploadSessionController);
   }
 }

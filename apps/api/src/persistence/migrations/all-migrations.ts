@@ -9,6 +9,9 @@ import { AddVfsSnapshotListIndex1791500000000 } from './1791500000000-AddVfsSnap
 import { AddAuditLogSnapshotId1791600000000 } from './1791600000000-AddAuditLogSnapshotId.js';
 import { AddIdempotencyKey1788700000000 } from './1788700000000-AddIdempotencyKey.js';
 import { InitSchema1788637362016 } from './1788637362016-InitSchema.js';
+import { AddVfsUploadSessions1791700000000 } from './1791700000000-AddVfsUploadSessions.js';
+import { AddUploadCreationExpiry1791700000001 } from './1791700000001-AddUploadCreationExpiry.js';
+import { AddUploadFinalizeLeaseToken1791700000002 } from './1791700000002-AddUploadFinalizeLeaseToken.js';
 
 type MigrationClass = new () => MigrationInterface;
 
@@ -29,4 +32,7 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddNamespaceLogicalQuota1791400000000,
   AddVfsSnapshotListIndex1791500000000,
   AddAuditLogSnapshotId1791600000000,
+  AddVfsUploadSessions1791700000000,
+  AddUploadCreationExpiry1791700000001,
+  AddUploadFinalizeLeaseToken1791700000002,
 ];

@@ -1,4 +1,8 @@
-import { CAPABILITY_REGISTRY, type CapabilityDefinition, validateCapabilityRegistry } from './capability-registry.js';
+import {
+  CAPABILITY_REGISTRY,
+  type CapabilityDefinition,
+  validateCapabilityRegistry,
+} from './capability-registry.js';
 
 const feature: CapabilityDefinition = {
   id: 'content-search',
@@ -12,8 +16,8 @@ const feature: CapabilityDefinition = {
 };
 
 describe('capability registry', () => {
-  it('production registry는 선택 기능을 등록하지 않는다', () => {
-    expect(CAPABILITY_REGISTRY).toEqual([]);
+  it('resumable-upload는 기본 비활성 namespace capability로 등록된다', () => {
+    expect(CAPABILITY_REGISTRY).toEqual([{ ...feature, id: 'resumable-upload' }]);
   });
 
   it('필수 메타데이터 누락과 잘못된 값을 거부한다', () => {
@@ -32,8 +36,12 @@ describe('capability registry', () => {
   });
 
   it('미등록 의존성과 자기 의존을 거부한다', () => {
-    expect(() => validateCapabilityRegistry([{ ...feature, dependencies: ['missing-feature'] }])).toThrow(/depend|의존/i);
-    expect(() => validateCapabilityRegistry([{ ...feature, dependencies: ['content-search'] }])).toThrow(/depend|의존/i);
+    expect(() => validateCapabilityRegistry([{ ...feature, dependencies: ['missing-feature'] }])).toThrow(
+      /depend|의존/i,
+    );
+    expect(() => validateCapabilityRegistry([{ ...feature, dependencies: ['content-search'] }])).toThrow(
+      /depend|의존/i,
+    );
   });
 
   it('간접 순환 의존을 거부한다', () => {
@@ -48,7 +56,10 @@ describe('capability registry', () => {
 
   it('등록된 비순환 의존은 허용한다', () => {
     expect(() =>
-      validateCapabilityRegistry([feature, { ...feature, id: 'file-preview', dependencies: ['content-search'] }]),
+      validateCapabilityRegistry([
+        feature,
+        { ...feature, id: 'file-preview', dependencies: ['content-search'] },
+      ]),
     ).not.toThrow();
   });
 });

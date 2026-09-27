@@ -9,6 +9,9 @@ import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
 import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
+import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
+import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
+import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 const entities = [
@@ -20,6 +23,9 @@ const entities = [
   VfsMutationReceiptEntity,
   VfsSnapshotEntity,
   VfsSnapshotEntryEntity,
+  VfsUploadSessionEntity,
+  VfsUploadPartEntity,
+  VfsUploadUsageEntity,
 ];
 const migrations = ALL_MIGRATIONS;
 

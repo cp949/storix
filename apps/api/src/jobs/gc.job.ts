@@ -3,15 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { BlobRepository } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
+import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
 const DELETE_CONCURRENCY = 20;
+const CLEANUP_BATCH_SIZE = 500;
 
 export interface GcResult {
   readonly deletedOrphanObjects: number;
   readonly deletedOrphanBlobs: number;
   readonly prunedMutationReceipts: number;
+  readonly expiredUploadSessions: number;
+  readonly recoveredUploadSessions: number;
+  readonly deletedStagingObjects: number;
+  readonly prunedUploadSessions: number;
 }
 
 @Injectable()
@@ -24,21 +30,54 @@ export class GcJob {
     private readonly blobRepository: BlobRepository,
     config: ConfigService,
     @Optional() private readonly receiptRepository?: VfsMutationReceiptRepository,
+    @Optional() private readonly uploadSessions?: VfsUploadSessionRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
   }
 
   async run(): Promise<GcResult> {
-    const cutoff = new Date(Date.now() - this.gracePeriodSeconds * 1000);
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - this.gracePeriodSeconds * 1000);
+
+    const recoveredUploadSessions = (await this.uploadSessions?.recoverStaleFinalizingLeases(now)) ?? 0;
+    let expiredUploadSessions = 0;
+    for (const session of (await this.uploadSessions?.findExpiredOpenSessions(now)) ?? []) {
+      if (await this.uploadSessions!.claimTerminalTransition(session.namespaceId, session.id, 'EXPIRED', now))
+        expiredUploadSessions++;
+    }
+    let deletedStagingObjects = 0;
+    if (this.uploadSessions) {
+      let after: { sessionId: string; partIndex: number } | null = null;
+      while (true) {
+        const parts = await this.uploadSessions.findCleanupParts(after, CLEANUP_BATCH_SIZE);
+        for (const part of parts) {
+          try {
+            await this.storage.delete(part.stagingKey);
+            if (await this.uploadSessions.markStagingObjectDeleted(
+              part.sessionId, part.partIndex, part.stagingKey, part.state,
+            ))
+              deletedStagingObjects++;
+          } catch (error) {
+            this.logger.error(`staging object 삭제 실패: ${part.stagingKey}`, error);
+          }
+        }
+        if (parts.length < CLEANUP_BATCH_SIZE) break;
+        const last = parts[parts.length - 1];
+        after = { sessionId: last.sessionId, partIndex: last.partIndex };
+      }
+    }
 
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff);
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
+    const prunedUploadSessions = (await this.uploadSessions?.pruneTerminalSessions(
+      new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
 
     this.logger.log(
       `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
     );
-    return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts };
+    return { deletedOrphanObjects, deletedOrphanBlobs, prunedMutationReceipts,
+      expiredUploadSessions, recoveredUploadSessions, deletedStagingObjects, prunedUploadSessions };
   }
 
   // metadata 없는 MinIO object: 버킷 전체 목록과 DB의 전체 storage_key 집합을
@@ -48,11 +87,18 @@ export class GcJob {
   // 참고: 모든 key는 `blobs/{shard}/{uuid}` 형식).
   private async collectOrphanObjects(cutoff: Date): Promise<number> {
     const knownKeys = await this.blobRepository.findAllStorageKeys();
+    const knownStagingKeys = await this.uploadSessions?.findAllStagingKeys();
     const staleKeys: string[] = [];
 
     for await (const item of this.storage.list('blobs/')) {
       if (!knownKeys.has(item.key) && item.lastModified < cutoff) {
         staleKeys.push(item.key);
+      }
+    }
+
+    if (knownStagingKeys) {
+      for await (const item of this.storage.list('upload-staging/')) {
+        if (!knownStagingKeys.has(item.key) && item.lastModified < cutoff) staleKeys.push(item.key);
       }
     }
 
