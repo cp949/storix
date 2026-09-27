@@ -14,6 +14,8 @@ export class VfsUploadPartEntity {
   @Column({ type: 'varchar', length: 16 }) state: VfsUploadPartState;
   @Column({ name: 'object_deleted_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
   objectDeletedAt: Date | null;
+  @Column({ name: 'lease_expires_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
+  leaseExpiresAt: Date | null;
   @Column({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE }) createdAt: Date;
   @Column({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE }) updatedAt: Date;
 }

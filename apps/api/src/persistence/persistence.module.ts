@@ -23,6 +23,7 @@ import { BackupRepository } from './backup.repository.js';
 import { VfsMutationReceiptRepository } from './vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
+import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 import { VfsUploadSessionRepository } from './vfs-upload-session.repository.js';
 
@@ -37,6 +38,7 @@ const ENTITIES = [
   VfsSnapshotEntryEntity,
   VfsUploadSessionEntity,
   VfsUploadPartEntity,
+  VfsUploadStagingCleanupEntity,
   VfsUploadUsageEntity,
 ];
 

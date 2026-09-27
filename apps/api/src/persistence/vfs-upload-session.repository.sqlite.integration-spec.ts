@@ -7,6 +7,7 @@ import { VfsUploadSessionRepository } from './vfs-upload-session.repository.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
+import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 
 const NAMESPACE = '123e4567-e89b-42d3-a456-426614174000';
@@ -24,7 +25,8 @@ describe('upload session repository (SQLite)', () => {
       type: 'better-sqlite3',
       database: ':memory:',
       synchronize: false,
-      entities: [NamespaceEntity, VfsUploadSessionEntity, VfsUploadPartEntity, VfsUploadUsageEntity],
+      entities: [NamespaceEntity, VfsUploadSessionEntity, VfsUploadPartEntity,
+        VfsUploadStagingCleanupEntity, VfsUploadUsageEntity],
       migrations: ALL_MIGRATIONS,
     }).initialize();
     await db.runMigrations();
@@ -187,10 +189,71 @@ describe('upload session repository (SQLite)', () => {
     expect(await repository.claimTerminalTransition(NAMESPACE, id, 'CANCELLED', new Date())).toBe(true);
     expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toBe(false);
     expect((await repository.reservePart(id, 0, '10', 'upload-staging/later', caps)).kind).toBe('closed');
-    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/terminal', 'RESERVED')).toBe(true);
+    expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/terminal', 'RESERVED')).toBe(false);
+    expect(await repository.releasePartReservation(id, 0, false, 'upload-staging/terminal')).toBe(true);
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { staged_bytes: 0 },
     ]);
+  });
+
+  it('keeps a stale PUT generation charged across exact-key cleanup and a new reservation', async () => {
+    const created = await repository.createSession(input(), caps);
+    if (created.kind !== 'created') throw new Error('expected creation');
+    const id = created.session.id;
+    const oldKey = 'upload-staging/stale-old';
+    expect((await repository.reservePart(id, 0, '4', oldKey, caps)).kind).toBe('reserved');
+    expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(false);
+    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?',
+      ['2020-01-01 00:00:00.000', id]);
+    expect(await repository.renewPartLease(id, 0, oldKey)).toBe(false);
+    expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(true);
+    expect((await repository.reservePart(id, 0, '4', 'upload-staging/blocked', caps)).kind).toBe('in-progress');
+    expect(await repository.findAllStagingKeys()).toContain(oldKey);
+    // mark is called only after storage.delete(oldKey) has acknowledged completion.
+    expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
+    // Repeated GC deletes do not provide evidence that the old PUT has settled.
+    expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
+    expect((await repository.reservePart(id, 0, '4', 'upload-staging/new', caps)).kind).toBe('reserved');
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
+      .toEqual([{ staged_bytes: 8 }]);
+    expect(await repository.releasePartReservation(id, 0, true, oldKey)).toBe(true);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
+      .toEqual([{ staged_bytes: 8 }]);
+    const settled = (await repository.findCleanupTombstones())[0].putSettledAt;
+    expect(settled).not.toBeNull();
+    expect(await repository.markTombstoneDeleted(oldKey, settled)).toBe(true);
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
+      .toEqual([{ staged_bytes: 4 }]);
+  });
+
+  it('does not refund a stale reservation without PUT settlement evidence', async () => {
+    const created = await repository.createSession(input(), caps);
+    if (created.kind !== 'created') throw new Error('expected creation');
+    const id = created.session.id;
+    const oldKey = 'upload-staging/unsettled';
+    expect((await repository.reservePart(id, 0, '10', oldKey, caps)).kind).toBe('reserved');
+    await db.query('UPDATE vfs_upload_part SET lease_expires_at = ? WHERE session_id = ?',
+      ['2020-01-01 00:00:00.000', id]);
+    expect(await repository.retireExpiredPartReservation(id, 0, oldKey)).toBe(true);
+    expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
+    expect((await repository.reservePart(id, 0, '10', 'upload-staging/retry', caps)).kind).toBe('limit');
+    expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'"))
+      .toEqual([{ staged_bytes: 10 }]);
+  });
+
+  it('pages tombstone cleanup beyond 500 keys', async () => {
+    const created = await repository.createSession(input(), caps);
+    if (created.kind !== 'created') throw new Error('expected creation');
+    const rows = Array.from({ length: 501 }, (_, index) =>
+      `('upload-staging/${String(index).padStart(4, '0')}', '${created.session.id}', 0,
+        '${NAMESPACE}', 1, '2026-09-27 00:00:00')`);
+    await db.query(`INSERT INTO vfs_upload_staging_cleanup
+      (staging_key, session_id, part_index, namespace_id, size_bytes, created_at)
+      VALUES ${rows.join(',')}`);
+    const first = await repository.findCleanupTombstones(null, 500);
+    const second = await repository.findCleanupTombstones(first[499].stagingKey, 500);
+    expect(first).toHaveLength(500);
+    expect(second.map((row) => row.stagingKey)).toEqual(['upload-staging/0500']);
   });
 
   it('failed write releases reservation, but uncertain object remains charged until deletion', async () => {

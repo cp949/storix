@@ -123,6 +123,8 @@ describe('GcJob', () => {
       claimTerminalTransition: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
       findCleanupParts: jest.fn<() => Promise<Array<{ sessionId: string; partIndex: number; stagingKey: string; state: 'CLEANUP' }>>>()
         .mockResolvedValue([{ sessionId: 'expired', partIndex: 0, stagingKey: 'upload-staging/cleanup', state: 'CLEANUP' }]),
+      findExpiredReservedParts: async () => [],
+      findCleanupTombstones: async () => [],
       markStagingObjectDeleted: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
       findAllStagingKeys: jest.fn<() => Promise<Set<string>>>().mockResolvedValue(new Set(['upload-staging/active', 'upload-staging/cleanup'])),
       pruneTerminalSessions: jest.fn<() => Promise<number>>().mockResolvedValue(0),
@@ -157,6 +159,8 @@ describe('GcJob', () => {
       findCleanupParts: async (cursor?: { sessionId: string; partIndex: number } | null, batchSize = 500) =>
         all.filter((part) => cursor === undefined || cursor === null || part.partIndex > cursor.partIndex)
           .slice(0, batchSize),
+      findExpiredReservedParts: async () => [],
+      findCleanupTombstones: async () => [],
       markStagingObjectDeleted: async (_sessionId: string, partIndex: number) => {
         marked.push(partIndex);
         return true;

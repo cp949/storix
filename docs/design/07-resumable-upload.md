@@ -24,7 +24,7 @@
 
 완료 작업자는 OPEN → FINALIZING을 claim하고 lease token을 받는다. 스트리밍 중 heartbeat가 token과 미만료 lease를 갱신한다. 최종 Blob 저장 뒤에도 갱신하며, `VfsNodeRepository.withMutation` 안에서 token·lease를 다시 검증한다. 해당 트랜잭션은 조건부 경로 검사, 논리 quota, Node/Blob/revision, 사용량과 완료 결과를 함께 커밋한다. 실패한 완료는 공개 파일을 만들지 않고 소유한 claim만 OPEN으로 돌린다. 커밋 결과가 불확실한 경우 참조 가능성이 있는 최종 객체는 보존하여 orphan GC에 맡긴다. 늦은 작업자는 회수된 claim으로 공개할 수 없다. 취소는 OPEN만 claim하므로 완료와 취소 중 한 종결 상태만 이긴다.
 
-GC는 DB의 활성 staging key를 orphan 검사에 포함해 보호하고, 종결 세션의 조각 삭제 실패를 재시도한다. metadata가 없는 `upload-staging/` 객체에는 기존 orphan grace를 적용한다. 실제 객체 삭제 전에는 예약·사용량을 해제하지 않는다. 이 정리에는 GC 잡 실행이 필요하다.
+GC는 DB의 활성 staging key를 orphan 검사에 포함해 보호하고, 종결 세션의 조각 삭제 실패를 재시도한다. metadata가 없는 `upload-staging/` 객체에는 기존 orphan grace를 적용한다. 조각 예약에는 PUT 소유 lease를 두고 PUT가 진행되는 동안 갱신한다. 만료된 `RESERVED`는 key별 정리 기록으로 옮기고 이전 key의 예약량을 전역·namespace 상한에 계속 포함한다. 이전 PUT가 미정착인 동안 같은 index 재시도는 정리 중이면 `409 VFS_UPLOAD_PART_IN_PROGRESS`, 삭제 후에도 이전 예약량으로 cap이 찼으면 `413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`를 반환한다. 용량 여유가 있으면 새 UUID key로 재시도할 수 있다. 정확한 key 삭제와 PUT 종료를 모두 확인한 뒤에만 이전 예약량을 해제한다. MinIO SDK는 프로세스 중단된 PUT의 취소·정착을 증명하지 못하므로 이런 예약은 자동으로 과금을 해제하지 않는다. 결과적으로 같은 세션 또는 다른 업로드가 cap에 막힐 수 있고, 이 경우 자동 복구 경로는 없다. GC는 key를 반복 정리하지만 과금 해제 근거는 만들지 않는다. 이 정리에는 GC 잡 실행이 필요하다.
 
 ## 검증과 운영 경계
 

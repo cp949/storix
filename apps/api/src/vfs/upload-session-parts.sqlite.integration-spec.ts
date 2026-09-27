@@ -19,6 +19,7 @@ import { GcJob } from '../jobs/gc.job.js';
 import { ALL_MIGRATIONS } from '../persistence/migrations/all-migrations.js';
 import { VfsUploadUsageEntity } from '../persistence/entities/vfs-upload-usage.entity.js';
 import { VfsUploadSessionEntity } from '../persistence/entities/vfs-upload-session.entity.js';
+import { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-part.entity.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
@@ -254,7 +255,7 @@ describe('upload parts (SQLite + MinIO)', () => {
     } finally { resume(); spy.mockRestore(); }
   });
 
-  it('re-charges a late object after GC deleted its in-flight reservation', async () => {
+  it('keeps a late PUT charged after GC retires its expired reservation', async () => {
     const id = await create('/gc-late-put.bin', '4', raceNamespaceId);
     const storage = app.get<BlobStorage>(BLOB_STORAGE);
     const repo = app.get(VfsUploadSessionRepository);
@@ -278,32 +279,33 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(reserved?.state).toBe('RESERVED');
       await app.get(DataSource).getRepository(VfsUploadSessionEntity)
         .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
+      await app.get(DataSource).getRepository(VfsUploadPartEntity)
+        .update({ sessionId: id, partIndex: 0 }, { leaseExpiresAt: new Date(Date.now() - 1000) });
       const gcResult = await app.get(GcJob).run();
       expect(gcResult.deletedStagingObjects).toBeGreaterThanOrEqual(1);
-      expect((await repo.findPart(id, 0))?.state).toBe('DELETED');
-      expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
+      expect(await repo.findPart(id, 0)).toBeNull();
+      expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
       deleteSpy = jest.spyOn(storage, 'delete')
         .mockImplementationOnce(async () => { throw new Error('cleanup unavailable'); })
         .mockImplementation(originalDelete);
       resume();
       const response = await pending;
       expect(response.status).toBe(409);
-      expect((await repo.findPart(id, 0))?.state).toBe('CLEANUP');
+      expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
-      expect(await repo.releasePartReservation(id, 0, true, reserved!.stagingKey)).toBe(false);
       expect(await repo.releasePartReservation(id, 0, true, `upload-staging/${randomUUID()}`)).toBe(false);
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
       deleteSpy.mockRestore();
       deleteSpy = undefined;
       const retried = await app.get(GcJob).run();
       expect(retried.deletedStagingObjects).toBeGreaterThanOrEqual(1);
-      expect((await repo.findPart(id, 0))?.state).toBe('DELETED');
+      expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
       await expect(storage.get(reserved!.stagingKey)).rejects.toThrow();
     } finally { resume(); putSpy.mockRestore(); deleteSpy?.mockRestore(); }
   });
 
-  it('rejects a delayed GC mark after an in-flight part is re-accounted', async () => {
+  it('keeps a retired key charged until its late PUT settles and deletion succeeds', async () => {
     const id = await create('/gc-stale-mark.bin', '4', raceNamespaceId);
     const storage = app.get<BlobStorage>(BLOB_STORAGE);
     const repo = app.get(VfsUploadSessionRepository);
@@ -324,9 +326,9 @@ describe('upload parts (SQLite + MinIO)', () => {
     let resumeGcDelete!: () => void;
     const gcDeleteReleased = new Promise<void>((resolve) => { resumeGcDelete = resolve; });
     const deleteSpy = jest.spyOn(storage, 'delete').mockImplementationOnce(async (key) => {
+      await originalDelete(key);
       gcDeleteEntered();
       await gcDeleteReleased;
-      await originalDelete(key);
     }).mockImplementationOnce(async () => { throw new Error('service cleanup unavailable'); })
       .mockImplementation(originalDelete);
     try {
@@ -336,24 +338,24 @@ describe('upload parts (SQLite + MinIO)', () => {
       expect(reserved?.state).toBe('RESERVED');
       await app.get(DataSource).getRepository(VfsUploadSessionEntity)
         .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
+      await app.get(DataSource).getRepository(VfsUploadPartEntity)
+        .update({ sessionId: id, partIndex: 0 }, { leaseExpiresAt: new Date(Date.now() - 1000) });
       const gcPending = app.get(GcJob).run();
       await gcDeleteStarted;
-      await originalDelete(reserved!.stagingKey);
-      expect(await repo.markStagingObjectDeleted(id, 0, reserved!.stagingKey, 'RESERVED')).toBe(true);
-      expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
+      expect(await repo.markStagingObjectDeleted(id, 0, reserved!.stagingKey, 'RESERVED')).toBe(false);
+      expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
       resumePut();
       expect((await pending).status).toBe(409);
-      expect((await repo.findPart(id, 0))?.state).toBe('CLEANUP');
+      expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
       resumeGcDelete();
-      expect((await gcPending).deletedStagingObjects).toBe(0);
-      expect((await repo.findPart(id, 0))?.state).toBe('CLEANUP');
+      expect((await gcPending).deletedStagingObjects).toBeGreaterThanOrEqual(1);
+      expect(await repo.findPart(id, 0)).toBeNull();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('4');
-      const marks = await Promise.all([
-        repo.markStagingObjectDeleted(id, 0, reserved!.stagingKey, 'CLEANUP'),
-        repo.markStagingObjectDeleted(id, 0, reserved!.stagingKey, 'CLEANUP'),
-      ]);
-      expect(marks.sort()).toEqual([false, true]);
+      (await storage.get(reserved!.stagingKey)).destroy();
+      await app.get(GcJob).run();
+      expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
+      await expect(storage.get(reserved!.stagingKey)).rejects.toThrow();
       expect(String((await usage.findOneByOrFail({ id: 'global' })).stagedBytes)).toBe('0');
     } finally { resumePut(); resumeGcDelete(); putSpy.mockRestore(); deleteSpy.mockRestore(); }
   });

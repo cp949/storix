@@ -71,6 +71,25 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     await context.restartEnabled();
   });
 
+  it('keeps creation and completion request IDs separate across both replay routes', async () => {
+    const key = randomUUID();
+    const body = { path: '/final-dual-replay-id.bin', sizeBytes: '0', mimeType: 'application/octet-stream', ifAbsent: true };
+    const createCall = (requestId: string) => auth(api().post(base()))
+      .set('X-Mutation-Scope', 'finalize')
+      .set('Idempotency-Key', key)
+      .set('X-Request-Id', requestId)
+      .send(body);
+    const created = await createCall('creation-original').expect(201);
+    const id = created.body.sessionId as string;
+    const completed = await complete(id).set('X-Request-Id', 'completion-original').expect(201);
+    const createReplay = await createCall('creation-retry').expect(201);
+    const completeReplay = await complete(id).set('X-Request-Id', 'completion-retry').expect(201);
+    expect(createReplay.body).toEqual(created.body);
+    expect(createReplay.headers['x-request-id']).toBe('creation-original');
+    expect(completeReplay.body).toEqual(completed.body);
+    expect(completeReplay.headers['x-request-id']).toBe('completion-original');
+  });
+
   it('rejects a changed target at finalization and keeps the losing session retryable', async () => {
     const loser = await create('/final-conflict.bin', '4');
     const winner = await create('/final-conflict.bin', '4');

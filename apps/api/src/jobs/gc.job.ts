@@ -47,6 +47,16 @@ export class GcJob {
     }
     let deletedStagingObjects = 0;
     if (this.uploadSessions) {
+      let staleAfter: { sessionId: string; partIndex: number } | null = null;
+      while (true) {
+        const stale = await this.uploadSessions.findExpiredReservedParts(now, staleAfter, CLEANUP_BATCH_SIZE);
+        for (const part of stale) {
+          await this.uploadSessions.retireExpiredPartReservation(part.sessionId, part.partIndex, part.stagingKey, now);
+        }
+        if (stale.length < CLEANUP_BATCH_SIZE) break;
+        const last = stale[stale.length - 1];
+        staleAfter = { sessionId: last.sessionId, partIndex: last.partIndex };
+      }
       let after: { sessionId: string; partIndex: number } | null = null;
       while (true) {
         const parts = await this.uploadSessions.findCleanupParts(after, CLEANUP_BATCH_SIZE);
@@ -64,6 +74,23 @@ export class GcJob {
         if (parts.length < CLEANUP_BATCH_SIZE) break;
         const last = parts[parts.length - 1];
         after = { sessionId: last.sessionId, partIndex: last.partIndex };
+      }
+      let tombstoneAfter: string | null = null;
+      while (true) {
+        const old = await this.uploadSessions.findCleanupTombstones(tombstoneAfter, CLEANUP_BATCH_SIZE);
+        for (const part of old) {
+          try {
+            await this.storage.delete(part.stagingKey);
+            // The observed PUT settlement belongs to this delete attempt. A PUT
+            // settling while delete is in flight needs another delete before refund.
+            if (await this.uploadSessions.markTombstoneDeleted(part.stagingKey, part.putSettledAt))
+              deletedStagingObjects++;
+          } catch (error) {
+            this.logger.error(`stale staging object 삭제 실패: ${part.stagingKey}`, error);
+          }
+        }
+        if (old.length < CLEANUP_BATCH_SIZE) break;
+        tombstoneAfter = old[old.length - 1].stagingKey;
       }
     }
 

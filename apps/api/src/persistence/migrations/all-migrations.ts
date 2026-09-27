@@ -12,6 +12,8 @@ import { InitSchema1788637362016 } from './1788637362016-InitSchema.js';
 import { AddVfsUploadSessions1791700000000 } from './1791700000000-AddVfsUploadSessions.js';
 import { AddUploadCreationExpiry1791700000001 } from './1791700000001-AddUploadCreationExpiry.js';
 import { AddUploadFinalizeLeaseToken1791700000002 } from './1791700000002-AddUploadFinalizeLeaseToken.js';
+import { AddUploadCreationRequestId1791700000003 } from './1791700000003-AddUploadCreationRequestId.js';
+import { AddUploadPartLease1791700000004 } from './1791700000004-AddUploadPartLease.js';
 
 type MigrationClass = new () => MigrationInterface;
 
@@ -35,4 +37,6 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddVfsUploadSessions1791700000000,
   AddUploadCreationExpiry1791700000001,
   AddUploadFinalizeLeaseToken1791700000002,
+  AddUploadCreationRequestId1791700000003,
+  AddUploadPartLease1791700000004,
 ];

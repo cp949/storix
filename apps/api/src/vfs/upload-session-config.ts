@@ -100,6 +100,10 @@ export function parseUploadSessionPolicy(
     throw new Error('Upload session part size exceeds database integer range');
   if (global.inactivitySeconds > global.maxLifetimeSeconds)
     throw new Error('Upload session inactivity exceeds lifetime');
+  const maxDateMs = 8_640_000_000_000_000;
+  if (!Number.isFinite(Date.now() + global.maxLifetimeSeconds * 1000) ||
+    Date.now() + global.maxLifetimeSeconds * 1000 > maxDateMs)
+    throw new Error('Upload session lifetime exceeds Date range');
   if (root.namespaces === null || typeof root.namespaces !== 'object' || Array.isArray(root.namespaces)) {
     throw new Error('Invalid upload session policy: namespaces');
   }

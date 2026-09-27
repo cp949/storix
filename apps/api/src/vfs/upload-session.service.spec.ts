@@ -29,6 +29,7 @@ describe('UploadSessionService lifecycle', () => {
         if (sessions.size >= 1) return { kind: 'limit' };
         const session: VfsUploadSessionEntity = {
           ...input, state: 'OPEN', requestId: input.requestId ?? null,
+          creationRequestId: input.requestId ?? null,
           leaseExpiresAt: null, leaseToken: null, terminalAt: null, responseStatus: null,
           responseBody: null, createdAt: input.now, updatedAt: input.now,
           creationExpiresAt: input.expiresAt,
@@ -76,6 +77,32 @@ describe('UploadSessionService lifecycle', () => {
     await expect(service.create(namespaceId, 'scope', key, { ...request, mimeType: 'text/plain' }, 'third')).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED', status: 409 });
     await service.cancel(namespaceId, (first.body as { sessionId: string }).sessionId);
     expect((await service.create(namespaceId, 'scope', key, request, 'fourth')).body).toEqual(first.body);
+  });
+
+  it('keeps the creation request ID when completion stores its own request ID', async () => {
+    const { service, sessions } = setup();
+    const first = await service.create(namespaceId, 'scope', key, request, 'creation-request');
+    const id = (first.body as { sessionId: string }).sessionId;
+    const session = sessions.get(id);
+    if (!session) throw new Error('session missing');
+    session.state = 'COMPLETED';
+    session.requestId = 'completion-request';
+    const replay = await service.create(namespaceId, 'scope', key, request, 'creation-retry');
+    expect(replay.status).toBe(201);
+    expect(replay.body).toEqual(first.body);
+    expect(replay.headers['x-request-id']).toBe('creation-request');
+  });
+
+  it('uses the retry request ID when a legacy completed row has no creation request ID', async () => {
+    const { service, sessions } = setup();
+    const first = await service.create(namespaceId, 'scope', key, request, 'creation-request');
+    const session = sessions.get((first.body as { sessionId: string }).sessionId);
+    if (!session) throw new Error('session missing');
+    session.creationRequestId = null;
+    session.state = 'COMPLETED';
+    session.requestId = 'completion-request';
+    const replay = await service.create(namespaceId, 'scope', key, request, 'creation-retry');
+    expect(replay.headers['x-request-id']).toBe('creation-retry');
   });
 
   it('blocks new sessions after disable while status and cancel remain available', async () => {

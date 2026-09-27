@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, IsNull } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
+import { classifyPersistenceOperation } from './persistence-failure.js';
 import { VfsUploadPartEntity, type VfsUploadPartState } from './entities/vfs-upload-part.entity.js';
+import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { VfsUploadSessionEntity, type VfsUploadSessionState } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
@@ -39,7 +41,7 @@ export type CreateUploadSessionResult =
 export type ReserveUploadPartResult =
   | { readonly kind: 'reserved'; readonly part: VfsUploadPartEntity }
   | { readonly kind: 'exists'; readonly part: VfsUploadPartEntity }
-  | { readonly kind: 'limit' | 'closed' | 'invalid' };
+  | { readonly kind: 'limit' | 'closed' | 'invalid' | 'in-progress' };
 
 interface UsageCounters {
   readonly id: string;
@@ -100,6 +102,7 @@ export class VfsUploadSessionRepository {
     }
   }
 
+  @classifyPersistenceOperation
   async createSession(
     input: CreateUploadSessionInput,
     caps: UploadSessionCaps,
@@ -130,6 +133,7 @@ export class VfsUploadSessionRepository {
         responseStatus: null,
         responseBody: null,
         requestId: input.requestId ?? null,
+        creationRequestId: input.requestId ?? null,
         createdAt: input.now,
         updatedAt: input.now,
         creationExpiresAt: input.expiresAt,
@@ -140,12 +144,14 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async reservePart(
     sessionId: string,
     partIndex: number,
     sizeBytes: string,
     stagingKey: string,
     caps: UploadSessionCaps,
+    leaseSeconds = 60,
   ): Promise<ReserveUploadPartResult> {
     const amount = BigInt(sizeBytes);
     if (amount <= 0n || !Number.isSafeInteger(partIndex) || partIndex < 0) return { kind: 'invalid' };
@@ -163,6 +169,9 @@ export class VfsUploadSessionRepository {
       const existing = await parts.findOneBy({ sessionId, partIndex });
       if (existing && (existing.state !== 'DELETED' || existing.objectDeletedAt === null))
         return { kind: 'exists', part: existing };
+      const pendingDeletes = await manager.getRepository(VfsUploadStagingCleanupEntity)
+        .countBy({ sessionId, partIndex, deletedAt: IsNull() });
+      if (pendingDeletes !== 0) return { kind: 'in-progress' };
       // 삭제된 행을 교체해도 같은 객체 key를 재사용하면 과거 GC 콜백과 구별할 수 없다.
       if (existing?.stagingKey === stagingKey) return { kind: 'invalid' };
       if (partIndex >= session.partCount) return { kind: 'invalid' };
@@ -181,6 +190,7 @@ export class VfsUploadSessionRepository {
         encryptionIv: null,
         state: 'RESERVED',
         objectDeletedAt: null,
+        leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000),
         createdAt: now,
         updatedAt: now,
       });
@@ -190,6 +200,7 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async commitPart(
     sessionId: string,
     partIndex: number,
@@ -208,7 +219,8 @@ export class VfsUploadSessionRepository {
       if (!current || current.state !== 'OPEN' || current.expiresAt <= now || current.maxExpiresAt <= now)
         return false;
       const part = await manager.getRepository(VfsUploadPartEntity).findOneBy({ sessionId, partIndex });
-      if (!part || part.state !== 'RESERVED' || (stagingKey !== undefined && part.stagingKey !== stagingKey))
+      if (!part || part.state !== 'RESERVED' || !part.leaseExpiresAt || part.leaseExpiresAt <= now ||
+        (stagingKey !== undefined && part.stagingKey !== stagingKey))
         return false;
       if (inactivitySeconds !== undefined) {
         const expiresAt = new Date(Math.min(now.getTime() + inactivitySeconds * 1000,
@@ -237,8 +249,62 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
+  async renewPartLease(sessionId: string, partIndex: number, stagingKey: string,
+    leaseSeconds = 60): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(VfsUploadPartEntity);
+      const query = repo.createQueryBuilder('part')
+        .where('part.session_id = :sessionId AND part.part_index = :partIndex AND part.staging_key = :stagingKey AND part.state = :state',
+          { sessionId, partIndex, stagingKey, state: 'RESERVED' });
+      if (!isSqliteDataSource(this.dataSource.options)) query.setLock('pessimistic_write');
+      const part = await query.getOne();
+      const lockedNow = new Date();
+      if (!part || !part.leaseExpiresAt || part.leaseExpiresAt <= lockedNow) return false;
+      const result = await repo.createQueryBuilder().update()
+        .set({ leaseExpiresAt: new Date(lockedNow.getTime() + leaseSeconds * 1000), updatedAt: lockedNow })
+        .where('session_id = :sessionId AND part_index = :partIndex AND staging_key = :stagingKey',
+          { sessionId, partIndex, stagingKey })
+        .andWhere('state = :state AND lease_expires_at > :now', { state: 'RESERVED', now: lockedNow })
+        .execute();
+      return result.affected === 1;
+    });
+  }
+
+  @classifyPersistenceOperation
+  async retireExpiredPartReservation(sessionId: string, partIndex: number, stagingKey: string,
+    _observedNow = new Date()): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const session = await manager.getRepository(VfsUploadSessionEntity).findOneBy({ id: sessionId });
+      if (!session) return false;
+      await this.lockUsage(manager, session.namespaceId);
+      const parts = manager.getRepository(VfsUploadPartEntity);
+      const query = parts.createQueryBuilder('part')
+        .where('part.session_id = :sessionId AND part.part_index = :partIndex AND part.staging_key = :stagingKey',
+          { sessionId, partIndex, stagingKey });
+      if (!isSqliteDataSource(this.dataSource.options)) query.setLock('pessimistic_write');
+      const part = await query.getOne();
+      const lockedNow = new Date();
+      if (!part || part.state !== 'RESERVED' || part.stagingKey !== stagingKey ||
+        (part.leaseExpiresAt !== null && part.leaseExpiresAt > lockedNow)) return false;
+      const removed = await parts.createQueryBuilder().delete()
+        .where('session_id = :sessionId AND part_index = :partIndex AND staging_key = :stagingKey AND state = :state',
+          { sessionId, partIndex, stagingKey, state: 'RESERVED' })
+        .andWhere('(lease_expires_at IS NULL OR lease_expires_at <= :now)', { now: lockedNow })
+        .execute();
+      if (removed.affected !== 1) return false;
+      await manager.getRepository(VfsUploadStagingCleanupEntity).insert({
+        stagingKey, sessionId, partIndex, namespaceId: session.namespaceId,
+        sizeBytes: part.sizeBytes, deletedAt: null, putSettledAt: null, createdAt: lockedNow,
+      });
+      // This old generation remains charged until its PUT settles and deletion is confirmed.
+      return true;
+    });
+  }
+
   // objectMayExist=true이면 GC가 삭제를 재시도할 수 있도록 객체 참조와 과금을 보존한다.
   // GC가 in-flight put보다 먼저 DELETED 처리했다면 같은 key의 뒤늦은 객체를 다시 과금한다.
+  @classifyPersistenceOperation
   async releasePartReservation(
     sessionId: string,
     partIndex: number,
@@ -251,7 +317,19 @@ export class VfsUploadSessionRepository {
       const usage = await this.lockUsage(manager, session.namespaceId);
       const repo = manager.getRepository(VfsUploadPartEntity);
       const part = await repo.findOneBy({ sessionId, partIndex });
-      if (!part || (stagingKey !== undefined && part.stagingKey !== stagingKey)) return false;
+      if (!part || (stagingKey !== undefined && part.stagingKey !== stagingKey)) {
+        if (stagingKey === undefined) return false;
+        const tombstones = manager.getRepository(VfsUploadStagingCleanupEntity);
+        const old = await tombstones.findOneBy({ stagingKey, sessionId, partIndex });
+        if (!old) return false;
+        if (objectMayExist) {
+          await tombstones.update({ stagingKey }, { putSettledAt: new Date() });
+        } else {
+          await tombstones.delete({ stagingKey });
+          await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(old.sizeBytes));
+        }
+        return true;
+      }
       if (part.state === 'DELETED') {
         if (!objectMayExist || stagingKey === undefined || part.objectDeletedAt === null) return false;
         const restored = await repo.update(
@@ -273,6 +351,7 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async claimTerminalTransition(
     namespaceId: string,
     sessionId: string,
@@ -308,6 +387,7 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async claimFinalize(namespaceId: string, sessionId: string, leaseDurationMs: number): Promise<
     | { kind: 'claimed'; token: string; session: VfsUploadSessionEntity; parts: VfsUploadPartEntity[] }
     | { kind: 'not-found' } | { kind: 'incomplete' } | { kind: 'busy' } | { kind: 'closed' }
@@ -343,27 +423,44 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async renewFinalize(namespaceId: string, sessionId: string, token: string,
     now: Date, leaseExpiresAt: Date): Promise<boolean> {
-    const result = await this.dataSource.getRepository(VfsUploadSessionEntity).createQueryBuilder().update()
-      .set({ leaseExpiresAt, updatedAt: now })
-      .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND lease_token = :token AND lease_expires_at > :now',
-        { sessionId, namespaceId, state: 'FINALIZING', token, now }).execute();
-    return result.affected === 1;
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(VfsUploadSessionEntity);
+      const query = repo.createQueryBuilder('session')
+        .where('session.id = :sessionId AND session.namespace_id = :namespaceId AND session.state = :state AND session.lease_token = :token',
+          { sessionId, namespaceId, state: 'FINALIZING', token });
+      if (!isSqliteDataSource(this.dataSource.options)) query.setLock('pessimistic_write');
+      const session = await query.getOne();
+      const lockedNow = new Date();
+      if (!session || !session.leaseExpiresAt || session.leaseExpiresAt <= lockedNow) return false;
+      const durationMs = leaseExpiresAt.getTime() - now.getTime();
+      const result = await repo.createQueryBuilder().update()
+        .set({ leaseExpiresAt: new Date(lockedNow.getTime() + durationMs), updatedAt: lockedNow })
+        .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND lease_token = :token AND lease_expires_at > :now',
+          { sessionId, namespaceId, state: 'FINALIZING', token, now: lockedNow }).execute();
+      return result.affected === 1;
+    });
   }
 
   // Node mutation과 같은 transaction에서 usage 다음 session row를 잠그고 claim을 검증한다.
   // 회수된 옛 worker는 여기서 실패하며, 검증 성공 뒤 GC 회수는 commit까지 대기한다.
+  @classifyPersistenceOperation
   async fenceFinalize(manager: EntityManager, namespaceId: string, sessionId: string,
     token: string, now: Date, leaseExpiresAt: Date): Promise<void> {
     await this.lockUsage(manager, namespaceId);
+    const lockedNow = new Date();
+    const leaseDurationMs = leaseExpiresAt.getTime() - now.getTime();
+    const lockedLeaseExpiresAt = new Date(lockedNow.getTime() + leaseDurationMs);
     const fenced = await manager.getRepository(VfsUploadSessionEntity).createQueryBuilder().update()
-      .set({ leaseExpiresAt, updatedAt: now })
+      .set({ leaseExpiresAt: lockedLeaseExpiresAt, updatedAt: lockedNow })
       .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND lease_token = :token AND lease_expires_at > :now',
-        { sessionId, namespaceId, state: 'FINALIZING', token, now }).execute();
+        { sessionId, namespaceId, state: 'FINALIZING', token, now: lockedNow }).execute();
     if (fenced.affected !== 1) throw new Error('Upload finalize claim lost');
   }
 
+  @classifyPersistenceOperation
   async completeFinalize(manager: EntityManager, namespaceId: string, sessionId: string,
     token: string, status: number, body: string, requestId: string): Promise<void> {
     const now = new Date();
@@ -377,6 +474,7 @@ export class VfsUploadSessionRepository {
     await this.changeUsage(manager, usage, 'activeSessions', -1n);
   }
 
+  @classifyPersistenceOperation
   async releaseFinalize(namespaceId: string, sessionId: string, token: string): Promise<boolean> {
     const result = await this.dataSource.getRepository(VfsUploadSessionEntity).createQueryBuilder().update()
       .set({ state: 'OPEN', leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() })
@@ -385,10 +483,12 @@ export class VfsUploadSessionRepository {
     return result.affected === 1;
   }
 
+  @classifyPersistenceOperation
   async isFinalObjectReferenced(storageKey: string): Promise<boolean> {
     return this.dataSource.getRepository(BlobEntity).exists({ where: { storageKey } });
   }
 
+  @classifyPersistenceOperation
   async renewSession(
     namespaceId: string,
     sessionId: string,
@@ -396,28 +496,34 @@ export class VfsUploadSessionRepository {
     inactivitySeconds: number,
   ): Promise<boolean> {
     return this.dataSource.transaction(async (manager) => {
+      await this.lockUsage(manager, namespaceId);
       const repo = manager.getRepository(VfsUploadSessionEntity);
-      const session = await repo.findOneBy({ id: sessionId, namespaceId });
-      if (!session || session.state !== 'OPEN' || session.expiresAt <= now || session.maxExpiresAt <= now)
+      const query = repo.createQueryBuilder('session')
+        .where('session.id = :sessionId AND session.namespace_id = :namespaceId', { sessionId, namespaceId });
+      if (!isSqliteDataSource(this.dataSource.options)) query.setLock('pessimistic_write');
+      const session = await query.getOne();
+      const lockedNow = new Date();
+      if (!session || session.state !== 'OPEN' || session.expiresAt <= lockedNow || session.maxExpiresAt <= lockedNow)
         return false;
       const expiresAt = new Date(
-        Math.min(now.getTime() + inactivitySeconds * 1000, session.maxExpiresAt.getTime()),
+        Math.min(lockedNow.getTime() + inactivitySeconds * 1000, session.maxExpiresAt.getTime()),
       );
       const result = await repo
         .createQueryBuilder()
         .update()
-        .set({ expiresAt, updatedAt: now })
+        .set({ expiresAt, updatedAt: lockedNow })
         .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND expires_at > :now AND max_expires_at > :now', {
           sessionId,
           namespaceId,
           state: 'OPEN',
-          now,
+          now: lockedNow,
         })
         .execute();
       return result.affected === 1;
     });
   }
 
+  @classifyPersistenceOperation
   async findForStatus(
     namespaceId: string,
     sessionId: string,
@@ -432,14 +538,17 @@ export class VfsUploadSessionRepository {
     return { session, parts: parts.map((part) => ({ ...part, sizeBytes: String(part.sizeBytes) })) };
   }
 
+  @classifyPersistenceOperation
   async findPart(sessionId: string, partIndex: number): Promise<VfsUploadPartEntity | null> {
     return this.dataSource.getRepository(VfsUploadPartEntity).findOneBy({ sessionId, partIndex });
   }
 
+  @classifyPersistenceOperation
   async findByCreationKey(namespaceId: string, scope: string, creationKey: string): Promise<VfsUploadSessionEntity | null> {
     return this.dataSource.getRepository(VfsUploadSessionEntity).findOneBy({ namespaceId, scope, creationKey });
   }
 
+  @classifyPersistenceOperation
   async findExpiredOpenSessions(now: Date, batchSize = 500): Promise<Array<Pick<VfsUploadSessionEntity, 'id' | 'namespaceId'>>> {
     return this.dataSource.getRepository(VfsUploadSessionEntity)
       .createQueryBuilder('session')
@@ -451,6 +560,7 @@ export class VfsUploadSessionRepository {
       .getMany();
   }
 
+  @classifyPersistenceOperation
   async recoverStaleFinalizingLeases(now: Date): Promise<number> {
     const result = await this.dataSource.getRepository(VfsUploadSessionEntity)
       .createQueryBuilder().update()
@@ -460,6 +570,7 @@ export class VfsUploadSessionRepository {
     return result.affected ?? 0;
   }
 
+  @classifyPersistenceOperation
   async findCleanupParts(
     after: Pick<VfsUploadPartEntity, 'sessionId' | 'partIndex'> | null = null,
     batchSize = 500,
@@ -468,8 +579,8 @@ export class VfsUploadSessionRepository {
       .createQueryBuilder('part')
       .innerJoin(VfsUploadSessionEntity, 'session', 'session.id = part.session_id')
       .select(['part.sessionId', 'part.partIndex', 'part.stagingKey', 'part.state'])
-      .where('(part.state = :cleanup OR (session.state IN (:...states) AND part.state != :deleted))', {
-        cleanup: 'CLEANUP', states: ['COMPLETED', 'CANCELLED', 'EXPIRED'], deleted: 'DELETED',
+      .where(`(part.state = :cleanup OR (session.state IN (:...states) AND part.state = :stored))`, {
+        cleanup: 'CLEANUP', states: ['COMPLETED', 'CANCELLED', 'EXPIRED'], stored: 'STORED',
       })
       .orderBy('part.sessionId', 'ASC')
       .addOrderBy('part.partIndex', 'ASC')
@@ -481,22 +592,67 @@ export class VfsUploadSessionRepository {
     return query.getMany();
   }
 
+  @classifyPersistenceOperation
+  async findExpiredReservedParts(now: Date, after: Pick<VfsUploadPartEntity, 'sessionId' | 'partIndex'> | null = null,
+    batchSize = 500): Promise<Array<Pick<VfsUploadPartEntity, 'sessionId' | 'partIndex' | 'stagingKey'>>> {
+    const query = this.dataSource.getRepository(VfsUploadPartEntity).createQueryBuilder('part')
+      .select(['part.sessionId', 'part.partIndex', 'part.stagingKey'])
+      .where('part.state = :state AND (part.lease_expires_at IS NULL OR part.lease_expires_at <= :now)',
+        { state: 'RESERVED', now })
+      .orderBy('part.sessionId', 'ASC').addOrderBy('part.partIndex', 'ASC').take(batchSize);
+    if (after) query.andWhere('(part.session_id > :sessionId OR (part.session_id = :sessionId AND part.part_index > :partIndex))', after);
+    return query.getMany();
+  }
+
+  @classifyPersistenceOperation
+  async findCleanupTombstones(after: string | null = null, batchSize = 500): Promise<VfsUploadStagingCleanupEntity[]> {
+    const query = this.dataSource.getRepository(VfsUploadStagingCleanupEntity).createQueryBuilder('old')
+      .orderBy('old.stagingKey', 'ASC').take(batchSize);
+    if (after) query.where('old.staging_key > :after', { after });
+    return query.getMany();
+  }
+
+  @classifyPersistenceOperation
+  async markTombstoneDeleted(stagingKey: string, observedPutSettledAt: Date | null): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const tombstones = manager.getRepository(VfsUploadStagingCleanupEntity);
+      const old = await tombstones.findOneBy({ stagingKey });
+      if (!old) return false;
+      const usage = await this.lockUsage(manager, old.namespaceId);
+      const current = await tombstones.findOneBy({ stagingKey });
+      if (!current) return false;
+      if (observedPutSettledAt !== null && current.putSettledAt !== null &&
+        current.putSettledAt.getTime() === observedPutSettledAt.getTime()) {
+        await tombstones.delete({ stagingKey });
+        await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(current.sizeBytes));
+      } else {
+        await tombstones.update({ stagingKey }, { deletedAt: new Date() });
+      }
+      return true;
+    });
+  }
+
+  @classifyPersistenceOperation
   async findAllStagingKeys(): Promise<Set<string>> {
     const parts = await this.dataSource.getRepository(VfsUploadPartEntity)
       .createQueryBuilder('part')
       .select('part.stagingKey', 'stagingKey')
       .where('part.state != :deleted', { deleted: 'DELETED' })
       .getRawMany<{ stagingKey: string }>();
-    return new Set(parts.map((part) => part.stagingKey));
+    const old = await this.dataSource.getRepository(VfsUploadStagingCleanupEntity)
+      .createQueryBuilder('old').select('old.stagingKey', 'stagingKey')
+      .getRawMany<{ stagingKey: string }>();
+    return new Set([...parts.map((part) => part.stagingKey), ...old.map((part) => part.stagingKey)]);
   }
 
+  @classifyPersistenceOperation
   async markStagingObjectDeleted(
     sessionId: string,
     partIndex: number,
     stagingKey: string,
     expectedState: VfsUploadPartState,
   ): Promise<boolean> {
-    if (expectedState === 'DELETED') return false;
+    if (expectedState === 'DELETED' || expectedState === 'RESERVED') return false;
     return this.dataSource.transaction(async (manager) => {
       const sessions = manager.getRepository(VfsUploadSessionEntity);
       const session = await sessions.findOneBy({ id: sessionId });
@@ -518,6 +674,7 @@ export class VfsUploadSessionRepository {
     });
   }
 
+  @classifyPersistenceOperation
   async pruneTerminalSessions(before: Date, batchSize = 500): Promise<number> {
     const sessions = await this.dataSource
       .getRepository(VfsUploadSessionEntity)
@@ -528,6 +685,7 @@ export class VfsUploadSessionRepository {
       })
       .andWhere(`NOT EXISTS (SELECT 1 FROM "vfs_upload_part" part
         WHERE part.session_id = session.id AND part.state != :deleted)`, { deleted: 'DELETED' })
+      .andWhere('NOT EXISTS (SELECT 1 FROM "vfs_upload_staging_cleanup" old WHERE old.session_id = session.id)')
       .orderBy('session.terminal_at', 'ASC')
       .addOrderBy('session.id', 'ASC')
       .take(batchSize)

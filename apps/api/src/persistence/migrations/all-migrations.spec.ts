@@ -18,6 +18,8 @@ describe('ALL_MIGRATIONS', () => {
       'AddVfsUploadSessions1791700000000',
       'AddUploadCreationExpiry1791700000001',
       'AddUploadFinalizeLeaseToken1791700000002',
+      'AddUploadCreationRequestId1791700000003',
+      'AddUploadPartLease1791700000004',
     ]);
   });
 });

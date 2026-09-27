@@ -1189,7 +1189,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '413':
-          description: VFS_UPLOAD_STAGING_LIMIT_EXCEEDED 또는 스트림 초과(VFS_FILE_TOO_LARGE)
+          description: VFS_UPLOAD_STAGING_LIMIT_EXCEEDED 또는 스트림 초과(VFS_FILE_TOO_LARGE). 정착 여부가 불명확한 이전 staging PUT 예약량은 자동 해제되지 않으므로 이 오류가 반복될 수 있다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

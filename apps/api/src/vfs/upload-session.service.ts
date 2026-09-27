@@ -37,6 +37,13 @@ function response(session: VfsUploadSessionEntity, creationReplay = false) {
   };
 }
 
+function creationRequestId(session: VfsUploadSessionEntity, currentRequestId: string): string {
+  if (session.creationRequestId !== null) return session.creationRequestId;
+  // migration 이전에 완료된 행은 생성 ID가 유실됐으므로 이번 재시도의 ID를 사용한다.
+  if (session.state === 'COMPLETED') return currentRequestId;
+  return session.requestId ?? currentRequestId;
+}
+
 @Injectable()
 export class UploadSessionService {
   private readonly globalMaxFileSizeBytes: number;
@@ -66,7 +73,7 @@ export class UploadSessionService {
     if (existing) {
       if (existing.fingerprint !== fingerprint)
         throw new UploadSessionError('MUTATION_KEY_REUSED', 409, '다른 요청에 사용한 mutation key');
-      return { status: 201, body: response(existing, true), headers: { 'x-request-id': existing.requestId ?? requestId } };
+      return { status: 201, body: response(existing, true), headers: { 'x-request-id': creationRequestId(existing, requestId) } };
     }
     const namespacePolicy = this.policy?.namespaces[namespaceId.toLowerCase()];
     if (!this.policy || !namespacePolicy) throw new UploadSessionError('VFS_FEATURE_DISABLED', 409, 'Upload session policy missing');
@@ -104,7 +111,7 @@ export class UploadSessionService {
     if (outcome.kind === 'limit') throw new UploadSessionError('VFS_UPLOAD_SESSION_LIMIT_EXCEEDED', 429,
       '활성 업로드 세션 상한 초과', 1);
     return { status: 201, body: response(outcome.session, true),
-      headers: { 'x-request-id': outcome.session.requestId ?? requestId } };
+      headers: { 'x-request-id': creationRequestId(outcome.session, requestId) } };
   }
 
   async status(namespaceId: string, sessionId: string) {

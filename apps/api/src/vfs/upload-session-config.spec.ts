@@ -106,4 +106,15 @@ describe('upload session policy', () => {
   ])('rejects invalid or missing finite policy limits: %j', async (value) => {
     await expect(load(value)).rejects.toThrow();
   });
+
+  it('rejects a lifetime that cannot be represented as a JavaScript Date', async () => {
+    await expect(load({
+      global: {
+        maxStagedBytes: '100', maxActiveSessions: 1,
+        inactivitySeconds: 1, maxLifetimeSeconds: Number.MAX_SAFE_INTEGER,
+      },
+      namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1 } },
+    })).rejects.toThrow(/Date range/);
+  });
+
 });

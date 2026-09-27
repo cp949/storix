@@ -11,6 +11,8 @@
 ### Added
 
 - 기본 비활성 `resumable-upload` capability로 생성·조각 저장·상태 조회·완료·취소 API를 추가했다. 같은 조각의 평문 SHA-256 재전송, 활동 기반 만료 갱신, 전역·namespace 임시 저장량 및 활성 세션 한도, 암호화 staging, GC 정리를 지원한다. 완전 업로드된 기존 세션은 capability를 끈 뒤에도 완료할 수 있다.
+- 프로세스 중단으로 staging PUT 정착 여부가 불명확한 예약은 quota 초과를 막기 위해 자동 과금 해제하지 않는다. 이 예약이 상한을 소진하면 해당 세션을 포함한 추가 업로드가 용량 한도 오류를 반환할 수 있다.
+  조각 PUT 제한 시간은 저장소 지연과 역압 중에도 적용되며, 만료된 예약의 이전 객체는 PUT 종료가 확인될 때까지 별도 과금 기록으로 보호한다.
 
 - `POST /api/v2/namespaces/{namespaceId}/fs/upload-sessions/{sessionId}/complete`로 저장된 조각을 순서대로 합쳐 조건부 파일 변경·논리 quota를 한 DB 트랜잭션에서 공개한다. 완료 결과와 `X-Request-Id`는 재시도 시 재생하며, 재회수된 완료 작업자는 lease token 검증으로 공개를 차단한다.
 
