@@ -9,7 +9,7 @@ import {
   putUploadSessionPart,
 } from "../api/client";
 import type { UploadSessionStatus } from "../api/types";
-import { ErrorProvider } from "../error/ErrorContext";
+import { ErrorProvider } from "../error/ErrorProvider";
 import { ResumableUpload } from "./ResumableUpload";
 import {
   readUploadSession,

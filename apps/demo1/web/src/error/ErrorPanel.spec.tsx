@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/client";
-import { ErrorProvider, useErrorReporter } from "./ErrorContext";
+import { ErrorProvider } from "./ErrorProvider";
+import { useErrorReporter } from "./use-error-reporter";
 import { ErrorPanel } from "./ErrorPanel";
 
 function Trigger() {

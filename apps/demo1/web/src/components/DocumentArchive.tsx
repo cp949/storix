@@ -13,7 +13,7 @@ import {
   unpublishDocument,
 } from "../api/client";
 import type { DemoUser, FileEntry, PublicLink } from "../api/types";
-import { useErrorReporter } from "../error/ErrorContext";
+import { useErrorReporter } from "../error/use-error-reporter";
 import { joinPath } from "../utils/path";
 import { EntryList } from "./EntryList";
 import { FolderTree } from "./FolderTree";
@@ -28,9 +28,13 @@ function splitBreadcrumb(path: string): string[] {
 }
 
 export function DocumentArchive({ user }: DocumentArchiveProps) {
+  return <DocumentArchiveForUser key={user} user={user} />;
+}
+
+function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
   const [currentPath, setCurrentPath] = useState("/");
   const [items, setItems] = useState<FileEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchName, setSearchName] = useState("");
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
   const [uploadStatus, setUploadStatus] = useState<
@@ -46,7 +50,6 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
 
   const loadList = useCallback(
     async (path: string) => {
-      setLoading(true);
       try {
         const pageResult = await listDocuments(user, path);
         setItems(pageResult.items);
@@ -61,14 +64,41 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
   );
 
   useEffect(() => {
-    setCurrentPath("/");
-  }, [user]);
+    let cancelled = false;
+    void listDocuments(user, currentPath)
+      .then((pageResult) => {
+        if (cancelled) {
+          return;
+        }
+        setItems(pageResult.items);
+        clearError();
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          reportError(cause);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, currentPath, clearError, reportError]);
 
-  useEffect(() => {
-    setSearchResults(null);
-    setSelectedPath(null);
-    void loadList(currentPath);
-  }, [currentPath, loadList]);
+  const handleNavigate = useCallback(
+    (path: string) => {
+      setSearchResults(null);
+      setSelectedPath(null);
+      if (path !== currentPath) {
+        setLoading(true);
+      }
+      setCurrentPath(path);
+    },
+    [currentPath],
+  );
 
   async function handleSearch() {
     setLoading(true);
@@ -90,6 +120,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       await uploadDocument(user, joinPath(currentPath, file.name), file);
       setUploadStatus("success");
       clearError();
+      setLoading(true);
       await loadList(currentPath);
     } catch (cause) {
       setUploadStatus("error");
@@ -108,6 +139,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       setNewFolderName("");
       clearError();
       setTreeRefreshKey((key) => key + 1);
+      setLoading(true);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -124,6 +156,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
+      setLoading(true);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -140,6 +173,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
+      setLoading(true);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -155,6 +189,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
+      setLoading(true);
       await loadList(currentPath);
     } catch (cause) {
       reportError(cause);
@@ -215,14 +250,14 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
         <FolderTree
           user={user}
           selectedPath={currentPath}
-          onNavigate={setCurrentPath}
+          onNavigate={handleNavigate}
           refreshKey={treeRefreshKey}
         />
       </aside>
 
       <div className="archive-main">
         <nav aria-label="현재 위치">
-          <button type="button" onClick={() => setCurrentPath("/")}>
+          <button type="button" onClick={() => handleNavigate("/")}>
             root
           </button>
           {breadcrumbSegments.map((segment, index) => {
@@ -230,7 +265,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
             return (
               <span key={path}>
                 {" / "}
-                <button type="button" onClick={() => setCurrentPath(path)}>
+                <button type="button" onClick={() => handleNavigate(path)}>
                   {segment}
                 </button>
               </span>
@@ -301,6 +336,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
             onComplete={async () => {
               setSearchResults(null);
               setTreeRefreshKey((key) => key + 1);
+              setLoading(true);
               await loadList(currentPath);
             }}
           />
@@ -323,7 +359,7 @@ export function DocumentArchive({ user }: DocumentArchiveProps) {
           loading={loading}
           publishedLinks={publishedLinks}
           onSelect={(item) => setSelectedPath(item.path)}
-          onOpenDirectory={(item) => setCurrentPath(item.path)}
+          onOpenDirectory={(item) => handleNavigate(item.path)}
           onMove={handleMove}
           onCopy={handleCopy}
           onRemove={handleRemove}

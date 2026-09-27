@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { DemoUser } from "./api/types";
 import { DocumentArchive } from "./components/DocumentArchive";
-import { ErrorProvider } from "./error/ErrorContext";
+import { ErrorProvider } from "./error/ErrorProvider";
 import { ErrorPanel } from "./error/ErrorPanel";
 import "./App.css";
 

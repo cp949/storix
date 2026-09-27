@@ -54,14 +54,13 @@ function TreeNode({
 }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(Boolean(defaultExpanded));
   const [children, setChildren] = useState<FileEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(defaultExpanded));
 
   useEffect(() => {
     if (!expanded) {
       return;
     }
     let cancelled = false;
-    setLoading(true);
     listDocuments(user, path)
       .then((result) => {
         if (cancelled) {
@@ -85,7 +84,13 @@ function TreeNode({
         <button
           type="button"
           aria-label={`${label} ${expanded ? "접기" : "펼치기"}`}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => {
+            const nextExpanded = !expanded;
+            setExpanded(nextExpanded);
+            if (nextExpanded && children === null) {
+              setLoading(true);
+            }
+          }}
         >
           {expanded ? "▾" : "▸"}
         </button>

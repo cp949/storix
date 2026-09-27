@@ -8,7 +8,7 @@ import {
   putUploadSessionPart,
 } from "../api/client";
 import type { DemoUser, UploadSessionStatus } from "../api/types";
-import { useErrorReporter } from "../error/ErrorContext";
+import { useErrorReporter } from "../error/use-error-reporter";
 import { joinPath } from "../utils/path";
 import {
   clearUploadSession,

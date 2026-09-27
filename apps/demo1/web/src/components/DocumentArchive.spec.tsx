@@ -19,7 +19,7 @@ import {
 } from "../api/client";
 import type { EntryPage } from "../api/types";
 import { ErrorPanel } from "../error/ErrorPanel";
-import { ErrorProvider } from "../error/ErrorContext";
+import { ErrorProvider } from "../error/ErrorProvider";
 import { DocumentArchive } from "./DocumentArchive";
 import { FolderTree } from "./FolderTree";
 

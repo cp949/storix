@@ -1,27 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { ApiError } from "../api/client";
-
-export interface DisplayedError {
-  readonly status: number;
-  readonly code: string;
-  readonly message: string;
-  readonly requestId: string;
-}
-
-interface ErrorContextValue {
-  readonly error: DisplayedError | null;
-  readonly reportError: (cause: unknown) => void;
-  readonly clearError: () => void;
-}
-
-const ErrorContext = createContext<ErrorContextValue | null>(null);
+import { ErrorContext, type DisplayedError } from "./error-context";
 
 export function ErrorProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<DisplayedError | null>(null);
@@ -54,14 +33,4 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
   return (
     <ErrorContext.Provider value={value}>{children}</ErrorContext.Provider>
   );
-}
-
-export function useErrorReporter(): ErrorContextValue {
-  const context = useContext(ErrorContext);
-  if (!context) {
-    throw new Error(
-      "useErrorReporter는 ErrorProvider 내부에서만 사용할 수 있다",
-    );
-  }
-  return context;
 }

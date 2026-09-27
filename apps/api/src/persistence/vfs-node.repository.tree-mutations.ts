@@ -7,7 +7,6 @@ import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 import type { VfsNodeRecord, MutationTx, CopySourceRow } from './vfs-node.repository.types.js';
 import { assertSubtreeDestinationPaths, toRecord, joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryFileMutations } from './vfs-node.repository.file-mutations.js';
-import { trackChangeFeedBefore } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutations {
   @classifyPersistenceOperation
