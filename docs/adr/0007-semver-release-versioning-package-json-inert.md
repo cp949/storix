@@ -18,8 +18,8 @@ ADR-0006이 릴리즈 버전의 source of truth를 git tag(`vX.Y.Z`) + `CHANGELO
   Changelog 포맷이 SemVer를 전제하므로 표준 규율을 그대로 채택한다: 1.0
   이전(0.x)에는 MINOR bump도 breaking change를 포함할 수 있고, 1.0 이후에는
   MAJOR bump만 breaking을 의미한다.
-- `package.json` 4개(root `storix`, `@storix/api`, `@storix/admin`,
-  `@storix/demo`)는 전부 `private: true`이며 어떤 툴체인도 이 version 필드를
+- `package.json` 4개(root `storix`, `@cp949/storix-api`, `@cp949/storix-admin`,
+  `@cp949/storix-demo`)는 전부 `private: true`이며 어떤 툴체인도 이 version 필드를
   실제로 소비하지 않는다(pnpm workspace 간 의존은 이름 기준이지 버전 range가
   아니다). 이 필드는 버전 정보로 쓰지 않고, 앞으로도 release 절차가 갱신하지
   않는다 — 지킬 실익이 없는 동기화 규칙을 새로 만들지 않는다.

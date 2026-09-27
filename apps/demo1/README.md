@@ -12,9 +12,9 @@ Storix API를 실사용 시나리오로 검증하는 레퍼런스 예제. `web`(
 
 ## 구성
 
-- `web/` — `@storix/demo1-web`. React 19 + Vite 8 SPA. 문서 아카이브 UI
+- `web/` — `@cp949/storix-demo1-web`. React 19 + Vite 8 SPA. 문서 아카이브 UI
   (일반·재개 업로드, 디렉터리 생성·이동·복사·삭제, 인가된 다운로드, 공개 발행/취소).
-- `was/` — `@storix/demo1-was`. NestJS. Storix 공개 HTTP API만 사용하는
+- `was/` — `@cp949/storix-demo1-was`. NestJS. Storix 공개 HTTP API만 사용하는
   외부 소비자 WAS 예제(document-archive 도메인).
 
 ## 실행
@@ -49,10 +49,10 @@ Storix 백엔드(`apps/api`, DB·스토리지 포함)가 이미 떠 있다는 �
 # was (NestJS, 기본 포트 4000)
 DEMO_WAS_STORIX_BASE_URL=http://localhost:3000 \
 DEMO_WAS_STORIX_API_KEY=<storix-api-key> \
-pnpm --filter @storix/demo1-was dev
+pnpm --filter @cp949/storix-demo1-was dev
 
 # web (Vite, 기본 포트 5173, /demo-api를 4000으로 프록시)
-pnpm --filter @storix/demo1-web dev
+pnpm --filter @cp949/storix-demo1-web dev
 ```
 
 `http://localhost:5173/` 접속. `apps/api`까지 로컬로 준비해야 해서 1번보다
@@ -119,7 +119,7 @@ namespace UUID가 이미 존재하는지 확인하므로 다음 순서로 준비
    ```bash
    STORIX_VFS_CAPABILITIES_CONFIG_PATH="$PWD/demo1-capabilities.json" \
    STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH="$PWD/demo1-upload-sessions.json" \
-   pnpm --filter @storix/api start:dev
+   pnpm --filter @cp949/storix-api start:dev
    ```
 
    재시작 후 `GET /api/v2/namespaces/$DEMO_WAS_NAMESPACE_ID/capabilities`가
@@ -135,7 +135,7 @@ namespace UUID가 이미 존재하는지 확인하므로 다음 순서로 준비
    DEMO_WAS_NAMESPACE_ID="$DEMO_WAS_NAMESPACE_ID" \
    DEMO_WAS_STORIX_BASE_URL=http://localhost:3000 \
    DEMO_WAS_STORIX_API_KEY="$STORIX_API_KEY" \
-   pnpm --filter @storix/demo1-was dev
+   pnpm --filter @cp949/storix-demo1-was dev
    ```
 
 ### 재개 업로드 사용
@@ -179,7 +179,7 @@ vertical-slice 시나리오도 같은 suite에서 실행한다.
 DEMO_WAS_STORIX_BASE_URL=http://localhost:3000 \
 DEMO_WAS_STORIX_API_KEY="$STORIX_API_KEY" \
 DEMO_WAS_NAMESPACE_ID="$DEMO_WAS_NAMESPACE_ID" \
-pnpm --filter @storix/demo1-was test:integration --runTestsByPath src/vertical-slice.integration-spec.ts
+pnpm --filter @cp949/storix-demo1-was test:integration --runTestsByPath src/vertical-slice.integration-spec.ts
 ```
 
 설정이 없으면 suite가 누락된 환경변수를 명시하며 실패한다. capability가 비활성이면

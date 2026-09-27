@@ -393,15 +393,15 @@ docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-c
 set -a; . ./.env; set +a
 export STORIX_STORAGE_PORT=7070
 
-pnpm --filter @storix/api migration:run
-pnpm --filter @storix/api start:dev
+pnpm --filter @cp949/storix-api migration:run
+pnpm --filter @cp949/storix-api start:dev
 ```
 
 테스트:
 
 ```bash
-pnpm --filter @storix/api test               # unit
-pnpm --filter @storix/api test:integration   # testcontainers — Docker/Podman 소켓 필요
+pnpm --filter @cp949/storix-api test               # unit
+pnpm --filter @cp949/storix-api test:integration   # testcontainers — Docker/Podman 소켓 필요
 ```
 
 기여자·에이전트의 로컬 검증 규약(Podman 기본, compose 검증 방법, 알려진 환경

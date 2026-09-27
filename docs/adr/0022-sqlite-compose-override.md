@@ -7,7 +7,7 @@
 ## 배경
 
 SQLite 드라이버(`STORIX_DB_DRIVER=sqlite`, `README.sqlite.md`)는 Plan
-B까지 host 직접 실행(`pnpm --filter @storix/api run backup:run:prod`
+B까지 host 직접 실행(`pnpm --filter @cp949/storix-api run backup:run:prod`
 등, `.env` 로드)에서만 검증됐다. 루트 `docker-compose.yml`의
 `x-db-env`가 Postgres 접속 정보(`STORIX_DB_HOST/PORT/USERNAME/PASSWORD/NAME`)만
 컨테이너에 넘기고, `STORIX_DB_DRIVER`/`STORIX_DB_SQLITE_PATH`는 넘기지

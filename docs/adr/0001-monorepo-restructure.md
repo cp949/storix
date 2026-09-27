@@ -15,7 +15,7 @@ CLI/SDK(`packages/`)를 같은 저장소에서 관리해야 하는데, 단일 �
 
 Turborepo + pnpm workspace로 전환한다.
 
-- `apps/api`(`@storix/api`): 기존 NestJS 서버. 코드는 순수 이동만 진행했다
+- `apps/api`(`@cp949/storix-api`): 기존 NestJS 서버. 코드는 순수 이동만 진행했다
   (내부 import가 전부 상대 경로라 소스 변경 없이 이동 가능했다).
 - `apps/admin`, `apps/demo`: Vite 8 + React 19 스캐폴딩만 우선 배치. 화면/기능은
   이후 별도 단계에서 구현한다.

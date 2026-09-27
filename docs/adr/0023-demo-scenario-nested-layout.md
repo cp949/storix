@@ -6,7 +6,7 @@
 
 ## 배경
 
-`apps/demo`(`@storix/demo`, 프론트엔드)와 `apps/demo-was`(`@storix/demo-was`,
+`apps/demo`(`@cp949/storix-demo`, 프론트엔드)와 `apps/demo-was`(`@cp949/storix-demo-was`,
 백엔드 소비자)가 `apps/` 루트에 `api`/`admin`과 나란히 평면으로 배치돼
 있었다. 두 가지 문제가 있었다:
 
@@ -26,14 +26,14 @@
 ## 결정
 
 1. **`apps/demo` → `apps/demo1/web`, `apps/demo-was` → `apps/demo1/was`로
-   이동한다.** 패키지명도 `@storix/demo` → `@storix/demo1-web`,
-   `@storix/demo-was` → `@storix/demo1-was`로 바꾼다. `ls apps/demo1`만으로
+   이동한다.** 패키지명도 `@cp949/storix-demo` → `@cp949/storix-demo1-web`,
+   `@cp949/storix-demo-was` → `@cp949/storix-demo1-was`로 바꾼다. `ls apps/demo1`만으로
    해당 데모 시나리오의 구성(web+was)이 보이는 것이 목적이다.
 2. **`pnpm-workspace.yaml`의 `packages`에 `apps/*/*`를 추가한다.**
    `demo1`/`demo2`는 자체 `package.json`이 없는 컨테이너 디렉터리이므로
    `apps/*`만으로는 하위 `web`/`was`가 workspace 패키지로 잡히지 않는다.
 3. **`demo2`는 지금 폴더를 만들지 않는다.** 실제 구현에 착수할 때
-   `apps/demo2/{web,was}`(패키지명 `@storix/demo2-web`/`@storix/demo2-was`)로
+   `apps/demo2/{web,was}`(패키지명 `@cp949/storix-demo2-web`/`@cp949/storix-demo2-was`)로
    이 ADR과 동일한 구조를 따른다. 빈 컨테이너 폴더를 미리 git에 남겨둘
    이유가 없다.
 4. **소스 내부 식별자는 이동과 함께 바꾸지 않는다.** `DEMO_WAS_*` 환경변수
@@ -59,8 +59,8 @@
 
 ## Consequences
 
-- 대상 지정은 `pnpm --filter @storix/demo1-web`, `pnpm --filter
-@storix/demo1-was`로 한다.
+- 대상 지정은 `pnpm --filter @cp949/storix-demo1-web`, `pnpm --filter
+@cp949/storix-demo1-was`로 한다.
 - `apps/demo1/was/Dockerfile`, `docs/deployment/scenarios/demo-all-in-one/
 nginx/Dockerfile`, `compose.demo.yml`,
   `.github/workflows/demo-all-in-one-smoke.yml`의 경로/패키지명 참조를
@@ -69,4 +69,4 @@ nginx/Dockerfile`, `compose.demo.yml`,
   `apps/demo-was` 언급은 작성 시점 기록이므로 소급 수정하지 않는다.
 - `docs/ROADMAP.md`의 구조 다이어그램을 새 레이아웃으로 갱신했다.
 - `demo2` 착수 시 이 ADR의 구조(`apps/demo2/{web,was}`, 패키지명
-  `@storix/demo2-web`/`@storix/demo2-was`)를 그대로 따른다.
+  `@cp949/storix-demo2-web`/`@cp949/storix-demo2-was`)를 그대로 따른다.

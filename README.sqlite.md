@@ -50,7 +50,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
 - **백업**: `docker-compose.sqlite.yml`을 겹쳐 쓴 상태에서
   `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml
 --profile backup run --rm backup`, 또는 호스트에서 `.env`를 로드한
-  상태로 `pnpm --filter @storix/api run backup:run:prod`(빌드 산출물
+  상태로 `pnpm --filter @cp949/storix-api run backup:run:prod`(빌드 산출물
   실행, 개발 중에는 `backup:run`)를 직접 실행해도 된다. `VACUUM INTO`로
   실행 중에도 일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에
   만든다(Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object
@@ -78,7 +78,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
 
 ## 검증
 
-- `pnpm --filter @storix/api run test:integration:sqlite` — SQLite 전용
+- `pnpm --filter @cp949/storix-api run test:integration:sqlite` — SQLite 전용
   통합테스트(마이그레이션 체인, `BlobRepository`, `VfsNodeRepository`
   스모크, `GcJob` 전체 왕복, 백업/복구 왕복) 전부를 한 번에 실행한다.
   마이그레이션·리포지토리 테스트는 컨테이너 없이 빠르게 돌고, `GcJob`과

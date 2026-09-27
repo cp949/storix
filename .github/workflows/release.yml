@@ -48,13 +48,13 @@ jobs:
         run: node --test '.github/scripts/**/*.test.mjs'
 
       - name: apps/api typecheck
-        run: pnpm --filter @storix/api typecheck
+        run: pnpm --filter @cp949/storix-api typecheck
 
       - name: apps/api lint
-        run: pnpm --filter @storix/api lint
+        run: pnpm --filter @cp949/storix-api lint
 
       - name: apps/api 단위 테스트
-        run: pnpm --filter @storix/api test
+        run: pnpm --filter @cp949/storix-api test
 
       - name: 버전 계산
         id: version

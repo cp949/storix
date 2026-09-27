@@ -89,11 +89,11 @@ Turborepo + pnpm workspace. pnpm은 워크스페이스 간 의존성을 엄격�
 ```
 storix/
 ├── apps/
-│   ├── api/          @storix/api   — 기존 NestJS 서버. CONTEXT.md, docs/adr/ 포함
-│   ├── admin/        @storix/admin — 보안/로그 관제 UI. Vite 8 + React 19
+│   ├── api/          @cp949/storix-api   — 기존 NestJS 서버. CONTEXT.md, docs/adr/ 포함
+│   ├── admin/        @cp949/storix-admin — 보안/로그 관제 UI. Vite 8 + React 19
 │   ├── demo1/        보안 최소화 데모 시나리오
-│   │   ├── web/      @storix/demo1-web — api 연동 레퍼런스 예제. Vite 8 + React 19
-│   │   └── was/      @storix/demo1-was — 공개 HTTP API만 쓰는 외부 소비자 WAS
+│   │   ├── web/      @cp949/storix-demo1-web — api 연동 레퍼런스 예제. Vite 8 + React 19
+│   │   └── was/      @cp949/storix-demo1-was — 공개 HTTP API만 쓰는 외부 소비자 WAS
 │   └── demo2/        (예정) mTLS 등 풀보안 데모 시나리오 — web/was 동일 구조
 ├── packages/                        (CLI/SDK 이름 미정 — 결정 시 추가)
 ├── CONTEXT-MAP.md                   (신규 — 컨텍스트별 CONTEXT.md를 가리킴)
@@ -126,7 +126,7 @@ storix/
 ### 체크리스트
 
 - [x] MONO-01: Turborepo + pnpm workspace 설정(`turbo.json`, `pnpm-workspace.yaml`)
-- [x] MONO-02: 기존 서버 코드를 `apps/api`(`@storix/api`)로 이동
+- [x] MONO-02: 기존 서버 코드를 `apps/api`(`@cp949/storix-api`)로 이동
 - [x] MONO-03: `CONTEXT-MAP.md` 도입, `CONTEXT.md`/`docs/adr/`를 `apps/api`로 이동
 - [x] MONO-04: `apps/admin` 스캐폴딩 (Vite 8 + React 19)
 - [x] MONO-05: `apps/demo` 스캐폴딩 (Vite 8 + React 19)

@@ -200,7 +200,7 @@ FILE snapshot 생성 요청의 선택 필드다. `kind: 'file'`에서만 허용�
 
 검증한 것:
 
-- 단위(`pnpm --filter @storix/api test`): 분류기(저장 대상·제외 코드·status 경계), `storeErrorReceipt`의 fencing 실패,
+- 단위(`pnpm --filter @cp949/storix-api test`): 분류기(저장 대상·제외 코드·status 경계), `storeErrorReceipt`의 fencing 실패,
   세 서비스의 저장·release 분기, content fingerprint 조합, `sourceRevision` DTO 검증·비교 순서·fingerprint 호환,
   OpenAPI와 컨트롤러 라우트 정합(`route-coverage.spec.ts`).
 - PostgreSQL 통합(`fs.integration-spec.ts`, `vfs-node.repository.integration-spec.ts`,

@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 모든 워크스페이스 패키지 이름을 `@storix/*`에서 `@cp949/storix-*`로 변경했다.
+
 ### Added
 
 - 파일·디렉터리 삭제를 30일 복구 가능한 휴지통으로 옮기고 목록·원래 ID 복구·관리자 영구 삭제 API를 추가했다. namespace별 기본 100000 node 보존 상한과 live·snapshot·휴지통 논리 quota, 만료 항목의 GC 배치 purge를 적용한다.

@@ -1,5 +1,5 @@
 {
-  "name": "@storix/api",
+  "name": "@cp949/storix-api",
   "version": "0.1.0",
   "description": "범용 VFS 저장 서버",
   "private": true,

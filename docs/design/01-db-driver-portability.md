@@ -142,7 +142,7 @@ repository의 쿼리는 가능한 한 두 드라이버가 같은 SQL을 공유�
 - 같은 동작을 검증하는 테스트는 드라이버별로 따로 쓰지 않는다. 본문을 `*.shared-tests.ts`의 함수(예:
   `runBlobRepositorySharedTests`)로 두고, PostgreSQL용 `*.integration-spec.ts`와 SQLite용 `*.sqlite.integration-spec.ts`
   얇은 파일이 각각 호출한다. 독립된 두 spec은 서로 어긋난다.
-- SQLite spec은 `:memory:` DB로 돌아 컨테이너가 필요 없다. `pnpm --filter @storix/api test:integration:sqlite`가
+- SQLite spec은 `:memory:` DB로 돌아 컨테이너가 필요 없다. `pnpm --filter @cp949/storix-api test:integration:sqlite`가
   `STORIX_DB_DRIVER=sqlite`를 얹은 별도 jest 실행으로 이 파일들만 고른다.
 - **`STORIX_DB_DRIVER=sqlite`를 전체 `test:integration`에 전역으로 넣지 않는다.** 3.3의 상수가 프로세스당 한 번 고정되므로
   같은 워커에서 도는 Postgres 통합 테스트까지 `blob`·`datetime` 타입으로 열려 `DataTypeNotSupportedError`로 깨진다.

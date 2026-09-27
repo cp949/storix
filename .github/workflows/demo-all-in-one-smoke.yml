@@ -55,10 +55,10 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 빌드(typecheck 포함)
-        run: pnpm --filter @storix/demo1-web build
+        run: pnpm --filter @cp949/storix-demo1-web build
 
       - name: 단위 테스트
-        run: pnpm --filter @storix/demo1-web test
+        run: pnpm --filter @cp949/storix-demo1-web test
 
   smoke:
     name: 문서 아카이브 전체 흐름 + 메모리 바운드 확인

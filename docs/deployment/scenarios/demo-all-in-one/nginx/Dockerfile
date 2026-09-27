@@ -4,13 +4,13 @@ WORKDIR /repo
 
 FROM base AS pruner
 COPY . .
-RUN pnpm dlx turbo prune @storix/demo1-web --docker
+RUN pnpm dlx turbo prune @cp949/storix-demo1-web --docker
 
 FROM base AS build
 COPY --from=pruner /repo/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /repo/out/full/ .
-RUN pnpm --filter @storix/demo1-web build
+RUN pnpm --filter @cp949/storix-demo1-web build
 
 FROM nginx:1.29-alpine AS runtime
 LABEL org.opencontainers.image.source="https://github.com/cp949/storix"

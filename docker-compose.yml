@@ -56,12 +56,13 @@ x-storage-env: &storage-env
 services:
   migrate:
     build: *api-build
-    command: ["pnpm", "--filter", "@storix/api", "run", "migration:run:prod"]
+    command:
+      ["pnpm", "--filter", "@cp949/storix-api", "run", "migration:run:prod"]
     environment: *db-env
 
   gc:
     build: *api-build
-    command: ["pnpm", "--filter", "@storix/api", "run", "gc:run:prod"]
+    command: ["pnpm", "--filter", "@cp949/storix-api", "run", "gc:run:prod"]
     profiles: ["gc"]
     environment:
       <<: [*db-env, *storage-env]
@@ -74,7 +75,7 @@ services:
 
   backup:
     build: *api-build
-    command: ["pnpm", "--filter", "@storix/api", "run", "backup:run:prod"]
+    command: ["pnpm", "--filter", "@cp949/storix-api", "run", "backup:run:prod"]
     profiles: ["backup"]
     environment:
       <<: [*db-env, *storage-env]
@@ -87,7 +88,8 @@ services:
 
   restore:
     build: *api-build
-    command: ["pnpm", "--filter", "@storix/api", "run", "restore:run:prod"]
+    command:
+      ["pnpm", "--filter", "@cp949/storix-api", "run", "restore:run:prod"]
     profiles: ["restore"]
     environment:
       <<: [*db-env, *storage-env]
