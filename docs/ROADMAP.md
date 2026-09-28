@@ -260,6 +260,9 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       PostgreSQL/MinIO·SQLite focused race/receipt/audit 및 OpenAPI 검증을 완료한 뒤 L0/L2
       게이트와 로컬 closeout 판정을 기록한다. 세부 계약은 [RQ-024](./requirements/file-storage.md)와
       [설계](./design/09-vfs-trash-and-recovery.md)를 따른다. 외부 consumer·production 검증은 제외한다.
+- [x] VFS-09: **파일 만료와 확정** — 새 FILE 생성 시 만료 지정, `persist` 확정,
+      GC 만료 삭제로 미확정 FILE을 Storix가 회수한다. 삭제는 namespace 휴지통 정책을
+      따르고 PUBLIC 읽기에서는 만료 예정 FILE을 숨긴다. [설계](./design/10-file-expiry.md)를 따른다.
 
 ## 3. 운영 성숙도
 

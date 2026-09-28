@@ -63,6 +63,16 @@ WAS → 브라우저: 제출 결과
 
 선 업로드에도 Storix 저장 성공 후 WAS DB 기록 실패·프로세스 중단이 생길 수 있습니다. 이 경우 먼저 남긴 업로드 시도와 경로를 이용해 미참조 파일을 찾고 삭제하세요. 이 cleanup은 미제출 `TEMP` 정리와 별도로 놓치지 않아야 합니다.
 
+### Storix 파일 만료와 확정 계약
+
+Storix는 새 FILE의 생성 시점에 만료 초를 받을 수 있습니다. 조건부 콘텐츠 업로드에는 `X-If-Absent: true`와 `X-Expires-In`을 함께 보내고, 재개 업로드 세션 생성에는 `ifAbsent: true`와 `expiresInSeconds`를 함께 보냅니다. 기본 허용 범위는 60~2592000초이며 서버 설정으로 조정할 수 있습니다. 만료 시각은 응답의 `expiresAt`에서 확인할 수 있습니다. 업로드 세션의 만료 시각과 완료된 FILE의 만료 시각은 별개입니다.
+
+호출자는 FILE을 참조하는 자체 영속 상태와 `persist` 재시도 작업을 같은 커밋에 기록해야 합니다. 그 커밋이 성공한 뒤 Storix에 확정을 요청하고, 성공할 때까지 저장된 작업을 재시도합니다. 자체 상태를 확정하기 전에 파일 만료를 해제하면 자체 커밋 실패 후에도 미참조 파일이 남을 수 있습니다.
+
+만료를 해제하려면 `POST /api/v2/namespaces/{namespaceId}/fs/mutations`에 `{ "kind": "persist", "path": "/example.bin", "ifRevision": "r1.…" }`를 보냅니다. `Idempotency-Key`와 `X-Mutation-Scope`가 필요합니다. 성공하면 revision이 바뀌고 `expiresAt`이 null이 됩니다. 이미 만료가 없다면 변경 없이 성공합니다. 같은 key의 재시도는 최초 결과를 재생합니다. 성공 응답을 잃은 뒤 새 key로 재시도해 412를 받으면 `current.id`가 같은 FILE이고 `current.expiresAt`이 null인지 확인해 확정 완료를 판정할 수 있습니다.
+
+만료 시각이 지나도 GC가 삭제하기 전에는 조회와 확정이 가능합니다. GC 삭제는 namespace의 휴지통 정책을 따르며 휴지통의 기본값은 OFF입니다. 만료를 해제하지 않은 FILE은 GC가 삭제할 수 있으므로 필요한 FILE의 확정 누락은 데이터 유실로 이어집니다. PUBLIC namespace의 인증 없는 콘텐츠 조회와 다운로드는 만료 예정 FILE을 404로 숨깁니다.
+
 ## 기존 첨부파일을 제거할 때
 
 업무 수정이나 삭제에서 기존 파일을 제거한다면 먼저 WAS DB의 파일 연결 변경을 commit하세요. 다른 업무에서 사용하지 않는 파일만 Storix에 삭제 요청을 보내고, 실패하면 재시도할 작업으로 기록하세요. DB commit 전에 파일부터 삭제하면 rollback 후 업무 레코드가 삭제된 파일을 가리킬 수 있습니다.
@@ -70,8 +80,10 @@ WAS → 브라우저: 제출 결과
 ## Storix API 대응
 
 - 파일 업로드: `POST /api/v2/namespaces/{namespaceId}/fs/content?path=...`는 파일 바이트를 받고 성공 응답에 `id`와 `path`를 포함합니다. 새 파일만 허용할 때는 기존 `fs/content/conditional` 계약을 확인하세요.
+- 파일 만료 지정: `POST .../fs/content/conditional`의 `X-Expires-In` 또는 `POST .../fs/upload-sessions`의 `expiresInSeconds`를 사용합니다. 둘 다 새 FILE 조건에서만 허용됩니다.
+- 파일 확정: `POST .../fs/mutations`의 `persist`는 `ifRevision`이 일치하는 FILE의 만료를 해제합니다.
 - 파일 확인: `GET /api/v2/namespaces/{namespaceId}/fs/stat?path=...`에서 현재 `id`를 확인할 수 있습니다.
 - 파일 삭제: `POST /api/v2/namespaces/{namespaceId}/fs/rm?path=...`는 경로를 대상으로 하며 삭제 결과는 Storix 휴지통 계약을 따릅니다.
-- 큰 파일의 선 업로드에는 기존 재개 업로드 기능을 사용할 수 있습니다. 그 기능의 세션 만료는 **완료 전 업로드 세션**에 적용되며, 이 문서의 미제출 파일 정리를 대신하지 않습니다.
+- 큰 파일의 선 업로드에는 기존 재개 업로드 기능을 사용할 수 있습니다. 그 기능의 세션 만료는 **완료 전 업로드 세션**에 적용되며, 완료된 FILE의 만료는 별도 `expiresInSeconds` 입력으로 지정합니다.
 
 API 요청 형식은 [OpenAPI](../../apps/api/openapi.yaml), 파일 삭제 동작은 [휴지통과 복구](../design/09-vfs-trash-and-recovery.md)를 참고하세요. 이 문서의 WAS DB 상태와 cleanup은 사용처의 구현 예시이며 Storix 기능이 아닙니다.

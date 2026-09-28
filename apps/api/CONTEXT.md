@@ -20,6 +20,15 @@ Namespace 안에서 파일 또는 디렉터리 하나를 가리키는 단위로,
 만든 것은 다른 Node다.
 _Avoid_: 엔트리, 아이템
 
+**만료 예정 파일**:
+`expires_at`이 있는 FILE Node. 새 파일을 만드는 요청에서만 만료를 지정하며,
+만료 시각 이후 GC가 namespace 삭제 정책에 따라 삭제할 수 있다. 삭제 전에는
+인증 API에서 일반 FILE로 조회하고 확정할 수 있다.
+
+**확정(persist)**:
+만료 예정 FILE의 만료를 해제하는 조건부 변경. 성공하면 같은 Node의 revision이
+바뀌고, 이미 만료가 없는 FILE에는 변경이 없다.
+
 **Blob**:
 FILE Node의 콘텐츠를 담는 불변 저장 단위로, 사용자 파일명과 무관한 UUID 기반
 storage key로 저장된다. 여러 FILE Node가 같은 Blob을 공유해 참조할 수 있으며,

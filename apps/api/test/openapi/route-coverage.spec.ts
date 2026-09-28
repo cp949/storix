@@ -271,6 +271,62 @@ it('재개 업로드의 다섯 operation과 필수 헤더·응답 스키마를 �
   }
 });
 
+it('파일 만료 입력·확정·공개 읽기 계약을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const fs = '/api/v2/namespaces/{namespaceId}/fs';
+  const node = spec.components.schemas.VfsNode;
+  expect(node.required).toContain('expiresAt');
+  expect(node.properties.expiresAt).toMatchObject({ type: 'string', format: 'date-time', nullable: true });
+
+  const conditional = spec.paths[`${fs}/content/conditional`].post;
+  expect(conditional.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'X-Expires-In', in: 'header', required: false }),
+    ]),
+  );
+  expect(conditional.responses['400'].description).toContain('VFS_INVALID_EXPIRY');
+  expect(spec.paths[`${fs}/content`].post.description).toContain('VFS_INVALID_EXPIRY');
+  expect(spec.paths[`${fs}/cp`].post.description).toContain('VFS_INVALID_EXPIRY');
+
+  const mutations = spec.paths[`${fs}/mutations`].post;
+  const variants = mutations.requestBody.content['application/json'].schema.oneOf;
+  expect(variants).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        required: ['kind', 'path', 'ifRevision'],
+        properties: expect.objectContaining({ kind: { type: 'string', enum: ['persist'] } }),
+      }),
+    ]),
+  );
+  expect(
+    variants.find((variant: { properties: { kind: { enum: string[] } } }) =>
+      variant.properties.kind.enum.includes('copy'),
+    ).properties.expiresInSeconds,
+  ).toMatchObject({ type: 'integer', minimum: 1 });
+  const move = variants.find((variant: { properties: { kind: { enum: string[] } } }) =>
+    variant.properties.kind.enum.includes('move'),
+  );
+  expect(move.properties.kind.enum).toEqual(['move']);
+  expect(move.additionalProperties).toBe(false);
+  expect(move.properties).not.toHaveProperty('expiresInSeconds');
+  expect(mutations.responses['400'].description).toContain('VFS_INVALID_EXPIRY');
+  expect(mutations.description).toContain('current.expiresAt');
+
+  const upload = spec.components.schemas.UploadSessionCreateRequest.oneOf[0];
+  expect(upload.properties.expiresInSeconds).toMatchObject({ type: 'integer', minimum: 1 });
+  expect(
+    spec.components.schemas.UploadSessionStatus.properties.condition.oneOf[0].properties.expiresInSeconds,
+  ).toMatchObject({ type: 'integer', minimum: 1 });
+  expect(spec.paths[`${fs}/upload-sessions`].post.responses['400'].description).toContain(
+    'VFS_INVALID_EXPIRY',
+  );
+  for (const endpoint of ['content', 'download']) {
+    expect(
+      spec.paths[`/api/v2/public/{namespaceId}/fs/${endpoint}`].get.responses['404'].description,
+    ).toContain('만료 예정 파일');
+  }
+});
+
 it('snapshot mutation과 content의 계약을 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as {
     paths: Record<string, Record<string, { parameters: unknown[]; responses: Record<string, unknown> }>>;
