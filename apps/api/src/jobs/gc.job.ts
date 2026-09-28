@@ -9,6 +9,7 @@ import {
   resolveChangeFeedRetentionDays,
 } from '../persistence/vfs-change-feed-retention.repository.js';
 import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
+import { VfsFileExpiryRepository } from '../persistence/vfs-file-expiry.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
@@ -26,6 +27,8 @@ export interface GcResult {
   readonly prunedChangeEvents: number;
   readonly prunedTrashItems: number;
   readonly prunedTrashBytes: string;
+  readonly expiredFiles: number;
+  readonly expiredBytes: string;
 }
 
 @Injectable()
@@ -42,6 +45,7 @@ export class GcJob {
     @Optional() private readonly uploadSessions?: VfsUploadSessionRepository,
     @Optional() private readonly changeFeedRetention?: VfsChangeFeedRetentionRepository,
     @Optional() private readonly trashRetention?: VfsTrashRetentionRepository,
+    @Optional() private readonly fileExpiry?: VfsFileExpiryRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
     this.changeRetentionDays = resolveChangeFeedRetentionDays(
@@ -118,6 +122,8 @@ export class GcJob {
       }
     }
 
+    // 만료 삭제 뒤 참조가 0이 된 Blob은 orphan grace 이후 회수한다.
+    const expired = (await this.fileExpiry?.expireDue(CLEANUP_BATCH_SIZE)) ?? { files: 0, bytes: '0' };
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff);
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
@@ -159,6 +165,8 @@ export class GcJob {
       prunedChangeEvents,
       prunedTrashItems,
       prunedTrashBytes: prunedTrashBytes.toString(),
+      expiredFiles: expired.files,
+      expiredBytes: expired.bytes,
     };
   }
 

@@ -120,6 +120,64 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     expect(response.headers['x-storix-sha256']).toBeUndefined();
   });
 
+  it('만료 예정 파일은 공개 읽기에서 없는 파일과 같은 404이고 확정 뒤에는 읽힌다', async () => {
+    const created = await request(app.getHttpServer())
+      .post(`/api/v2/namespaces/${publicNamespaceId}/fs/content/conditional`)
+      .query({ path: '/pending.txt' })
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'public-expiry')
+      .set('X-If-Absent', 'true')
+      .set('X-Expires-In', '600')
+      .set('Content-Type', 'text/plain')
+      .send(FILE_BODY)
+      .expect(201);
+
+    for (const route of ['content', 'download']) {
+      const hidden = await request(app.getHttpServer())
+        .get(`/api/v2/public/${publicNamespaceId}/fs/${route}`)
+        .query({ path: '/pending.txt' })
+        .expect(404);
+      const missing = await request(app.getHttpServer())
+        .get(`/api/v2/public/${publicNamespaceId}/fs/${route}`)
+        .query({ path: '/never.txt' })
+        .expect(404);
+      expect(hidden.body.path).toBe('/pending.txt');
+      expect(missing.body.path).toBe('/never.txt');
+      const normalizeBody = (body: Record<string, unknown>, requestedPath: string) => ({
+        ...body,
+        message:
+          typeof body.message === 'string' ? body.message.replaceAll(requestedPath, '<path>') : body.message,
+        path: '<path>',
+        requestId: undefined,
+      });
+      expect(normalizeBody(hidden.body, '/pending.txt')).toEqual(normalizeBody(missing.body, '/never.txt'));
+
+      const authenticated = await request(app.getHttpServer())
+        .get(`/api/v2/namespaces/${publicNamespaceId}/fs/${route}`)
+        .query({ path: '/pending.txt' })
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(200);
+      expect(authenticated.text).toBe(FILE_BODY);
+    }
+
+    await request(app.getHttpServer())
+      .post(`/api/v2/namespaces/${publicNamespaceId}/fs/mutations`)
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'public-expiry')
+      .send({ kind: 'persist', path: '/pending.txt', ifRevision: created.body.resource.revision })
+      .expect(200);
+
+    for (const route of ['content', 'download']) {
+      const published = await request(app.getHttpServer())
+        .get(`/api/v2/public/${publicNamespaceId}/fs/${route}`)
+        .query({ path: '/pending.txt' })
+        .expect(200);
+      expect(published.text).toBe(FILE_BODY);
+    }
+  });
+
   it('content는 Content-Disposition을 설정하지 않는다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v2/public/${publicNamespaceId}/fs/content?path=${encodeURIComponent('/docs/hello.txt')}`)

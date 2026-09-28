@@ -33,6 +33,7 @@ import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
 import { VfsChangeFeedRetentionRepository } from './vfs-change-feed-retention.repository.js';
 import { VfsTrashRepository } from './vfs-trash.repository.js';
 import { VfsTrashRetentionRepository } from './vfs-trash-retention.repository.js';
+import { VfsFileExpiryRepository } from './vfs-file-expiry.repository.js';
 
 const ENTITIES = [
   NamespaceEntity,
@@ -117,6 +118,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsSnapshotRepository,
     VfsTrashRepository,
     VfsTrashRetentionRepository,
+    VfsFileExpiryRepository,
     VfsUploadSessionRepository,
     VfsChangeFeedRetentionRepository,
     SqliteCaseSensitiveLikeInitializer,
@@ -134,6 +136,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsSnapshotRepository,
     VfsTrashRepository,
     VfsTrashRetentionRepository,
+    VfsFileExpiryRepository,
     VfsUploadSessionRepository,
     VfsChangeFeedRetentionRepository,
   ],

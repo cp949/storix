@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
 import { readDbNow } from '../../../src/persistence/vfs-node.repository.helpers.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
@@ -239,6 +240,81 @@ export function runFileExpiryTests(helpers: VfsNodeRepositoryTestHelpers): void 
         getRepo().putConditionalContent(tx, ['plain.bin'], { ifAbsent: true }, makeBlobData()),
       );
       expect(created.value.resource.expiresAt).toBeNull();
+    });
+
+    it('이동과 본문 교체는 만료를 유지하고 입력 없는 레거시 복사는 만료를 상속하지 않는다', async () => {
+      const namespace = await createNamespace(`expiry-propagation-${randomUUID()}`);
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const resource = await createExpiring(namespace.id, root.id, 'temp.bin');
+      const nodes = getDs().getRepository(VfsNodeEntity);
+      const original = (await nodes.findOneByOrFail({ id: resource.id })).expiresAt!.toISOString();
+
+      await getRepo().moveNode(namespace.id, root.id, ['temp.bin'], ['moved.bin'], false);
+      expect((await nodes.findOneByOrFail({ id: resource.id })).expiresAt!.toISOString()).toBe(original);
+
+      const moved = await nodes.findOneByOrFail({ id: resource.id });
+      await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(
+          tx,
+          ['moved.bin'],
+          { ifRevision: encodeRevision(moved) },
+          makeBlobData(),
+        ),
+      );
+      expect((await nodes.findOneByOrFail({ id: resource.id })).expiresAt!.toISOString()).toBe(original);
+
+      const copied = await getRepo().copyNode(namespace.id, root.id, ['moved.bin'], ['copy.bin'], false, 10);
+      expect((await nodes.findOneByOrFail({ id: copied.node.id })).expiresAt).toBeNull();
+    });
+
+    it('만료 FILE을 포함한 디렉터리는 휴지통 복원 뒤 원래 node ID와 만료 없는 상태를 갖는다', async () => {
+      const namespace = await createNamespace(`expiry-trash-${randomUUID()}`);
+      await getDs().getRepository(NamespaceEntity).update({ id: namespace.id }, { trashEnabled: true });
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['dir'], false);
+      const created = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(
+          tx,
+          ['dir', 'temp.bin'],
+          { ifAbsent: true, expiresInSeconds: 600 },
+          makeBlobData(),
+        ),
+      );
+
+      const trashId = await getRepo().removeNode(namespace.id, root.id, ['dir'], true, 10);
+      await getRepo().restoreTrashItem(namespace.id, trashId!);
+
+      const restored = await getDs()
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId: namespace.id, name: 'temp.bin' });
+      expect(restored.id).toBe(created.value.resource.id);
+      expect(restored.expiresAt).toBeNull();
+    });
+
+    it('snapshot 복원으로 새로 만든 FILE은 원본의 만료를 상속하지 않는다', async () => {
+      const namespace = await createNamespace(`expiry-restore-blob-${randomUUID()}`);
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const resource = await createExpiring(namespace.id, root.id, 'temp.bin');
+      const source = await getDs().getRepository(VfsNodeEntity).findOneByOrFail({ id: resource.id });
+
+      const restored = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().restoreBlob(
+          tx,
+          ['restored.bin'],
+          { ifAbsent: true },
+          {
+            blobId: source.blobId!,
+            size: String(source.size),
+            mimeType: source.mimeType!,
+          },
+        ),
+      );
+
+      expect(restored.value.kind).toBe('created');
+      expect(
+        (await getDs().getRepository(VfsNodeEntity).findOneByOrFail({ id: restored.value.node.id }))
+          .expiresAt,
+      ).toBeNull();
     });
   });
 }

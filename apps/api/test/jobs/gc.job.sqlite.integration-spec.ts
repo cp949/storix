@@ -10,8 +10,10 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
 import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
+import { installSqliteGate } from '../../src/persistence/sqlite-gate.js';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(blob.repository.sqlite.integration-spec.ts와
@@ -25,6 +27,7 @@ describe('GcJob 통합 (SQLite)', () => {
   let namespaceId: string;
   let nodeRepository: VfsNodeRepository;
   let trashRetention: VfsTrashRetentionRepository;
+  let fileExpiry: VfsFileExpiryRepository;
   const bucket = 'storix-gc-sqlite-test';
 
   beforeAll(async () => {
@@ -52,6 +55,7 @@ describe('GcJob 통합 (SQLite)', () => {
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
+    installSqliteGate(dataSource);
     blobRepository = new BlobRepository(dataSource);
     nodeRepository = new VfsNodeRepository(
       dataSource.getRepository(NamespaceEntity),
@@ -62,6 +66,7 @@ describe('GcJob 통합 (SQLite)', () => {
       { get: () => undefined } as never,
     );
     trashRetention = new VfsTrashRetentionRepository(dataSource, nodeRepository);
+    fileExpiry = new VfsFileExpiryRepository(dataSource, nodeRepository);
 
     const client = new Client({
       endPoint: minioContainer.getHost(),
@@ -90,6 +95,7 @@ describe('GcJob 통합 (SQLite)', () => {
     namespaceId,
     nodeRepository,
     trashRetention,
+    fileExpiry,
     setZeroSinceSecondsAgo: (blobId, secondsAgo) =>
       dataSource.query(`UPDATE blob SET zero_since = datetime('now', ? || ' seconds') WHERE id = ?`, [
         `-${secondsAgo}`,

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import { jest } from '@jest/globals';
+import { DataSource, IsNull } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
@@ -10,7 +11,11 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
 import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
+import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
+import { readDbNow } from '../../src/persistence/vfs-node.repository.helpers.js';
+import { encodeRevision } from '../../src/vfs/revision.js';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 export interface GcJobTestContext {
@@ -20,6 +25,7 @@ export interface GcJobTestContext {
   readonly namespaceId: string;
   readonly nodeRepository: VfsNodeRepository;
   readonly trashRetention: VfsTrashRetentionRepository;
+  readonly fileExpiry: VfsFileExpiryRepository;
   setZeroSinceSecondsAgo(blobId: string, secondsAgo: number): Promise<void>;
 }
 
@@ -129,6 +135,209 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     );
     return { namespaceId: namespace.id, blob, ids, storageKey };
   }
+
+  async function createExpiringFixture(trashEnabled: boolean, names: string[]) {
+    const { dataSource, nodeRepository } = getContext();
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      `gc-expiry-${randomUUID()}`,
+    );
+    await dataSource.getRepository(NamespaceEntity).update({ id: namespace.id }, { trashEnabled });
+    const root = await dataSource
+      .getRepository(VfsNodeEntity)
+      .findOneByOrFail({ namespaceId: namespace.id, parentId: IsNull() });
+    const ids: string[] = [];
+    for (const name of names) {
+      const created = await nodeRepository.withMutation(namespace.id, root.id, (tx) =>
+        nodeRepository.putConditionalContent(
+          tx,
+          [name],
+          { ifAbsent: true, expiresInSeconds: 600 },
+          {
+            storageKey: `blobs/ab/${randomUUID()}`,
+            size: '7',
+            mimeType: 'text/plain',
+            sha256: 'f'.repeat(64),
+            encryptionIv: null,
+          },
+        ),
+      );
+      ids.push(created.value.resource.id);
+    }
+    return { namespaceId: namespace.id, rootId: root.id, ids };
+  }
+
+  async function makeOverdue(id: string, secondsAgo = 60): Promise<void> {
+    const { dataSource } = getContext();
+    const now = await readDbNow(dataSource.manager);
+    await dataSource
+      .getRepository(VfsNodeEntity)
+      .update({ id }, { expiresAt: new Date(now.getTime() - secondsAgo * 1000) });
+  }
+
+  it('만료 파일만 삭제하고 확정·미만료 파일은 보존한다', async () => {
+    const { dataSource, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(false, ['a', 'b', 'c']);
+    await makeOverdue(fixture.ids[0]);
+    await makeOverdue(fixture.ids[1]);
+    await dataSource.getRepository(VfsNodeEntity).update({ id: fixture.ids[1] }, { expiresAt: null });
+
+    expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+    const remaining = await dataSource
+      .getRepository(VfsNodeEntity)
+      .findBy({ namespaceId: fixture.namespaceId, type: 'FILE' });
+    expect(remaining.map((node) => node.id).sort()).toEqual([fixture.ids[1], fixture.ids[2]].sort());
+    const namespace = await dataSource
+      .getRepository(NamespaceEntity)
+      .findOneByOrFail({ id: fixture.namespaceId });
+    expect(String(namespace.liveFileByteCount)).toBe('14');
+    expect(await dataSource.getRepository(VfsTrashEntity).countBy({ namespaceId: fixture.namespaceId })).toBe(
+      0,
+    );
+  });
+
+  it('휴지통이 켜진 namespace의 만료 파일을 휴지통으로 옮긴다', async () => {
+    const { dataSource, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(true, ['a']);
+    await makeOverdue(fixture.ids[0]);
+
+    expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+    const trash = await dataSource.getRepository(VfsTrashEntity).findBy({ namespaceId: fixture.namespaceId });
+    expect(trash).toHaveLength(1);
+    expect(trash[0].originalPath).toBe('/a');
+  });
+
+  it('후보 조회 뒤 이동된 파일의 현재 경로를 따라 삭제한다', async () => {
+    const { dataSource, nodeRepository, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const originalExpire = nodeRepository.expireNode.bind(nodeRepository);
+    const expire = jest
+      .spyOn(nodeRepository, 'expireNode')
+      .mockImplementationOnce(async (namespaceId, nodeId, cutoff) => {
+        await nodeRepository.ensureDirectory(fixture.namespaceId, fixture.rootId, ['moved'], false);
+        await nodeRepository.moveNode(fixture.namespaceId, fixture.rootId, ['a'], ['moved', 'a'], false);
+        return originalExpire(namespaceId, nodeId, cutoff);
+      });
+    try {
+      expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+    } finally {
+      expire.mockRestore();
+    }
+    expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: fixture.ids[0] })).toBeNull();
+  });
+
+  it('잠긴 경로의 대상 ID가 후보와 다르면 삭제하지 않는다', async () => {
+    const { dataSource, nodeRepository } = getContext();
+    const fixture = await createExpiringFixture(false, ['a', 'b']);
+    await makeOverdue(fixture.ids[0]);
+    const other = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: fixture.ids[1] });
+    const cutoff = await readDbNow(dataSource.manager);
+    // root 잠금을 쓰지 않는 외부 변경이 경로 해석과 대상 잠금 사이에 끼어든 경우를 재현한다.
+    const lockTarget = jest
+      .spyOn(
+        nodeRepository as unknown as {
+          lockTargetNode: (...args: unknown[]) => Promise<VfsNodeEntity | null>;
+        },
+        'lockTargetNode',
+      )
+      .mockResolvedValueOnce(other);
+    try {
+      expect(await nodeRepository.expireNode(fixture.namespaceId, fixture.ids[0], cutoff)).toBeNull();
+    } finally {
+      lockTarget.mockRestore();
+    }
+    expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: fixture.ids[0] })).not.toBeNull();
+    await dataSource.getRepository(VfsNodeEntity).update({ id: fixture.ids[0] }, { expiresAt: null });
+  });
+
+  it('확정으로 건너뛴 항목이 있어도 작은 배치의 keyset을 전진한다', async () => {
+    const { nodeRepository, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(false, ['a', 'b', 'c', 'd', 'e']);
+    for (const [index, id] of fixture.ids.entries()) await makeOverdue(id, 100 - index);
+    const originalExpire = nodeRepository.expireNode.bind(nodeRepository);
+    const expire = jest
+      .spyOn(nodeRepository, 'expireNode')
+      .mockImplementation(async (namespaceId, id, cutoff) => {
+        if (id === fixture.ids[1]) {
+          const node = await getContext().dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id });
+          await nodeRepository.withMutation(fixture.namespaceId, fixture.rootId, (tx) =>
+            nodeRepository.applyConditionalMutation(tx, {
+              kind: 'persist',
+              path: '/b',
+              segments: ['b'],
+              ifRevision: encodeRevision(node),
+            }),
+          );
+        }
+        return originalExpire(namespaceId, id, cutoff);
+      });
+    try {
+      expect(await fileExpiry.expireDue(2)).toEqual({ files: 4, bytes: '28' });
+    } finally {
+      expire.mockRestore();
+    }
+  });
+
+  it('DELETING namespace의 만료 파일은 보존한다', async () => {
+    const { dataSource, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    await dataSource
+      .getRepository(NamespaceEntity)
+      .update({ id: fixture.namespaceId }, { status: 'DELETING' });
+
+    expect(await fileExpiry.expireDue(500)).toEqual({ files: 0, bytes: '0' });
+    expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: fixture.ids[0] })).not.toBeNull();
+  });
+
+  it('확정과 만료 삭제가 경합하면 하나만 적용한다', async () => {
+    const { dataSource, nodeRepository } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const node = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: fixture.ids[0] });
+    const cutoff = await readDbNow(dataSource.manager);
+
+    const [expired, persisted] = await Promise.allSettled([
+      nodeRepository.expireNode(fixture.namespaceId, node.id, cutoff),
+      nodeRepository.withMutation(fixture.namespaceId, fixture.rootId, (tx) =>
+        nodeRepository.applyConditionalMutation(tx, {
+          kind: 'persist',
+          path: '/a',
+          segments: ['a'],
+          ifRevision: encodeRevision(node),
+        }),
+      ),
+    ]);
+    const after = await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: node.id });
+    if (after === null) {
+      expect(expired).toEqual({ status: 'fulfilled', value: { size: '7' } });
+      expect(persisted.status).toBe('rejected');
+    } else {
+      expect(after.expiresAt).toBeNull();
+      expect(persisted.status).toBe('fulfilled');
+      expect(expired).toEqual({ status: 'fulfilled', value: null });
+    }
+  });
+
+  it('GC 결과에 만료 삭제 건수와 바이트를 기록한다', async () => {
+    const { storage, blobRepository, fileExpiry } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const job = new GcJob(
+      storage,
+      blobRepository,
+      makeConfig(3600),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fileExpiry,
+    );
+
+    const result = await job.run();
+    expect(result.expiredFiles).toBeGreaterThanOrEqual(1);
+    expect(BigInt(result.expiredBytes)).toBeGreaterThanOrEqual(7n);
+  });
 
   it('만료 경계의 항목을 한 배치씩 purge하고 미만료 항목·공유 Blob·quota를 보존한다', async () => {
     const { dataSource, storage, trashRetention } = getContext();

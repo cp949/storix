@@ -229,6 +229,10 @@ export class ContentService {
     if (!target) {
       throw new VfsNodeNotFoundError(canonical);
     }
+    // 확정되지 않은 파일은 공개 표면에서 없는 파일과 같은 404로 숨긴다.
+    if (!authenticated && target.expiresAt !== null) {
+      throw new VfsNodeNotFoundError(canonical);
+    }
     if (target.type === 'DIRECTORY') {
       throw new VfsIsDirectoryError(canonical);
     }
