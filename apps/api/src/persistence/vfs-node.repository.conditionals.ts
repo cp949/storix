@@ -156,6 +156,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     if (target.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
     target.expiresAt = null;
     // save()가 @VersionColumn과 updatedAt을 올리므로 withMutation의 추가 bump는 요청하지 않는다.
+    await this.markAncestorChain(tx, parentId);
     const saved = await tx.manager.getRepository(VfsNodeEntity).save(target);
     this.markChanged(tx, saved.id, false);
     return { status: 200, resource: toNodeResponse(toRecord(saved), path) };

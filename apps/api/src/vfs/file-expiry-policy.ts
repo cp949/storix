@@ -35,17 +35,24 @@ export function resolveFileExpiryBounds(min: string | undefined, max: string | u
   return { minSeconds, maxSeconds };
 }
 
-// JSON 입력(resumable)과 헤더 파싱 결과가 공유하는 범위 검사.
-export function assertExpirySeconds(value: unknown, bounds: FileExpiryBounds): number {
+// 설정 범위와 분리해 JSON 만료 입력의 형태·DB 저장 가능 범위만 확인한다.
+export function parseExpirySeconds(value: unknown): number {
   if (
     typeof value !== 'number' ||
     !Number.isSafeInteger(value) ||
-    value < bounds.minSeconds ||
-    value > bounds.maxSeconds
+    value < 1 ||
+    value > MAX_FILE_EXPIRY_SECONDS
   ) {
     throw new VfsInvalidExpiryError();
   }
   return value;
+}
+
+// JSON 입력(resumable)과 헤더 파싱 결과가 공유하는 현재 정책 범위 검사.
+export function assertExpirySeconds(value: unknown, bounds: FileExpiryBounds): number {
+  const seconds = parseExpirySeconds(value);
+  if (seconds < bounds.minSeconds || seconds > bounds.maxSeconds) throw new VfsInvalidExpiryError();
+  return seconds;
 }
 
 // X-Expires-In은 부호·공백·소수·지수·선행 0 없는 10진 정수만 받는다.

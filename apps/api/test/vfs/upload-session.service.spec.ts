@@ -32,6 +32,7 @@ describe('UploadSessionService lifecycle', () => {
   };
 
   function setup() {
+    let expiryMax = '2592000';
     const sessions = new Map<string, VfsUploadSessionEntity>();
     const repo = {
       createSession: async (input: CreateUploadSessionInput) => {
@@ -109,7 +110,12 @@ describe('UploadSessionService lifecycle', () => {
       capability as unknown as CapabilityService,
       policy,
       {
-        get: (name: string) => (name === 'STORIX_MAX_FILE_SIZE_BYTES' ? '8' : undefined),
+        get: (name: string) =>
+          name === 'STORIX_MAX_FILE_SIZE_BYTES'
+            ? '8'
+            : name === 'STORIX_VFS_EXPIRY_MAX_SECONDS'
+              ? expiryMax
+              : undefined,
       } as unknown as ConfigService,
     );
     return {
@@ -117,6 +123,11 @@ describe('UploadSessionService lifecycle', () => {
       sessions,
       setEnabled: (value: boolean) => {
         enabled = value;
+      },
+      setExpiryMax: (value: string) => {
+        expiryMax = value;
+        (service as unknown as { expiryBounds: { maxSeconds: number } }).expiryBounds.maxSeconds =
+          Number(value);
       },
       setParentExists: (value: boolean) => {
         parentExists = value;
@@ -188,6 +199,21 @@ describe('UploadSessionService lifecycle', () => {
     await expect(
       service.create(namespaceId, 'scope', key, { ...request, expiresInSeconds: 601 }, 'req-2'),
     ).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED' });
+  });
+
+  it('현재 MAX가 낮아져도 같은 creation key와 fingerprint면 만료 입력을 replay한다', async () => {
+    const { service, sessions, setExpiryMax } = setup();
+    const requestWithExpiry = { ...request, expiresInSeconds: 7200 };
+    const first = await service.create(namespaceId, 'scope', key, requestWithExpiry, 'req-1');
+    setExpiryMax('600');
+
+    const replay = await service.create(namespaceId, 'scope', key, requestWithExpiry, 'req-2');
+
+    expect(replay.body).toEqual(first.body);
+    expect(sessions.size).toBe(1);
+    await expect(
+      service.create(namespaceId, 'scope', randomUUID(), requestWithExpiry, 'req-3'),
+    ).rejects.toMatchObject({ code: 'VFS_INVALID_EXPIRY', status: 400 });
   });
 
   it.each([

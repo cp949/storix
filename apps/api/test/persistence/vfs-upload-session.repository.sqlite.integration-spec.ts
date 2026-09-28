@@ -45,6 +45,7 @@ describe('upload session repository (SQLite)', () => {
   });
 
   function input(key = randomUUID()) {
+    const now = new Date();
     return {
       id: randomUUID(),
       namespaceId: NAMESPACE,
@@ -59,9 +60,9 @@ describe('upload session repository (SQLite)', () => {
       fileExpiresInSeconds: null,
       partSizeBytes: 10,
       partCount: 1,
-      now: new Date('2026-09-27T00:00:00Z'),
-      expiresAt: new Date('2026-09-28T00:00:00Z'),
-      maxExpiresAt: new Date('2026-10-04T00:00:00Z'),
+      now,
+      expiresAt: new Date(now.getTime() + 86400_000),
+      maxExpiresAt: new Date(now.getTime() + 7 * 86400_000),
     };
   }
 
@@ -400,19 +401,23 @@ describe('upload session repository (SQLite)', () => {
     const created = await repository.createSession(input(), caps);
     if (created.kind !== 'created') throw new Error('expected creation');
     const id = created.session.id;
-    const now = new Date('2026-09-27T01:00:00Z');
+    const now = new Date(created.session.createdAt.getTime() + 60 * 60_000);
     expect(await repository.renewSession(NAMESPACE, id, now, 10 * 86400)).toBe(true);
     expect((await repository.findForStatus(NAMESPACE, id))?.session.expiresAt).toEqual(
       created.session.maxExpiresAt,
     );
-    expect(await repository.pruneTerminalSessions(new Date('2026-10-10T00:00:00Z'))).toBe(0);
+    expect(
+      await repository.pruneTerminalSessions(new Date(created.session.maxExpiresAt.getTime() + 60_000)),
+    ).toBe(0);
     await db.getRepository(VfsUploadSessionEntity).update({ id }, { sizeBytes: '0', partCount: 0 });
     expect((await repository.claimFinalize(NAMESPACE, id, 60_000)).kind).toBe('claimed');
     expect(await db.query("SELECT active_sessions FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { active_sessions: 1 },
     ]);
     await db.getRepository(VfsUploadSessionEntity).update({ id }, { state: 'COMPLETED', terminalAt: now });
-    expect(await repository.pruneTerminalSessions(new Date('2026-10-10T00:00:00Z'))).toBe(1);
+    expect(
+      await repository.pruneTerminalSessions(new Date(created.session.maxExpiresAt.getTime() + 60_000)),
+    ).toBe(1);
     expect(await repository.findForStatus(NAMESPACE, id)).toBeNull();
   });
 });

@@ -188,6 +188,40 @@ describe('ConditionalContentService 오류 receipt', () => {
     expect(completeAfterRollback.mock.calls[0][5]).toBe(4);
   });
 
+  it('invalid path receipt fingerprint includes valid expiry input', async () => {
+    const key = randomUUID();
+    const send = (ttl: string) =>
+      service.put(
+        namespaceId,
+        'scope',
+        key,
+        '/é',
+        'true',
+        undefined,
+        Readable.from([Buffer.from('body')]),
+        'application/octet-stream',
+        '4',
+        'req-ttl',
+        undefined,
+        ttl,
+      );
+    const first = await send('600');
+    const firstFingerprint = completeAfterRollback.mock.calls.at(-1)?.[2] as string;
+    claim.mockResolvedValue({
+      kind: 'complete',
+      receipt: {
+        method: 'POST',
+        fingerprint: firstFingerprint,
+        responseStatus: first.status,
+        responseBody: JSON.stringify(first.body),
+        responseHeaders: JSON.stringify(first.headers),
+      } as VfsMutationReceiptEntity,
+    });
+
+    expect(await send('601')).toMatchObject({ status: 409, body: { code: 'MUTATION_KEY_REUSED' } });
+    expect(await send('600')).toEqual(first);
+  });
+
   it('NFD raw path를 업로드 전에 400 응답으로 확정한다', async () => {
     const result = await upload('/é', 'true', undefined);
     expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_PATH', requestId: 'req-1' } });

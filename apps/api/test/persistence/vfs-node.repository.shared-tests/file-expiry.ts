@@ -153,7 +153,51 @@ export function runFileExpiryTests(helpers: VfsNodeRepositoryTestHelpers): void 
         revision: encodeRevision(stored),
       });
       const events = await getRepo().listChangeFeedEvents(namespace.id, checkpoint, 10);
-      expect(events.map((event) => [event.kind, event.nodeId])).toEqual([['updated', resource.id]]);
+      expect(events.map((event) => [event.kind, event.nodeId])).toEqual(
+        expect.arrayContaining([
+          ['updated', resource.id],
+          ['updated', root.id],
+        ]),
+      );
+    });
+
+    it('persist는 부모·조상 revision을 갱신해 목록 cursor를 무효화한다', async () => {
+      const namespace = await createNamespace(`persist-cursor-${randomUUID()}`);
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const parent = await getRepo().ensureDirectory(namespace.id, root.id, ['parent'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['parent', 'nested'], false);
+      const resource = await getRepo().withMutation(namespace.id, root.id, (tx) =>
+        getRepo().putConditionalContent(
+          tx,
+          ['parent', 'nested', 'temp.bin'],
+          { ifAbsent: true, expiresInSeconds: 600 },
+          makeBlobData(),
+        ),
+      );
+      await getRepo().ensureDirectory(namespace.id, root.id, ['parent', 'sibling'], false);
+      const first = await getRepo().listRevisionChildren(
+        namespace.id,
+        root.id,
+        ['parent'],
+        '/parent',
+        null,
+        1,
+      );
+      const cursor = {
+        directoryId: first.directory.id,
+        directoryRevision: encodeRevision(first.directory),
+        name: first.rows[0].name,
+        id: first.rows[0].id,
+      };
+      const parentBefore = await getDs().getRepository(VfsNodeEntity).findOneByOrFail({ id: parent.node.id });
+
+      await persist(namespace.id, root.id, '/parent/nested/temp.bin', resource.value.resource.revision);
+
+      const parentAfter = await getDs().getRepository(VfsNodeEntity).findOneByOrFail({ id: parent.node.id });
+      expect(parentAfter.version).toBe(parentBefore.version + 1);
+      await expect(
+        getRepo().listRevisionChildren(namespace.id, root.id, ['parent'], '/parent', cursor, 1),
+      ).rejects.toBeInstanceOf(VfsPreconditionFailedError);
     });
 
     it('이미 확정된 파일의 persist는 변경 없이 200이고 revision과 change feed를 유지한다', async () => {

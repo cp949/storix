@@ -16,6 +16,7 @@ import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-ret
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { readDbNow } from '../../src/persistence/vfs-node.repository.helpers.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
+import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 export interface GcJobTestContext {
@@ -312,11 +313,53 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     if (after === null) {
       expect(expired).toEqual({ status: 'fulfilled', value: { size: '7' } });
       expect(persisted.status).toBe('rejected');
+      if (persisted.status === 'rejected') expect(persisted.reason).toBeInstanceOf(VfsNodeNotFoundError);
     } else {
       expect(after.expiresAt).toBeNull();
       expect(persisted.status).toBe('fulfilled');
       expect(expired).toEqual({ status: 'fulfilled', value: null });
     }
+  });
+
+  it('GC가 먼저 삭제하면 persist는 VFS_NODE_NOT_FOUND로 끝난다', async () => {
+    const { dataSource, nodeRepository } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const node = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: fixture.ids[0] });
+    const cutoff = await readDbNow(dataSource.manager);
+
+    expect(await nodeRepository.expireNode(fixture.namespaceId, node.id, cutoff)).toEqual({ size: '7' });
+    await expect(
+      nodeRepository.withMutation(fixture.namespaceId, fixture.rootId, (tx) =>
+        nodeRepository.applyConditionalMutation(tx, {
+          kind: 'persist',
+          path: '/a',
+          segments: ['a'],
+          ifRevision: encodeRevision(node),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(VfsNodeNotFoundError);
+  });
+
+  it('persist가 먼저 확정하면 GC는 같은 파일을 삭제하지 않는다', async () => {
+    const { dataSource, nodeRepository } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const node = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: fixture.ids[0] });
+    const cutoff = await readDbNow(dataSource.manager);
+
+    await nodeRepository.withMutation(fixture.namespaceId, fixture.rootId, (tx) =>
+      nodeRepository.applyConditionalMutation(tx, {
+        kind: 'persist',
+        path: '/a',
+        segments: ['a'],
+        ifRevision: encodeRevision(node),
+      }),
+    );
+    expect(await nodeRepository.expireNode(fixture.namespaceId, node.id, cutoff)).toBeNull();
+    expect(
+      (await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: node.id })).expiresAt,
+    ).toBeNull();
   });
 
   it('GC 결과에 만료 삭제 건수와 바이트를 기록한다', async () => {

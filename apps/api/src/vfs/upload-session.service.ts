@@ -11,7 +11,12 @@ import type { VfsUploadSessionEntity } from '../persistence/entities/vfs-upload-
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { toPreconditionCurrent } from './dto/node-response.dto.js';
 import { parseUploadSessionCreateRequest } from './dto/upload-session-request.dto.js';
-import { assertExpirySeconds, type FileExpiryBounds, resolveFileExpiryBounds } from './file-expiry-policy.js';
+import {
+  assertExpirySeconds,
+  parseExpirySeconds,
+  type FileExpiryBounds,
+  resolveFileExpiryBounds,
+} from './file-expiry-policy.js';
 import { hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
@@ -96,7 +101,7 @@ export class UploadSessionService {
     let fileExpiresInSeconds: number | null = null;
     if (parsed.expiresInSeconds !== undefined) {
       if (!parsed.ifAbsent) throw new VfsInvalidExpiryError();
-      fileExpiresInSeconds = assertExpirySeconds(parsed.expiresInSeconds, this.expiryBounds);
+      fileExpiresInSeconds = parseExpirySeconds(parsed.expiresInSeconds);
     }
     const resolved = this.paths.resolveConditional(parsed.path);
     if (resolved.segments.length === 0) throw new VfsInvalidMutationRequestError();
@@ -118,6 +123,9 @@ export class UploadSessionService {
         body: response(existing, true),
         headers: { 'x-request-id': creationRequestId(existing, requestId) },
       };
+    }
+    if (fileExpiresInSeconds !== null) {
+      fileExpiresInSeconds = assertExpirySeconds(fileExpiresInSeconds, this.expiryBounds);
     }
     const namespacePolicy = this.policy?.namespaces[namespaceId.toLowerCase()];
     if (!this.policy || !namespacePolicy)

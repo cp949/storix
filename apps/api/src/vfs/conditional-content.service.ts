@@ -54,9 +54,16 @@ function conditionIdentity(
   condition: ContentPrecondition | null,
   ifAbsent: string | undefined,
   ifRevision: string | undefined,
+  expiresInSeconds?: number,
 ): string {
   if (condition) return JSON.stringify(condition);
-  return JSON.stringify({ invalid: { ifAbsent: ifAbsent ?? null, ifRevision: ifRevision ?? null } });
+  return JSON.stringify({
+    invalid: {
+      ifAbsent: ifAbsent ?? null,
+      ifRevision: ifRevision ?? null,
+      ...(expiresInSeconds === undefined ? {} : { expiresInSeconds }),
+    },
+  });
 }
 
 function fingerprint(
@@ -142,7 +149,7 @@ export class ConditionalContentService {
       else throw error;
     }
 
-    const conditionKey = conditionIdentity(condition, ifAbsent, ifRevision);
+    const conditionKey = conditionIdentity(condition, ifAbsent, ifRevision, expiresInSeconds);
     const claim = await this.receipts.claim(identity, new Date());
     if (claim.kind === 'busy') return busyResponse(claim.retryAfterSeconds, requestId);
     try {

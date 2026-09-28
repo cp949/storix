@@ -1,6 +1,7 @@
 import { decodeRevision } from '../revision.js';
 import {
   VfsInvalidChecksumError,
+  VfsInvalidExpiryError,
   VfsInvalidMutationRequestError,
   VfsPreconditionRequiredError,
 } from '../vfs.errors.js';
@@ -31,6 +32,10 @@ export function parseUploadSessionCreateRequest(value: unknown): UploadSessionCr
   if (Object.hasOwn(row, 'sha256') && (typeof row.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(row.sha256)))
     throw new VfsInvalidChecksumError();
   const absent = Object.hasOwn(row, 'ifAbsent');
+  const hasExpiry = Object.hasOwn(row, 'expiresInSeconds');
+  if (hasExpiry && (!absent || row.ifAbsent !== true || Object.hasOwn(row, 'ifRevision'))) {
+    throw new VfsInvalidExpiryError();
+  }
   const revision = Object.hasOwn(row, 'ifRevision');
   if (!absent && !revision) throw new VfsPreconditionRequiredError();
   if (
@@ -54,7 +59,7 @@ export function parseUploadSessionCreateRequest(value: unknown): UploadSessionCr
     sizeBytes: row.sizeBytes,
     mimeType: row.mimeType.toLowerCase(),
     ...(row.sha256 !== undefined ? { sha256: row.sha256 as string } : {}),
-    ...(Object.hasOwn(row, 'expiresInSeconds') ? { expiresInSeconds: row.expiresInSeconds } : {}),
+    ...(hasExpiry ? { expiresInSeconds: row.expiresInSeconds } : {}),
     ...(absent ? { ifAbsent: true as const } : { ifRevision: row.ifRevision as string }),
   };
 }
