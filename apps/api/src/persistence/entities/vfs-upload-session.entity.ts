@@ -14,6 +14,9 @@ export class VfsUploadSessionEntity {
   @Column({ name: 'size_bytes', type: 'bigint' }) sizeBytes: string;
   @Column({ type: 'varchar', length: 64, nullable: true }) sha256: string | null;
   @Column({ name: 'mime_type', type: 'varchar', length: 255 }) mimeType: string;
+  // 완료로 만들 파일의 만료 초. 완료 트랜잭션 시각을 기준으로 계산한다.
+  @Column({ name: 'file_expires_in_seconds', type: 'integer', nullable: true })
+  fileExpiresInSeconds: number | null;
   @Column({ name: 'condition_type', type: 'varchar', length: 16 }) conditionType: 'ABSENT' | 'REVISION';
   @Column({ name: 'condition_revision', type: 'varchar', length: 128, nullable: true }) conditionRevision:
     string | null;

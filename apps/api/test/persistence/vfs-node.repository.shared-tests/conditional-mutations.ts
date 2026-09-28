@@ -534,6 +534,7 @@ export function runConditionalMutationsTests(helpers: VfsNodeRepositoryTestHelpe
         createdAt: existing.createdAt.toISOString(),
         updatedAt: existing.updatedAt.toISOString(),
         version: existing.version,
+        expiresAt: null,
         revision: encodeRevision(existing),
       });
     });

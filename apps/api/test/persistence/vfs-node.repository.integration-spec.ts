@@ -3,6 +3,8 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
 import { DataSource } from 'typeorm';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { VfsChangeEventEntity } from '../../src/persistence/entities/vfs-change-event.entity.js';
+import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
@@ -27,6 +29,8 @@ describe('VfsNodeRepository (Postgres)', () => {
         NamespaceEntity,
         VfsNodeEntity,
         BlobEntity,
+        VfsChangeEventEntity,
+        VfsChangeFeedStateEntity,
         IdempotencyKeyEntity,
         VfsTrashEntity,
         VfsTrashEntryEntity,

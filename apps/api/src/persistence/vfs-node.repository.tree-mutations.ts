@@ -19,6 +19,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     maxSyncCopyNodes: number,
     tx?: MutationTx,
     destinationResolution?: 'exact',
+    expiresAt: Date | null = null,
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
     if (!tx) {
       return (
@@ -32,6 +33,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
             maxSyncCopyNodes,
             inner,
             destinationResolution,
+            expiresAt,
           ),
         )
       ).value;
@@ -68,6 +70,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
           blobId: sourceNode.blobId,
           size: sourceNode.size,
           mimeType: sourceNode.mimeType,
+          expiresAt,
         }),
       );
       this.markChanged(tx, created.id, false);
@@ -129,6 +132,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
       blobId: string | null;
       size: string | null;
       mimeType: string | null;
+      expiresAt: Date | null;
     }[] = [];
     // BFS로 부모의 새 id가 먼저 정해진 뒤 자식의 parentId를 채운다. 실제 insert는
     // 한 트랜잭션 안에서 한 번에 일어나므로, 이 순서는 in-memory 구성 단계에서만
@@ -163,6 +167,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
           blobId: child.blob_id,
           size: child.size,
           mimeType: child.mime_type,
+          expiresAt: child.type === 'FILE' ? expiresAt : null,
         });
       }
     }

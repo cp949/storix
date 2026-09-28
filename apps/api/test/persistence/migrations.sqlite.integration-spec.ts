@@ -11,6 +11,7 @@ import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migr
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
+import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -126,6 +127,40 @@ describe('마이그레이션 체인 (SQLite)', () => {
       expect(
         await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE ?', ['trash-policy-new-%']),
       ).toEqual([{ trash_enabled: 0 }]);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('파일 만료 migration은 기존 node를 NULL로 두고 부분 인덱스와 세션 컬럼을 가역적으로 만든다', async () => {
+    const namespace = await dataSource
+      .getRepository(NamespaceEntity)
+      .save({ name: `file-expiry-migration-${randomUUID()}` });
+    const nodeId = randomUUID();
+    const migration = new AddFileExpiry1791700000010();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await migration.down(runner);
+      expect(await runner.query("PRAGMA table_info('vfs_node')")).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'expires_at' })]),
+      );
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name, blob_id, size, mime_type)
+         VALUES (?, ?, NULL, 'DIRECTORY', '', NULL, NULL, NULL)`,
+        [nodeId, namespace.id],
+      );
+      await migration.up(runner);
+      expect(await runner.query('SELECT id, expires_at FROM vfs_node WHERE id = ?', [nodeId])).toEqual([
+        { id: nodeId, expires_at: null },
+      ]);
+      expect(
+        await runner.query(
+          "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_vfs_node_expires_at'",
+        ),
+      ).toEqual([{ sql: expect.stringContaining('WHERE "expires_at" IS NOT NULL') }]);
+      expect(await runner.query("PRAGMA table_info('vfs_upload_session')")).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'file_expires_in_seconds' })]),
+      );
     } finally {
       await runner.release();
     }
@@ -253,6 +288,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddVfsTrash1791700000007',
       'AddAuditLogTrashId1791700000008',
       'AddNamespaceTrashEnabled1791700000009',
+      'AddFileExpiry1791700000010',
     ]);
   });
 

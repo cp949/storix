@@ -17,11 +17,21 @@ function makeRecord(overrides: Partial<VfsNodeRecord> = {}): VfsNodeRecord {
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     version: 1,
+    expiresAt: null,
     ...overrides,
   };
 }
 
 describe('toNodeResponse', () => {
+  it('expiresAt이 없으면 null을 반환한다', () => {
+    expect(toNodeResponse(makeRecord(), '/a').expiresAt).toBeNull();
+  });
+
+  it('expiresAt을 ISO 문자열로 반환한다', () => {
+    const expiresAt = new Date('2026-09-30T00:00:00.000Z');
+    expect(toNodeResponse(makeRecord({ expiresAt }), '/a').expiresAt).toBe('2026-09-30T00:00:00.000Z');
+  });
+
   it('DIRECTORY record를 응답 DTO로 변환한다', () => {
     const result = toNodeResponse(makeRecord(), '/a');
 
@@ -35,6 +45,7 @@ describe('toNodeResponse', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       version: 1,
+      expiresAt: null,
     });
   });
 

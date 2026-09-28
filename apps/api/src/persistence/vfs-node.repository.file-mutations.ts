@@ -159,11 +159,22 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     ifMatchVersion: number | null,
     force: boolean,
     tx?: MutationTx,
+    expiresAt: Date | null = null,
   ): Promise<PutFileOutcome> {
     if (!tx) {
       return (
         await this.withMutation(namespaceId, rootId, (inner) =>
-          this.putFileContent(namespaceId, rootId, segments, parents, newBlob, ifMatchVersion, force, inner),
+          this.putFileContent(
+            namespaceId,
+            rootId,
+            segments,
+            parents,
+            newBlob,
+            ifMatchVersion,
+            force,
+            inner,
+            expiresAt,
+          ),
         )
       ).value;
     }
@@ -218,6 +229,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
         blobId: createdBlob.id,
         size: newBlob.size,
         mimeType: newBlob.mimeType,
+        expiresAt,
       }),
     );
     this.markChanged(tx, created.id, false);

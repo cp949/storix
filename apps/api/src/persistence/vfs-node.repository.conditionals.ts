@@ -27,7 +27,7 @@ import type {
   MutationTx,
   ContentPrecondition,
 } from './vfs-node.repository.types.js';
-import { toRecord, joinSegments } from './vfs-node.repository.helpers.js';
+import { toRecord, joinSegments, readDbNow } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryTrash } from './vfs-node.repository.trash.js';
 
 export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
@@ -43,7 +43,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     tx: MutationTx,
     command: ConditionalMutation,
   ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null; trashId?: string }> {
-    if (command.kind === 'mkdir' || command.kind === 'delete') {
+    if (command.kind === 'mkdir' || command.kind === 'delete' || command.kind === 'persist') {
       assertConditionalSegments(command.segments);
     } else {
       assertConditionalSegments(command.sourceSegments);
@@ -58,6 +58,10 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
       }
       const result = await this.ensureDirectory(namespaceId, rootId, command.segments, false, tx);
       return { status: 201, resource: toNodeResponse(result.node, command.path) };
+    }
+
+    if (command.kind === 'persist') {
+      return this.persistNode(tx, command.path, command.segments, command.ifRevision);
     }
 
     const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
@@ -96,6 +100,11 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
         namespace.maxSyncCopyNodes,
         parsePositiveInt(process.env.STORIX_MAX_SYNC_COPY_NODES, 1000),
       );
+      // copy의 만료는 새로 생기는 FILE 전부에 같은 DB 시각 + 초로 적용한다.
+      const expiresAt =
+        command.expiresInSeconds !== undefined
+          ? new Date((await readDbNow(tx.manager)).getTime() + command.expiresInSeconds * 1000)
+          : null;
       const result = await this.copyNode(
         namespaceId,
         rootId,
@@ -105,6 +114,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
         max,
         tx,
         command.destinationResolution,
+        expiresAt,
       );
       return { status: 201, resource: toNodeResponse(result.node, result.finalPath) };
     } catch (error) {
@@ -120,6 +130,35 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
       }
       throw error;
     }
+  }
+
+  // namespace root 잠금 아래에서 대상 파일을 확정한다. GC 만료 삭제와 직렬화된다.
+  private async persistNode(
+    tx: MutationTx,
+    path: string,
+    segments: string[],
+    ifRevision: string,
+  ): Promise<{ status: 200; resource: VfsNodeResponseDto }> {
+    const parentId = await this.lockParentChain(
+      tx.manager,
+      tx.namespaceId,
+      tx.rootId,
+      segments,
+      false,
+      tx,
+      false,
+    );
+    const target = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, segments.at(-1)!, tx);
+    if (!target) throw new VfsNodeNotFoundError(path);
+    if (target.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
+    this.assertRevision(target, ifRevision, path);
+    if (target.expiresAt === null) return { status: 200, resource: toNodeResponse(toRecord(target), path) };
+    if (target.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
+    target.expiresAt = null;
+    // save()가 @VersionColumn과 updatedAt을 올리므로 withMutation의 추가 bump는 요청하지 않는다.
+    const saved = await tx.manager.getRepository(VfsNodeEntity).save(target);
+    this.markChanged(tx, saved.id, false);
+    return { status: 200, resource: toNodeResponse(toRecord(saved), path) };
   }
 
   @classifyPersistenceOperation
@@ -138,6 +177,11 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
       if (!existing) throw new VfsNodeNotFoundError(path);
       this.assertRevision(existing, condition.ifRevision, path);
     }
+    // 만료는 새 FILE을 만드는 ifAbsent에서만 받는다. 기준은 이 트랜잭션의 DB 시각이다.
+    const expiresAt =
+      'ifAbsent' in condition && condition.expiresInSeconds !== undefined
+        ? new Date((await readDbNow(tx.manager)).getTime() + condition.expiresInSeconds * 1000)
+        : null;
     const outcome = await this.putFileContent(
       tx.namespaceId,
       tx.rootId,
@@ -147,6 +191,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
       existing?.version ?? null,
       false,
       tx,
+      expiresAt,
     );
     return {
       status: outcome.kind === 'created' ? 201 : 200,

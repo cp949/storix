@@ -1,5 +1,6 @@
 import { assertPathSegments } from '../vfs/path-resolver.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
+import type { EntityManager } from 'typeorm';
 import type {
   VfsNodeRecord,
   VfsNodeMatch,
@@ -43,6 +44,7 @@ export function toRecord(entity: VfsNodeEntity): VfsNodeRecord {
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,
     version: entity.version,
+    expiresAt: entity.expiresAt,
   };
 }
 
@@ -77,8 +79,15 @@ export function toMatch(row: FindRecursiveRow): VfsNodeMatch {
     createdAt: parseSqlTimestamp(row.created_at),
     updatedAt: parseSqlTimestamp(row.updated_at),
     version: row.version,
+    expiresAt: row.expires_at === null ? null : parseSqlTimestamp(row.expires_at),
     relativeSegments: row.path_segments.split('/'),
   };
+}
+
+// 트랜잭션의 DB 현재 시각. SQLite CURRENT_TIMESTAMP는 타임존 없는 문자열이라 UTC로 보정한다.
+export async function readDbNow(manager: EntityManager): Promise<Date> {
+  const raw = (await manager.query('SELECT CURRENT_TIMESTAMP AS now')) as Array<{ now: Date | string }>;
+  return parseSqlTimestamp(raw[0].now);
 }
 
 export function escapeLikeValue(value: string): string {

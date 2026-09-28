@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository, type MutationTx } from '../../src/persistence/vfs-node.repository.js';
@@ -46,6 +47,7 @@ describe('MutationService 오류 receipt', () => {
         completeAfterRollback,
         release,
       } as unknown as VfsMutationReceiptRepository,
+      { get: () => undefined } as unknown as ConfigService,
     );
   });
 
@@ -91,6 +93,7 @@ describe('MutationService 오류 receipt', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
       version: 3,
+      expiresAt: null,
       revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     };
     applyConditionalMutation.mockRejectedValueOnce(new VfsPreconditionFailedError('/a', current));
@@ -180,6 +183,7 @@ describe('errorResponse', () => {
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-02T00:00:00.000Z',
     version: 2,
+    expiresAt: null,
     revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   };
 

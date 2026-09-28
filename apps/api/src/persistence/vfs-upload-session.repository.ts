@@ -26,6 +26,7 @@ export interface CreateUploadSessionInput {
   readonly mimeType: string;
   readonly conditionType: 'ABSENT' | 'REVISION';
   readonly conditionRevision: string | null;
+  readonly fileExpiresInSeconds: number | null;
   readonly partSizeBytes: number;
   readonly partCount: number;
   readonly now: Date;

@@ -15,6 +15,8 @@
 
 ### Added
 
+- 조건부 파일 생성(`POST /fs/content/conditional`, `X-If-Absent: true`)에 `X-Expires-In`을 추가했다. 허용 범위는 기본 60~2592000초이며 설정으로 조정할 수 있다. 생성 결과와 인증 조회의 파일 metadata에 `expiresAt`을 제공한다.
+
 - 파일·디렉터리 삭제를 30일 복구 가능한 휴지통으로 옮기고 목록·원래 ID 복구·관리자 영구 삭제 API를 추가했다. namespace별 기본 100000 node 보존 상한과 live·snapshot·휴지통 논리 quota, 만료 항목의 GC 배치 purge를 적용한다.
 
 - 기본 비활성 `change-feed` capability와 `GET /api/v2/namespaces/{namespaceId}/fs/changes`를 추가했다. 초기 checkpoint 뒤 전체 열거한 변경을 namespace 순서의 cursor 페이지로 재생하며, 30일 기본 보존 경계 이전 cursor는 410으로 전체 재동기화를 요구한다.

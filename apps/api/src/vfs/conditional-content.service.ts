@@ -5,6 +5,7 @@ import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { EncryptingPutTarget } from '../encryption/encrypted-content.js';
+import { FileExpiryBounds, parseExpiresInHeader, resolveFileExpiryBounds } from './file-expiry-policy.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import {
   mutationLeaseSeconds,
@@ -26,6 +27,7 @@ import { decodeRevision } from './revision.js';
 import {
   VfsChecksumMismatchError,
   VfsInvalidChecksumError,
+  VfsInvalidExpiryError,
   VfsInvalidMutationRequestError,
   VfsPreconditionRequiredError,
 } from './vfs.errors.js';
@@ -74,6 +76,7 @@ function fingerprint(
 export class ConditionalContentService {
   private readonly maxFileSizeBytes: number;
   private readonly maxUploadDurationMs: number;
+  private readonly expiryBounds: FileExpiryBounds;
 
   constructor(
     private readonly paths: PathResolver,
@@ -87,6 +90,10 @@ export class ConditionalContentService {
     this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
     this.maxUploadDurationMs =
       parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
+    this.expiryBounds = resolveFileExpiryBounds(
+      config.get<string>('STORIX_VFS_EXPIRY_MIN_SECONDS'),
+      config.get<string>('STORIX_VFS_EXPIRY_MAX_SECONDS'),
+    );
   }
 
   async put(
@@ -101,9 +108,17 @@ export class ConditionalContentService {
     contentLength: string | undefined,
     requestId: string,
     expectedSha256?: string,
+    expiresIn?: string,
   ): Promise<MutationHttpResult> {
     if (expectedSha256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSha256)) {
       throw new VfsInvalidChecksumError();
+    }
+    // 만료 입력은 checksum처럼 본문 소비·receipt 생성 전에 검증한다.
+    // 새 파일을 만드는 X-If-Absent: true 요청에서만 받는다.
+    let expiresInSeconds: number | undefined;
+    if (expiresIn !== undefined) {
+      if (ifAbsent !== 'true' || ifRevision !== undefined) throw new VfsInvalidExpiryError();
+      expiresInSeconds = parseExpiresInHeader(expiresIn, this.expiryBounds);
     }
     const identity = identityOf(namespaceId, scope, key);
     const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
@@ -119,6 +134,9 @@ export class ConditionalContentService {
       path = resolved.canonical;
       segments = resolved.segments;
       condition = parsePrecondition(ifAbsent, ifRevision);
+      if (expiresInSeconds !== undefined && condition && 'ifAbsent' in condition) {
+        condition = { ifAbsent: true, expiresInSeconds };
+      }
     } catch (error) {
       if (error instanceof DomainError) parseError = error;
       else throw error;

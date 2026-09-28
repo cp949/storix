@@ -1,7 +1,12 @@
-import { VfsInvalidPathError } from '../../../src/vfs/vfs.errors.js';
+import { VfsInvalidExpiryError, VfsInvalidPathError } from '../../../src/vfs/vfs.errors.js';
 import { parseCopyRequest } from '../../../src/vfs/dto/copy-request.dto.js';
 
 describe('parseCopyRequest', () => {
+  it('레거시 cp 본문에 expiresInSeconds가 있으면 VFS_INVALID_EXPIRY다', () => {
+    expect(() => parseCopyRequest({ source: '/a', destination: '/b', expiresInSeconds: 600 })).toThrow(
+      VfsInvalidExpiryError,
+    );
+  });
   it('source/destination만 주어지면 destinationParents는 false로 기본값을 가진다', () => {
     expect(parseCopyRequest({ source: '/a', destination: '/b' })).toEqual({
       source: '/a',

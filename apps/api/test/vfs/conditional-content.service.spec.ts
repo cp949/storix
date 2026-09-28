@@ -97,6 +97,54 @@ describe('ConditionalContentService 오류 receipt', () => {
     );
   }
 
+  describe('X-Expires-In', () => {
+    it.each([
+      ['X-If-Revision과 함께', undefined, 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'],
+      ['X-If-Absent 없이', undefined, undefined],
+      ['X-If-Absent가 true가 아닐 때', 'false', undefined],
+    ])('%s 보내면 receipt claim 전에 400 VFS_INVALID_EXPIRY다', async (_label, ifAbsent, ifRevision) => {
+      await expect(
+        service.put(
+          namespaceId,
+          'scope',
+          randomUUID(),
+          '/a.bin',
+          ifAbsent,
+          ifRevision,
+          Readable.from([]),
+          'application/octet-stream',
+          '0',
+          'req-1',
+          undefined,
+          '600',
+        ),
+      ).rejects.toMatchObject({ code: 'VFS_INVALID_EXPIRY', status: 400 });
+      expect(claim).not.toHaveBeenCalled();
+    });
+
+    it('범위 밖 값은 receipt claim 전에 400 VFS_INVALID_EXPIRY다', async () => {
+      const source = Readable.from([Buffer.from('body')]);
+      await expect(
+        service.put(
+          namespaceId,
+          'scope',
+          randomUUID(),
+          '/a.bin',
+          'true',
+          undefined,
+          source,
+          'application/octet-stream',
+          '0',
+          'req-1',
+          undefined,
+          '59',
+        ),
+      ).rejects.toMatchObject({ code: 'VFS_INVALID_EXPIRY' });
+      expect(source.readableEnded).toBe(false);
+      expect(claim).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(['', 'A'.repeat(64), 'a'.repeat(63), 'g'.repeat(64), ' a'.repeat(64)])(
     '잘못된 checksum %j는 body와 receipt를 건드리기 전에 거부한다',
     async (checksum) => {
@@ -197,6 +245,7 @@ describe('ConditionalContentService 오류 receipt', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       version: 5,
+      expiresAt: null,
       revision: 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     };
     putConditionalContent.mockRejectedValueOnce(new VfsPreconditionFailedError('/valid', current));

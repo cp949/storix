@@ -56,6 +56,7 @@ describe('upload session repository (SQLite)', () => {
       mimeType: 'text/plain',
       conditionType: 'ABSENT' as const,
       conditionRevision: null,
+      fileExpiresInSeconds: null,
       partSizeBytes: 10,
       partCount: 1,
       now: new Date('2026-09-27T00:00:00Z'),

@@ -13,6 +13,7 @@ export interface VfsNodeRecord {
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly version: number;
+  readonly expiresAt: Date | null;
 }
 
 // FILE 콘텐츠 조회에 필요한 참조 Blob 정보. sha256은 복호화한 원본 전체 바이트 기준이다.
@@ -86,7 +87,8 @@ export interface AffectedRevision {
   readonly revision: string;
 }
 
-export type ContentPrecondition = { readonly ifAbsent: true } | { readonly ifRevision: string };
+export type ContentPrecondition =
+  { readonly ifAbsent: true; readonly expiresInSeconds?: number } | { readonly ifRevision: string };
 
 export interface FindRecursiveRow {
   readonly id: string;
@@ -98,6 +100,7 @@ export interface FindRecursiveRow {
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
   readonly version: number;
+  readonly expires_at: Date | string | null;
   readonly path_segments: string;
 }
 

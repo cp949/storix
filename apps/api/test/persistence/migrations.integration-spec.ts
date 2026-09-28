@@ -13,6 +13,7 @@ import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrat
 import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
+import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -145,6 +146,42 @@ describe('Migration: InitSchema', () => {
       expect(
         await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE $1', ['trash-policy-new-%']),
       ).toEqual([{ trash_enabled: false }]);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('파일 만료 migration은 기존 node를 NULL로 두고 부분 인덱스와 세션 컬럼을 가역적으로 만든다', async () => {
+    const namespace = await dataSource
+      .getRepository(NamespaceEntity)
+      .save({ name: `file-expiry-migration-${randomUUID()}` });
+    const nodeId = randomUUID();
+    const migration = new AddFileExpiry1791700000010();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await migration.down(runner);
+      expect(
+        await runner.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'vfs_node' AND column_name = 'expires_at'",
+        ),
+      ).toEqual([]);
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name, blob_id, size, mime_type)
+         VALUES ($1, $2, NULL, 'DIRECTORY', '', NULL, NULL, NULL)`,
+        [nodeId, namespace.id],
+      );
+      await migration.up(runner);
+      expect(await runner.query('SELECT id, expires_at FROM vfs_node WHERE id = $1', [nodeId])).toEqual([
+        { id: nodeId, expires_at: null },
+      ]);
+      expect(
+        await runner.query("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_vfs_node_expires_at'"),
+      ).toEqual([{ indexdef: expect.stringContaining('WHERE (expires_at IS NOT NULL)') }]);
+      expect(
+        await runner.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'vfs_upload_session' AND column_name = 'file_expires_in_seconds'",
+        ),
+      ).toEqual([{ column_name: 'file_expires_in_seconds' }]);
     } finally {
       await runner.release();
     }

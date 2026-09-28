@@ -38,6 +38,15 @@ export class VfsInvalidChecksumError extends DomainError {
   }
 }
 
+export class VfsInvalidExpiryError extends DomainError {
+  readonly code = 'VFS_INVALID_EXPIRY';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 만료 입력');
+  }
+}
+
 export class VfsChecksumMismatchError extends DomainError {
   readonly code = 'VFS_CHECKSUM_MISMATCH';
   readonly status = 422;

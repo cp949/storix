@@ -212,12 +212,12 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
     let sql = `
       WITH RECURSIVE subtree AS (
         SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, created_at, updated_at, version,
-               CAST(name AS TEXT) AS path_segments
+               expires_at, CAST(name AS TEXT) AS path_segments
         FROM vfs_node
         WHERE namespace_id = ${ph.bind(namespaceId)} AND parent_id = ${ph.bind(startId)}
         UNION ALL
         SELECT vn.id, vn.namespace_id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type,
-               vn.created_at, vn.updated_at, vn.version, s.path_segments || '/' || vn.name
+               vn.created_at, vn.updated_at, vn.version, vn.expires_at, s.path_segments || '/' || vn.name
         FROM vfs_node vn
         INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
       )

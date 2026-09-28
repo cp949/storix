@@ -12,6 +12,7 @@ export interface VfsNodeResponseDto {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly version: number;
+  readonly expiresAt: string | null;
 }
 
 export function toNodeResponse(record: VfsNodeRecord, path: string): VfsNodeResponseDto {
@@ -25,6 +26,7 @@ export function toNodeResponse(record: VfsNodeRecord, path: string): VfsNodeResp
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
     version: record.version,
+    expiresAt: record.expiresAt === null ? null : record.expiresAt.toISOString(),
   };
 }
 

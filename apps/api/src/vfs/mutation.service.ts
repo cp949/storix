@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../common/domain-error.js';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { parseConditionalMutation, ConditionalMutation } from './dto/conditional-mutation-request.dto.js';
+import { type FileExpiryBounds, resolveFileExpiryBounds } from './file-expiry-policy.js';
 import { busyResponse, ErrorReceiptOwner, replayReceipt, storeErrorReceipt } from './mutation-receipt.js';
 import { requireRoot } from './require-root.js';
 import { VfsInvalidMutationRequestError } from './vfs.errors.js';
@@ -49,10 +51,18 @@ export function identityOf(
 
 @Injectable()
 export class MutationService {
+  private readonly expiryBounds: FileExpiryBounds;
+
   constructor(
     private readonly nodes: VfsNodeRepository,
     private readonly receipts: VfsMutationReceiptRepository,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.expiryBounds = resolveFileExpiryBounds(
+      config.get<string>('STORIX_VFS_EXPIRY_MIN_SECONDS'),
+      config.get<string>('STORIX_VFS_EXPIRY_MAX_SECONDS'),
+    );
+  }
 
   async executeJson(
     namespaceId: string,
@@ -68,7 +78,7 @@ export class MutationService {
     let command: ConditionalMutation | null = null;
     let parseError: DomainError | null = null;
     try {
-      command = parseConditionalMutation(JSON.parse(bytes.toString('utf8')) as unknown);
+      command = parseConditionalMutation(JSON.parse(bytes.toString('utf8')) as unknown, this.expiryBounds);
     } catch (error) {
       if (error instanceof DomainError) parseError = error;
       else parseError = new VfsInvalidMutationRequestError();

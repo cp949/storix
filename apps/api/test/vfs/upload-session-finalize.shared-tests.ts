@@ -30,7 +30,7 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     path: string,
     size: string,
     ns = context.namespace(),
-    condition: { ifAbsent: true } | { ifRevision: string } = { ifAbsent: true },
+    condition: Record<string, unknown> = { ifAbsent: true },
   ) {
     const result = await auth(api().post(base(ns)))
       .set('X-Mutation-Scope', 'finalize')
@@ -602,4 +602,35 @@ export function registerFinalizeTests(context: FinalizeContext): void {
       await auth(api().get(`${base(ns)}/${id}`)).expect(404);
     },
   );
+  it('만료 세션 완료는 완료 커밋 DB 시각과 고정 초로 expiresAt을 채우고 상태에 입력을 보여준다', async () => {
+    const id = await create('/final-expiring.bin', '2', context.namespace(), {
+      ifAbsent: true,
+      expiresInSeconds: 600,
+    });
+    const status = await auth(api().get(`${base()}/${id}`)).expect(200);
+    expect(status.body.condition).toEqual({ ifAbsent: true, expiresInSeconds: 600 });
+    await put(id, 0, 'ab');
+    const beforeComplete = Date.now();
+    const done = await complete(id).expect(201);
+    const expiresAt = Date.parse(done.body.resource.expiresAt as string);
+    expect(expiresAt).toBeGreaterThanOrEqual(beforeComplete + 600_000 - 2000);
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 600_000 + 2000);
+  });
+
+  it('세션 생성 뒤 만료 범위가 줄어도 완료는 고정된 초를 그대로 적용한다', async () => {
+    const id = await create('/final-fixed-expiry.bin', '1', context.namespace(), {
+      ifAbsent: true,
+      expiresInSeconds: 3600,
+    });
+    await put(id, 0, 'a');
+    process.env.STORIX_VFS_EXPIRY_MAX_SECONDS = '600';
+    try {
+      await context.restartEnabled();
+      const done = await complete(id).expect(201);
+      expect(Date.parse(done.body.resource.expiresAt as string)).toBeGreaterThan(Date.now() + 3000_000);
+    } finally {
+      delete process.env.STORIX_VFS_EXPIRY_MAX_SECONDS;
+      await context.restartEnabled();
+    }
+  });
 }

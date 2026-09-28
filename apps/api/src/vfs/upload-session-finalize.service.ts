@@ -121,7 +121,12 @@ export class UploadSessionFinalizeService {
       const resolved = this.paths.resolveConditional(session.targetPath);
       const condition =
         session.conditionType === 'ABSENT'
-          ? { ifAbsent: true as const }
+          ? {
+              ifAbsent: true as const,
+              ...(session.fileExpiresInSeconds === null
+                ? {}
+                : { expiresInSeconds: session.fileExpiresInSeconds }),
+            }
           : { ifRevision: session.conditionRevision! };
       const applied = await this.nodes.withMutation(
         namespaceId,

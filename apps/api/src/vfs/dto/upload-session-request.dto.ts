@@ -12,6 +12,7 @@ export interface UploadSessionCreateRequest {
   readonly ifAbsent?: true;
   readonly ifRevision?: string;
   readonly sha256?: string;
+  readonly expiresInSeconds?: unknown;
 }
 
 export function parseUploadSessionCreateRequest(value: unknown): UploadSessionCreateRequest {
@@ -20,7 +21,10 @@ export function parseUploadSessionCreateRequest(value: unknown): UploadSessionCr
   const row = value as Record<string, unknown>;
   if (
     Object.keys(row).some(
-      (key) => !['path', 'sizeBytes', 'mimeType', 'ifAbsent', 'ifRevision', 'sha256'].includes(key),
+      (key) =>
+        !['path', 'sizeBytes', 'mimeType', 'ifAbsent', 'ifRevision', 'sha256', 'expiresInSeconds'].includes(
+          key,
+        ),
     )
   )
     throw new VfsInvalidMutationRequestError();
@@ -50,6 +54,7 @@ export function parseUploadSessionCreateRequest(value: unknown): UploadSessionCr
     sizeBytes: row.sizeBytes,
     mimeType: row.mimeType.toLowerCase(),
     ...(row.sha256 !== undefined ? { sha256: row.sha256 as string } : {}),
+    ...(Object.hasOwn(row, 'expiresInSeconds') ? { expiresInSeconds: row.expiresInSeconds } : {}),
     ...(absent ? { ifAbsent: true as const } : { ifRevision: row.ifRevision as string }),
   };
 }

@@ -1,6 +1,15 @@
 import { PathResolver } from '../path-resolver.js';
 import { decodeRevision } from '../revision.js';
-import { VfsInvalidMutationRequestError, VfsPreconditionRequiredError } from '../vfs.errors.js';
+import {
+  assertExpirySeconds,
+  DEFAULT_FILE_EXPIRY_BOUNDS,
+  type FileExpiryBounds,
+} from '../file-expiry-policy.js';
+import {
+  VfsInvalidExpiryError,
+  VfsInvalidMutationRequestError,
+  VfsPreconditionRequiredError,
+} from '../vfs.errors.js';
 
 export type ConditionalMutation =
   | { readonly kind: 'mkdir'; readonly path: string; readonly segments: string[]; readonly ifAbsent: true }
@@ -12,6 +21,12 @@ export type ConditionalMutation =
       readonly recursive: boolean;
     }
   | {
+      readonly kind: 'persist';
+      readonly path: string;
+      readonly segments: string[];
+      readonly ifRevision: string;
+    }
+  | {
       readonly kind: 'move' | 'copy';
       readonly source: string;
       readonly sourceSegments: string[];
@@ -20,6 +35,7 @@ export type ConditionalMutation =
       readonly sourceRevision: string;
       readonly destinationAbsent: true;
       readonly destinationResolution?: 'exact';
+      readonly expiresInSeconds?: number;
     };
 
 const resolver = new PathResolver();
@@ -69,7 +85,10 @@ function requireTrue(record: Record<string, unknown>, field: string): void {
   }
 }
 
-export function parseConditionalMutation(body: unknown): ConditionalMutation {
+export function parseConditionalMutation(
+  body: unknown,
+  expiryBounds: FileExpiryBounds = DEFAULT_FILE_EXPIRY_BOUNDS,
+): ConditionalMutation {
   const record = recordOf(body);
   switch (record.kind) {
     case 'mkdir': {
@@ -93,6 +112,12 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
         recursive: record.recursive === true,
       };
     }
+    case 'persist': {
+      requireKeys(record, ['kind', 'path', 'ifRevision']);
+      const path = pathOf(record.path, false);
+      const ifRevision = requiredRevision(record, 'ifRevision');
+      return { kind: 'persist', path: path.canonical, segments: path.segments, ifRevision };
+    }
     case 'move':
     case 'copy': {
       requireKeys(record, [
@@ -102,6 +127,7 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
         'sourceRevision',
         'destinationAbsent',
         'destinationResolution',
+        'expiresInSeconds',
       ]);
       const source = pathOf(record.source, false);
       const destination = pathOf(record.destination, true);
@@ -109,6 +135,12 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
       requireTrue(record, 'destinationAbsent');
       if ('destinationResolution' in record && record.destinationResolution !== 'exact') {
         throw new VfsInvalidMutationRequestError();
+      }
+      // 만료는 새 FILE을 만드는 copy에서만 받는다. move는 기존 node를 옮기므로 거부한다.
+      let expiresInSeconds: number | undefined;
+      if ('expiresInSeconds' in record) {
+        if (record.kind === 'move') throw new VfsInvalidExpiryError();
+        expiresInSeconds = assertExpirySeconds(record.expiresInSeconds, expiryBounds);
       }
       return {
         kind: record.kind,
@@ -119,6 +151,7 @@ export function parseConditionalMutation(body: unknown): ConditionalMutation {
         sourceRevision,
         destinationAbsent: true,
         ...(record.destinationResolution === 'exact' ? { destinationResolution: 'exact' as const } : {}),
+        ...(expiresInSeconds === undefined ? {} : { expiresInSeconds }),
       };
     }
     default:

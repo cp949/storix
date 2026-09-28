@@ -15,6 +15,154 @@ import { MAX_FILE_SIZE_BYTES, postChunked, startHeldUpload } from './fs-http-fix
 
 export function registerFsConditionalContentContract(ctx: FsHttpContext) {
   describe('conditional content upload', () => {
+    it('조건부 copy 만료 오류는 receipt로 재생되고 레거시 cp의 만료 입력은 400이다', async () => {
+      const namespaceId = await ctx.createNamespace('copy-expiry-http');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const created = await request(ctx.httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/plain.bin' })
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'copy-expiry')
+        .set('X-If-Absent', 'true')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('plain'))
+        .expect(201);
+      const key = randomUUID();
+      const body = {
+        kind: 'copy',
+        source: '/plain.bin',
+        destination: '/copy.bin',
+        sourceRevision: created.body.resource.revision,
+        destinationAbsent: true,
+        expiresInSeconds: 59,
+      };
+      const send = (idempotencyKey: string, expiresInSeconds: number) =>
+        request(ctx.httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', idempotencyKey)
+          .set('X-Mutation-Scope', 'copy-expiry')
+          .send({ ...body, expiresInSeconds });
+      const first = await send(key, 59).expect(400);
+      expect(first.body.code).toBe('VFS_INVALID_EXPIRY');
+      const replay = await send(key, 59).expect(400);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+      expect((await send(key, 600).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+
+      const okKey = randomUUID();
+      const ok = await send(okKey, 600).expect(201);
+      expect(ok.body.resource.expiresAt).toEqual(expect.any(String));
+      expect((await send(okKey, 601).expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+
+      const legacy = await request(ctx.httpServer)
+        .post(`${base}/cp`)
+        .send({ source: '/plain.bin', destination: '/legacy.bin', expiresInSeconds: 600 })
+        .expect(400);
+      expect(legacy.body.code).toBe('VFS_INVALID_EXPIRY');
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/legacy.bin' }).expect(404);
+    });
+
+    it('persist는 receipt로 재생되고 응답 유실 뒤 새 key 재시도는 412 current.expiresAt null로 완료를 판정한다', async () => {
+      const namespaceId = await ctx.createNamespace('persist-http');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const created = await request(ctx.httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/temp.bin' })
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'persist')
+        .set('X-If-Absent', 'true')
+        .set('X-Expires-In', '600')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('temp'))
+        .expect(201);
+      const persist = (key: string, ifRevision: string) =>
+        request(ctx.httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'persist')
+          .send({ kind: 'persist', path: '/temp.bin', ifRevision });
+
+      const key = randomUUID();
+      const first = await persist(key, created.body.resource.revision).expect(200);
+      expect(first.body.resource).toMatchObject({ id: created.body.resource.id, expiresAt: null });
+      const replay = await persist(key, created.body.resource.revision).expect(200);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+
+      const retried = await persist(randomUUID(), created.body.resource.revision).expect(412);
+      expect(retried.body.current).toMatchObject({ id: created.body.resource.id, expiresAt: null });
+
+      const stat = (
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/temp.bin' }).expect(200)
+      ).body;
+      expect(stat.expiresAt).toBeNull();
+      expect(stat.revision).not.toBe(created.body.resource.revision);
+    });
+
+    it('X-Expires-In 생성은 expiresAt을 응답·stat에 노출하고 만료 값은 fingerprint에 포함된다', async () => {
+      const namespaceId = await ctx.createNamespace('conditional-expiry');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const key = randomUUID();
+      const upload = (path: string, headers: Record<string, string>, idempotencyKey = randomUUID()) => {
+        let call = request(ctx.httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path })
+          .set('Idempotency-Key', idempotencyKey)
+          .set('X-Mutation-Scope', 'expiry')
+          .set('Content-Type', 'application/octet-stream');
+        for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+        return call.send(Buffer.from('temp'));
+      };
+
+      const created = await upload('/temp.bin', { 'X-If-Absent': 'true', 'X-Expires-In': '600' }, key).expect(
+        201,
+      );
+      expect(created.body.resource.expiresAt).toEqual(expect.any(String));
+      const stat = (
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/temp.bin' }).expect(200)
+      ).body;
+      expect(stat.expiresAt).toBe(created.body.resource.expiresAt);
+      const listed = (await request(ctx.httpServer).get(`${base}/ls`).query({ path: '/' }).expect(200)).body;
+      expect(JSON.stringify(listed)).toContain(created.body.resource.expiresAt);
+
+      expect(
+        (await upload('/temp.bin', { 'X-If-Absent': 'true', 'X-Expires-In': '601' }, key).expect(409)).body
+          .code,
+      ).toBe('MUTATION_KEY_REUSED');
+
+      const plain = await upload('/plain.bin', { 'X-If-Absent': 'true' }).expect(201);
+      expect(plain.body.resource.expiresAt).toBeNull();
+    });
+
+    it.each([
+      [{ 'X-If-Revision': 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'X-Expires-In': '600' }],
+      [{ 'X-If-Absent': 'true', 'X-Expires-In': '59' }],
+      [{ 'X-If-Absent': 'true', 'X-Expires-In': '+600' }],
+    ])('만료 입력 오류 %j는 400 VFS_INVALID_EXPIRY이고 파일을 만들지 않는다', async (headers) => {
+      const namespaceId = await ctx.createNamespace('conditional-expiry-invalid');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      let call = request(ctx.httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/bad.bin' })
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'expiry')
+        .set('Content-Type', 'application/octet-stream');
+      for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+      expect((await call.send(Buffer.from('x')).expect(400)).body.code).toBe('VFS_INVALID_EXPIRY');
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/bad.bin' }).expect(404);
+    });
+
+    it('POST /fs/content에 X-Expires-In을 보내면 400 VFS_INVALID_EXPIRY다', async () => {
+      const namespaceId = await ctx.createNamespace('content-expiry-rejected');
+      const response = await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.bin' })
+        .set('Content-Type', 'application/octet-stream')
+        .set('X-Expires-In', '600')
+        .send(Buffer.from('x'))
+        .expect(400);
+      expect(response.body.code).toBe('VFS_INVALID_EXPIRY');
+    });
+
     it('경쟁 생성의 승자 ID와 revision을 receipt·stat에 보존하고 교체·이동·재생성의 ID 경계를 지킨다', async () => {
       const namespaceId = await ctx.createNamespace('conditional-stable-id');
       const otherNamespaceId = await ctx.createNamespace('conditional-stable-id-other');

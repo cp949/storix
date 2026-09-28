@@ -19,6 +19,7 @@ import { AddVfsChangeFeed1791700000006 } from './1791700000006-AddVfsChangeFeed.
 import { AddVfsTrash1791700000007 } from './1791700000007-AddVfsTrash.js';
 import { AddAuditLogTrashId1791700000008 } from './1791700000008-AddAuditLogTrashId.js';
 import { AddNamespaceTrashEnabled1791700000009 } from './1791700000009-AddNamespaceTrashEnabled.js';
+import { AddFileExpiry1791700000010 } from './1791700000010-AddFileExpiry.js';
 
 type MigrationClass = new () => MigrationInterface;
 
@@ -49,4 +50,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddVfsTrash1791700000007,
   AddAuditLogTrashId1791700000008,
   AddNamespaceTrashEnabled1791700000009,
+  AddFileExpiry1791700000010,
 ];

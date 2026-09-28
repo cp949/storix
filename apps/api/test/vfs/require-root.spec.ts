@@ -36,6 +36,7 @@ describe('requireRoot', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       version: 1,
+      expiresAt: null,
     };
     const repo = {
       getRoot: jest.fn<(namespaceId: string) => Promise<VfsNodeRecord | null>>().mockResolvedValue(root),
@@ -78,6 +79,7 @@ describe('requireRootWithLimits', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       version: 1,
+      expiresAt: null,
     };
     const limits: NamespaceResourceLimits = {
       maxFileSizeBytes: null,

@@ -36,6 +36,10 @@ export class VfsNodeEntity {
   @Column({ name: 'mime_type', type: 'varchar', length: 255, nullable: true })
   mimeType: string | null;
 
+  // 생성 시 지정한 만료 시각. NULL이면 만료 없음. DIRECTORY는 항상 NULL이다.
+  @Column({ name: 'expires_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
+  expiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

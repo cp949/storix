@@ -8,6 +8,7 @@ import type { VfsUploadSessionEntity } from '../../src/persistence/entities/vfs-
 import type { VfsUploadSessionState } from '../../src/persistence/entities/vfs-upload-session.entity.js';
 import type { UploadSessionPolicy } from '../../src/vfs/upload-session-config.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';
+import { encodeRevision } from '../../src/vfs/revision.js';
 import { UploadSessionService } from '../../src/vfs/upload-session.service.js';
 
 describe('UploadSessionService lifecycle', () => {
@@ -56,6 +57,7 @@ describe('UploadSessionService lifecycle', () => {
           createdAt: input.now,
           updatedAt: input.now,
           creationExpiresAt: input.expiresAt,
+          fileExpiresInSeconds: input.fileExpiresInSeconds,
         };
         sessions.set(input.id, session);
         return { kind: 'created', session };
@@ -106,7 +108,9 @@ describe('UploadSessionService lifecycle', () => {
       repo as unknown as VfsUploadSessionRepository,
       capability as unknown as CapabilityService,
       policy,
-      { get: () => '8' } as unknown as ConfigService,
+      {
+        get: (name: string) => (name === 'STORIX_MAX_FILE_SIZE_BYTES' ? '8' : undefined),
+      } as unknown as ConfigService,
     );
     return {
       service,
@@ -163,6 +167,49 @@ describe('UploadSessionService lifecycle', () => {
       code: 'MUTATION_KEY_REUSED',
       status: 409,
     });
+  });
+
+  it('ifAbsent와 expiresInSeconds를 세션에 고정하고 상태와 fingerprint에 포함한다', async () => {
+    const { service, sessions } = setup();
+    const first = await service.create(
+      namespaceId,
+      'scope',
+      key,
+      { ...request, expiresInSeconds: 600 },
+      'req-1',
+    );
+    expect(first.status).toBe(201);
+    const stored = [...sessions.values()][0];
+    expect(stored.fileExpiresInSeconds).toBe(600);
+    expect((await service.status(namespaceId, stored.id)).condition).toEqual({
+      ifAbsent: true,
+      expiresInSeconds: 600,
+    });
+    await expect(
+      service.create(namespaceId, 'scope', key, { ...request, expiresInSeconds: 601 }, 'req-2'),
+    ).rejects.toMatchObject({ code: 'MUTATION_KEY_REUSED' });
+  });
+
+  it.each([
+    [
+      {
+        ifAbsent: undefined,
+        ifRevision: encodeRevision({ id: randomUUID(), version: 1 }),
+        expiresInSeconds: 600,
+      },
+    ],
+    [{ expiresInSeconds: 59 }],
+    [{ expiresInSeconds: '600' }],
+    [{ expiresInSeconds: 600.5 }],
+  ])('잘못된 만료 입력 %j는 세션을 만들지 않고 400 VFS_INVALID_EXPIRY다', async (patch) => {
+    const { service, sessions } = setup();
+    const body: Record<string, unknown> = { ...request, ...patch };
+    if (body.ifAbsent === undefined) delete body.ifAbsent;
+    await expect(service.create(namespaceId, 'scope', randomUUID(), body, 'req-1')).rejects.toMatchObject({
+      code: 'VFS_INVALID_EXPIRY',
+      status: 400,
+    });
+    expect(sessions.size).toBe(0);
   });
 
   it('keeps the creation request ID when completion stores its own request ID', async () => {

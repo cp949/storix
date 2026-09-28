@@ -11,6 +11,7 @@ import type { VfsUploadSessionEntity } from '../persistence/entities/vfs-upload-
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { toPreconditionCurrent } from './dto/node-response.dto.js';
 import { parseUploadSessionCreateRequest } from './dto/upload-session-request.dto.js';
+import { assertExpirySeconds, type FileExpiryBounds, resolveFileExpiryBounds } from './file-expiry-policy.js';
 import { hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
@@ -18,6 +19,7 @@ import { encodeRevision } from './revision.js';
 import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
 import {
   VfsInvalidMutationRequestError,
+  VfsInvalidExpiryError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsPreconditionFailedError,
@@ -59,6 +61,7 @@ function creationRequestId(session: VfsUploadSessionEntity, currentRequestId: st
 @Injectable()
 export class UploadSessionService {
   private readonly globalMaxFileSizeBytes: number;
+  private readonly expiryBounds: FileExpiryBounds;
 
   constructor(
     private readonly paths: PathResolver,
@@ -70,6 +73,10 @@ export class UploadSessionService {
   ) {
     this.globalMaxFileSizeBytes = resolveGlobalMaxFileSizeBytes(
       config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'),
+    );
+    this.expiryBounds = resolveFileExpiryBounds(
+      config.get<string>('STORIX_VFS_EXPIRY_MIN_SECONDS'),
+      config.get<string>('STORIX_VFS_EXPIRY_MAX_SECONDS'),
     );
   }
 
@@ -85,6 +92,12 @@ export class UploadSessionService {
     const existing = await this.sessions.findByCreationKey(namespaceId, identity.scope, identity.key);
     if (!existing) this.capabilities.requireEnabled(namespaceId, 'resumable-upload');
     const parsed = parseUploadSessionCreateRequest(request);
+    // 만료 초는 생성 때만 검증하며, 완료할 때는 세션에 고정된 값을 사용한다.
+    let fileExpiresInSeconds: number | null = null;
+    if (parsed.expiresInSeconds !== undefined) {
+      if (!parsed.ifAbsent) throw new VfsInvalidExpiryError();
+      fileExpiresInSeconds = assertExpirySeconds(parsed.expiresInSeconds, this.expiryBounds);
+    }
     const resolved = this.paths.resolveConditional(parsed.path);
     if (resolved.segments.length === 0) throw new VfsInvalidMutationRequestError();
     const fingerprint = hashParts([
@@ -95,6 +108,7 @@ export class UploadSessionService {
       parsed.mimeType,
       parsed.ifAbsent ? 'ABSENT' : parsed.ifRevision!,
       ...(parsed.sha256 === undefined ? [] : [parsed.sha256]),
+      ...(fileExpiresInSeconds === null ? [] : [`expires:${fileExpiresInSeconds}`]),
     ]);
     if (existing) {
       if (existing.fingerprint !== fingerprint)
@@ -153,6 +167,7 @@ export class UploadSessionService {
         mimeType: parsed.mimeType,
         conditionType: parsed.ifAbsent ? 'ABSENT' : 'REVISION',
         conditionRevision: parsed.ifRevision ?? null,
+        fileExpiresInSeconds,
         partSizeBytes: this.policy.global.partSizeBytes,
         partCount,
         now,
@@ -186,7 +201,14 @@ export class UploadSessionService {
       sizeBytes: String(session.sizeBytes),
       mimeType: session.mimeType,
       condition:
-        session.conditionType === 'ABSENT' ? { ifAbsent: true } : { ifRevision: session.conditionRevision },
+        session.conditionType === 'ABSENT'
+          ? {
+              ifAbsent: true,
+              ...(session.fileExpiresInSeconds === null
+                ? {}
+                : { expiresInSeconds: session.fileExpiresInSeconds }),
+            }
+          : { ifRevision: session.conditionRevision },
       parts: parts.map((part) => ({ index: part.partIndex, sizeBytes: String(part.sizeBytes) })),
       ...(session.state === 'COMPLETED' && session.responseBody
         ? { result: JSON.parse(session.responseBody) as unknown }

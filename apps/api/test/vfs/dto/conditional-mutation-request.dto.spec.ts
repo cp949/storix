@@ -1,10 +1,91 @@
 import { parseConditionalMutation } from '../../../src/vfs/dto/conditional-mutation-request.dto.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
-import { VfsPreconditionRequiredError } from '../../../src/vfs/vfs.errors.js';
+import { VfsInvalidExpiryError, VfsPreconditionRequiredError } from '../../../src/vfs/vfs.errors.js';
 
 const revision = encodeRevision({ id: '00000000-0000-4000-8000-000000000001', version: 3 });
 
 describe('conditional mutation request', () => {
+  it('copy는 선택 expiresInSeconds를 받고 생략하면 기존 command shape를 유지한다', () => {
+    const body = {
+      kind: 'copy',
+      source: '/a',
+      destination: '/b',
+      sourceRevision: revision,
+      destinationAbsent: true,
+    };
+    expect(Object.keys(parseConditionalMutation(body))).not.toContain('expiresInSeconds');
+    expect(parseConditionalMutation({ ...body, expiresInSeconds: 600 })).toMatchObject({
+      kind: 'copy',
+      expiresInSeconds: 600,
+    });
+  });
+
+  it.each([59, 2592001, 600.5, '600', null])(
+    'copy의 잘못된 expiresInSeconds %j는 VFS_INVALID_EXPIRY다',
+    (value) => {
+      expect(() =>
+        parseConditionalMutation({
+          kind: 'copy',
+          source: '/a',
+          destination: '/b',
+          sourceRevision: revision,
+          destinationAbsent: true,
+          expiresInSeconds: value,
+        }),
+      ).toThrow(VfsInvalidExpiryError);
+    },
+  );
+
+  it('move에 expiresInSeconds가 있으면 VFS_INVALID_EXPIRY다', () => {
+    expect(() =>
+      parseConditionalMutation({
+        kind: 'move',
+        source: '/a',
+        destination: '/b',
+        sourceRevision: revision,
+        destinationAbsent: true,
+        expiresInSeconds: 600,
+      }),
+    ).toThrow(VfsInvalidExpiryError);
+  });
+
+  it('주입한 범위로 검사한다', () => {
+    expect(() =>
+      parseConditionalMutation(
+        {
+          kind: 'copy',
+          source: '/a',
+          destination: '/b',
+          sourceRevision: revision,
+          destinationAbsent: true,
+          expiresInSeconds: 600,
+        },
+        { minSeconds: 60, maxSeconds: 300 },
+      ),
+    ).toThrow(VfsInvalidExpiryError);
+  });
+
+  it('persist는 정규 경로와 ifRevision을 받는다', () => {
+    expect(parseConditionalMutation({ kind: 'persist', path: '/a//b', ifRevision: revision })).toEqual({
+      kind: 'persist',
+      path: '/a/b',
+      segments: ['a', 'b'],
+      ifRevision: revision,
+    });
+  });
+
+  it('persist에 ifRevision이 없으면 428, 추가 필드와 root 경로는 400이다', () => {
+    expect(() => parseConditionalMutation({ kind: 'persist', path: '/a' })).toThrow(
+      VfsPreconditionRequiredError,
+    );
+    expect(() =>
+      parseConditionalMutation({ kind: 'persist', path: '/a', ifRevision: revision, recursive: true }),
+    ).toThrow(expect.objectContaining({ status: 400 }));
+    expect(() => parseConditionalMutation({ kind: 'persist', path: '/', ifRevision: revision })).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
+  });
+
   it('canonicalizes paths and keeps explicit conditions', () => {
     expect(parseConditionalMutation({ kind: 'mkdir', path: '/a//./b', ifAbsent: true })).toEqual({
       kind: 'mkdir',

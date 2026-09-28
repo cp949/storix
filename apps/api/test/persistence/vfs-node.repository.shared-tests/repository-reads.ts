@@ -1,9 +1,10 @@
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
 import { VfsInvalidCursorError, VfsPreconditionFailedError } from '../../../src/vfs/vfs.errors.js';
+import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
 
 export function runRepositoryReadsTests(helpers: VfsNodeRepositoryTestHelpers): void {
-  const { getRepo, createNamespace, createFile, makeBlobData } = helpers;
+  const { getRepo, getDs, createNamespace, createFile, makeBlobData } = helpers;
   describe('revision snapshot reads', () => {
     it('invalidates a cursor after a descendant changes but not after an independent branch changes', async () => {
       const namespace = await createNamespace('revision-snapshot-ns');
@@ -75,6 +76,22 @@ export function runRepositoryReadsTests(helpers: VfsNodeRepositoryTestHelpers): 
   });
 
   describe('findRecursive', () => {
+    it('find 결과에 node의 expiresAt을 포함한다', async () => {
+      const namespace = await createNamespace(`find-expiry-${randomUUID()}`);
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const file = await createFile(namespace.id, root.id, 'temp.bin');
+      const expiresAt = new Date('2030-01-01T00:00:00.000Z');
+      await getDs().getRepository(VfsNodeEntity).update({ id: file.id }, { expiresAt });
+      await createFile(namespace.id, root.id, 'kept.bin');
+
+      const matches = await getRepo().findRecursive(namespace.id, root.id, {}, null, 10);
+
+      expect(matches.map((match) => [match.name, match.expiresAt?.toISOString() ?? null])).toEqual([
+        ['kept.bin', null],
+        ['temp.bin', '2030-01-01T00:00:00.000Z'],
+      ]);
+    });
+
     async function buildTree(namespace: { id: string }, root: { id: string }) {
       const a = await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
       await getRepo().ensureDirectory(namespace.id, a.node.id, ['b'], false);
@@ -220,3 +237,4 @@ export function runRepositoryReadsTests(helpers: VfsNodeRepositoryTestHelpers): 
     });
   });
 }
+import { randomUUID } from 'node:crypto';

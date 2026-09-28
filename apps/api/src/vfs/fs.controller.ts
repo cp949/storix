@@ -24,6 +24,7 @@ import { parseTouchRequest } from './dto/touch-request.dto.js';
 import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
+import { VfsInvalidExpiryError } from './vfs.errors.js';
 
 @Controller('api/v2/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -47,6 +48,7 @@ export class FsController {
     @Headers('content-type') contentType: string | undefined,
     @Headers('content-length') contentLength: string | undefined,
     @Headers('x-content-sha256') expectedSha256: string | undefined,
+    @Headers('x-expires-in') expiresIn: string | undefined,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -62,6 +64,7 @@ export class FsController {
       contentLength,
       req.requestId,
       expectedSha256,
+      expiresIn,
     );
     res.status(result.status);
     for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
@@ -183,9 +186,12 @@ export class FsController {
     @Headers('content-type') contentType: string | undefined,
     @Headers('content-length') contentLength: string | undefined,
     @Headers('if-match') ifMatch: string | undefined,
+    @Headers('x-expires-in') expiresIn: string | undefined,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    // 생성·덮어쓰기 겸용 경로는 만료를 받지 않는다. 무시하면 호출자가 적용됐다고 오해한다.
+    if (expiresIn !== undefined) throw new VfsInvalidExpiryError();
     const result = await this.contentService.putContent(namespaceId, path ?? '', req, {
       contentType,
       contentLength,
