@@ -338,7 +338,7 @@ paths:
     patch:
       operationId: updateNamespaceQuota
       summary: Namespace 논리 사용량 상한 변경
-      description: '별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. `maxTotalLogicalBytes: null`은 전역 상한 상속을 뜻한다.'
+      description: '별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. `maxTotalLogicalBytes: null`은 전역 상한 상속을 뜻한다. 현재 사용량보다 낮은 상한도 받아들이며 저장된 파일은 지우지 않고, 사용량이 상한 아래로 내려올 때까지 사용량을 늘리는 새 저장만 413 `VFS_QUOTA_EXCEEDED`로 거부한다.'
       parameters:
         - name: namespaceId
           in: path
@@ -365,11 +365,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Namespace' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400':
+          description: 형식 오류·추가 필드 `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, 전역 상한 초과 `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, Idempotency-Key 누락 `IDEMPOTENCY_KEY_REQUIRED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: 같은 key를 다른 요청에 재사용함
+        '422':
+          description: 같은 key를 다른 요청에 재사용함 (`IDEMPOTENCY_KEY_REUSED`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

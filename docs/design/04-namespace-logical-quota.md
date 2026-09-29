@@ -10,7 +10,7 @@
 
 ## 원자성 및 오류
 
-모든 VFS mutation은 namespace root lock/transaction 안에서 기존 live 파일 합계와 변경 delta를 계산한다. snapshot 생성·삭제도 같은 transaction에 quota delta와 저장 수를 반영한다. 최종 사용량이 상한을 넘고 요청이 양의 delta를 만들면 mutation 전체를 rollback하고 413 `VFS_QUOTA_EXCEEDED`를 반환한다. 0 또는 음수 delta는 이미 상한 초과인 namespace에서도 허용된다. restore는 유지 중 snapshot bytes에 복원 후 live bytes를 더해 판단한다.
+모든 VFS mutation은 namespace root lock/transaction 안에서 기존 live 파일 합계와 변경 delta를 계산한다. snapshot 생성·삭제도 같은 transaction에 quota delta와 저장 수를 반영한다. 최종 사용량이 상한을 넘고 요청이 양의 delta를 만들면 mutation 전체를 rollback하고 413 `VFS_QUOTA_EXCEEDED`를 반환한다. 0 또는 음수 delta는 이미 상한 초과인 namespace에서도 허용된다. 관리자가 사용량보다 낮은 `maxTotalLogicalBytes`를 지정해도 변경은 받아들이며 저장된 파일은 지우지 않는다. 사용량이 새 상한 아래로 내려올 때까지 양의 delta는 413이고 삭제 같은 감소 요청은 허용된다. 관리자 quota 요청 본문은 `maxTotalLogicalBytes` 한 필드만 허용하며 다른 필드가 있으면 400 `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`다. restore는 유지 중 snapshot bytes에 복원 후 live bytes를 더해 판단한다.
 
 조건부 mutation과 snapshot mutation의 deterministic quota 413은 기존 receipt 계약에 따라 저장·재생된다. quota 변경 후에도 완료 receipt는 그대로 재생되므로 다른 조건으로 시도할 때 새 `Idempotency-Key`를 사용한다. 관리 변경 API는 `STORIX_ADMIN_API_KEY` 전용 guard와 필수 idempotency key를 사용한다. 요청 키는 namespace 범위로 파생 저장되며 canonical request hash가 다르면 충돌한다. 변경은 같은 root lock transaction에서 quota 설정과 receipt를 함께 기록한다.
 
