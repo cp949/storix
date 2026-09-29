@@ -3,6 +3,7 @@ import type { ProfileName } from '../define-contract.ts';
 /** 프로필별로 서버 기동 env에 덧씌우는 값. `default`는 서버 기본값을 그대로 쓴다. */
 export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, string>>>> = {
   default: {},
+  'change-feed': {},
 
   // 한도 초과 계약용. 전역 한도는 프로세스 시작 때 한 번 읽으므로 기동 설정으로 준다(docs/design/04).
   // 700바이트 파일은 모든 한도 안이고, snapshot을 만들면 사용량 1400, 새 경로로 복원하면 2100이라 논리 상한을 넘는다.
@@ -14,4 +15,12 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
     STORIX_MAX_SYNC_DELETE_NODES: '5',
     STORIX_MAX_SYNC_COPY_NODES: '5',
   },
+};
+
+/**
+ * 프로필이 전역과 사전 준비 namespace에 허용하는 선택 capability.
+ * 시작 설정이 namespace ID를 요구하므로 러너가 namespace를 먼저 만들고 설정을 쓴 뒤 서버를 재시작한다.
+ */
+export const PROFILE_CAPABILITIES: Readonly<Partial<Record<ProfileName, readonly string[]>>> = {
+  'change-feed': ['change-feed'],
 };

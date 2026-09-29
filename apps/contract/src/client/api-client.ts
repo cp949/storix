@@ -73,6 +73,18 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
       return request('GET', `/api/v2/namespaces/${namespaceId}/fs/ls?${query}`);
     },
 
+    listChanges(namespaceId: string, options = {}) {
+      const query = new URLSearchParams();
+      if (options.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options.limit !== undefined) query.set('limit', String(options.limit));
+      const suffix = query.size === 0 ? '' : `?${query}`;
+      return request('GET', `/api/v2/namespaces/${namespaceId}/fs/changes${suffix}`);
+    },
+
+    listCapabilities(namespaceId: string) {
+      return request('GET', `/api/v2/namespaces/${namespaceId}/capabilities`);
+    },
+
     move(namespaceId: string, body: object) {
       return request('POST', `/api/v2/namespaces/${namespaceId}/fs/mv`, {
         headers: { 'Content-Type': 'application/json' },

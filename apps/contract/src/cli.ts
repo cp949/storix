@@ -3,15 +3,17 @@
  * 인자는 `parseArgs` 정의가 원천이다. 실행 흐름은 docs/design/12-contract-checks.md "실행 흐름".
  */
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { removeStaleContainers, startBlobStorage } from './runner/blob-storage.ts';
+import type { NamespaceInfo } from './define-contract.ts';
 import { createContractContext } from './runner/context.ts';
 import { prepareSqliteDatabase } from './runner/database.ts';
 import { CONTRACTS_DIR } from './runner/paths.ts';
-import { PROFILE_ENV } from './runner/profiles.ts';
+import { PROFILE_CAPABILITIES, PROFILE_ENV } from './runner/profiles.ts';
+import { EMPTY_CAPABILITIES_CONFIG, provisionCapabilityNamespaces } from './runner/provision.ts';
 import {
   discoverContracts,
   findUncoveredRqs,
@@ -113,6 +115,12 @@ async function main(): Promise<number> {
     const database = prepareSqliteDatabase(workDir, profile);
     const apiKey = randomBytes(16).toString('hex');
     const port = await findFreePort();
+    // capability를 허용하는 프로필은 설정 파일이 필요하다. 처음에는 아무것도 허용하지 않는 설정으로 기동한다.
+    const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
+    const capabilitiesConfigPath = path.join(workDir, `${profile}.capabilities.json`);
+    if (capabilities.length > 0) {
+      await writeFile(capabilitiesConfigPath, JSON.stringify(EMPTY_CAPABILITIES_CONFIG));
+    }
     const server = await startServer({
       port,
       workDir,
@@ -121,11 +129,26 @@ async function main(): Promise<number> {
         port,
         apiKey,
         adminKey: randomBytes(16).toString('hex'),
-        profileEnv: PROFILE_ENV[profile],
+        profileEnv: {
+          ...PROFILE_ENV[profile],
+          ...(capabilities.length > 0 ? { STORIX_VFS_CAPABILITIES_CONFIG_PATH: capabilitiesConfigPath } : {}),
+        },
         databaseEnv: database.env,
         storageEnv: blob.env,
       }),
     });
+    // 계약이 `createNamespace()`를 한 번씩 부른다고 보고 여유를 두어 준비한다.
+    const provisioned: NamespaceInfo[] | undefined =
+      capabilities.length > 0
+        ? await provisionCapabilityNamespaces({
+            baseUrl: server.baseUrl,
+            apiKey,
+            capabilities,
+            count: group.length * 2,
+            configPath: capabilitiesConfigPath,
+            restart: () => server.restart(),
+          })
+        : undefined;
 
     for (const contract of group) {
       if (interrupted) return 130;
@@ -136,6 +159,7 @@ async function main(): Promise<number> {
           apiKey,
           server: { restart: () => server.restart() },
           contractId: contract.id,
+          provisioned,
         }),
       );
       results.push(result);

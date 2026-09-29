@@ -5,7 +5,7 @@
  */
 
 /** 서버 기동 설정 이름. 프로필마다 서버를 한 번 기동한다. */
-export type ProfileName = 'default' | 'small-limits';
+export type ProfileName = 'default' | 'small-limits' | 'change-feed';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -82,6 +82,15 @@ export interface ApiClient {
   /** `POST /fs/snapshots/{id}/delete`로 snapshot을 삭제한다. */
   deleteSnapshot(namespaceId: string, snapshotId: string, options?: MutationOptions): Promise<ApiResponse>;
 
+  /** `GET /fs/changes`로 변경 feed를 읽는다. `cursor`를 생략하면 현재 sequence의 checkpoint를 받는다. */
+  listChanges(
+    namespaceId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<ApiResponse>;
+
+  /** `GET /api/v2/namespaces/{id}/capabilities`로 활성 선택 capability ID 목록을 읽는다. */
+  listCapabilities(namespaceId: string): Promise<ApiResponse>;
+
   /** `GET /fs/stat`으로 본문 없이 파일·디렉터리 메타데이터를 읽는다. */
   getStat(namespaceId: string, filePath: string): Promise<ApiResponse>;
 
@@ -136,8 +145,12 @@ export interface ContractContext {
 
   readonly server: ContractServer;
 
-  /** 이 계약만 쓰는 namespace를 새로 만든다. 정리 코드는 필요 없다(서버 종료가 정리한다). */
-  createNamespace(): Promise<NamespaceInfo>;
+  /**
+   * 이 계약만 쓰는 namespace를 받는다. 정리 코드는 필요 없다(서버 종료가 정리한다).
+   * capability를 허용하는 프로필에서는 그 capability가 켜진 namespace다.
+   * `withoutCapabilities`를 주면 허용 목록에 없는 새 namespace를 API로 만든다(선택 capability가 꺼진 상태).
+   */
+  createNamespace(options?: { readonly withoutCapabilities?: boolean }): Promise<NamespaceInfo>;
 }
 
 /** `defineContract`에 넘기는 입력. */
