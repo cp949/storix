@@ -19,7 +19,7 @@ export default defineContract({
       ),
     );
 
-    const statuses = attempts.map((attempt) => attempt.status).sort();
+    const statuses = attempts.map((attempt) => attempt.status).sort((a, b) => a - b);
     assert.deepEqual(statuses, [201, 412], `성공 1건, 충돌 1건이어야 한다: ${statuses.join(', ')}`);
 
     // 성공한 요청의 바이트가 그대로 저장돼 있다.
