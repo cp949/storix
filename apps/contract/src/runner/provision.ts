@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import type { NamespaceInfo } from '../define-contract.ts';
-import { createContractContext } from './context.ts';
+import { createApiClient } from '../client/api-client.ts';
+import { createApiNamespace } from './context.ts';
 
 /** 시작 설정 JSON의 내용. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 가리키는 파일 형식이다. */
 export interface CapabilitiesConfig {
@@ -45,15 +46,10 @@ export interface ProvisionInput {
  * 서버는 `EMPTY_CAPABILITIES_CONFIG`를 담은 설정 파일로 이미 기동한 상태여야 한다.
  */
 export async function provisionCapabilityNamespaces(input: ProvisionInput): Promise<NamespaceInfo[]> {
-  const creator = createContractContext({
-    baseUrl: input.baseUrl,
-    apiKey: input.apiKey,
-    server: { restart: input.restart },
-    contractId: 'provisioned',
-  });
+  const client = createApiClient(input.baseUrl, input.apiKey);
   const namespaces: NamespaceInfo[] = [];
   for (let index = 0; index < input.count; index += 1) {
-    namespaces.push(await creator.createNamespace());
+    namespaces.push(await createApiNamespace(client, 'provisioned'));
   }
   const config = buildCapabilitiesConfig(
     input.capabilities,

@@ -131,6 +131,27 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
       });
     },
 
+    getNamespace(namespaceId: string) {
+      return request('GET', `/api/v2/namespaces/${namespaceId}`);
+    },
+
+    updateNamespaceQuota(
+      namespaceId: string,
+      adminKey: string,
+      body: object,
+      options: { readonly idempotencyKey?: string | null } = {},
+    ) {
+      const idempotencyKey = options.idempotencyKey === undefined ? randomUUID() : options.idempotencyKey;
+      return request('PATCH', `/api/v2/admin/namespaces/${namespaceId}/quota`, {
+        headers: {
+          Authorization: `Bearer ${adminKey}`,
+          'Content-Type': 'application/json',
+          ...(idempotencyKey === null ? {} : { 'Idempotency-Key': idempotencyKey }),
+        },
+        body: JSON.stringify(body),
+      });
+    },
+
     getSnapshot(namespaceId: string, snapshotId: string) {
       return request('GET', snapshotUrl(namespaceId, `/${snapshotId}`));
     },

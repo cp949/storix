@@ -119,6 +119,20 @@ export interface ApiClient {
 
   /** `POST /fs/rm`으로 삭제한다. `recursive`가 true일 때만 비어 있지 않은 디렉터리를 지운다. */
   remove(namespaceId: string, targetPath: string, recursive?: boolean): Promise<ApiResponse>;
+
+  /** `GET /api/v2/namespaces/{id}`로 namespace 조회 결과(한도·사용량 포함)를 읽는다. */
+  getNamespace(namespaceId: string): Promise<ApiResponse>;
+
+  /**
+   * `PATCH /api/v2/admin/namespaces/{id}/quota`로 namespace 논리 사용량 상한을 바꾼다.
+   * `adminKey`로 인증하고 `body`는 JSON으로 직렬화한다. `idempotencyKey`를 생략하면 새 키를 쓰고 `null`이면 헤더를 보내지 않는다.
+   */
+  updateNamespaceQuota(
+    namespaceId: string,
+    adminKey: string,
+    body: object,
+    options?: { readonly idempotencyKey?: string | null },
+  ): Promise<ApiResponse>;
 }
 
 /** 계약 전용으로 만든 namespace. */
@@ -133,6 +147,21 @@ export interface ContractServer {
   restart(): Promise<void>;
 }
 
+/**
+ * 계약이 제어할 수 있는 blob 저장소. 저장 장애를 만드는 계약만 쓴다.
+ * 계약이 저장소를 멈춘 채 끝나거나 실패해도 러너가 다음 계약 전에 되살린다.
+ */
+export interface ContractBlobStorage {
+  /** 저장소를 멈춘다. 멈춘 동안 저장소를 쓰는 요청은 일시 장애로 실패한다. */
+  stop(): Promise<void>;
+
+  /** 멈춘 저장소를 같은 주소·같은 데이터로 다시 시작하고 준비될 때까지 기다린다. */
+  start(): Promise<void>;
+
+  /** 저장소의 객체를 모두 지운다. 이미 저장한 파일의 바이트가 사라진 상태를 만든다. 다른 계약의 파일도 지우므로 뒤 계약은 앞 계약의 파일에 기대지 않는다. */
+  deleteAllObjects(): Promise<void>;
+}
+
 /** 계약의 `run`이 받는 컨텍스트. */
 export interface ContractContext {
   /** 서버 기본 URL. 끝에 `/`가 없다. */
@@ -141,9 +170,14 @@ export interface ContractContext {
   /** 서비스 API key. `client`가 쓰는 값이며, 클라이언트로 표현할 수 없는 저수준 요청(중단된 업로드 등)에 쓴다. */
   readonly apiKey: string;
 
+  /** 관리자 API key(`STORIX_ADMIN_API_KEY`). `/api/v2/admin/**`를 `Authorization: Bearer`로 호출할 때 쓴다. 서비스 key로는 인증되지 않는다. */
+  readonly adminKey: string;
+
   readonly client: ApiClient;
 
   readonly server: ContractServer;
+
+  readonly blobStorage: ContractBlobStorage;
 
   /**
    * 이 계약만 쓰는 namespace를 받는다. 정리 코드는 필요 없다(서버 종료가 정리한다).

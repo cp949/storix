@@ -3,13 +3,20 @@ import { describe, it } from 'node:test';
 import { createContractContext } from './context.ts';
 
 const server = { restart: async () => {} };
+const blobStorage = {
+  stop: async () => {},
+  start: async () => {},
+  deleteAllObjects: async () => {},
+};
 
 describe('계약 컨텍스트의 사전 준비 namespace 풀', () => {
   it('풀이 있으면 API를 부르지 않고 앞에서부터 하나씩 꺼낸다', async () => {
     const ctx = createContractContext({
       baseUrl: 'http://127.0.0.1:1',
       apiKey: 'key',
+      adminKey: 'admin-key',
       server,
+      blobStorage,
       contractId: 'sample',
       provisioned: [
         { id: 'id-1', name: 'one' },
@@ -24,10 +31,27 @@ describe('계약 컨텍스트의 사전 준비 namespace 풀', () => {
     const ctx = createContractContext({
       baseUrl: 'http://127.0.0.1:1',
       apiKey: 'key',
+      adminKey: 'admin-key',
       server,
+      blobStorage,
       contractId: 'sample',
       provisioned: [],
     });
     await assert.rejects(() => ctx.createNamespace(), /사전 준비한 namespace/);
+  });
+});
+
+describe('계약 컨텍스트의 관리자 key', () => {
+  it('서비스 key와 별개로 관리자 key를 노출한다', () => {
+    const ctx = createContractContext({
+      baseUrl: 'http://127.0.0.1:1',
+      apiKey: 'service',
+      adminKey: 'admin',
+      server,
+      blobStorage,
+      contractId: 'sample',
+    });
+    assert.equal(ctx.apiKey, 'service');
+    assert.equal(ctx.adminKey, 'admin');
   });
 });

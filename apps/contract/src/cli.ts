@@ -126,6 +126,7 @@ async function main(): Promise<number> {
         ? prepareSqliteDatabase(workDir, profile)
         : preparePostgresDatabase(postgres, runId, profile);
     const apiKey = randomBytes(16).toString('hex');
+    const adminKey = randomBytes(16).toString('hex');
     const port = await findFreePort();
     // capability를 허용하는 프로필은 설정 파일이 필요하다. 처음에는 아무것도 허용하지 않는 설정으로 기동한다.
     const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
@@ -140,7 +141,7 @@ async function main(): Promise<number> {
       env: buildServerEnv({
         port,
         apiKey,
-        adminKey: randomBytes(16).toString('hex'),
+        adminKey,
         profileEnv: {
           ...PROFILE_ENV[profile],
           ...(capabilities.length > 0 ? { STORIX_VFS_CAPABILITIES_CONFIG_PATH: capabilitiesConfigPath } : {}),
@@ -169,11 +170,19 @@ async function main(): Promise<number> {
         createContractContext({
           baseUrl: server.baseUrl,
           apiKey,
+          adminKey,
           server: { restart: () => server.restart() },
+          blobStorage: {
+            stop: () => blob.interrupt(),
+            start: () => blob.resume(),
+            deleteAllObjects: () => blob.deleteAllObjects(),
+          },
           contractId: contract.id,
           provisioned,
         }),
       );
+      // 저장소를 멈춘 채 끝나거나 실패한 계약이 다음 계약의 저장소를 막지 않도록 되살린다.
+      await blob.ensureRunning();
       results.push(result);
       printResult(result);
       if (!result.passed) failedLogs.add(server.logFile);
