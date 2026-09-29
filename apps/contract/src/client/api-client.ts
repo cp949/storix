@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ApiClient, ApiResponse, ContentCondition } from '../define-contract.ts';
+import type { ApiClient, ApiResponse, ContentCondition, MutationOptions } from '../define-contract.ts';
 
 /** 호출자 scope. 계약 검증이 보내는 모든 변경 요청이 같은 값을 쓴다. */
 const MUTATION_SCOPE = 'storix-contract';
@@ -29,18 +29,33 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
   const contentUrl = (namespaceId: string, route: string, filePath: string): string =>
     `/api/v2/namespaces/${namespaceId}/fs/${route}?path=${encodeURIComponent(filePath)}`;
 
+  const jsonHeaders = (options: MutationOptions): Record<string, string> => ({
+    'Idempotency-Key': options.idempotencyKey ?? randomUUID(),
+    'X-Mutation-Scope': MUTATION_SCOPE,
+    'Content-Type': 'application/json',
+  });
+  const snapshotUrl = (namespaceId: string, suffix = ''): string =>
+    `/api/v2/namespaces/${namespaceId}/fs/snapshots${suffix}`;
+
   return {
     request,
 
-    putConditionalContent(namespaceId: string, filePath: string, bytes: Buffer, condition: ContentCondition) {
+    putConditionalContent(
+      namespaceId: string,
+      filePath: string,
+      bytes: Buffer,
+      condition: ContentCondition,
+      options: MutationOptions & { readonly contentType?: string; readonly expectedSha256?: string } = {},
+    ) {
       const conditionHeader: Record<string, string> =
         'ifAbsent' in condition ? { 'X-If-Absent': 'true' } : { 'X-If-Revision': condition.ifRevision };
       return request('POST', contentUrl(namespaceId, 'content/conditional', filePath), {
         headers: {
-          'Idempotency-Key': randomUUID(),
+          'Idempotency-Key': options.idempotencyKey ?? randomUUID(),
           'X-Mutation-Scope': MUTATION_SCOPE,
-          'Content-Type': 'application/octet-stream',
+          'Content-Type': options.contentType ?? 'application/octet-stream',
           ...conditionHeader,
+          ...(options.expectedSha256 === undefined ? {} : { 'X-Content-Sha256': options.expectedSha256 }),
         },
         body: bytes,
       });
@@ -48,6 +63,60 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
 
     getContent(namespaceId: string, filePath: string) {
       return request('GET', contentUrl(namespaceId, 'content', filePath));
+    },
+
+    getStat(namespaceId: string, filePath: string) {
+      return request('GET', contentUrl(namespaceId, 'stat', filePath));
+    },
+
+    mkdir(namespaceId: string, dirPath: string, parents = false) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/mkdir`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: dirPath, parents }),
+      });
+    },
+
+    postMutation(namespaceId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/mutations`, {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
+    createSnapshot(namespaceId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', snapshotUrl(namespaceId), {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
+    getSnapshot(namespaceId: string, snapshotId: string) {
+      return request('GET', snapshotUrl(namespaceId, `/${snapshotId}`));
+    },
+
+    listSnapshots(namespaceId: string, rootNodeId: string, options = {}) {
+      const query = new URLSearchParams({ rootNodeId });
+      if (options.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options.limit !== undefined) query.set('limit', String(options.limit));
+      return request('GET', `${snapshotUrl(namespaceId)}?${query}`);
+    },
+
+    getSnapshotContent(namespaceId: string, snapshotId: string) {
+      return request('GET', snapshotUrl(namespaceId, `/${snapshotId}/content`));
+    },
+
+    restoreSnapshot(namespaceId: string, snapshotId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', snapshotUrl(namespaceId, `/${snapshotId}/restore`), {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
+    deleteSnapshot(namespaceId: string, snapshotId: string, options: MutationOptions = {}) {
+      return request('POST', snapshotUrl(namespaceId, `/${snapshotId}/delete`), {
+        headers: jsonHeaders(options),
+        body: JSON.stringify({}),
+      });
     },
   };
 }

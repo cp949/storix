@@ -5,7 +5,9 @@ import { runContract, summarize } from './run.ts';
 
 const fakeContext: ContractContext = {
   baseUrl: 'http://127.0.0.1:1',
+  apiKey: 'test-key',
   client: {} as ContractContext['client'],
+  server: { restart: async () => {} },
   createNamespace: async () => ({ id: 'id', name: 'name' }),
 };
 

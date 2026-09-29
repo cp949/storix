@@ -131,7 +131,12 @@ async function main(): Promise<number> {
       if (interrupted) return 130;
       const result = await runContract(
         contract,
-        createContractContext({ baseUrl: server.baseUrl, apiKey, contractId: contract.id }),
+        createContractContext({
+          baseUrl: server.baseUrl,
+          apiKey,
+          server: { restart: () => server.restart() },
+          contractId: contract.id,
+        }),
       );
       results.push(result);
       printResult(result);

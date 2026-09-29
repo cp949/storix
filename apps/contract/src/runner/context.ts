@@ -1,11 +1,14 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createApiClient } from '../client/api-client.ts';
-import type { ContractContext, NamespaceInfo } from '../define-contract.ts';
+import type { ContractContext, ContractServer, NamespaceInfo } from '../define-contract.ts';
 
 /** `createContractContext` 입력. */
 export interface ContractContextInput {
   readonly baseUrl: string;
   readonly apiKey: string;
+
+  /** 계약에 노출할 서버 제어 */
+  readonly server: ContractServer;
 
   /** namespace 이름의 접두어로 쓴다. 소문자 kebab-case라 namespace 이름 규칙(`^[a-z0-9_-]{1,128}$`)에 맞는다. */
   readonly contractId: string;
@@ -16,7 +19,9 @@ export function createContractContext(input: ContractContextInput): ContractCont
   const client = createApiClient(input.baseUrl, input.apiKey);
   return {
     baseUrl: input.baseUrl,
+    apiKey: input.apiKey,
     client,
+    server: input.server,
     async createNamespace(): Promise<NamespaceInfo> {
       const name = `${input.contractId}-${randomBytes(3).toString('hex')}`;
       const response = await client.request('POST', '/api/v2/namespaces', {

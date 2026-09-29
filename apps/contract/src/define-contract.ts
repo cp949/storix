@@ -25,6 +25,12 @@ export interface ApiResponse {
 /** 조건부 콘텐츠 저장의 전제 조건. 정확히 하나만 지정한다. */
 export type ContentCondition = { readonly ifAbsent: true } | { readonly ifRevision: string };
 
+/** 변경 요청(`Idempotency-Key`를 쓰는 POST)의 선택 인자. */
+export interface MutationOptions {
+  /** 멱등성 키. 생략하면 요청마다 새 키를 쓴다. 재전송을 검증하는 계약이 같은 값을 다시 준다. */
+  readonly idempotencyKey?: string;
+}
+
 /** 서비스 API key로 인증하는 HTTP 클라이언트. */
 export interface ApiClient {
   /** 임의의 요청을 보낸다. `path`는 `/`로 시작한다. */
@@ -34,13 +40,53 @@ export interface ApiClient {
     options?: { readonly headers?: Readonly<Record<string, string>>; readonly body?: string | Buffer },
   ): Promise<ApiResponse>;
 
-  /** `POST /fs/content/conditional`로 파일 바이트를 조건부 저장한다. 요청마다 새 `Idempotency-Key`를 쓴다. */
+  /**
+   * `POST /fs/content/conditional`로 파일 바이트를 조건부 저장한다. 요청마다 새 `Idempotency-Key`를 쓴다.
+   * `contentType`을 생략하면 `application/octet-stream`이다. `expectedSha256`을 주면 `X-Content-Sha256`으로 보낸다.
+   */
   putConditionalContent(
     namespaceId: string,
     filePath: string,
     bytes: Buffer,
     condition: ContentCondition,
+    options?: MutationOptions & { readonly contentType?: string; readonly expectedSha256?: string },
   ): Promise<ApiResponse>;
+
+  /** `POST /fs/mutations`로 조건부 변경(`delete`·`move` 등)을 보낸다. `body`는 JSON으로 직렬화한다. */
+  postMutation(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
+
+  /** `POST /fs/snapshots`로 snapshot을 만든다. `body`는 `{ kind, path, sourceRevision? }`다. */
+  createSnapshot(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
+
+  /** `GET /fs/snapshots/{id}`로 snapshot 메타데이터를 읽는다. */
+  getSnapshot(namespaceId: string, snapshotId: string): Promise<ApiResponse>;
+
+  /** `GET /fs/snapshots?rootNodeId=`로 파일 ID별 snapshot 목록을 페이지 단위로 읽는다. */
+  listSnapshots(
+    namespaceId: string,
+    rootNodeId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<ApiResponse>;
+
+  /** `GET /fs/snapshots/{id}/content`로 FILE snapshot의 전체 바이트를 읽는다. */
+  getSnapshotContent(namespaceId: string, snapshotId: string): Promise<ApiResponse>;
+
+  /** `POST /fs/snapshots/{id}/restore`로 snapshot을 `body.path`의 파일로 복원한다. */
+  restoreSnapshot(
+    namespaceId: string,
+    snapshotId: string,
+    body: object,
+    options?: MutationOptions,
+  ): Promise<ApiResponse>;
+
+  /** `POST /fs/snapshots/{id}/delete`로 snapshot을 삭제한다. */
+  deleteSnapshot(namespaceId: string, snapshotId: string, options?: MutationOptions): Promise<ApiResponse>;
+
+  /** `GET /fs/stat`으로 본문 없이 파일·디렉터리 메타데이터를 읽는다. */
+  getStat(namespaceId: string, filePath: string): Promise<ApiResponse>;
+
+  /** `POST /fs/mkdir`로 디렉터리를 만든다. `parents`가 true일 때만 없는 부모를 만든다. */
+  mkdir(namespaceId: string, dirPath: string, parents?: boolean): Promise<ApiResponse>;
 
   /** `GET /fs/content`로 전체 파일 바이트를 읽는다. */
   getContent(namespaceId: string, filePath: string): Promise<ApiResponse>;
@@ -52,12 +98,23 @@ export interface NamespaceInfo {
   readonly name: string;
 }
 
+/** 계약이 제어할 수 있는 서버. */
+export interface ContractServer {
+  /** 같은 포트·env·DB로 서버를 종료 후 다시 기동한다. 재시작 뒤 지속성·재생을 검증하는 계약이 쓴다. */
+  restart(): Promise<void>;
+}
+
 /** 계약의 `run`이 받는 컨텍스트. */
 export interface ContractContext {
   /** 서버 기본 URL. 끝에 `/`가 없다. */
   readonly baseUrl: string;
 
+  /** 서비스 API key. `client`가 쓰는 값이며, 클라이언트로 표현할 수 없는 저수준 요청(중단된 업로드 등)에 쓴다. */
+  readonly apiKey: string;
+
   readonly client: ApiClient;
+
+  readonly server: ContractServer;
 
   /** 이 계약만 쓰는 namespace를 새로 만든다. 정리 코드는 필요 없다(서버 종료가 정리한다). */
   createNamespace(): Promise<NamespaceInfo>;
