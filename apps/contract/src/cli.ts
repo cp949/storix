@@ -1,6 +1,7 @@
-// 계약 검증 CLI 진입점.
-// 사용법: pnpm contract [id...] [--db sqlite] [--shuffle] [--coverage] [--contracts-dir <경로>]
-// 실행 흐름은 docs/design/12-contract-checks.md "실행 흐름".
+/**
+ * 계약 검증 CLI 진입점.
+ * 인자는 `parseArgs` 정의가 원천이다. 실행 흐름은 docs/design/12-contract-checks.md "실행 흐름".
+ */
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -26,6 +27,15 @@ import { findFreePort, startServer, stopAllServers } from './runner/server.ts';
 
 /** 종료 시 거꾸로 실행할 정리 작업. SIGINT도 같은 목록을 실행한다. */
 const cleanups: Array<() => Promise<void>> = [];
+
+/** SIGINT를 받았는가. 정리 중 들어오는 반복 신호를 무시하고 중단 뒤의 진행·오류 출력을 막는 데 쓴다. */
+let interrupted = false;
+
+/** 작업 디렉터리를 지우지 않고 남길지. 실패·오류 종료에서 서버 로그를 확인할 수 있게 한다. */
+let keepWorkDir = false;
+
+/** 오류 종료 때 보존한 작업 디렉터리를 알리려고 기록한다. */
+let workDirForError: string | undefined;
 
 async function runCleanups(): Promise<void> {
   for (let cleanup = cleanups.pop(); cleanup !== undefined; cleanup = cleanups.pop()) {
@@ -81,6 +91,11 @@ async function main(): Promise<number> {
   const selected = selectContracts(contracts, positionals);
   const groups = groupByProfile(values.shuffle ? shuffle(selected) : selected);
   const workDir = await mkdtemp(path.join(tmpdir(), 'storix-contract-'));
+  workDirForError = workDir;
+  // 서버가 로그를 쓰는 디렉터리이므로 서버 정리 뒤에 지우도록 서버 정리보다 먼저 등록한다.
+  cleanups.push(async () => {
+    if (!keepWorkDir) await rm(workDir, { recursive: true, force: true });
+  });
   const results: ContractResult[] = [];
   const failedLogs = new Set<string>();
 
@@ -93,6 +108,7 @@ async function main(): Promise<number> {
   cleanups.push(async () => void (await stopAllServers()));
 
   for (const [profile, group] of groups) {
+    if (interrupted) return 130;
     console.log(`\n프로필 ${profile}: 계약 ${group.length}개`);
     const database = prepareSqliteDatabase(workDir, profile);
     const apiKey = randomBytes(16).toString('hex');
@@ -112,6 +128,7 @@ async function main(): Promise<number> {
     });
 
     for (const contract of group) {
+      if (interrupted) return 130;
       const result = await runContract(
         contract,
         createContractContext({ baseUrl: server.baseUrl, apiKey, contractId: contract.id }),
@@ -125,9 +142,8 @@ async function main(): Promise<number> {
 
   const summary = summarize(results);
   console.log(`\n통과 ${summary.passed}, 실패 ${summary.failed}`);
-  if (summary.exitCode === 0) {
-    await rm(workDir, { recursive: true, force: true });
-  } else {
+  if (summary.exitCode !== 0) {
+    keepWorkDir = true;
     console.log(`작업 디렉터리를 보존했다: ${workDir}`);
     for (const log of failedLogs) console.log(`서버 로그: ${log}`);
   }
@@ -135,13 +151,22 @@ async function main(): Promise<number> {
 }
 
 process.on('SIGINT', () => {
+  if (interrupted) return;
+  interrupted = true;
   void runCleanups().finally(() => process.exit(130));
 });
 
 try {
   process.exitCode = await main();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error);
+  // 중단으로 서버를 정리하면서 생긴 오류는 사용자에게 의미가 없어 출력하지 않는다.
+  if (!interrupted) {
+    console.error(error instanceof Error ? error.message : error);
+    if (workDirForError !== undefined) {
+      keepWorkDir = true;
+      console.error(`작업 디렉터리를 보존했다: ${workDirForError}`);
+    }
+  }
   process.exitCode = 1;
 } finally {
   await runCleanups();

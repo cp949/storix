@@ -9,6 +9,17 @@ export interface DatabaseHandle {
 }
 
 /**
+ * migration 프로세스에 전달할 env를 명시적으로 만든다.
+ * pnpm 실행에 필요한 `PATH`·`HOME`만 부모에서 가져와 개발자 로컬의 `STORIX_*`가 섞이지 않게 한다.
+ */
+export function buildMigrationEnv(
+  databaseEnv: Readonly<Record<string, string>>,
+  parentEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return { PATH: parentEnv.PATH ?? '', HOME: parentEnv.HOME ?? '', ...databaseEnv };
+}
+
+/**
  * `workDir` 아래에 새 SQLite 파일을 만들고 빌드된 API의 migration을 적용한다.
  * 프로필마다 파일을 새로 만들어 상태를 초기화한다.
  */
@@ -19,7 +30,7 @@ export function prepareSqliteDatabase(workDir: string, label: string): DatabaseH
   };
   const result = spawnSync('pnpm', ['--filter', '@cp949/storix-api', 'run', 'migration:run:prod'], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: buildMigrationEnv(env),
     encoding: 'utf-8',
   });
   if (result.status !== 0) {

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { waitUntil } from './runner/wait.ts';
@@ -12,12 +14,18 @@ function containers(): string {
   }).trim();
 }
 
+/** 임시 디렉터리 아래 러너가 만든 작업 디렉터리 이름 */
+function workDirs(): Set<string> {
+  return new Set(readdirSync(tmpdir()).filter((name) => /^storix-contract-[A-Za-z0-9]{6}$/.test(name)));
+}
+
 // 실제 docker와 빌드된 apps/api/dist를 쓴다. CLI 프로세스를 직접 띄워 종료 신호를 보낸다.
 describe('CLI 중단(SIGINT)', () => {
   it(
     'VersityGW가 준비되기를 기다리는 중에 중단해도 컨테이너가 남지 않는다',
     { timeout: 60_000 },
     async () => {
+      const before = workDirs();
       const cli = spawn(process.execPath, [CLI], { stdio: 'ignore' });
       const exited = new Promise<number | null>((resolve) => cli.once('exit', (code) => resolve(code)));
       try {
@@ -30,6 +38,10 @@ describe('CLI 중단(SIGINT)', () => {
         cli.kill('SIGINT');
         assert.equal(await exited, 130);
         assert.equal(containers(), '');
+        assert.deepEqual(
+          [...workDirs()].filter((name) => !before.has(name)),
+          [],
+        );
       } finally {
         cli.kill('SIGKILL');
         const leftover = containers().split('\n').filter(Boolean);
