@@ -41,7 +41,7 @@ cp .env.example .env
 | `STORIX_VERSITYGW_DATA_PATH`                                                                         | 비움 또는 `/`로 시작하는 절대 경로      | 비우면 named volume `versitygw-data`. NAS면 절대 경로                                                        |
 | `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보                 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의                                |
 | `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL`    | 클라이언트가 접근 가능한 VersityGW 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패                                                           |
-| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                         | presigned download를 쓸 때 비우면 안 됨(아래 문제 해결)                                                      |
+| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                         | 비우면 `us-east-1`. VersityGW를 `--region`으로 띄웠다면 같은 값(이 저장소의 compose는 `us-east-1`)                |
 
 override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
 `STORIX_STORAGE_USE_SSL`(`versitygw` / `7070` / `false`로 고정).
@@ -146,7 +146,6 @@ services:
 STORIX_STORAGE_PUBLIC_ENDPOINT=localhost
 STORIX_STORAGE_PUBLIC_PORT=7070
 STORIX_STORAGE_PUBLIC_USE_SSL=false
-STORIX_STORAGE_REGION=us-east-1
 ```
 
 ```bash
@@ -193,10 +192,6 @@ STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --
   같은 `STORIX_DB_HOST`를 쓴다. `docker-compose.postgres.yml`은 겹치지 않는다. 여러
   VersityGW가 같은 NAS를 동시에 posix 백엔드로 쓰는 구성의 안전성은 아직
   검증되지 않았다. 상세: `docs/deployment/multi-instance-versitygw.md`.
-- **presigned-download가 500**: `STORIX_STORAGE_REGION`이 비어 있으면 minio-js가 리전
-  자동 조회를 위해 `STORIX_STORAGE_PUBLIC_ENDPOINT`로 실제 요청을 보내는데, 컨테이너
-  안에서 `localhost`는 app 자기 자신이라 실패한다. `STORIX_STORAGE_REGION=us-east-1`
-  (VersityGW 기본 리전)을 설정한다.
 - **로그**: `docker compose $C logs -f app versitygw`.
 - **데이터 초기화**:
 

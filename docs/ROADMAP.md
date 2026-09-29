@@ -33,7 +33,6 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
 - ADR-0001의 ENCRYPTED 암호화 정책: 설계만 있고 구현 없음
 - 감사 로그(누가/언제/어떤 namespace·파일에 접근) 없음
 - CI/의존성 취약점 스캔 없음 (`.github` 부재)
-- Blob 저장소가 MinIO SDK 구현 하나에 결합
 
 ## 실행 순서
 
@@ -155,20 +154,20 @@ storix/
 
 ## 2. 스토리지 백엔드 일반화
 
-S3, MinIO, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 셋 다 S3 API를
-말하므로, MinIO 구현체에 커스텀 엔드포인트(`Endpoint`, path-style 옵션)를
+S3, VersityGW를 각각 다른 백엔드로 구현하지 않는다. 둘 다 S3 API를
+말하므로, S3 구현체에 커스텀 엔드포인트(`Endpoint`, path-style 옵션)를
 설정으로 노출하는 것으로 끝난다(imgproxy의 s3 백엔드 구조 참고). 기존
 `BlobStorage` 인터페이스는 유지한다. 별도 어댑터 계층은 만들지 않는다.
 
-- [x] STORAGE-01: MinIO 구현체에 커스텀 엔드포인트 설정(`Endpoint`,
-      path-style 옵션) 노출 — S3/MinIO/VersityGW 공통 지원
+- [x] STORAGE-01: S3 구현체에 커스텀 엔드포인트 설정(`Endpoint`,
+      path-style 옵션) 노출 — S3/VersityGW 공통 지원
 - [x] STORAGE-02: **Presigned download URL 발급** — `BlobStorage`에 presigned
       URL 메서드를 추가한다. 내부 통신용 `STORIX_STORAGE_ENDPOINT`와 외부에서 접근
       가능한 `STORIX_STORAGE_PUBLIC_ENDPOINT`를 분리해 설정한다(같은 값을 쓰면 서명된
       URL의 host가 내부 전용 이름이 되어 외부에서 못 찾는다). 발급 API는
       `SEC-01` 인증을 거친다.
 - [x] STORAGE-03: **nginx reverse-proxy 샘플** — `docker-compose`에 nginx
-      서비스를 추가해 "공개 도메인 → nginx → 내부 MinIO" 패턴을 재현·검증한다.
+      서비스를 추가해 "공개 도메인 → nginx → 내부 스토리지" 패턴을 재현·검증한다.
       `Host` 헤더와 쿼리스트링을 그대로 통과시켜 presigned 서명이 깨지지
       않게 설정하고, 운영 배포 시 참조용 샘플 구성으로 문서화한다.
 
@@ -190,8 +189,8 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
 - [x] VFS-02: **재개 가능한 대용량 업로드** — 현재 raw stream 업로드와 구분되는
       업로드 session 계약을 설계·구현한다. 조각 재전송, 완료 시 원자적 공개,
       동시 완료/중단, 만료·취소, 임시 저장량 한도 및 정리를 포함한다.
-      구현과 집중 로컬 검증: PostgreSQL+MinIO 및 SQLite에서 lifecycle·parts·finalize를
-      확인했다. 최종 L2는 PostgreSQL+MinIO 33 suites/480 tests, SQLite 19 suites/281 tests를
+      구현과 집중 로컬 검증: PostgreSQL 및 SQLite에서 lifecycle·parts·finalize를
+      확인했다. 최종 L2는 PostgreSQL 33 suites/480 tests, SQLite 19 suites/281 tests를
       통과했다. SQLite 최초 실행은 migration 기대 목록 fixture 1건 실패했고 수정 후 전체 재실행했다.
       기본 비활성 capability와 공개 계약·암호화·GC 경계를 문서화했다.
       프로세스 중단 중 PUT 정착 여부를 증명할 수 없는 예약은 quota 상한을 위해 자동 과금 해제하지 않으며,
@@ -205,9 +204,9 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       잘못된 값은 400 `VFS_INVALID_CHECKSUM`, 불일치는 무변경 422
       `VFS_CHECKSUM_MISMATCH`다. raw receipt와 재개 생성 fingerprint는 기대 checksum에
       결합하고, 재개 불일치는 `FAILED` 완료 결과로 30일 이상 재생한다.
-      DELTA-01/02의 선택 L1 검증과 마지막 테스트 보강 후 PostgreSQL/MinIO·SQLite finalize spec
-      각 20/20 통과를 기록했다. 최종 L0 전체 통과, PostgreSQL/MinIO L2 33 suites/485 tests,
-      SQLite L2 19 suites/286 tests 통과를 확인했다. 최초 PostgreSQL/MinIO L2에서 기존
+      DELTA-01/02의 선택 L1 검증과 마지막 테스트 보강 후 PostgreSQL·SQLite finalize spec
+      각 20/20 통과를 기록했다. 최종 L0 전체 통과, PostgreSQL L2 33 suites/485 tests,
+      SQLite L2 19 suites/286 tests 통과를 확인했다. 최초 PostgreSQL L2에서 기존
       short-lease 사례 1건이 일시 실패했으나 단독·파일 전체 재실행에서 재현되지 않았고 후속 전체 L2에서 통과했다.
       실패 원인은 특정하지 않았다. 운영 활성화와 실제 소비자 연동 검증은 제외 범위다.
       요구사항 판정은 [RQ-028](./requirements/file-storage.md)을 참고한다.
@@ -231,7 +230,7 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       purge는 공유 Blob 참조를 보존한다. [RQ-024](./requirements/file-storage.md)와
       [설계](./design/09-vfs-trash-and-recovery.md)를 따른다. 로컬 focused PostgreSQL
       GC+HTTP 2 suites/167 tests, SQLite GC+HTTP 2 suites/28 tests가 통과했고,
-      최종 PostgreSQL/MinIO L2 36 suites/536 tests, SQLite L2 22 suites/326 tests가 통과했다.
+      최종 PostgreSQL L2 36 suites/536 tests, SQLite L2 22 suites/326 tests가 통과했다.
       최종 root test는 API 90 suites/891 tests, typecheck·lint·build도 통과했다. 운영 DB migration, 실제 백업 복원,
       외부 consumer/browser/production 연동은 별도 검증 대상이다.
 - [x] VFS-06: **선택 capability 설정과 비활성 동작** — 이후 추가되는 선택 기능을 완결된
@@ -240,7 +239,7 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       `VFS_FEATURE_DISABLED`와 조건부 receipt 재생 경계를 구현했다. 기존 파일 API는
       계속 활성이고 저장 데이터의 조회·내보내기·복구·삭제 경계는 선택 기능 추가 시
       지켜야 한다. 활성 capability 조회 계약·구현은 VFS-07에서 완료했다. 현재
-      production registry에는 기본 비활성 `resumable-upload`가 있다. PostgreSQL/MinIO와
+      production registry에는 기본 비활성 `resumable-upload`가 있다. PostgreSQL와
       SQLite에서 기능 활성 중 완료한 파일을 재시작 후 비활성 상태에서도 capability 목록에서
       숨기고 기존 VFS `stat`/`content` API로 읽을 수 있음을 검증했다. 세부 근거는
       [RQ-027](./requirements/file-storage.md)을 참고한다. 실제 배포 설정·소비자 검증은 제외한다.
@@ -257,7 +256,7 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       조건부 delete는 휴지통 manifest 없이 영구 삭제한다. 관리자 PATCH로 namespace별 정책을
       바꾸며, 정책 변경과 삭제는 동일 namespace mutation lock으로 직렬화한다. OFF 전환 뒤에도
       기존 휴지통 항목은 목록·복원·purge 가능하고, 조건부 receipt는 최초 결과를 재생한다.
-      PostgreSQL/MinIO·SQLite focused race/receipt/audit 및 OpenAPI 검증을 완료한 뒤 L0/L2
+      PostgreSQL·SQLite focused race/receipt/audit 및 OpenAPI 검증을 완료한 뒤 L0/L2
       게이트와 로컬 closeout 판정을 기록한다. 세부 계약은 [RQ-024](./requirements/file-storage.md)와
       [설계](./design/09-vfs-trash-and-recovery.md)를 따른다. 외부 consumer·production 검증은 제외한다.
 - [x] VFS-09: **파일 만료와 확정** — 새 FILE 생성 시 만료 지정, `persist` 확정,
@@ -270,7 +269,7 @@ move/copy는 신규 기능으로 중복 등록하지 않는다. 해당 동작의
       인터페이스 + 활성화 목록 구조로 설계해 Prometheus/OTel 등 여러 개를
       동시에 켤 수 있게 한다(imgproxy `monitoring/`, `errorreport/` 패턴
       참고).
-- [x] OPS-02: **백업/복구** — Storix는 Postgres(metadata) + MinIO(object)
+- [x] OPS-02: **백업/복구** — Storix는 Postgres(metadata) + Blob 스토리지(object)
       양쪽에 상태를 가지므로 참고할 기존 사례가 없다 — 별도로 설계해야 한다.
 
 WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으로 검토한다. 범용 파일
@@ -282,13 +281,10 @@ WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으�
       사용법 추가 (핵심 기능 소개는 DEPLOY-06에서 완료).
 - [x] DEPLOY-02: **헬스체크 확장** — `/health/ready`는 최초 커밋부터 이미
       Postgres·스토리지를 함께 검사한다(로드맵 최초 문구 오기, 코드 확인 후
-      정정). 남은 갭 두 개를 실제로 채운다: (1) `app` 컨테이너에
+      정정). 남은 갭을 실제로 채운다: `app` 컨테이너에
       Docker/Podman `healthcheck`가 없어 `compose ps`로 상태를 못 봤음 →
       Node 내장 fetch로 `/health/ready`를 찌르는 healthcheck 추가(curl은
-      이미지 축소로 purge됨, 재설치하지 않음). (2) 응답 키가 `minio`로
-      고정돼 VersityGW-primary 방향(ADR-0003)과 같은 오독 위험 → `storage`로
-      변경(클래스/파일명은 ADR-0016대로 `Minio*` 유지 — minio-js Client 타입
-      결합은 그대로이므로).
+      이미지 축소로 purge됨, 재설치하지 않음).
 - [x] DEPLOY-03: **스키마 마이그레이션/업그레이드 경로 문서화** — 자동
       revert는 지원하지 않고 이미지 되돌리기(스키마 불변경)·백업 복구(스키마
       변경)로 롤백 처리(ADR-0017). 범위는 single-instance만이며, 버전 식별은

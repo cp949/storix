@@ -24,7 +24,6 @@ export STORIX_API_KEY=$(openssl rand -hex 32)
 export STORIX_STORAGE_PUBLIC_ENDPOINT=localhost
 export STORIX_STORAGE_PUBLIC_PORT=8443
 export STORIX_STORAGE_PUBLIC_USE_SSL=true
-export STORIX_STORAGE_REGION=us-east-1
 docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml \
   -f docs/deployment/compose.nginx-demo.yml up -d --wait
 ```
@@ -32,11 +31,9 @@ docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-c
 `nginx-cert-init` 서비스가 기동 시 self-signed 인증서를 생성하고(`nginx-certs`
 볼륨), `nginx` 서비스(호스트 포트 `${STORIX_NGINX_PUBLIC_PORT:-8443}` → 컨테이너
 443)가 이를 로드한다. 인증서 CN/SAN은 `localhost` 고정이다 — 다른 hostname으로
-접속하면 TLS 클라이언트가 인증서 불일치로 거부한다. `STORIX_STORAGE_REGION`을 비워두면
-minio-js(Storix가 쓰는 S3 SDK)가 리전 자동 조회를 위해 `STORIX_STORAGE_PUBLIC_ENDPOINT`(컨테이너 자기 자신의
-loopback으로 되돌아가는 주소)에 실제 네트워크 호출을 시도하다 실패해
-presigned-download 발급이 500나므로, `STORIX_STORAGE_REGION`을 설정해 이 호출 자체를
-스킵해야 한다.
+접속하면 TLS 클라이언트가 인증서 불일치로 거부한다. presigned URL 서명은 네트워크 요청
+없이 로컬에서 이뤄지므로 컨테이너에서 `STORIX_STORAGE_PUBLIC_ENDPOINT`에 접근할 수 없어도
+발급된다.
 
 ## 운영 배포로 옮길 때 바꿔야 하는 것
 
@@ -51,10 +48,6 @@ presigned-download 발급이 500나므로, `STORIX_STORAGE_REGION`을 설정해 
   테스트도 testcontainers가 할당한 임의 포트로 검증한다). 443을 권장하는 건
   정확성이 아니라 편의 때문이다: 표준 HTTPS 포트는 URL/Host 헤더에서
   생략되어 더 깔끔한 presigned URL이 나온다.
-- `STORIX_STORAGE_REGION`을 비워두지 않는다 — presigned URL 발급마다 리전 자동 조회가
-  공개 프록시로 실제 네트워크 왕복을 시도한다(방화벽·split-horizon DNS
-  환경에서는 로컬 재현과 동일하게 500날 수 있다). 값 자체는 VersityGW
-  설정과만 맞으면 되고, 기본 `us-east-1`이면 충분하다.
 
 ## 왜 `$http_host`이고 `$host`가 아닌가
 

@@ -11,7 +11,7 @@
 #
 # nginx-reverse-proxy.conf가 versitygw:7070으로 proxy_pass하므로
 # docker-compose.versitygw.yml 조합에서만 동작한다. 필요한 환경 변수
-# (STORIX_STORAGE_PUBLIC_*, STORIX_STORAGE_REGION, STORIX_NGINX_PUBLIC_PORT)와 운영 배포로 옮길 때
+# (STORIX_STORAGE_PUBLIC_*, STORIX_NGINX_PUBLIC_PORT)와 운영 배포로 옮길 때
 # 바꿔야 하는 값은 nginx-reverse-proxy.md 참고.
 
 services:

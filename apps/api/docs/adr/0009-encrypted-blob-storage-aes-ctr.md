@@ -18,7 +18,7 @@ CTR은 블록 경계 기준으로 임의 오프셋부터 복호화를 시작할 
 
 IV(16바이트, blob마다 랜덤 생성)는 저장 객체에 prepend하지 않고
 `blob.encryption_iv`(nullable bytea) 컬럼에 저장한다. `content.service.ts`가
-GET/PUT마다 이미 blob 메타 row를 조회하므로 추가 MinIO 왕복 없이 IV를 얻을 수
+GET/PUT마다 이미 blob 메타 row를 조회하므로 추가 스토리지 왕복 없이 IV를 얻을 수
 있고, 저장 객체가 평문과 바이트 수 1:1로 대응해 Range 좌표 계산에 오프셋 보정이
 필요 없다.
 

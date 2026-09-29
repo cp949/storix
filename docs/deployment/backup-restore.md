@@ -2,7 +2,7 @@
 
 OPS-02. Postgres(metadata) + S3 호환 스토리지(object) 양쪽 상태를 갖는 배포의 재해복구
 절차다. 설계 배경은
-`../../apps/api/docs/adr/0015-backup-restore-postgres-then-minio.md` 참고.
+`../../apps/api/docs/adr/0015-backup-restore-postgres-then-blobs.md` 참고.
 
 아래 `docker compose ...` 명령은 실제 배포에 쓰는 `-f` 조합(예:
 `-f docker-compose.yml -f docker-compose.versitygw.yml`)을 그대로 앞에 붙여
@@ -18,7 +18,7 @@ docker compose --profile backup run --rm backup
 
 `STORIX_BACKUP_DIR`(기본 `/backups`, 호스트의 `./backups`에 바인드 마운트) 아래
 `{ISO8601 타임스탬프}/` 디렉터리에 `postgres.dump`(pg_dump custom format)와
-`minio/`(스토리지 버킷 전체 미러. 디렉터리 이름은 하위 호환을 위해 유지)를 남긴다. 실행마다 ENCRYPTED namespace가
+`blobs/`(스토리지 버킷 전체 미러)를 남긴다. 실행마다 ENCRYPTED namespace가
 있으면 콘솔에 경고가 남는다 — `STORIX_ENCRYPTION_MASTER_KEY`는 이 백업에 포함되지
 않으므로 별도 채널(시크릿 매니저 등)에 반드시 따로 백업해야 한다.
 

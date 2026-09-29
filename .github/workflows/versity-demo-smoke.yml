@@ -50,10 +50,6 @@ jobs:
           sed -i "s|^STORIX_API_KEY=.*|STORIX_API_KEY=${STORIX_API_KEY}|" .env
           sed -i "s|^STORIX_STORAGE_PUBLIC_ENDPOINT=.*|STORIX_STORAGE_PUBLIC_ENDPOINT=localhost|" .env
           sed -i "s|^STORIX_STORAGE_PUBLIC_PORT=.*|STORIX_STORAGE_PUBLIC_PORT=7070|" .env
-          # STORIX_STORAGE_REGION이 비어 있으면 presigned 발급 시 minio-js가 리전 자동
-          # 조회를 STORIX_STORAGE_PUBLIC_ENDPOINT(localhost = app 컨테이너 자신)로
-          # 보내다 실패해 500난다(docs/deployment/nginx-reverse-proxy.md와 동일).
-          sed -i "s|^STORIX_STORAGE_REGION=.*|STORIX_STORAGE_REGION=us-east-1|" .env
           echo "STORIX_API_KEY=${STORIX_API_KEY}" >> "$GITHUB_ENV"
 
       - name: VersityGW 백엔드 스택 기동

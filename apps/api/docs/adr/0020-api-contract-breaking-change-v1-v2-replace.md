@@ -54,4 +54,4 @@
   `route-coverage.spec.ts`(ADR-0019)가 drift를 잡아준다.
 - `apps/demo` 검증이 끝나 `openapi.yaml`의 draft 문구를 걷어낼 때, 이 ADR을
   수정하지 않고 새 ADR(또는 `CHANGELOG.md` 항목)로 "1.0 확정"을 기록한다 —
-  ADR은 불변 로그로 취급한다(ADR-0016 컨벤션).
+  ADR은 불변 로그로 취급한다.

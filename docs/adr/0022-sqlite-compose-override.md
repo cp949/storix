@@ -20,7 +20,7 @@ compose 기반 배포·개발(`docker compose up`)을 SQLite로는 할 수 없�
 ## 결정
 
 1. **`docker-compose.sqlite.yml`을 ADR-0004가 정한 override 계열에
-   추가한다.** 다른 백엔드/DB override(`versitygw.yml`/`minio.yml`/
+   추가한다.** 다른 백엔드/DB override(`versitygw.yml`/
    `s3.yml`/`postgres.yml`)와 동급으로 루트에 둔다.
 2. **컨테이너를 추가하지 않는다.** SQLite는 별도 서버 프로세스가 없는
    파일 기반 DB이므로, `postgres.yml`처럼 컨테이너 서비스를 정의할

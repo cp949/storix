@@ -10,6 +10,8 @@
 
 ### Changed
 
+- S3 클라이언트를 AWS SDK for JavaScript v3로 교체했다. `STORIX_STORAGE_REGION`을 비우면 `us-east-1`을 사용한다. 실제 AWS S3는 버킷 리전을 지정해야 한다.
+- 백업의 객체 미러 디렉터리 이름을 `blobs/`로 바꿨다. 이전 형식의 백업은 복구할 수 없다.
 - 휴지통은 namespace별 설정이며 기본 OFF다. OFF 삭제는 즉시 영구 삭제하고 `X-Trash-Id`/`trashId`를 반환하지 않는다. OFF 전환 전 휴지통 항목은 계속 복원할 수 있다.
 - 모든 워크스페이스 패키지 이름을 `@storix/*`에서 `@cp949/storix-*`로 변경했다.
 
@@ -131,10 +133,6 @@
   다운로드 엔드포인트 추가. `PUBLIC`이 아닌 namespace는 404로 응답한다.
 - `ENCRYPTED` namespace를 `PUBLIC`으로 생성하는 요청을 400으로 거부한다.
 
-### Removed
-
-- `docker-compose.minio.yml`과 `README.minio.md`를 제거했다. MinIO가 Docker Hub의 `minio/minio`·`minio/mc` 이미지를 삭제했고 `quay.io/minio`도 받을 수 없다(ADR-0024). 이미 운영 중인 MinIO 서버에는 base 단독 구성으로 계속 연결할 수 있다. nginx reverse-proxy 샘플의 upstream은 VersityGW로 바뀌었다(`docker-compose.versitygw.yml` 조합).
-
 ### Fixed
 
 - 변경 feed는 한 transaction에서 자식을 생성·삭제한 뒤에도 커밋된 디렉터리 listing revision이 바뀌면 최종 revision의 `updated` 이벤트를 기록한다. 최종 상태가 부재인 자식의 이벤트는 기록하지 않는다.
@@ -166,7 +164,7 @@
 - `ENCRYPTED` namespace 콘텐츠 암호화(AES-256-CTR)
 - 감사 로그(요청 단위 접근 기록)
 - CI 취약점 관리 게이트(의존성 audit + 컨테이너 이미지 스캔)
-- S3/MinIO/VersityGW 커스텀 엔드포인트 지원
+- S3 호환 백엔드(VersityGW 포함) 커스텀 엔드포인트 지원
 - Presigned download URL 발급
 - nginx reverse-proxy 샘플 구성
 - 메트릭(Prometheus)/에러 리포팅(Sentry)
@@ -179,7 +177,6 @@
 - 저장소를 Turborepo + pnpm 모노레포로 전환(`apps/api`/`apps/admin`/`apps/demo`)
 - 환경변수를 벤더중립 `STORAGE_*`로, 이후 전체를 `STORIX_*` 접두어로 통일
 - compose 구성을 백엔드 중립 base + 백엔드별 override 구조로 재구성
-- 헬스체크 응답 키를 `minio`에서 `storage`로 변경
 
 ### Fixed
 

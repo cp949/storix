@@ -7,7 +7,7 @@
 ## 배경
 
 ADR-0004 시점의 환경변수 이름은 다섯 가지 방식이 섞여 있었다: `DB_*`(5개),
-`STORAGE_*`(11개, ADR api-0016에서 `MINIO_*`에서 개명), 무접두 한도값
+`STORAGE_*`(11개), 무접두 한도값
 (`MAX_FILE_SIZE_BYTES`, `MAX_SYNC_DELETE_NODES`, `MAX_SYNC_COPY_NODES`,
 `PRESIGNED_URL_EXPIRY_SECONDS`, `ORPHAN_GRACE_PERIOD`), 무접두 비밀값·기타
 (`API_KEY`, `API_KEY_PREVIOUS`, `ENCRYPTION_MASTER_KEY`, `SENTRY_DSN`, `PORT`), 잡
@@ -49,8 +49,7 @@ listen 포트였다.
    `STORIX_PORT`를 `.env`에서 바꾸는 경우는 호스트 직접 실행(`pnpm dev`)뿐이다.
 4. **DI 토큰은 대상이 아니다.** `STORAGE_CLIENT`, `STORAGE_PUBLIC_CLIENT`,
    `STORAGE_BUCKET` 심볼은 내부 식별자이며 env 이름과 무관하다.
-5. **하위호환 alias나 마이그레이션 가이드는 두지 않는다.** ADR api-0016과 같은
-   논리다 — 릴리스 태그도 실 배포도 없어 breaking change 비용이 지금 가장
+5. **하위호환 alias나 마이그레이션 가이드는 두지 않는다.** 릴리스 태그도 실 배포도 없어 breaking change 비용이 지금 가장
    낮다. DEPLOY-01(README 환경변수 문서화)과 API-03(1.0 직전 breaking-change
    정책 고정) 이후에는 alias 코드가 필요해지므로 그 전에 바꾼다.
 6. **ADR 본문은 고치지 않는다.** 이 저장소의 ADR은 불변 로그다. ADR-0002~~0004와

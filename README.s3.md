@@ -20,10 +20,10 @@ compose가 대신 해주지 않는다.
 1. **버킷 생성**. 리전을 정해 미리 만든다. Storix는 버킷을 만들지 않는다
    (자격증명에 버킷 생성 권한을 요구하지 않기 위해).
 2. **IAM 사용자와 access key 발급**. 아래 정책을 그 버킷에 한정해 붙인다.
-   Storix는 모든 업로드를 크기 미지정 스트림으로 보내 minio-js가 항상
-   멀티파트 업로드 경로를 타므로, `GetObject`/`PutObject`/`DeleteObject`/
-   `ListBucket`만으로는 업로드가 `AccessDenied`로 실패한다. 멀티파트 관련 3개
-   액션이 추가로 필요하다.
+   Storix는 모든 업로드를 크기 미지정 스트림으로 보내며, 16MiB를 넘는 파일은
+   멀티파트 업로드 경로를 탄다. `GetObject`/`PutObject`/`DeleteObject`/
+   `ListBucket`만으로는 그 업로드가 `AccessDenied`로 실패하므로 멀티파트 관련
+   3개 액션이 추가로 필요하다.
 
 ```json
 {
@@ -67,7 +67,7 @@ cp .env.example .env
 | 변수                                                                                                 | 값                                | 비고                                                                          |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------- |
 | `STORIX_API_KEY`                                                                                     | `openssl rand -hex 32` 출력       | 필수. 비어 있으면 compose가 즉시 실패                                         |
-| `STORIX_STORAGE_REGION`                                                                              | 버킷의 리전(예: `ap-northeast-2`) | 필수. 비우면 리전 자동 조회로 요청마다 추가 왕복                              |
+| `STORIX_STORAGE_REGION`                                                                              | 버킷의 리전(예: `ap-northeast-2`) | 필수. 버킷 리전과 다르면 서명 오류(`AuthorizationHeaderMalformed`)로 요청이 실패한다 |
 | `STORIX_STORAGE_ACCESS_KEY` / `STORIX_STORAGE_SECRET_KEY`                                            | 위에서 발급한 IAM access key      | 정적 키만 지원(IAM 역할·STS 세션 토큰 미지원)                                 |
 | `STORIX_STORAGE_BUCKET`                                                                              | 미리 만든 버킷 이름               |                                                                               |
 | `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보           | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의 |
@@ -198,11 +198,11 @@ STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --
 
 - **업로드가 `AccessDenied`**: IAM 정책에 멀티파트 액션 3개
   (`s3:ListBucketMultipartUploads`, `s3:AbortMultipartUpload`,
-  `s3:ListMultipartUploadParts`)가 빠졌는지 확인한다. 작은 파일도 예외가 아니다.
+  `s3:ListMultipartUploadParts`)가 빠졌는지 확인한다. 16MiB를 넘는 파일에서만 나타난다.
 - **`PermanentRedirect`(301)**: 위 "리전 전용 엔드포인트가 필요할 때".
 - **정적 키만 지원**: EC2 인스턴스 프로파일·IAM 역할·STS 세션 토큰은 쓸 수
-  없다. `MinioBlobStorage`가 minio SDK Client를 그대로 쓰기 때문이다
-  (`apps/api/docs/adr/0012-minio-sdk-generic-s3-client.md`).
+  없다. `S3BlobStorage`가 `S3Client`에 정적 자격증명만 설정하기 때문이다
+  (`apps/api/docs/adr/0012-s3-client-sdk.md`).
 - **presigned URL 만료**: `STORIX_PRESIGNED_URL_EXPIRY_SECONDS` 상한은 SigV4 제한인
   604800초(7일)다. 초과하면 `app`이 부팅 시 종료된다.
 - **로그**: `docker compose $C logs -f app`.

@@ -2,23 +2,22 @@
 
 ## 상태
 
-승인됨 (2026-09-08) — 구현 완료. 일부 대체됨: `docker-compose.minio.yml` 제거와 nginx 샘플의 VersityGW upstream 전환은 ADR-0024.
+승인됨 (2026-09-08) — 구현 완료.
 
 ## 배경
 
-ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이너를 profile
-없이 항상 기동하고, `app`/`gc`/`backup`/`restore`에 `STORAGE_ENDPOINT: minio`를
-하드코딩했다. 그 위에 `docker-compose.versity-demo.yml`/`docker-compose.s3-demo.yml`/
+ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`와 스토리지 컨테이너를 profile
+없이 항상 기동하고, `app`/`gc`/`backup`/`restore`에 스토리지 컨테이너를 가리키는
+`STORAGE_ENDPOINT`를 하드코딩했다. 그 위에 `docker-compose.versity-demo.yml`/`docker-compose.s3-demo.yml`/
 `docker-compose.shared-db.yml` override가 쌓이면서 다음 문제가 굳어졌다:
 
-- 어떤 override를 겹쳐도 base의 `postgres`/`minio`가 미사용 상태로 같이 떴다
+- 어떤 override를 겹쳐도 base의 `postgres`와 스토리지 컨테이너가 미사용 상태로 같이 떴다
   (ADR-0003 Consequences 1번, "N개 WAS가 1개 공유 DB를 바라보는 토폴로지와 맞지
   않는다").
-- base만 보면 MinIO가 기본이고 VersityGW/S3는 시연으로 읽혔다. `-demo` 접미사가
-  "지원 백엔드"가 아니라 "예제"라는 인상을 줬다. `docker-compose.minio-demo.yml`은
-  동작을 바꾸지 않는 문서용 파일이었다.
+- base만 보면 특정 백엔드가 기본이고 VersityGW/S3는 시연으로 읽혔다. `-demo` 접미사가
+  "지원 백엔드"가 아니라 "예제"라는 인상을 줬다.
 - s3 override가 `AWS_S3_*`라는 별도 변수를 써야 했다 — `STORAGE_ACCESS_KEY`가
-  base의 `minio` 컨테이너 root 자격증명으로도 흘러들어갔기 때문이다.
+  base의 스토리지 컨테이너 root 자격증명으로도 흘러들어갔기 때문이다.
 - 같은 env 블록이 파일마다 서비스 4개에 반복됐다.
 - `PORT: 3000`처럼 unquoted 정수 env 값이 podman-compose 1.6에서 파싱 실패를
   일으켰다(같은 서비스 안의 `${PORT}` 치환에 int가 들어가 `''.join`이 죽는다).
@@ -33,7 +32,6 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
 2. **컨테이너 추가·연결 재정의는 `docker-compose.<대상>.yml` override로만 한다.**
    - `docker-compose.versitygw.yml` — VersityGW 컨테이너 + 버킷 초기화, 4개
      서비스의 `STORAGE_ENDPOINT/PORT/USE_SSL` 재정의. 목표 기본 백엔드(ADR-0003).
-   - `docker-compose.minio.yml` — MinIO 동일 패턴.
    - `docker-compose.s3.yml` — 컨테이너 없음. 엔드포인트/443/SSL/path-style/
      `STORAGE_PUBLIC_*`만 AWS 값으로 고정. 자격증명·리전·버킷은 `.env`의
      `STORAGE_*`를 그대로 쓴다(`AWS_S3_*` 제거 — 이 조합에는 그 값을 root
@@ -41,11 +39,11 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
    - `docker-compose.postgres.yml` — 개발·검증용 Postgres 컨테이너, 5개 서비스의
      `DB_HOST/DB_PORT`를 `postgres:5432`로 재정의, 호스트 `127.0.0.1:${DB_PORT}`
      노출.
-   - 세 백엔드 파일은 서로 우선하지 않는 동급이다. 파일 목록만으로 지원
-     백엔드(VersityGW/MinIO/S3)를 알 수 있어야 하므로 `-demo` 접미사를 쓰지
+   - 두 백엔드 파일은 서로 우선하지 않는 동급이다. 파일 목록만으로 지원
+     백엔드(VersityGW/S3)를 알 수 있어야 하므로 `-demo` 접미사를 쓰지
      않는다.
 3. **Storix 구성 요소가 아닌 파일은 루트 밖에 둔다.** 루트의 `docker-compose*`
-   목록은 base + 백엔드 3종 + 개발 DB만 남긴다.
+   목록은 base + 백엔드 2종 + 개발 DB만 남긴다.
    - CI 전용 override → `.github/compose.ci.yml`(`.github/workflows/` 안은 GitHub이
      워크플로로 파싱하므로 그 바깥).
    - 개발·검증용 nginx reverse-proxy 샘플(STORAGE-03) →
@@ -75,33 +73,33 @@ ADR-0003 이전의 루트 `docker-compose.yml`은 `postgres`/`minio` 컨테이�
 
 ## Considered Options
 
-- **단일 파일 + profile로 백엔드 선택**: `app`이 profile 서비스(`minio` 등)에
+- **단일 파일 + profile로 백엔드 선택**: `app`이 profile 서비스(스토리지 컨테이너 등)에
   `depends_on`을 걸 수 없고(비활성 profile 의존은 검증 오류), `STORAGE_ENDPOINT`를
   profile에 따라 바꿀 방법이 없다. 파일 목록으로 지원 백엔드를 인지할 수도
   없다. 보류.
 - **백엔드별 self-contained 파일(복사해서 쓰는 완결 파일)**: `app`/`gc`/`backup`/
-  `restore` 정의가 파일 3개에 그대로 복제돼, env 하나를 바꿀 때마다 세 곳을
+  `restore` 정의가 파일마다 그대로 복제돼, env 하나를 바꿀 때마다 모든 파일을
   고쳐야 한다. 보류.
 - **compose `include:`**: 포함된 파일의 서비스를 override할 수 없어(충돌 오류)
   `STORAGE_ENDPOINT` 재정의·`depends_on` 추가가 불가능하다. 보류.
-- **MinIO를 base 기본으로 유지하고 나머지만 override**: ADR-0003 배경에 기록된
-  오독(MinIO가 기본이라는 인상)을 그대로 남긴다. 보류.
+- **특정 백엔드를 base 기본으로 유지하고 나머지만 override**: 그 백엔드가 기본이고
+  VersityGW/S3는 시연이라는 인상을 그대로 남긴다. 보류.
 
 ## Consequences
 
-- **breaking**: base 단독 `docker compose up`이 더 이상 `postgres`/`minio`를 띄우지
+- **breaking**: base 단독 `docker compose up`이 더 이상 `postgres`와 스토리지 컨테이너를 띄우지
   않는다. 기존 로컬 개발 명령은 `-f docker-compose.yml -f docker-compose.versitygw.yml
--f docker-compose.postgres.yml`(또는 minio)로 바뀐다. `SHARED_DB_HOST`/`AWS_S3_*`
+-f docker-compose.postgres.yml`로 바뀐다. `SHARED_DB_HOST`/`AWS_S3_*`
   변수는 사라진다.
 - ADR-0003 Consequences 1번("스택마다 전용 postgres를 새로 만드는 구조")은 이
   배치로 해소된다. 멀티 인스턴스 절차는
   `docs/deployment/multi-instance-versitygw.md`가 이 배치 기준으로 갱신됐다.
-- nginx reverse-proxy 샘플은 `minio:9000` upstream 고정의 개발·검증 도구로
+- nginx reverse-proxy 샘플은 `versitygw:7070` upstream 고정의 개발·검증 도구로
   `docs/deployment/compose.nginx-demo.yml`에 둔다. Storix 필수 구성이 아니므로
-  백엔드 중립화(VersityGW upstream)는 계획하지 않는다.
-- 로컬 검증은 podman-compose `config`로 조합 6종(base 단독, +versitygw,
-  +versitygw+postgres+ci, +minio+postgres+`docs/deployment/compose.nginx-demo.yml`,
-  +minio, +s3; gc/backup/restore profile 포함)의 병합 결과를 확인했다. 실 기동은 로컬 podman-compose의 기본
+  백엔드 중립화는 계획하지 않는다.
+- 로컬 검증은 podman-compose `config`로 조합별(base 단독, +versitygw,
+  +versitygw+postgres+ci, +versitygw+postgres+`docs/deployment/compose.nginx-demo.yml`,
+  +s3; gc/backup/restore profile 포함) 병합 결과를 확인했다. 실 기동은 로컬 podman-compose의 기본
   네트워크 DNS 결함 때문에 불가능하며, `dev` push 시
   `.github/workflows/versity-demo-smoke.yml`이 실제 Docker Compose로 검증한다.
 - `.env`의 `COMPOSE_FILE`을 docker compose가 읽는다는 것은 compose-go의 옵션 적용

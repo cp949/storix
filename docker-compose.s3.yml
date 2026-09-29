@@ -8,7 +8,7 @@
 #   - AWS 콘솔/CLI로 버킷을 미리 만들어 둔다(자동 생성 없음 — 자격증명에
 #     버킷 생성 권한까지 요구하지 않기 위해).
 #   - IAM 사용자를 만들고 해당 버킷에 한정한 최소 권한 access key를 발급한다.
-#     Storix는 모든 업로드를 크기 미지정 스트림으로 보내 minio-js가 항상
+#     Storix는 모든 업로드를 크기 미지정 스트림으로 보내며 16MiB를 넘는 파일은
 #     멀티파트 경로를 타므로 GetObject/PutObject/DeleteObject/ListBucket에
 #     더해 ListBucketMultipartUploads/AbortMultipartUpload/
 #     ListMultipartUploadParts가 필요하다. 정책 JSON은 README.s3.md 참고.
@@ -28,8 +28,8 @@
 # 없다(별도 override 파일에만 존재). 진짜 AWS 시크릿이 흘러들어갈 다른
 # 서비스가 없다.
 #
-# 한계: MinioBlobStorage는 minio SDK Client를 그대로 쓰므로 정적 access/secret
-# key만 지원한다 — IAM 역할, STS 세션 토큰은 미지원.
+# 한계: S3BlobStorage는 S3Client에 정적 access/secret key만 설정하므로
+# 그 방식만 지원한다 — IAM 역할, STS 세션 토큰은 미지원.
 #
 # 값을 비워두면 compose 파싱은 통과하지만, app이 실제로 스토리지에 접근하는
 # 시점(부팅 헬스체크 또는 최초 요청)에 인증 실패로 드러난다 — base와 같은

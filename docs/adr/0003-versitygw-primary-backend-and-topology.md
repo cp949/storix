@@ -8,20 +8,15 @@
 
 ## 배경
 
-Storix는 개발 초기 편의상 MinIO로 시작했지만, 실사용처는 MinIO가 아니라
-VersityGW를 스토리지 백엔드로 쓴다. 루트 `docker-compose.yml`(base)이 여전히
-`app`/`gc`/`backup`/`restore`에 `STORAGE_ENDPOINT: minio`를 하드코딩된 기본값으로
-두고 있어, 코드/설정만 보면 "MinIO가 기본이고 VersityGW/S3는 그 대안을
-증명하는 데모"로 오독하기 쉽다 — 실제로 이 오독 때문에 세션 하나가 잘못된
-설계 권고(`docker-compose.minio-demo.yml`로의 재구성 제안)를 낸 적이 있다.
-방향은 정반대다: VersityGW가 목적지이고, MinIO/S3 지원은 이미 마련된
-STORAGE_* 벤더중립 추상화(`apps/api/docs/adr/0012-minio-sdk-generic-s3-client.md`)
-덕에 별도 작업 없이 따라오는 파생 결과일 뿐이다.
+Storix의 스토리지 백엔드는 VersityGW다. 코드는 S3 API 호환 클라이언트 하나
+(`STORAGE_*` 벤더중립 추상화, `apps/api/docs/adr/0012-s3-client-sdk.md`)로 VersityGW와
+그 밖의 S3 호환 백엔드를 지원한다. 루트 `docker-compose.yml`(base)은 백엔드를
+정하지 않고, 백엔드는 override 파일이 정한다.
 
 ## 결정
 
-1. 목표 기본 스토리지 백엔드는 VersityGW다. MinIO/S3 지원 유지 자체가 목표가
-   아니라, STORAGE_* 추상화를 지키기만 하면 자동으로 계속 따라오는 부산물이다.
+1. 목표 기본 스토리지 백엔드는 VersityGW다. 그 밖의 S3 호환 백엔드 지원은
+   STORAGE_* 추상화를 지키기만 하면 자동으로 따라온다.
 2. 여러 Storix WAS(API 서버) 인스턴스는 Postgres DB를 공유한다 — 인스턴스마다
    전용 DB를 새로 두지 않는다.
 3. 스토리지 배치 형태는 기반 매체가 NAS인지 아닌지에 따라 갈린다:
