@@ -85,9 +85,10 @@ if [ -n "$demo_was_container" ]; then
   if [ -z "$rss_before" ] || [ -z "$rss_after" ]; then
     log "   경고: RSS 값을 읽지 못해 RSS 기록을 건너뜀"
   else
-    # 정보성 기록이며 통과/실패 기준이 아니다. fresh 프로세스는 할당/GC 지연으로
-    # fixture 크기의 약 2배까지 늘 수 있어 임계값 판정에 쓸 수 없다. 스트리밍
-    # 여부는 storix-http.client.spec.ts의 백프레셔 테스트가 검증한다.
+    # 정보성 기록이며 통과/실패 기준이 아니다. fresh 프로세스는 다 쓴 Buffer가 GC 전까지
+    # 쌓여 fixture 크기와 무관한 상한까지 늘 수 있어 임계값 판정에 쓸 수 없다.
+    # 본문 보유 여부는 storix-http.client.spec.ts의 회귀 테스트가 검증하고,
+    # 수신 측 정지 시의 백프레셔는 같은 파일의 백프레셔 테스트가 검증한다.
     log "   demo-was RSS 증가량: $((rss_after - rss_before)) KiB(정보성 기록, 판정 기준 아님)"
   fi
 else

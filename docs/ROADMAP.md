@@ -332,8 +332,12 @@ WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으�
 - [x] demo1 실사용 검증 완료: Chromium으로 MIME 변경 UI와 presigned 다운로드 응답 헤더를
       확인했다. 다운로드 `Content-Type`이 변경한 MIME을 반영하지 않던 결함을 고쳤다.
       Firefox·WebKit과 그 밖의 브라우저 UI(이동·복사·공개 링크 등)는 확인하지 않았다.
-- [ ] WAS 업로드 메모리 상한 판정: 16 MiB 업로드 RSS가 smoke 기준(8 MiB)을 넘은 원인을
-      정리해 기준을 조정하거나 코드를 고친다. 현재는 정보성 기록이다(#9).
+- [ ] WAS 업로드 메모리 상한 판정: 원인은 Node 24.20.0 내장 `fetch`가 스트림 요청 본문을
+      요청이 끝날 때까지 보유하는 것이었다([TRP-002](./traps/TRP-002-node-fetch-stream-body-retention.md)).
+      `undici` 8의 `fetch`로 바꿔 256 MiB 업로드의 RSS 피크를 396 MiB에서 200 MiB로
+      줄였고 64 MiB 업로드와 같은 수준이다. cold 프로세스의 첫 16 MiB 업로드는 여전히
+      RSS가 +27~30 MiB 늘며, 크기와 무관한 GC 지연 성분이다. smoke의 8 MiB 기준을 이
+      성분에 어떻게 적용할지 결정이 남아 있다(#9).
 - [ ] 릴리즈 태그 정책 확인: 현재 태그가 없고 `CHANGELOG.md`는 `[0.1.0]` baseline만
       있다. 1.0 확정 시점의 태그 번호를 정한다.
 

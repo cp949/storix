@@ -138,6 +138,8 @@
 
 ### Fixed
 
+- demo1 WAS가 업로드 크기에 비례해 메모리를 쓰던 문제를 고쳤다. Node 24.20.0 내장 `fetch`가 스트림 요청 본문을 요청이 끝날 때까지 보유하므로 Storix 호출의 `fetch`를 `undici` 8.10.2로 바꿨다. 256 MiB 업로드의 RSS 피크가 396 MiB에서 200 MiB로 줄었고 64 MiB 업로드와 같은 수준이다.
+
 - `GET /fs/presigned-download`가 발급한 URL의 응답 `Content-Type`이 `setMimeType`으로 바꾼 MIME type을 무시하고 업로드 시 저장된 값을 돌려주던 문제를 고쳤다. URL이 노드의 MIME type을 `response-content-type`으로 서명하므로 `GET /fs/content`·공개 URL과 같은 값을 응답한다. 이미 발급된 URL은 만료 전까지 이전 값을 응답한다.
 
 - 변경 feed는 한 transaction에서 자식을 생성·삭제한 뒤에도 커밋된 디렉터리 listing revision이 바뀌면 최종 revision의 `updated` 이벤트를 기록한다. 최종 상태가 부재인 자식의 이벤트는 기록하지 않는다.
