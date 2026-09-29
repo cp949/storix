@@ -68,6 +68,37 @@ describe('S3BlobStorage', () => {
     await expect(deleting.delete('key')).rejects.toBe(unknown);
   });
 
+  it('멀티파트 업로드 중 파트 전송이 실패하면 AbortMultipartUpload로 미완성 파트를 정리한다', async () => {
+    const uploadId = 'upload-1';
+    const { client, requests } = createStubS3Client((request) => {
+      const { method, query } = request as { method: string; query?: Record<string, string> };
+      if (method === 'POST' && query && 'uploads' in query) {
+        return {
+          statusCode: 200,
+          body: `<InitiateMultipartUploadResult><Bucket>bucket</Bucket><Key>key</Key><UploadId>${uploadId}</UploadId></InitiateMultipartUploadResult>`,
+        };
+      }
+      if (method === 'PUT' && query?.partNumber) {
+        return { statusCode: 500, body: '<Error><Code>InternalError</Code><Message>fail</Message></Error>' };
+      }
+      return { statusCode: 204 };
+    });
+    const storage = new S3BlobStorage(client, 'bucket', null);
+    // 16MiB 파트 크기를 넘겨 멀티파트 경로로 들어가게 한다.
+    const source = Readable.from(
+      (async function* () {
+        for (let sent = 0; sent < 20; sent += 1) yield Buffer.alloc(1024 * 1024, 1);
+      })(),
+    );
+
+    await expect(storage.put('key', source)).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+
+    const aborts = (requests as { method: string; query?: Record<string, string> }[]).filter(
+      (request) => request.method === 'DELETE' && request.query?.uploadId === uploadId,
+    );
+    expect(aborts).toHaveLength(1);
+  });
+
   it('range.end가 range.start보다 작으면 거부한다', async () => {
     const storage = new S3BlobStorage({} as S3Client, 'bucket', null);
 

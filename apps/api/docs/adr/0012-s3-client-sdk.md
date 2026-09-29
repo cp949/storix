@@ -16,8 +16,9 @@
   붙이는데, 일부 S3 호환 백엔드가 이를 거부한다.
 
 크기를 모르는 stream 업로드는 `@aws-sdk/lib-storage`의 `Upload`로 처리한다.
-`partSize`는 16MiB, `queueSize`는 1이다. 업로드 중 버퍼링하는 메모리는 전송 중인 파트와
-누적 중인 잔여분을 합쳐 파트 크기의 약 2배(약 32MiB)이며 파일 크기와 무관하다. 빈 stream은 `Upload`를 거치지 않고 본문 없는 단일 `PutObject`로
+`partSize`는 16MiB, `queueSize`는 1이다. 업로드 중 버퍼링하는 메모리는 파일 크기와 무관하다.
+전송 중인 파트와 누적 중인 잔여분, 파트를 자를 때 합치는 복사본이 겹쳐 `arrayBuffers` 증가 피크가
+64MiB(파트 크기의 4배, 회수 전 버퍼 포함)로 실측됐다(통합 테스트가 상한 96MiB로 회귀를 잡는다). 빈 stream은 `Upload`를 거치지 않고 본문 없는 단일 `PutObject`로
 0-byte 객체를 만든다. presigned URL은 `@aws-sdk/s3-request-presigner`로 서명하며
 공개 endpoint용 별도 `S3Client`(`STORAGE_PUBLIC_CLIENT`)를 쓴다(ADR-0013).
 

@@ -123,31 +123,37 @@ describe('S3BlobStorage', () => {
     expect(size).toBe(total);
   }, 60000);
 
-  it('대용량 stream 업로드 중 RSS가 파일 크기만큼 늘지 않는다', async () => {
+  it('대용량 stream 업로드 중 버퍼 메모리가 파일 크기와 무관하게 파트 크기 안팎에 머문다', async () => {
     const chunk = Buffer.alloc(1024 * 1024, 1);
     // 업로드 경로(SDK 모듈 로딩·JIT·소켓)를 먼저 데워 콜드스타트 메모리를 측정에서 뺀다.
-    const upload = async (key: string, total: number): Promise<number> => {
-      const before = process.memoryUsage().rss;
-      let peak = before;
+    const upload = async (key: string, total: number): Promise<{ rss: number; arrayBuffers: number }> => {
+      const before = process.memoryUsage();
+      let peakRss = before.rss;
+      let peakArrayBuffers = before.arrayBuffers;
       const source = Readable.from(
         (async function* () {
           for (let sent = 0; sent < total; sent += chunk.length) {
             yield chunk;
-            peak = Math.max(peak, process.memoryUsage().rss);
+            const usage = process.memoryUsage();
+            peakRss = Math.max(peakRss, usage.rss);
+            peakArrayBuffers = Math.max(peakArrayBuffers, usage.arrayBuffers);
           }
         })(),
       );
       await storage.put(key, source);
-      return peak - before;
+      return { rss: peakRss - before.rss, arrayBuffers: peakArrayBuffers - before.arrayBuffers };
     };
     await upload('blobs/ab/test-memory-warmup', 20 * 1024 * 1024);
 
     const total = 320 * 1024 * 1024;
     const growth = await upload('blobs/ab/test-memory', total);
 
-    // 전체 버퍼링이면 증가량이 320MiB 이상이다. 실측은 파트 버퍼(16MiB)와 GC 지연 포함 40MiB 안팎이라
-    // 파일 크기의 절반을 상한으로 둔다.
-    expect(growth).toBeLessThan(total / 2);
+    // Part 버퍼는 Buffer(ArrayBuffer)라 arrayBuffers로 재는 편이 RSS(GC·할당기 지연 포함)보다 안정적이다.
+    // 실측 피크는 64MiB(PART_SIZE 4배, 회수 전 버퍼 포함)로 반복 실행에서 같았다. 상한 96MiB는 이 값에
+    // 여유를 두면서 queueSize를 늘린 부분 버퍼링 회귀와 통버퍼링(320MiB)을 모두 잡는다.
+    expect(growth.arrayBuffers).toBeLessThan(96 * 1024 * 1024);
+    // RSS는 GC 지연 때문에 흔들리므로 통버퍼링만 잡는 느슨한 상한을 유지한다.
+    expect(growth.rss).toBeLessThan(total / 2);
   }, 120000);
 
   it('list는 1000개를 넘는 object도 모두 반환한다', async () => {
