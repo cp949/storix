@@ -1,5 +1,9 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
+import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import { mockFetchOnce } from '../../test/fetch-mock.js';
 import { StorixUnreachableError } from './storix-client.errors.js';
@@ -75,5 +79,54 @@ describe('StorixHttpClient', () => {
     await expect(client.requestJson({ method: 'GET', path: '/api/v2/probe' })).rejects.toBeInstanceOf(
       StorixUnreachableError,
     );
+  });
+
+  it('수신 측이 본문을 읽지 않으면 소스 스트림을 상한 이상 미리 읽지 않는다(백프레셔)', async () => {
+    const chunkBytes = 64 * 1024;
+    const totalBytes = 64 * 1024 * 1024;
+    const readAheadLimitBytes = 16 * 1024 * 1024;
+    let pulledBytes = 0;
+
+    // 본문을 소비하지 않는 수신 서버. 일정 시간 뒤 소켓을 끊어 요청을 종료한다.
+    const server = createServer((req, res) => {
+      req.pause();
+      setTimeout(() => {
+        req.destroy();
+        res.destroy();
+      }, 500);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const source = new Readable({
+      read() {
+        if (pulledBytes >= totalBytes) {
+          this.push(null);
+          return;
+        }
+        pulledBytes += chunkBytes;
+        this.push(Buffer.alloc(chunkBytes, 1));
+      },
+    });
+    const streamingClient = new StorixHttpClient({
+      storixBaseUrl: `http://127.0.0.1:${port}`,
+      storixApiKey: 'secret-key',
+    } as DemoWasConfig);
+
+    try {
+      await streamingClient
+        .request({
+          method: 'PUT',
+          path: '/api/v2/probe',
+          body: Readable.toWeb(source) as ReadableStream,
+          duplex: 'half',
+        })
+        .catch(() => undefined);
+    } finally {
+      source.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    expect(pulledBytes).toBeLessThan(readAheadLimitBytes);
   });
 });
