@@ -29,6 +29,10 @@ User-facing changes go in `CHANGELOG.md` (Keep a Changelog format) under `## [Un
 
 브레인스토밍으로 확정한 작업이나 `docs/ROADMAP.md` 항목 하나처럼 한 번에 끝내기 큰 작업은 rubber-workflow(DELTA 단위, 탄력적 추가, `dev` 브랜치 + 재그룹화 병합)를 따른다. See `docs/agents/rubber-workflow.md`.
 
+### 문서·주석 작성
+
+소스·테스트 주석과 `docs/` 문서를 새로 쓰거나 고칠 때 `docs/agents/writing-styles.md`를 따른다.
+
 ### 문서 배치
 
 - 일회성 작업 문서(설계 초안, 구현 계획, checklist, DELTA)는 `_works/<yyyyMMdd>-NN-<제목>/`에 둔다. git 추적 대상이 아니다.
