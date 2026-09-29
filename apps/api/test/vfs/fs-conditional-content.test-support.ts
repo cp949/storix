@@ -98,6 +98,105 @@ export function registerFsConditionalContentContract(ctx: FsHttpContext) {
       expect(stat.revision).not.toBe(created.body.resource.revision);
     });
 
+    it('setMimeType은 receipt로 재생되고 값 변경 뒤 재사용은 409, 응답 유실 뒤 새 key 재시도는 412 current.mimeType으로 완료를 판정한다', async () => {
+      const namespaceId = await ctx.createNamespace('set-mimetype-http');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const created = await request(ctx.httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/doc.bin' })
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'set-mimetype')
+        .set('X-If-Absent', 'true')
+        .set('Content-Type', 'text/plain')
+        .send(Buffer.from('body'))
+        .expect(201);
+      const setMimeType = (key: string, ifRevision: string, mimeType: string) =>
+        request(ctx.httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'set-mimetype')
+          .send({ kind: 'setMimeType', path: '/doc.bin', ifRevision, mimeType });
+
+      const key = randomUUID();
+      const first = await setMimeType(key, created.body.resource.revision, 'image/png').expect(200);
+      expect(first.body.resource).toMatchObject({ id: created.body.resource.id, mimeType: 'image/png' });
+      const replay = await setMimeType(key, created.body.resource.revision, 'image/png').expect(200);
+      expect(replay.body).toEqual(first.body);
+      expect(replay.headers['x-request-id']).toBe(first.headers['x-request-id']);
+
+      expect(
+        (await setMimeType(key, created.body.resource.revision, 'image/jpeg').expect(409)).body.code,
+      ).toBe('MUTATION_KEY_REUSED');
+
+      // 첫 응답을 잃었다고 가정하고 새 key + 원래(이제는 낡은) revision으로 재시도하면 412다.
+      // current.mimeType이 이미 바뀐 값이면 첫 mutation이 완료됐다고 판정할 수 있다.
+      const retried = await setMimeType(
+        randomUUID(),
+        created.body.resource.revision,
+        'image/gif',
+      ).expect(412);
+      expect(retried.body.current).toMatchObject({ id: created.body.resource.id, mimeType: 'image/png' });
+
+      const stat = (
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/doc.bin' }).expect(200)
+      ).body;
+      expect(stat.mimeType).toBe('image/png');
+      expect(stat.revision).not.toBe(created.body.resource.revision);
+    });
+
+    it('setMimeType 대상이 디렉터리면 409 VFS_IS_DIRECTORY이고, 세미콜론 포함 mimeType은 400이며 receipt로 재생된다', async () => {
+      const namespaceId = await ctx.createNamespace('set-mimetype-http-errors');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
+      const dirStat = (
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/dir' }).expect(200)
+      ).body;
+      const dirResult = await request(ctx.httpServer)
+        .post(`${base}/mutations`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'set-mimetype-errors')
+        .send({ kind: 'setMimeType', path: '/dir', ifRevision: dirStat.revision, mimeType: 'image/png' })
+        .expect(409);
+      expect(dirResult.body.code).toBe('VFS_IS_DIRECTORY');
+
+      const created = await request(ctx.httpServer)
+        .post(`${base}/content/conditional`)
+        .query({ path: '/file.bin' })
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Mutation-Scope', 'set-mimetype-errors')
+        .set('X-If-Absent', 'true')
+        .set('Content-Type', 'text/plain')
+        .send(Buffer.from('body'))
+        .expect(201);
+      const key = randomUUID();
+      const setMimeType = (mimeType: string) =>
+        request(ctx.httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'set-mimetype-errors')
+          .send({
+            kind: 'setMimeType',
+            path: '/file.bin',
+            ifRevision: created.body.resource.revision,
+            mimeType,
+          });
+
+      // 세미콜론 파라미터가 있으면 파싱 단계에서 거부한다(관대한 대체를 하지 않는다).
+      // 이 400도 다른 요청 형식 오류와 같은 receipt 재생 규칙을 따른다: 같은 key 재시도는
+      // 같은 body·X-Request-Id를 재생하고, 유효한 값으로 같은 key를 재사용하면 409다.
+      const malformed = await setMimeType('text/plain; charset=utf-8').expect(400);
+      expect(malformed.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
+      const replay = await setMimeType('text/plain; charset=utf-8').expect(400);
+      expect(replay.body).toEqual(malformed.body);
+      expect(replay.headers['x-request-id']).toBe(malformed.headers['x-request-id']);
+      expect((await setMimeType('image/png').expect(409)).body.code).toBe('MUTATION_KEY_REUSED');
+
+      const stat = (
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/file.bin' }).expect(200)
+      ).body;
+      expect(stat.mimeType).toBe('text/plain');
+    });
+
     it('X-Expires-In 생성은 expiresAt을 응답·stat에 노출하고 만료 값은 fingerprint에 포함된다', async () => {
       const namespaceId = await ctx.createNamespace('conditional-expiry');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;

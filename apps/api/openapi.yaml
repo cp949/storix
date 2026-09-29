@@ -460,6 +460,19 @@ paths:
         재시도해 412를 받으면 `current.id`가 같은 파일이고 `current.expiresAt`이
         null인지 확인해 확정 완료를 판정할 수 있다.
 
+        **setMimeType.** bytes·Blob·논리 사용량은 바뀌지 않고 `expiresAt`도 읽거나
+        쓰지 않아 그대로 유지된다(만료 예정 FILE도 변경할 수 있다). `mimeType`은
+        upload-session과 같은 엄격 검증을 거친다: 파라미터(세미콜론 등) 포함이나
+        형식 오류는 조용히 대체하지 않고 400 `VFS_INVALID_MUTATION_REQUEST`로
+        거부한다(ADR-0028). 이 400도 다른 요청 형식 오류와 같은 receipt 규칙을 따르므로
+        같은 key 재시도는 최초 status·body·X-Request-Id를 재생하고, 유효한 값으로
+        같은 key를 재사용하면 409 MUTATION_KEY_REUSED다. 요청 값이 정규화 후 현재
+        저장값과 같으면 변경 없이 200이고 `affectedRevisions`는 빈 배열이다(revision을
+        소모하지 않는다). 값이 실제로 바뀌면 200과 새 revision을 담은
+        `affectedRevisions`(대상+조상)를 반환한다. DIRECTORY는 409 VFS_IS_DIRECTORY.
+        성공 응답을 잃고 새 key로 재시도해 412를 받으면 `current.mimeType`이 이미
+        바뀐 값인지 확인해 완료 여부를 판정할 수 있다.
+
         **copy 만료.** `expiresInSeconds`는 copy에서만 허용한다. 새로 생기는 모든 FILE에
         복사 transaction의 DB 시각 + 초를 적용하며, 생략하면 원본 만료와 관계없이
         만료가 없다. move에 보내면 400 VFS_INVALID_EXPIRY다. 만료 입력 오류는
@@ -503,6 +516,14 @@ paths:
                     kind: { type: string, enum: [persist] }
                     path: { type: string }
                     ifRevision: { type: string, pattern: '^r1\.' }
+                - type: object
+                  required: [kind, path, ifRevision, mimeType]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, enum: [setMimeType] }
+                    path: { type: string }
+                    ifRevision: { type: string, pattern: '^r1\.' }
+                    mimeType: { type: string, maxLength: 255 }
                 - type: object
                   required: [kind, source, destination, sourceRevision, destinationAbsent]
                   additionalProperties: false
