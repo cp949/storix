@@ -1,15 +1,11 @@
 openapi: 3.0.3
 info:
   title: Storix API
-  version: 0.1.0-draft
+  version: 1.0.0
   description: |
     Storix는 호출 서버가 사용하는 독립 VFS(Virtual File System) 저장 서버다. 파일의
     업무적 의미와 최종 사용자 인증·권한 판단은 호출 서버의 책임이며 Storix 도메인에
     포함하지 않는다. 용어 정의는 `apps/api/CONTEXT.md` 참고.
-
-    **초안 상태**: apps/demo로 이 API 모양이 실사용 검증되기 전에 작성됐다
-    (`docs/ROADMAP.md`의 "실행 순서" 참고). demo 피드백에 따라 breaking change가
-    발생할 수 있다.
 
     이 스펙은 `namespace`/`fs` 컨트롤러만 다룬다. `/health/*`(인증 예외 대상)와
     `/metrics`(운영 관측용)는 외부 API 계약이 아니라서 포함하지 않는다.

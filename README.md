@@ -416,7 +416,7 @@ pnpm --filter @cp949/storix-api test:integration   # testcontainers — Docker/P
 - WAS와 Storix의 서비스 간 신뢰: [인증과 네트워크 구성 방법](docs/guides/was-storix-service-trust.md)
 - 컨텍스트 목록: `CONTEXT-MAP.md`
 - api 도메인 용어: `apps/api/CONTEXT.md`
-- API 계약(OpenAPI, 초안): `apps/api/openapi.yaml`
+- API 계약(OpenAPI): `apps/api/openapi.yaml`
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 릴리즈, 멀티 인스턴스): `docs/deployment/`
 - 선택형 배포 시나리오와 실제 설정: `docs/deployment/scenarios/`

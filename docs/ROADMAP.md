@@ -33,7 +33,6 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
 
 남은 항목:
 
-- `openapi.yaml` draft 해제(1.0 확정): 아래 "5. API 계약 고정"의 확정 조건 참고
 - `apps/admin` 화면 설계·구현(오픈 이슈 참고)
 - `apps/demo2`(mTLS 등 풀보안 시나리오, 미착수)
 
@@ -49,7 +48,7 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
    인증)의 사용성을 검증하고, `STORAGE-02`/`STORAGE-03`(presigned URL + nginx
    reverse-proxy)을 실제로 재현해 검증한다. 발견된 불편함을 api에 반영한다.
    `apps/demo1`을 구현했고 전체 스택 HTTP smoke 20단계와 Chromium의 MIME 변경·다운로드 응답
-   헤더 확인을 통과했다. 남은 조건은 "5. API 계약 고정"의 1.0 확정 조건이 추적한다.
+   헤더 확인을 통과했다. 이를 근거로 `openapi.yaml`을 1.0.0으로 확정했다("5. API 계약 고정" 참고).
 4. **배포/온보딩 + API 계약 고정**: `DEPLOY-01`~~`DEPLOY-06`, `API-01`~~`API-03`.
    apps/demo로 API 모양이 검증된 뒤 스펙과 버저닝을 고정한다 — 먼저 고정하면
    demo 피드백으로 다시 깨야 한다.
@@ -319,27 +318,26 @@ WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으�
 - [x] API-03: **버저닝/breaking-change 정책 수립** — 릴리즈 태그는 SemVer,
       breaking change는 `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로
       표현한다(`docs/adr/0007`, `apps/api/docs/adr/0020`). `package.json` 4개의
-      version 필드는 버전 정보로 쓰지 않는다. `openapi.yaml`의 초안 문구·1.0
-      확정은 `apps/demo` 실사용 검증(로드맵 "실행 순서" 3번) 이후로 유지한다.
-      정책 수립은 완료했고, 1.0 확정은 아래 "1.0 확정 조건"이 충족될 때까지 보류한다.
+      version 필드는 버전 정보로 쓰지 않는다. `openapi.yaml`의 1.0 확정은
+      `apps/demo` 실사용 검증 이후로 미뤘고 아래 "1.0 확정 조건"이 충족돼 완료했다.
 
 ### 1.0 확정 조건
 
-`openapi.yaml`의 "초안 상태" 문구와 `info.version`의 `-draft` 접미사를 제거하려면
-다음을 모두 만족해야 한다. 확정 기록은 ADR-0020 지시에 따라 새 ADR 또는
-`CHANGELOG.md` 항목으로 남긴다.
+`openapi.yaml`의 draft를 해제하는 조건이다. 세 조건을 모두 만족해 `info.version`을
+`1.0.0`으로 확정했다. 기록은 [ADR-0030](../apps/api/docs/adr/0030-openapi-1-0-finalization.md)이다.
 
 - [x] demo1 실사용 검증 완료: Chromium으로 MIME 변경 UI와 presigned 다운로드 응답 헤더를
       확인했다. 다운로드 `Content-Type`이 변경한 MIME을 반영하지 않던 결함을 고쳤다.
       Firefox·WebKit과 그 밖의 브라우저 UI(이동·복사·공개 링크 등)는 확인하지 않았다.
-- [ ] WAS 업로드 메모리 상한 판정: 원인은 Node 24.20.0 내장 `fetch`가 스트림 요청 본문을
+- [x] WAS 업로드 메모리 상한 판정(#9): 원인은 Node 24.20.0 내장 `fetch`가 스트림 요청 본문을
       요청이 끝날 때까지 보유하는 것이었다([TRP-002](./traps/TRP-002-node-fetch-stream-body-retention.md)).
       `undici` 8의 `fetch`로 바꿔 256 MiB 업로드의 RSS 피크를 396 MiB에서 200 MiB로
-      줄였고 64 MiB 업로드와 같은 수준이다. cold 프로세스의 첫 16 MiB 업로드는 여전히
-      RSS가 +27~30 MiB 늘며, 크기와 무관한 GC 지연 성분이다. smoke의 8 MiB 기준을 이
-      성분에 어떻게 적용할지 결정이 남아 있다(#9).
-- [ ] 릴리즈 태그 정책 확인: 현재 태그가 없고 `CHANGELOG.md`는 `[0.1.0]` baseline만
-      있다. 1.0 확정 시점의 태그 번호를 정한다.
+      줄였고 64 MiB 업로드와 같은 수준이다. 보유 여부는 `storix-http.client.spec.ts`의
+      회귀 테스트가 판정한다(수정 전 33.4 MB 보유로 실패). smoke의 RSS는 정보성 기록으로
+      유지한다. cold 첫 16 MiB의 +27~30 MiB는 크기와 무관한 GC 지연 성분이고, 16~32 MiB
+      업로드의 RSS 증가량은 GC 시점 잡음(-0.6~+11.6 MiB)이 커서 임계값 판정에 쓸 수 없다.
+- [x] 릴리즈 태그 번호: 첫 릴리즈 태그는 `v1.0.0`이다. 태그 push는 사용자가
+      `docs/deployment/release.md` 절차로 직접 한다.
 
 ## 오픈 이슈
 

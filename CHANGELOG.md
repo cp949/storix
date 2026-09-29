@@ -10,6 +10,7 @@
 
 ### Changed
 
+- `openapi.yaml`을 1.0.0으로 확정했다. `info.version`의 `-draft` 접미사와 "초안 상태" 문단을 제거했다. 첫 릴리즈 태그는 `v1.0.0`이다. 기록은 `apps/api/docs/adr/0030`이다.
 - 관리자 `PATCH /api/v2/admin/namespaces/{id}/quota`가 `maxTotalLogicalBytes` 외 필드가 있는 요청을 400 `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`로 거부한다(이전에는 무시하고 200). `openapi.yaml`은 같은 key 재사용 응답을 422 `IDEMPOTENCY_KEY_REUSED`로 정정하고, 사용량보다 낮은 상한을 받아들이며 새 저장만 413으로 막는 정책을 명시했다.
 - `openapi.yaml`에 변경 요청의 `Idempotency-Key`·`X-Mutation-Scope` 누락·형식 오류가 400 `VFS_INVALID_MUTATION_REQUEST`임을 명시했다. `IDEMPOTENCY_KEY_REQUIRED`는 namespace 생성과 관리자 PATCH에만 쓴다. 동작 변경은 없다.
 - `openapi.yaml`의 `POST /fs/mkdir` 응답 설명을 실제 동작에 맞췄다. 이미 있는 디렉터리를 `parents=true`로 다시 요청하면 200이고, `parents`를 생략하거나 false로 하면 409 `VFS_ALREADY_EXISTS`다. 동작 변경은 없다.
