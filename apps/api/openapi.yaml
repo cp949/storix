@@ -184,6 +184,12 @@ info:
     | `STORAGE_FAILURE` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
     | `INTERNAL_ERROR` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
 
+    **변경 요청 헤더 오류.** `content/conditional`, `mutations`, `snapshots`(생성·복원·삭제), `upload-sessions` 생성,
+    휴지통 `restore`는 `Idempotency-Key`(UUID 형식)와 `X-Mutation-Scope`(비어 있지 않고 UTF-8 128바이트 이하) 중 하나라도
+    없거나 형식이 틀리면 400 `VFS_INVALID_MUTATION_REQUEST`다. 이 요청은 receipt를 남기지 않으므로 헤더를 고쳐 같은
+    key로 다시 보낼 수 있다. `IDEMPOTENCY_KEY_REQUIRED`는 이 endpoint들이 아니라 namespace 생성과 관리자 PATCH가
+    key를 보내지 않았을 때의 코드이며, namespace 생성은 key 형식을 검증하지 않는다.
+
     `VFS_FEATURE_DISABLED`의 메시지에는 비활성 capability ID가 포함된다. 현재 등록된 선택 capability는 기본 비활성 `resumable-upload`, `change-feed`이며, 활성 상태는 `GET /api/v2/namespaces/{id}/capabilities`로 조회한다.
 
     5xx body의 `message`는 고정된 안전 문구이며 내부 예외 메시지, 저장소 주소, 파일 바이트, 키·자격 증명을 포함하지
