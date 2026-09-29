@@ -22,17 +22,20 @@ Storix를 사내 전용 서버에서 **고객이 자기 인프라에 self-host�
 업로드/다운로드, mv/rm/cp(Blob-level COW), orphan Blob GC, 구조화 로깅 +
 requestId.
 
-모노레포 전환(`MONO-01`~`MONO-07`) 완료: `apps/api`·`apps/admin`·`apps/demo`·
+모노레포 전환(`MONO-01`~`MONO-07`) 완료: `apps/api`·`apps/admin`·`apps/demo1`·
 `packages/` 구조로 전환, pnpm + Turborepo 도입, `Dockerfile` 베이스 이미지를
 Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. 저장소 구조
 전환" 체크리스트 참고.
 
-확인된 갭:
+실행 순서 1·2·4·5 단계의 체크리스트 항목(`SEC-01`~`SEC-05`, `STORAGE-01`~`03`,
+`VFS-01`~`09`, `OPS-01`~`02`, `DEPLOY-01`~`06`, `API-01`~`03`)은 모두 완료했다.
+`apps/demo1`(문서 아카이브 UI + WAS)은 구현해 dev에 병합했다.
 
-- 호출 서버 ↔ Storix 간 서비스 인증 없음
-- ADR-0001의 ENCRYPTED 암호화 정책: 설계만 있고 구현 없음
-- 감사 로그(누가/언제/어떤 namespace·파일에 접근) 없음
-- CI/의존성 취약점 스캔 없음 (`.github` 부재)
+남은 항목:
+
+- `openapi.yaml` draft 해제(1.0 확정): 아래 "5. API 계약 고정"의 확정 조건 참고
+- `apps/admin` 화면 설계·구현(오픈 이슈 참고)
+- `apps/demo2`(mTLS 등 풀보안 시나리오, 미착수)
 
 ## 실행 순서
 
@@ -45,6 +48,8 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
 3. **apps/demo 구현 및 반복 개선**: 실사용 시나리오로 fs API와 `SEC-01`(서비스
    인증)의 사용성을 검증하고, `STORAGE-02`/`STORAGE-03`(presigned URL + nginx
    reverse-proxy)을 실제로 재현해 검증한다. 발견된 불편함을 api에 반영한다.
+   `apps/demo1`을 구현했고 전체 스택 HTTP smoke 20단계를 통과했다. 브라우저 UI·다운로드
+   응답 헤더 검증은 남아 있어 이 단계는 완료로 표시하지 않는다.
 4. **배포/온보딩 + API 계약 고정**: `DEPLOY-01`~~`DEPLOY-06`, `API-01`~~`API-03`.
    apps/demo로 API 모양이 검증된 뒤 스펙과 버저닝을 고정한다 — 먼저 고정하면
    demo 피드백으로 다시 깨야 한다.
@@ -315,8 +320,20 @@ WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으�
       breaking change는 `/api/v1` → `/api/v2` 전체 교체(병행 노출 없음)로
       표현한다(`docs/adr/0007`, `apps/api/docs/adr/0020`). `package.json` 4개의
       version 필드는 버전 정보로 쓰지 않는다. `openapi.yaml`의 초안 문구·1.0
-      확정은 `apps/demo` 실사용 검증(로드맵 "실행 순서" 3번, 아직 미완료) 이후로
-      유지한다.
+      확정은 `apps/demo` 실사용 검증(로드맵 "실행 순서" 3번) 이후로 유지한다.
+      정책 수립은 완료했고, 1.0 확정은 아래 "1.0 확정 조건"이 충족될 때까지 보류한다.
+
+### 1.0 확정 조건
+
+`openapi.yaml`의 "초안 상태" 문구와 `info.version`의 `-draft` 접미사를 제거하려면
+다음을 모두 만족해야 한다. 확정 기록은 ADR-0020 지시에 따라 새 ADR 또는
+`CHANGELOG.md` 항목으로 남긴다.
+
+- [ ] demo1 실사용 검증 완료: 브라우저에서 MIME 변경 UI와 다운로드 응답 헤더 확인
+- [ ] WAS 업로드 메모리 상한 판정: 16 MiB 업로드 RSS가 smoke 기준(8 MiB)을 넘은 원인을
+      정리해 기준을 조정하거나 코드를 고친다. 현재는 정보성 기록이다.
+- [ ] 릴리즈 태그 정책 확인: 현재 태그가 없고 `CHANGELOG.md`는 `[0.1.0]` baseline만
+      있다. 1.0 확정 시점의 태그 번호를 정한다.
 
 ## 오픈 이슈
 
