@@ -622,7 +622,7 @@ paths:
               $ref: '#/components/schemas/MkdirRequest'
       responses:
         '200':
-          description: 이미 존재하는 디렉터리(멱등 성공)
+          description: '`parents=true`로 요청한 이미 존재하는 디렉터리(멱등 성공)'
           content:
             application/json:
               schema:
@@ -640,7 +640,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: '`parents`를 생략하거나 false로 한 요청의 대상이 이미 있음(`VFS_ALREADY_EXISTS`), 경로 중간이 디렉터리가 아님(`VFS_NOT_DIRECTORY`) 등'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/touch:

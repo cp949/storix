@@ -10,6 +10,7 @@
 
 ### Changed
 
+- `openapi.yaml`의 `POST /fs/mkdir` 응답 설명을 실제 동작에 맞췄다. 이미 있는 디렉터리를 `parents=true`로 다시 요청하면 200이고, `parents`를 생략하거나 false로 하면 409 `VFS_ALREADY_EXISTS`다. 동작 변경은 없다.
 - S3 클라이언트를 AWS SDK for JavaScript v3로 교체했다. `STORIX_STORAGE_REGION`을 비우면 `us-east-1`을 사용한다. 실제 AWS S3는 버킷 리전을 지정해야 한다.
 - 백업의 객체 미러 디렉터리 이름을 `blobs/`로 바꿨다. 이전 형식의 백업은 복구할 수 없으며, `restore`는 `blobs/` 외의 하위 디렉터리가 있는 백업을 기존 데이터를 지우기 전에 `RestoreUnsupportedBackupError`로 거부한다.
 - 휴지통은 namespace별 설정이며 기본 OFF다. OFF 삭제는 즉시 영구 삭제하고 `X-Trash-Id`/`trashId`를 반환하지 않는다. OFF 전환 전 휴지통 항목은 계속 복원할 수 있다.

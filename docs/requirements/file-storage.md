@@ -183,17 +183,17 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-022 디렉터리 자식 목록과 cursor 일관성
 
 - [ ] **진행 상태:** 진행 중
-- **판정 근거:** OpenAPI는 `GET /api/v2/namespaces/{namespaceId}/fs/ls`의 cursor pagination과 `consistency=revision`을 공개한다. 디렉터리 변경 후 기존 revision-bound cursor를 어떻게 거부하는지는 공개 계약에 명시되지 않았다. 이 항목은 해당 갭을 기록하며 runtime 동작 검증은 아니다. SQLite 계약 검증에서 `ls-pagination`(cursor 페이지가 누락·중복 없이 열거되고, revision 열거의 모든 페이지가 현재 `directoryRevision`을 알리며, 디렉터리 변경 뒤 이전 cursor로 다음 페이지를 이어 붙이지 않고 거부하고, 형식이 잘못된 cursor는 400 `VFS_INVALID_CURSOR`)이 통과했다. 변경 뒤 거부의 실제 응답은 412 `VFS_PRECONDITION_FAILED`로 openapi와 일치하지만 이 RQ의 수용 조건(400 `VFS_INVALID_CURSOR`)과 다르다. 계약은 두 응답 중 하나를 허용해 거부 사실만 단언하며, 어느 쪽으로 고정할지는 결정 대기 중이다.
+- **판정 근거:** OpenAPI는 `GET /api/v2/namespaces/{namespaceId}/fs/ls`의 cursor pagination과 `consistency=revision`을 공개하며, cursor의 디렉터리 revision이 현재와 다르면 412 `VFS_PRECONDITION_FAILED`로 응답한다고 명시한다(구현과 일치). SQLite 계약 검증에서 `ls-pagination`(cursor 페이지가 누락·중복 없이 열거되고, revision 열거의 모든 페이지가 현재 `directoryRevision`을 알리며, 디렉터리 변경 뒤 이전 cursor로 다음 페이지를 이어 붙이지 않고 412 `VFS_PRECONDITION_FAILED`로 거부하고, 형식이 잘못된 cursor는 400 `VFS_INVALID_CURSOR`)이 통과했다.
 - 호출자는 디렉터리의 직계 자식을 cursor 페이지로 열거할 수 있어야 한다. `consistency=revision`을 선택한 열거는 한 디렉터리 revision에 일관되어야 한다.
-- **수용 조건:** cursor가 묶인 디렉터리 revision이 더 이상 현재 revision과 다르면 다음 페이지는 `400 VFS_INVALID_CURSOR`로 거부한다. 호출자는 첫 페이지부터 다시 열거하며, 서로 다른 디렉터리 상태의 페이지를 조용히 이어 붙이지 않는다.
+- **수용 조건:** cursor가 묶인 디렉터리 revision이 더 이상 현재 revision과 다르면 다음 페이지는 `412 VFS_PRECONDITION_FAILED`로 거부한다. 형식이 잘못되거나 변조된 cursor는 `400 VFS_INVALID_CURSOR`다. 호출자는 첫 페이지부터 다시 열거하며, 서로 다른 디렉터리 상태의 페이지를 조용히 이어 붙이지 않는다.
 - **관련 계약:** `GET /api/v2/namespaces/{namespaceId}/fs/ls`, `cursor`, `consistency=revision`, `rc1.` cursor 및 `directoryRevision`.
 
 ### RQ-023 디렉터리 생성
 
 - [ ] **진행 상태:** 진행 중
-- **판정 근거:** OpenAPI는 `/fs/mkdir`에서 이미 존재하는 디렉터리를 멱등 성공으로 응답하고, 조건부 `/fs/mutations`의 mkdir은 부재 조건을 사용한다. 부모 자동 생성은 공통 경로 계약상 명시적 옵션에 달려 있다. 이 RQ는 두 공개 계약의 동작을 추적하며 자동 검증 상태를 새로 주장하지 않는다. SQLite 계약 검증에서 `mkdir-parents`(`parents` 생략·false는 404이고 부모를 만들지 않음, `parents=true`는 부모와 대상을 함께 만들고 이미 있는 디렉터리의 재요청은 200으로 같은 ID·상태, 경로 중간이 파일이면 409, 조건부 mkdir은 기존 대상 412·없는 부모 404)와 `destination-parents`(이동·복사의 `destinationParents`)가 통과했다. `parents` 없는 `/fs/mkdir`가 이미 있는 디렉터리에 409 `VFS_ALREADY_EXISTS`를 반환하는 동작은 수용 조건(기존 디렉터리 재요청은 멱등 성공)·openapi(200)와 다르며, 계약은 이 경우를 단언하지 않는다(결정 대기 중).
+- **판정 근거:** OpenAPI는 `/fs/mkdir`에서 `parents=true`로 이미 존재하는 디렉터리를 다시 요청하면 200 멱등 성공, `parents`를 생략하거나 false로 두면 409 `VFS_ALREADY_EXISTS`로 응답한다고 명시하며(구현과 일치), 조건부 `/fs/mutations`의 mkdir은 부재 조건을 사용한다. 부모 자동 생성은 공통 경로 계약상 명시적 옵션에 달려 있다. SQLite 계약 검증에서 `mkdir-parents`(`parents` 생략·false는 없는 부모에 404이고 부모를 만들지 않음, `parents=true`는 부모와 대상을 함께 만들고 이미 있는 디렉터리의 재요청은 200으로 같은 ID·상태, `parents` 생략·false로 이미 있는 디렉터리를 다시 요청하면 409 `VFS_ALREADY_EXISTS`, 경로 중간이 파일이면 409, 조건부 mkdir은 기존 대상 412·없는 부모 404)와 `destination-parents`(이동·복사의 `destinationParents`)가 통과했다.
 - 호출자는 기존 디렉터리를 중복 생성하지 않고 필요한 경로에 디렉터리를 만들 수 있어야 한다. 없는 부모를 자동 생성할지는 요청에서 명시해야 한다.
-- **수용 조건:** 기존 디렉터리 생성 재요청은 기존 디렉터리 ID와 상태를 보존하는 멱등 성공이다. `parents` 또는 `destinationParents`를 생략하거나 false로 두면 부모 디렉터리를 암묵적으로 만들지 않는다. true인 경우 부모 생성과 대상 생성은 모두 적용되거나 모두 적용되지 않는다.
+- **수용 조건:** `parents=true`로 한 기존 디렉터리 생성 재요청은 기존 디렉터리 ID와 상태를 보존하는 멱등 성공이다. `parents`를 생략하거나 false로 한 재요청은 상태를 바꾸지 않고 `409 VFS_ALREADY_EXISTS`로 거부한다. `parents` 또는 `destinationParents`를 생략하거나 false로 두면 부모 디렉터리를 암묵적으로 만들지 않는다. true인 경우 부모 생성과 대상 생성은 모두 적용되거나 모두 적용되지 않는다.
 - **관련 계약:** `POST /api/v2/namespaces/{namespaceId}/fs/mkdir`, `/fs/mutations`의 `kind: mkdir`, 공통 `parents` 규칙.
 
 ### RQ-024 파일·디렉터리 삭제
