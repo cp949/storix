@@ -3,7 +3,8 @@ import { CreateBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { waitUntil } from './wait.ts';
 
 const IMAGE = 'versity/versitygw:v1.8.0';
-const CONTAINER_PREFIX = 'storix-contract-';
+/** 러너가 띄우는 컨테이너 이름 접두어. 시작 시 이 접두어의 잔여 컨테이너를 모두 제거한다. */
+export const CONTAINER_PREFIX = 'storix-contract-';
 const ACCESS_KEY = 'storix';
 const SECRET_KEY = 'storix-secret';
 const BUCKET = 'storix';

@@ -19,6 +19,18 @@ export function buildMigrationEnv(
   return { PATH: parentEnv.PATH ?? '', HOME: parentEnv.HOME ?? '', ...databaseEnv };
 }
 
+/** 빌드된 API의 migration을 `env`가 가리키는 DB에 적용한다. 실패하면 출력을 담아 던진다. */
+export function runMigrations(env: Readonly<Record<string, string>>, label: string): void {
+  const result = spawnSync('pnpm', ['--filter', '@cp949/storix-api', 'run', 'migration:run:prod'], {
+    cwd: REPO_ROOT,
+    env: buildMigrationEnv(env),
+    encoding: 'utf-8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} migration 실패:\n${result.stdout}\n${result.stderr}`);
+  }
+}
+
 /**
  * `workDir` 아래에 새 SQLite 파일을 만들고 빌드된 API의 migration을 적용한다.
  * 프로필마다 파일을 새로 만들어 상태를 초기화한다.
@@ -28,13 +40,6 @@ export function prepareSqliteDatabase(workDir: string, label: string): DatabaseH
     STORIX_DB_DRIVER: 'sqlite',
     STORIX_DB_SQLITE_PATH: path.join(workDir, `${label}.sqlite`),
   };
-  const result = spawnSync('pnpm', ['--filter', '@cp949/storix-api', 'run', 'migration:run:prod'], {
-    cwd: REPO_ROOT,
-    env: buildMigrationEnv(env),
-    encoding: 'utf-8',
-  });
-  if (result.status !== 0) {
-    throw new Error(`SQLite migration 실패:\n${result.stdout}\n${result.stderr}`);
-  }
+  runMigrations(env, 'SQLite');
   return { env };
 }

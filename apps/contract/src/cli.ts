@@ -11,6 +11,7 @@ import { removeStaleContainers, startBlobStorage } from './runner/blob-storage.t
 import type { NamespaceInfo } from './define-contract.ts';
 import { createContractContext } from './runner/context.ts';
 import { prepareSqliteDatabase } from './runner/database.ts';
+import { preparePostgresDatabase, startPostgres } from './runner/postgres.ts';
 import { CONTRACTS_DIR } from './runner/paths.ts';
 import { PROFILE_CAPABILITIES, PROFILE_ENV } from './runner/profiles.ts';
 import { EMPTY_CAPABILITIES_CONFIG, provisionCapabilityNamespaces } from './runner/provision.ts';
@@ -85,8 +86,8 @@ async function main(): Promise<number> {
     for (const id of uncovered) console.log(`  ${id}`);
     return 0;
   }
-  if (values.db !== 'sqlite') {
-    console.error(`지원하지 않는 --db 값: ${values.db}. 현재는 sqlite만 지원한다.`);
+  if (values.db !== 'sqlite' && values.db !== 'postgres') {
+    console.error(`지원하지 않는 --db 값: ${values.db}. sqlite 또는 postgres만 지원한다.`);
     return 1;
   }
 
@@ -104,15 +105,22 @@ async function main(): Promise<number> {
   // VersityGW 준비를 기다리는 중에 중단돼도 컨테이너가 남지 않도록 기동 전에 등록한다.
   // 동시 실행을 하지 않는다는 전제에서 `storix-contract-` 컨테이너를 접두어로 모두 제거한다.
   cleanups.push(async () => removeStaleContainers());
-  const blob = await startBlobStorage(randomBytes(4).toString('hex'));
+  const runId = randomBytes(4).toString('hex');
+  const blob = await startBlobStorage(runId);
   cleanups.push(() => blob.stop());
+  // blob 저장소가 잔여 컨테이너를 정리한 뒤에 띄운다. 프로필마다 database를 새로 만든다.
+  const postgres = values.db === 'postgres' ? await startPostgres(runId) : undefined;
+  if (postgres !== undefined) cleanups.push(() => postgres.stop());
   // 서버 기동을 기다리는 중에 중단돼도 서버 프로세스가 남지 않도록 핸들과 별도로 등록한다.
   cleanups.push(async () => void (await stopAllServers()));
 
   for (const [profile, group] of groups) {
     if (interrupted) return 130;
     console.log(`\n프로필 ${profile}: 계약 ${group.length}개`);
-    const database = prepareSqliteDatabase(workDir, profile);
+    const database =
+      postgres === undefined
+        ? prepareSqliteDatabase(workDir, profile)
+        : preparePostgresDatabase(postgres, runId, profile);
     const apiKey = randomBytes(16).toString('hex');
     const port = await findFreePort();
     // capability를 허용하는 프로필은 설정 파일이 필요하다. 처음에는 아무것도 허용하지 않는 설정으로 기동한다.
