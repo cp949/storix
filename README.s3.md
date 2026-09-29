@@ -78,7 +78,7 @@ override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_S
 외부에서 접근 가능한 주소라 내부/외부 구분이 필요 없다).
 
 이 조합에는 `STORIX_STORAGE_ACCESS_KEY`/`STORIX_STORAGE_SECRET_KEY`를 root 자격증명으로 받는
-`minio`/`versitygw` 컨테이너가 없으므로 AWS 시크릿이 다른 서비스로 흘러가지
+`versitygw` 컨테이너가 없으므로 AWS 시크릿이 다른 서비스로 흘러가지
 않는다.
 
 ## 기동

@@ -53,7 +53,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
   상태로 `pnpm --filter @cp949/storix-api run backup:run:prod`(빌드 산출물
   실행, 개발 중에는 `backup:run`)를 직접 실행해도 된다. `VACUUM INTO`로
   실행 중에도 일관된 스냅샷을 원자적으로 `<백업 디렉터리>/storix.sqlite`에
-  만든다(Postgres 백업의 `postgres.dump` 자리를 대신함). MinIO object
+  만든다(Postgres 백업의 `postgres.dump` 자리를 대신함). 스토리지 object
   미러링 절차는 드라이버 무관 — `docs/deployment/backup-restore.md` 참고.
   불변 VFS snapshot을 복원하려면 SQLite DB와 Blob 버킷을 같은 시점에
   확보해야 한다. 백업 동안 API 쓰기와 GC를 멈춘다. DB 파일만 복구하거나
@@ -82,7 +82,7 @@ Postgres의 `pg_dump`/`pg_restore` 대신 SQLite 내장 기능을 쓴다.
   통합테스트(마이그레이션 체인, `BlobRepository`, `VfsNodeRepository`
   스모크, `GcJob` 전체 왕복, 백업/복구 왕복) 전부를 한 번에 실행한다.
   마이그레이션·리포지토리 테스트는 컨테이너 없이 빠르게 돌고, `GcJob`과
-  백업/복구 왕복 테스트만 object storage 검증을 위해 MinIO 컨테이너를
+  백업/복구 왕복 테스트만 object storage 검증을 위해 VersityGW 컨테이너를
   띄운다(드라이버와 무관 — Postgres 통합테스트와 동일한 방식).
 - `docker compose -f docker-compose.yml -f docker-compose.sqlite.yml config`
   로 override 병합 결과를 확인할 수 있다. 로컬 podman-compose는 기본

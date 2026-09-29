@@ -5,7 +5,6 @@
 #
 # 컨테이너를 추가하려면 같은 디렉터리의 override 파일을 -f로 겹쳐 쓴다:
 #   docker-compose.versitygw.yml  VersityGW 컨테이너 (목표 기본 백엔드, ADR-0003)
-#   docker-compose.minio.yml      MinIO 컨테이너
 #   docker-compose.s3.yml         AWS S3 (컨테이너 없음, 접속값만 고정)
 #   docker-compose.postgres.yml   개발·검증용 Postgres 컨테이너
 #   docker-compose.sqlite.yml     Postgres 대신 SQLite 파일 DB (컨테이너 없음, ADR-0022)
@@ -31,7 +30,7 @@ x-api-build: &api-build
 
 # STORIX_DB_HOST/STORIX_STORAGE_ENDPOINT를 `${VAR:?}` 필수 마커로 강제하지 않는다 — 필수
 # 마커는 profile 필터링·override 병합보다 먼저 파일 전체에 대해 평가돼,
-# override가 값을 채우는 조합(postgres/versitygw/minio)까지 막아버린다.
+# override가 값을 채우는 조합(postgres/versitygw)까지 막아버린다.
 # 미설정은 app이 부팅 시점에 거부한다(STORIX_DB_HOST는 requireEnv, STORIX_STORAGE_ENDPOINT는
 # ConfigService.getOrThrow).
 x-db-env: &db-env

@@ -1,6 +1,6 @@
 # 백업/복구 운영 절차
 
-OPS-02. Postgres(metadata) + MinIO(object) 양쪽 상태를 갖는 배포의 재해복구
+OPS-02. Postgres(metadata) + S3 호환 스토리지(object) 양쪽 상태를 갖는 배포의 재해복구
 절차다. 설계 배경은
 `../../apps/api/docs/adr/0015-backup-restore-postgres-then-minio.md` 참고.
 
@@ -18,7 +18,7 @@ docker compose --profile backup run --rm backup
 
 `STORIX_BACKUP_DIR`(기본 `/backups`, 호스트의 `./backups`에 바인드 마운트) 아래
 `{ISO8601 타임스탬프}/` 디렉터리에 `postgres.dump`(pg_dump custom format)와
-`minio/`(MinIO 버킷 전체 미러)를 남긴다. 실행마다 ENCRYPTED namespace가
+`minio/`(스토리지 버킷 전체 미러. 디렉터리 이름은 하위 호환을 위해 유지)를 남긴다. 실행마다 ENCRYPTED namespace가
 있으면 콘솔에 경고가 남는다 — `STORIX_ENCRYPTION_MASTER_KEY`는 이 백업에 포함되지
 않으므로 별도 채널(시크릿 매니저 등)에 반드시 따로 백업해야 한다.
 
@@ -27,7 +27,7 @@ rename된다. 따라서 `.partial` 접미사가 붙은 디렉터리는 실패했
 백업이며, 보존/회전 스크립트는 이 접미사가 없는 디렉터리만 완결된 백업으로
 취급하면 된다.
 
-`backup`은 `gc`와 동시에 돌리지 않는다. 백업은 Postgres 스냅샷 시점의 MinIO
+`backup`은 `gc`와 동시에 돌리지 않는다. 백업은 Postgres 스냅샷 시점의 스토리지
 버킷을 미러하는데, 두 단계 사이에 GC가 orphan object를 지우면 그만큼 미러에서
 빠진다(복구된 인스턴스는 다음 GC 실행에서 스스로 정합해지므로 데이터 손상은
 아니다). 불필요한 경합을 만들지 않도록 cron 스케줄을 겹치지 않게 둔다.
@@ -63,7 +63,7 @@ STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z STORIX_RESTORE_FORCE
 
 ```txt
 위험도: 높음
-롤백: 불가능 — 대상의 기존 Postgres 데이터와 MinIO 오브젝트가 전부 지워지고
+롤백: 불가능 — 대상의 기존 Postgres 데이터와 스토리지 오브젝트가 전부 지워지고
 백업 시점 상태로 교체된다.
 ```
 

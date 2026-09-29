@@ -2,7 +2,7 @@
 
 ## 상태
 
-승인됨 (2026-09-08) — 구현 완료.
+승인됨 (2026-09-08) — 구현 완료. 일부 대체됨: `docker-compose.minio.yml` 제거와 nginx 샘플의 VersityGW upstream 전환은 ADR-0024.
 
 ## 배경
 

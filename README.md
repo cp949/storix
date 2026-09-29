@@ -97,7 +97,7 @@ cursor는 400 `VFS_INVALID_CURSOR`다. GC가 DB 시각으로 오래된 이벤트
 
 같은 namespace 안에서 `cp`는 파일 콘텐츠를 복사하지 않는다. 새 VFS Node가
 원본과 같은 immutable Blob을 참조하며 `reference_count`만 증가시킨다.
-대용량 파일이나 디렉터리 recursive copy가 MinIO I/O 없이 즉시 끝난다. 이후
+대용량 파일이나 디렉터리 recursive copy가 스토리지 I/O 없이 즉시 끝난다. 이후
 어느 한쪽 Node에 내용을 쓰면 그 Node만 새 Blob으로 교체되고 다른 참조자는
 영향받지 않는다. 참조 카운트가 0이 되면 grace period 이후 GC가 회수한다.
 
@@ -113,7 +113,7 @@ cursor는 400 `VFS_INVALID_CURSOR`다. GC가 DB 시각으로 오래된 이벤트
   - Podman 4 이상 + podman-compose 1.x. Podman 3.x는 `depends_on`의
     healthcheck 조건을 무시해 기동 순서가 보장되지 않는다.
 - git
-- Postgres 16과 S3 호환 스토리지(VersityGW/MinIO/AWS S3). 이미 운영 중인 것에
+- Postgres 16과 S3 호환 스토리지(VersityGW/AWS S3 등). 이미 운영 중인 것에
   붙거나, 아래 override 파일로 컨테이너를 함께 띄운다.
 
 compose 파일은 compose-spec 표준 문법(`profiles`, `depends_on.condition`, YAML
@@ -156,7 +156,6 @@ cp .env.example .env
 | 파일                           | 추가·재정의하는 것                                                                                            | 상세 절차                |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | `docker-compose.versitygw.yml` | VersityGW 컨테이너 + 버킷 초기화. 목표 기본 백엔드(`docs/adr/0003-versitygw-primary-backend-and-topology.md`) | `README.versitygw.md`    |
-| `docker-compose.minio.yml`     | MinIO 컨테이너 + 버킷 초기화                                                                                  | `README.minio.md`        |
 | `docker-compose.s3.yml`        | AWS S3. 컨테이너 없음, 엔드포인트/TLS/path-style만 고정                                                       | `README.s3.md`           |
 | `docker-compose.postgres.yml`  | 개발·검증용 Postgres 컨테이너                                                                                 | 위 세 문서의 "개발" 명령 |
 | `docker-compose.sqlite.yml`    | SQLite 드라이버 설정. DB 컨테이너 없이 named volume의 파일을 사용하며 단일 프로세스 배포 전제                 | `README.sqlite.md`       |
@@ -277,7 +276,7 @@ app·gc·backup·restore, `compose` = 코드가 읽지 않고 compose 보간에�
 | `STORIX_STORAGE_ENDPOINT`                | 필수   | —             | app·잡  | S3 호환 엔드포인트 호스트. 백엔드 override가 컨테이너 쪽을 재정의                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `STORIX_STORAGE_PORT`                    | 선택   | `9000`        | app·잡  | 스토리지 포트. versitygw override는 `7070`으로 재정의                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `STORIX_STORAGE_USE_SSL`                 | 선택   | `false`       | app·잡  | 스토리지 TLS 사용 여부                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `STORIX_STORAGE_ACCESS_KEY`              | 필수   | —             | app·잡  | 스토리지 access key. versitygw/minio override에서는 컨테이너 root 자격증명으로도 쓰인다                                                                                                                                                                                                                                                                                                                                                                                       |
+| `STORIX_STORAGE_ACCESS_KEY`              | 필수   | —             | app·잡  | 스토리지 access key. versitygw override에서는 컨테이너 root 자격증명으로도 쓰인다                                                                                                                                                                                                                                                                                                                                                                                             |
 | `STORIX_STORAGE_SECRET_KEY`              | 필수   | —             | app·잡  | 스토리지 secret key. 위와 같음                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `STORIX_STORAGE_BUCKET`                  | 필수   | —             | app·잡  | 버킷 이름. override가 기동 시 생성한다                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `STORIX_STORAGE_PATH_STYLE`              | 선택   | `true`        | app·잡  | path-style 주소 사용. AWS S3는 `docker-compose.s3.yml`이 `false`로 고정                                                                                                                                                                                                                                                                                                                                                                                                       |

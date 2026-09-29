@@ -2,7 +2,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d
 #   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml --profile backup run --rm backup
 #
-# 다른 백엔드/DB override(versitygw.yml, minio.yml, s3.yml, postgres.yml)와
+# 다른 백엔드/DB override(versitygw.yml, s3.yml, postgres.yml)와
 # 달리 컨테이너를 추가하지 않는다 — SQLite는 별도 서버 프로세스가 없는
 # 파일 기반 DB다. 대신 migrate/app/gc/backup/restore 5개 서비스 모두 같은
 # named volume(sqlite-data)의 storix.sqlite 파일을 보게 한다.

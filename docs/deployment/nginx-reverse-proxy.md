@@ -1,9 +1,9 @@
 # nginx reverse-proxy 참조 구성
 
-STORAGE-03. "공개 도메인 → nginx → 내부 MinIO" 배포 패턴의 참조 구성이다.
+STORAGE-03. "공개 도메인 → nginx → 내부 VersityGW" 배포 패턴의 참조 구성이다.
 presigned download URL(STORAGE-02)은 발급 시점 Client의 host/port/scheme으로
 서명되므로, TLS를 종료하는 리버스 프록시 뒤에 배포하려면 프록시가 원본 Host
-헤더와 쿼리스트링을 그대로 MinIO로 전달해야 서명이 깨지지 않는다. 결정 배경은
+헤더와 쿼리스트링을 그대로 VersityGW로 전달해야 서명이 깨지지 않는다. 결정 배경은
 `../adr/0002-nginx-reverse-proxy-sample.md` 참고.
 
 ## 구성 파일
@@ -14,8 +14,8 @@ presigned download URL(STORAGE-02)은 발급 시점 Client의 host/port/scheme�
   self-signed 인증서를 만드는 `nginx-cert-init` 서비스. 개발·검증용이며 Storix
   필수 구성이 아니라 루트 `docker-compose*` 목록에 두지 않는다.
 
-이 샘플은 `proxy_pass http://minio:9000`으로 고정된 MinIO 전용 구성이라
-`docker-compose.minio.yml` 조합에서만 동작한다. 서명 검증 재현을 위해 `location /`의 GET을 MinIO로 전달하므로, 운영에서 공개할 bucket 경로를 한정하는 설정 예시는 아니다. 운영 공개 listener는 실제 presigned URL의 bucket 경로만 라우팅하고, Storix 보호 API는 WAS 전용 내부 경로에 둔다. nginx의 GET 제한은 서명 검증을 대체하지 않으며 bucket은 비공개로 유지한다. 자세한 사용처 경계는 [WAS 다운로드 가이드](../guides/was-file-download-patterns.md)를 따른다.
+이 샘플은 `proxy_pass http://versitygw:7070`으로 고정된 VersityGW 전용 구성이라
+`docker-compose.versitygw.yml` 조합에서만 동작한다. 서명 검증 재현을 위해 `location /`의 GET을 VersityGW로 전달하므로, 운영에서 공개할 bucket 경로를 한정하는 설정 예시는 아니다. 운영 공개 listener는 실제 presigned URL의 bucket 경로만 라우팅하고, Storix 보호 API는 WAS 전용 내부 경로에 둔다. nginx의 GET 제한은 서명 검증을 대체하지 않으며 bucket은 비공개로 유지한다. 자세한 사용처 경계는 [WAS 다운로드 가이드](../guides/was-file-download-patterns.md)를 따른다.
 
 ## 로컬 재현 (docker-compose)
 
@@ -25,7 +25,7 @@ export STORIX_STORAGE_PUBLIC_ENDPOINT=localhost
 export STORIX_STORAGE_PUBLIC_PORT=8443
 export STORIX_STORAGE_PUBLIC_USE_SSL=true
 export STORIX_STORAGE_REGION=us-east-1
-docker compose -f docker-compose.yml -f docker-compose.minio.yml -f docker-compose.postgres.yml \
+docker compose -f docker-compose.yml -f docker-compose.versitygw.yml -f docker-compose.postgres.yml \
   -f docs/deployment/compose.nginx-demo.yml up -d --wait
 ```
 
@@ -33,7 +33,7 @@ docker compose -f docker-compose.yml -f docker-compose.minio.yml -f docker-compo
 볼륨), `nginx` 서비스(호스트 포트 `${STORIX_NGINX_PUBLIC_PORT:-8443}` → 컨테이너
 443)가 이를 로드한다. 인증서 CN/SAN은 `localhost` 고정이다 — 다른 hostname으로
 접속하면 TLS 클라이언트가 인증서 불일치로 거부한다. `STORIX_STORAGE_REGION`을 비워두면
-minio-js가 리전 자동 조회를 위해 `STORIX_STORAGE_PUBLIC_ENDPOINT`(컨테이너 자기 자신의
+minio-js(Storix가 쓰는 S3 SDK)가 리전 자동 조회를 위해 `STORIX_STORAGE_PUBLIC_ENDPOINT`(컨테이너 자기 자신의
 loopback으로 되돌아가는 주소)에 실제 네트워크 호출을 시도하다 실패해
 presigned-download 발급이 500나므로, `STORIX_STORAGE_REGION`을 설정해 이 호출 자체를
 스킵해야 한다.
@@ -53,13 +53,13 @@ presigned-download 발급이 500나므로, `STORIX_STORAGE_REGION`을 설정해 
   생략되어 더 깔끔한 presigned URL이 나온다.
 - `STORIX_STORAGE_REGION`을 비워두지 않는다 — presigned URL 발급마다 리전 자동 조회가
   공개 프록시로 실제 네트워크 왕복을 시도한다(방화벽·split-horizon DNS
-  환경에서는 로컬 재현과 동일하게 500날 수 있다). 값 자체는 MinIO 서버
+  환경에서는 로컬 재현과 동일하게 500날 수 있다). 값 자체는 VersityGW
   설정과만 맞으면 되고, 기본 `us-east-1`이면 충분하다.
 
 ## 왜 `$http_host`이고 `$host`가 아닌가
 
 nginx의 `$host`는 포트를 제거한 값이라, 비표준 포트(로컬 재현의 `8443`처럼)로
-접속했을 때 그 포트 정보가 사라져 MinIO가 서명 검증에 실패한다. `$http_host`는
+접속했을 때 그 포트 정보가 사라져 VersityGW가 서명 검증에 실패한다. `$http_host`는
 클라이언트가 보낸 Host 헤더를 그대로 보존한다.
 
 ## 메서드 제한

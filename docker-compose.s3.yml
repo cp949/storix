@@ -24,8 +24,8 @@
 # 발생하면 이 파일을 복사해 s3.<region>.amazonaws.com으로 바꾼다.
 #
 # 자격증명을 STORIX_STORAGE_ACCESS_KEY/STORIX_STORAGE_SECRET_KEY로 그대로 쓰는 것이 안전한
-# 이유: 이 조합에는 그 값을 root 자격증명으로 받는 minio/versitygw 컨테이너가
-# 없다(각각 별도 override 파일에만 존재). 진짜 AWS 시크릿이 흘러들어갈 다른
+# 이유: 이 조합에는 그 값을 root 자격증명으로 받는 versitygw 컨테이너가
+# 없다(별도 override 파일에만 존재). 진짜 AWS 시크릿이 흘러들어갈 다른
 # 서비스가 없다.
 #
 # 한계: MinioBlobStorage는 minio SDK Client를 그대로 쓰므로 정적 access/secret

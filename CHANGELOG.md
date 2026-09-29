@@ -131,6 +131,10 @@
   다운로드 엔드포인트 추가. `PUBLIC`이 아닌 namespace는 404로 응답한다.
 - `ENCRYPTED` namespace를 `PUBLIC`으로 생성하는 요청을 400으로 거부한다.
 
+### Removed
+
+- `docker-compose.minio.yml`과 `README.minio.md`를 제거했다. MinIO가 Docker Hub의 `minio/minio`·`minio/mc` 이미지를 삭제했고 `quay.io/minio`도 받을 수 없다(ADR-0024). 이미 운영 중인 MinIO 서버에는 base 단독 구성으로 계속 연결할 수 있다. nginx reverse-proxy 샘플의 upstream은 VersityGW로 바뀌었다(`docker-compose.versitygw.yml` 조합).
+
 ### Fixed
 
 - 변경 feed는 한 transaction에서 자식을 생성·삭제한 뒤에도 커밋된 디렉터리 listing revision이 바뀌면 최종 revision의 `updated` 이벤트를 기록한다. 최종 상태가 부재인 자식의 이벤트는 기록하지 않는다.

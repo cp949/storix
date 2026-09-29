@@ -17,7 +17,7 @@
 ## compose 파일 검증
 
 - 조합 병합 결과는 `podman-compose <-f …> config`로 확인한다. 최소 조합:
-  base 단독 / +versitygw / +versitygw+postgres / +minio+postgres / +s3, 그리고
+  base 단독 / +versitygw / +versitygw+postgres / +s3, 그리고
   `--profile gc|backup|restore`.
 - `environment`의 숫자 리터럴은 quote한다(`STORIX_PORT: '3000'`).
   podman-compose 1.6은 unquoted 정수를 같은 서비스의 `${VAR}` 치환에 int로
@@ -42,7 +42,7 @@ postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다
 
 ## 통합 테스트(testcontainers)
 
-`pnpm --filter @cp949/storix-api test:integration`은 testcontainers로 postgres/minio를
+`pnpm --filter @cp949/storix-api test:integration`은 testcontainers로 postgres/versitygw를
 띄운다. Podman에서는 `podman system service`가 떠 있어야 하고 `DOCKER_HOST`가
 그 소켓을 가리켜야 한다.
 
@@ -57,7 +57,7 @@ postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다
   `node:https` `request()`에 `rejectUnauthorized: false`를 준다. Jest ESM
   환경에서 전역 dispatcher가 env var보다 먼저 초기화된다.
 - 여러 에이전트가 통합 테스트를 반복 실행하면 컨테이너가 누적돼 `podman ps`가
-  멈출 수 있다. 복구: `ps aux | grep -E "conmon|minio server|postgres"`의
+  멈출 수 있다. 복구: `ps aux | grep -E "conmon|versitygw|postgres"`의
   PID를 `kill -9` → 남은 `podman system service`도 `kill -9` →
   `podman rm -af`. 통합 테스트 대량 실패는 먼저 이 가능성을 의심한다.
 

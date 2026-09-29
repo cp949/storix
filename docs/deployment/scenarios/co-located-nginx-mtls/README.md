@@ -245,6 +245,6 @@ curl --cacert docs/deployment/scenarios/co-located-nginx-mtls/pki/generated/ca.c
 - 동일 NAS를 사용하는 두 VersityGW의 동시 접근은 NAS가 제공하는 POSIX 의미를
   그대로 따른다. Storix가 그 위에 별도 분산 락을 추가하지 않는다.
 - mTLS 인증서 회전과 폐기는 운영 PKI 정책의 책임이다.
-- 현재 자동 Nginx reverse-proxy 통합 테스트는 MinIO를 사용한다. 운영 도입 전에
+- 현재 자동 Nginx reverse-proxy 통합 테스트는 단일 노드 VersityGW(posix)를 사용한다. 운영 도입 전에
   이 시나리오의 VersityGW·NAS 조합으로 PUT 직후 반대 노드 GET, 동시 PUT,
   multipart upload, DELETE/GET·GC 경합을 별도로 확인한다.
