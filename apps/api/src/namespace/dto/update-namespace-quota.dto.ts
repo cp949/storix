@@ -10,7 +10,9 @@ export function parseUpdateNamespaceQuotaRequest(body: unknown): UpdateNamespace
       ? (body as Record<string, unknown>)
       : {};
   const value = record.maxTotalLogicalBytes;
-  if (value !== null && !isPositiveInt64Decimal(value)) {
+  // openapi의 additionalProperties: false와 맞춰 maxTotalLogicalBytes 외의 필드는 거부한다.
+  const hasExtraField = Object.keys(record).some((key) => key !== 'maxTotalLogicalBytes');
+  if (hasExtraField || (value !== null && !isPositiveInt64Decimal(value))) {
     throw new NamespaceInvalidTotalLogicalBytesError(value);
   }
   return { maxTotalLogicalBytes: value as string | null };

@@ -303,6 +303,28 @@ describe('Namespace HTTP contract', () => {
     expect(replay.body).toEqual(first.body);
   });
 
+  it('quota 관리자 경로는 허용되지 않은 추가 필드를 400으로 거부하고 상한을 바꾸지 않는다', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', 'create-admin-quota-extra')
+      .send({ name: 'quota-admin-extra' })
+      .expect(201);
+    const path = `/api/v2/admin/namespaces/${created.body.id}/quota`;
+
+    const rejected = await request(app.getHttpServer())
+      .patch(path)
+      .set('Authorization', 'Bearer quota-admin-secret')
+      .set('Idempotency-Key', 'quota-admin-extra-patch')
+      .send({ maxTotalLogicalBytes: '2048', extra: 1 })
+      .expect(400);
+    expect(rejected.body.code).toBe('NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES');
+
+    const fetched = await request(app.getHttpServer())
+      .get(`/api/v2/namespaces/${created.body.id}`)
+      .expect(200);
+    expect(fetched.body.quota.limitBytes).toBe(created.body.quota.limitBytes);
+  });
+
   it('같은 key와 같은 body로 재시도하면 새로 만들지 않고 같은 결과를 재생한다', async () => {
     const first = await request(app.getHttpServer())
       .post('/api/v2/namespaces')

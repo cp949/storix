@@ -77,7 +77,9 @@ export class NamespaceInvalidTotalLogicalBytesError extends DomainError {
   readonly status = 400;
 
   constructor(readonly value: unknown) {
-    super('maxTotalLogicalBytes는 1 이상의 int64 범위 decimal string이어야 함');
+    super(
+      'quota 요청은 1 이상의 int64 범위 decimal string 또는 null인 maxTotalLogicalBytes 필드만 포함해야 함',
+    );
   }
 }
 
