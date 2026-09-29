@@ -67,12 +67,19 @@ services:
       retries: 10
 
   versitygw-init:
-    image: minio/mc:latest
+    image: amazon/aws-cli@sha256:fb7ccfc7b4e3a05017e6c9ded4ba959b99af622130e211fb976c68c2f4d3f224
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        mc alias set local http://versitygw:7070 ${STORIX_STORAGE_ACCESS_KEY:-storix} ${STORIX_STORAGE_SECRET_KEY:-storix-secret} &&
-        mc mb --ignore-existing local/${STORIX_STORAGE_BUCKET:-storix}
+        if aws --endpoint-url http://versitygw:7070 s3api head-bucket --bucket "${STORIX_STORAGE_BUCKET:-storix}" >/dev/null 2>&1; then
+          exit 0
+        fi
+        aws --endpoint-url http://versitygw:7070 s3api create-bucket --bucket "${STORIX_STORAGE_BUCKET:-storix}" --region us-east-1
+    environment:
+      AWS_ACCESS_KEY_ID: ${STORIX_STORAGE_ACCESS_KEY:-storix}
+      AWS_SECRET_ACCESS_KEY: ${STORIX_STORAGE_SECRET_KEY:-storix-secret}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     depends_on:
       versitygw:
         condition: service_healthy
