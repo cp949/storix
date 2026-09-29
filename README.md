@@ -221,11 +221,11 @@ base가 정의하는 운영 잡 4종 중 `migrate`는 위처럼 `up`마다 자�
 나머지 3종은 profile로 켜서 명시적으로 실행한다. 배포에 쓴 것과 같은 `-f`
 조합에 `--profile`을 더한다 — 조합이 다르면 잡이 다른 DB·스토리지를 본다.
 
-| profile = 서비스 | 하는 일                                                                                                                                      | 상세                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `gc`             | 참조가 0이 된 지 `STORIX_ORPHAN_GRACE_PERIOD`(기본 1일)를 넘긴 Blob과 metadata 없는 orphan object 회수, 변경 feed 보존 기간 경과 이벤트 정리 | `apps/api/docs/adr/0006-gc-zero-since-grace-period.md` |
-| `backup`         | Postgres dump + 스토리지 버킷 미러를 `STORIX_BACKUP_DIR/<타임스탬프>/`에 저장                                                                | `docs/deployment/backup-restore.md`                    |
-| `restore`        | `STORIX_RESTORE_SOURCE_DIR`의 백업으로 복구. 대상에 데이터가 있으면 `STORIX_RESTORE_FORCE=true` 없이는 거부                                  | `docs/deployment/backup-restore.md`                    |
+| profile = 서비스 | 하는 일                                                                                                                                                                                   | 상세                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `gc`             | 참조가 0이 된 지 `STORIX_ORPHAN_GRACE_PERIOD`(기본 1일)를 넘긴 Blob과 metadata 없는 orphan object 회수, 변경 feed 보존 기간 경과 이벤트 정리, 종결된 재개 업로드 세션의 staging 조각 삭제 | `apps/api/docs/adr/0006-gc-zero-since-grace-period.md` |
+| `backup`         | Postgres dump + 스토리지 버킷 미러를 `STORIX_BACKUP_DIR/<타임스탬프>/`에 저장                                                                                                             | `docs/deployment/backup-restore.md`                    |
+| `restore`        | `STORIX_RESTORE_SOURCE_DIR`의 백업으로 복구. 대상에 데이터가 있으면 `STORIX_RESTORE_FORCE=true` 없이는 거부                                                                               | `docs/deployment/backup-restore.md`                    |
 
 ```bash
 C="-f docker-compose.yml -f docker-compose.versitygw.yml"   # 배포에 쓴 조합
@@ -236,7 +236,10 @@ STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z docker compose $C --
 ```
 
 `gc`는 주기 실행이 전제다. 실행하지 않으면 삭제·덮어쓰기로 참조가 끊긴 Blob이
-스토리지에 남는다. 호스트 crontab 예(매일 04:00, 저장소가 `/opt/storix`일 때):
+스토리지에 남는다. 재개 업로드를 켠 배포에서는 완료·취소·만료된 세션의 조각도 GC 전까지
+staging에 남아 `maxStagedBytes`를 차지한다. 이 한도가 차면 새 조각 저장이
+`413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`가 되므로 실행 주기는 한도를 채우는 데 걸리는 시간보다
+짧게 잡는다. `STORIX_GC_MIN_INTERVAL`(기본 3600초) 안에 다시 실행하면 건너뛴다. 호스트 crontab 예(매일 04:00, 저장소가 `/opt/storix`일 때):
 
 ```cron
 0 4 * * * cd /opt/storix && docker compose -f docker-compose.yml -f docker-compose.versitygw.yml --profile gc run --rm gc >> /var/log/storix-gc.log 2>&1
