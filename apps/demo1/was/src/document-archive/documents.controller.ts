@@ -15,7 +15,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Readable } from 'node:stream';
+import { toWebStream } from '../common/request-body-stream.js';
 import type { DemoUser } from './demo-user.js';
 import type {
   FileEntry,
@@ -121,7 +121,7 @@ export class DocumentsController {
     const user = parseDemoUser(demoUserHeader);
     const internalPath = resolveInternalPath(user, firstQueryValue(path) ?? '');
 
-    const entry = await this.storixClient.upload(internalPath, Readable.toWeb(req) as ReadableStream, {
+    const entry = await this.storixClient.upload(internalPath, toWebStream(req), {
       mimeType: contentType,
       contentLength: contentLength !== undefined ? Number(contentLength) : undefined,
     });
@@ -169,7 +169,7 @@ export class DocumentsController {
     return this.storixClient.putUploadSessionPart(
       sessionId,
       index,
-      Readable.toWeb(req) as ReadableStream,
+      toWebStream(req),
       contentLength,
       contentType,
     );
