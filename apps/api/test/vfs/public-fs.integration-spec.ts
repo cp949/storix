@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client as MinioClient } from 'minio';
 import request from 'supertest';
@@ -22,7 +22,7 @@ const FILE_BODY = 'public-file-body';
 
 describe('public namespace 다운로드 HTTP 계약', () => {
   let postgresContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let migrationDataSource: DataSource;
   let app: INestApplication;
   let publicNamespaceId: string;
@@ -50,27 +50,27 @@ describe('public namespace 다운로드 HTTP 계약', () => {
 
   beforeAll(async () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
-    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
 
     process.env.STORIX_DB_HOST = postgresContainer.getHost();
     process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
     process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
     process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
     process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
-    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_ENDPOINT = s3Container.getHost();
+    process.env.STORIX_STORAGE_PORT = String(s3Container.getPort());
     process.env.STORIX_STORAGE_USE_SSL = 'false';
-    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_ACCESS_KEY = s3Container.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = s3Container.getPassword();
     process.env.STORIX_STORAGE_BUCKET = 'storix-public-fs-test';
     process.env.STORIX_API_KEY = API_KEY;
 
     const minioClient = new MinioClient({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
@@ -102,7 +102,7 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     await app.close();
     await migrationDataSource.destroy();
     await postgresContainer.stop();
-    await minioContainer.stop();
+    await s3Container.stop();
   });
 
   it('PUBLIC namespace의 파일을 인증 없이 다운로드한다', async () => {

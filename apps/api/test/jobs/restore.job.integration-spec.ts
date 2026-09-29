@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
@@ -22,7 +22,7 @@ import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 describe('RestoreJob 통합', () => {
   let pgContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let backupRepository: BackupRepository;
   let storage: MinioBlobStorage;
@@ -62,9 +62,9 @@ describe('RestoreJob 통합', () => {
   }
 
   beforeAll(async () => {
-    [pgContainer, minioContainer] = await Promise.all([
+    [pgContainer, s3Container] = await Promise.all([
       new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
-      new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start(),
+      startS3Container(),
     ]);
 
     dataSource = new DataSource({
@@ -79,11 +79,11 @@ describe('RestoreJob 통합', () => {
     backupRepository = new BackupRepository(dataSource);
 
     const client = new Client({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket(bucket);
     storage = new MinioBlobStorage(client, bucket, null);
@@ -115,7 +115,7 @@ describe('RestoreJob 통합', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
-    await Promise.all([pgContainer.stop(), minioContainer.stop()]);
+    await Promise.all([pgContainer.stop(), s3Container.stop()]);
     await fs.rm(backupRootDir, { recursive: true, force: true });
   });
 

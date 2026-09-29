@@ -6,7 +6,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { jest } from '@jest/globals';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client as MinioClient, S3Error } from 'minio';
 import request from 'supertest';
@@ -138,36 +138,36 @@ function getInterruptedDownload(
 
 describe('대용량 스트리밍', () => {
   let postgresContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let migrationDataSource: DataSource;
   let app: INestApplication;
   let serverPort: number;
 
   beforeAll(async () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
-    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
 
     process.env.STORIX_DB_HOST = postgresContainer.getHost();
     process.env.STORIX_DB_PORT = String(postgresContainer.getPort());
     process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
     process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
     process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
-    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_ENDPOINT = s3Container.getHost();
+    process.env.STORIX_STORAGE_PORT = String(s3Container.getPort());
     process.env.STORIX_STORAGE_USE_SSL = 'false';
-    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_ACCESS_KEY = s3Container.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = s3Container.getPassword();
     process.env.STORIX_STORAGE_BUCKET = 'storix-streaming-test';
     process.env.STORIX_MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
     process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
     process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
 
     const minioClient = new MinioClient({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
@@ -196,7 +196,7 @@ describe('대용량 스트리밍', () => {
     await app.close();
     await migrationDataSource.destroy();
     await postgresContainer.stop();
-    await minioContainer.stop();
+    await s3Container.stop();
   });
 
   async function createNamespace(name: string): Promise<string> {

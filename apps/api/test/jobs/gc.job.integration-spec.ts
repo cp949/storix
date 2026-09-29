@@ -1,4 +1,4 @@
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client } from 'minio';
 import { DataSource } from 'typeorm';
@@ -18,7 +18,7 @@ import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 describe('GcJob 통합', () => {
   let pgContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
   let storage: MinioBlobStorage;
@@ -29,9 +29,9 @@ describe('GcJob 통합', () => {
   const bucket = 'storix-gc-test';
 
   beforeAll(async () => {
-    [pgContainer, minioContainer] = await Promise.all([
+    [pgContainer, s3Container] = await Promise.all([
       new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
-      new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start(),
+      startS3Container(),
     ]);
 
     dataSource = new DataSource({
@@ -63,11 +63,11 @@ describe('GcJob 통합', () => {
     fileExpiry = new VfsFileExpiryRepository(dataSource, nodeRepository);
 
     const client = new Client({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket(bucket);
     storage = new MinioBlobStorage(client, bucket, null);
@@ -79,7 +79,7 @@ describe('GcJob 통합', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
-    await Promise.all([pgContainer.stop(), minioContainer.stop()]);
+    await Promise.all([pgContainer.stop(), s3Container.stop()]);
   });
 
   runGcJobSharedTests(() => ({

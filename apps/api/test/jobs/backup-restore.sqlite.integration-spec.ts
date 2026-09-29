@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import type { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
 import { DataSource } from 'typeorm';
@@ -20,10 +20,10 @@ import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 // SQLite는 파일 하나가 곧 DB이므로, BackupJob/RestoreJob이 열어 둔 DataSource와
 // SqliteDumpTool이 파일 경로로 직접 여는 better-sqlite3 연결이 같은 파일을
-// 가리키게 한다(단일 프로세스 배포 모델과 일치). MinIO는 Postgres 테스트와
+// 가리키게 한다(단일 프로세스 배포 모델과 일치). S3 스토리지는 Postgres 테스트와
 // 동일하게 testcontainers로 띄운다 — object storage는 드라이버와 무관.
 describe('Backup/Restore SQLite 통합', () => {
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let dbDir: string;
   let dbPath: string;
   let dataSource: DataSource;
@@ -55,7 +55,7 @@ describe('Backup/Restore SQLite 통합', () => {
         'STORIX_DB_DRIVER=sqlite 환경변수 없이 이 파일을 실행하면 엔티티의 bytea/timestamptz 대체 상수가 postgres 값으로 고정돼 의미가 없다',
       );
     }
-    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
 
     dbDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-backup-restore-sqlite-'));
     dbPath = path.join(dbDir, 'storix.sqlite');
@@ -72,11 +72,11 @@ describe('Backup/Restore SQLite 통합', () => {
     backupRepository = new BackupRepository(dataSource);
 
     const client = new Client({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket(bucket);
     storage = new MinioBlobStorage(client, bucket, null);
@@ -86,7 +86,7 @@ describe('Backup/Restore SQLite 통합', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
-    await minioContainer.stop();
+    await s3Container.stop();
     await fs.rm(dbDir, { recursive: true, force: true });
     await fs.rm(backupRootDir, { recursive: true, force: true });
   });

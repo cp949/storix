@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { Client as MinioClient } from 'minio';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
@@ -19,10 +19,10 @@ import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from '../../src/vfs/u
 import { registerFinalizeTests } from './upload-session-finalize.shared-tests.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
 
-describe('upload finalize (SQLite + MinIO)', () => {
+describe('upload finalize (SQLite + S3)', () => {
   const previous = { ...process.env };
   let directory: string;
-  let minio: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let migrations: DataSource;
   let app: INestApplication;
   let plainId: string;
@@ -74,14 +74,14 @@ describe('upload finalize (SQLite + MinIO)', () => {
   beforeAll(async () => {
     if (process.env.STORIX_DB_DRIVER !== 'sqlite') throw new Error('SQLite driver required');
     directory = await mkdtemp(join(tmpdir(), 'storix-upload-finalize-'));
-    minio = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
     Object.assign(process.env, {
       STORIX_DB_SQLITE_PATH: join(directory, 'finalize.sqlite'),
-      STORIX_STORAGE_ENDPOINT: minio.getHost(),
-      STORIX_STORAGE_PORT: String(minio.getPort()),
+      STORIX_STORAGE_ENDPOINT: s3Container.getHost(),
+      STORIX_STORAGE_PORT: String(s3Container.getPort()),
       STORIX_STORAGE_USE_SSL: 'false',
-      STORIX_STORAGE_ACCESS_KEY: minio.getUsername(),
-      STORIX_STORAGE_SECRET_KEY: minio.getPassword(),
+      STORIX_STORAGE_ACCESS_KEY: s3Container.getUsername(),
+      STORIX_STORAGE_SECRET_KEY: s3Container.getPassword(),
       STORIX_STORAGE_BUCKET: 'storix-upload-finalize',
       STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64),
       STORIX_API_KEY: 'upload-finalize-integration-key',
@@ -89,11 +89,11 @@ describe('upload finalize (SQLite + MinIO)', () => {
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
     const client = new MinioClient({
-      endPoint: minio.getHost(),
-      port: minio.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minio.getUsername(),
-      secretKey: minio.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket('storix-upload-finalize');
     migrations = new DataSource({
@@ -121,7 +121,7 @@ describe('upload finalize (SQLite + MinIO)', () => {
   afterAll(async () => {
     if (app) await app.close();
     if (migrations?.isInitialized) await migrations.destroy();
-    if (minio) await minio.stop();
+    if (s3Container) await s3Container.stop();
     if (directory) await rm(directory, { recursive: true, force: true });
     for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
     Object.assign(process.env, previous);

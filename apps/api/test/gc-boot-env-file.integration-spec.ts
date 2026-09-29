@@ -41,7 +41,7 @@ describe('gc-main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', ()
     );
 
     // 버그 재현 조건: STORIX_DB_DRIVER는 .env 파일에만 있고 쉘 환경에는 없다.
-    // MinIO는 실제로 떠 있지 않아 GcJob.run()은 ECONNREFUSED로 실패하지만,
+    // S3 스토리지는 실제로 떠 있지 않아 GcJob.run()은 ECONNREFUSED로 실패하지만,
     // 그건 DB 계층을 통과했다는 증거다 — DataTypeNotSupportedError만 없으면 된다.
     const { output } = await runProcess({
       cwd: workDir,

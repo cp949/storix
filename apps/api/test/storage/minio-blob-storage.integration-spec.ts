@@ -1,16 +1,16 @@
 import { Readable } from 'node:stream';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from './s3-container.test-support.js';
 import { Client } from 'minio';
 import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 describe('MinioBlobStorage', () => {
-  let container: StartedMinioContainer;
+  let container: StartedS3Container;
   let client: Client;
   let storage: MinioBlobStorage;
   const bucket = 'storix-test';
 
   beforeAll(async () => {
-    container = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    container = await startS3Container();
     client = new Client({
       endPoint: container.getHost(),
       port: container.getPort(),

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Module, type INestApplicationContext, type Type } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -31,7 +31,7 @@ class RestoreAppModuleFixture {}
 
 describe('job 진입점 모듈 부팅 통합', () => {
   let pgContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let workDir: string;
   let savedEnv: NodeJS.ProcessEnv;
 
@@ -68,11 +68,11 @@ describe('job 진입점 모듈 부팅 통합', () => {
       STORIX_DB_USERNAME: pgContainer.getUsername(),
       STORIX_DB_PASSWORD: pgContainer.getPassword(),
       STORIX_DB_NAME: pgContainer.getDatabase(),
-      STORIX_STORAGE_ENDPOINT: minioContainer.getHost(),
-      STORIX_STORAGE_PORT: String(minioContainer.getPort()),
+      STORIX_STORAGE_ENDPOINT: s3Container.getHost(),
+      STORIX_STORAGE_PORT: String(s3Container.getPort()),
       STORIX_STORAGE_USE_SSL: 'false',
-      STORIX_STORAGE_ACCESS_KEY: minioContainer.getUsername(),
-      STORIX_STORAGE_SECRET_KEY: minioContainer.getPassword(),
+      STORIX_STORAGE_ACCESS_KEY: s3Container.getUsername(),
+      STORIX_STORAGE_SECRET_KEY: s3Container.getPassword(),
       STORIX_STORAGE_BUCKET: 'storix-job-boot-test',
       // compose가 `${VAR:-}`로 넘기는 값은 미설정이 아니라 빈 문자열로 도착한다.
       STORIX_STORAGE_PATH_STYLE: '',
@@ -92,9 +92,9 @@ describe('job 진입점 모듈 부팅 통합', () => {
   }
 
   beforeAll(async () => {
-    [pgContainer, minioContainer] = await Promise.all([
+    [pgContainer, s3Container] = await Promise.all([
       new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
-      new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start(),
+      startS3Container(),
     ]);
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-job-boot-test-'));
     savedEnv = { ...process.env };
@@ -105,7 +105,7 @@ describe('job 진입점 모듈 부팅 통합', () => {
       delete process.env[key];
     }
     Object.assign(process.env, savedEnv);
-    await Promise.all([pgContainer.stop(), minioContainer.stop()]);
+    await Promise.all([pgContainer.stop(), s3Container.stop()]);
     await fs.rm(workDir, { recursive: true, force: true });
   });
 

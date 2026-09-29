@@ -4,7 +4,7 @@ import { jest } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client as MinioClient } from 'minio';
 import request from 'supertest';
@@ -26,10 +26,10 @@ import { VfsModule } from '../../src/vfs/vfs.module.js';
 
 const API_KEY = 'upload-session-integration-key';
 
-describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
+describe('upload session lifecycle (PostgreSQL + S3)', () => {
   const previousEnv = { ...process.env };
   let postgres: StartedPostgreSqlContainer;
-  let minio: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let migrations: DataSource;
   let app: INestApplication;
   let namespaceId: string;
@@ -90,20 +90,20 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
   }
 
   beforeAll(async () => {
-    [postgres, minio] = await Promise.all([
+    [postgres, s3Container] = await Promise.all([
       new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
-      new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start(),
+      startS3Container(),
     ]);
     process.env.STORIX_DB_HOST = postgres.getHost();
     process.env.STORIX_DB_PORT = String(postgres.getPort());
     process.env.STORIX_DB_USERNAME = postgres.getUsername();
     process.env.STORIX_DB_PASSWORD = postgres.getPassword();
     process.env.STORIX_DB_NAME = postgres.getDatabase();
-    process.env.STORIX_STORAGE_ENDPOINT = minio.getHost();
-    process.env.STORIX_STORAGE_PORT = String(minio.getPort());
+    process.env.STORIX_STORAGE_ENDPOINT = s3Container.getHost();
+    process.env.STORIX_STORAGE_PORT = String(s3Container.getPort());
     process.env.STORIX_STORAGE_USE_SSL = 'false';
-    process.env.STORIX_STORAGE_ACCESS_KEY = minio.getUsername();
-    process.env.STORIX_STORAGE_SECRET_KEY = minio.getPassword();
+    process.env.STORIX_STORAGE_ACCESS_KEY = s3Container.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = s3Container.getPassword();
     process.env.STORIX_STORAGE_BUCKET = 'storix-upload-lifecycle';
     process.env.STORIX_ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
     process.env.STORIX_API_KEY = API_KEY;
@@ -112,11 +112,11 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
 
     const client = new MinioClient({
-      endPoint: minio.getHost(),
-      port: minio.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minio.getUsername(),
-      secretKey: minio.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket(process.env.STORIX_STORAGE_BUCKET);
     migrations = new DataSource({
@@ -143,7 +143,7 @@ describe('upload session lifecycle (PostgreSQL + MinIO)', () => {
   afterAll(async () => {
     if (app) await app.close();
     if (migrations?.isInitialized) await migrations.destroy();
-    await Promise.all([postgres?.stop(), minio?.stop()]);
+    await Promise.all([postgres?.stop(), s3Container?.stop()]);
     for (const key of Object.keys(process.env)) if (!(key in previousEnv)) delete process.env[key];
     Object.assign(process.env, previousEnv);
   });

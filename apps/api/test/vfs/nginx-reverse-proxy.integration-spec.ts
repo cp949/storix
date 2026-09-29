@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client as MinioClient } from 'minio';
 import request from 'supertest';
@@ -81,7 +81,7 @@ function fetchInsecure(url: string, init?: { method?: string }): Promise<Insecur
 
 describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
   let postgresContainer: StartedPostgreSqlContainer;
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let nginxContainer: StartedTestContainer;
   let migrationDataSource: DataSource;
   let app: INestApplication;
@@ -89,18 +89,18 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
 
   beforeAll(async () => {
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
-    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
 
     // 커스텀 Network()를 만들지 않는다 — 새 CNI 네트워크 생성이 일부 podman
-    // 환경(예: cniVersion 불일치)에서 깨질 수 있다. 대신 minio/postgres가 기본으로
-    // 붙는 default 네트워크에서 minio의 실제 IP를 읽어(getNetworkNames()로 이름을
+    // 환경(예: cniVersion 불일치)에서 깨질 수 있다. 대신 versitygw/postgres가 기본으로
+    // 붙는 default 네트워크에서 versitygw의 실제 IP를 읽어(getNetworkNames()로 이름을
     // 하드코딩하지 않는다 — docker의 기본 네트워크 이름 "bridge"와 podman의 "podman"이
     // 다르다) nginx 컨테이너에 /etc/hosts 항목으로 주입한다. nginx.conf의
-    // `proxy_pass http://minio:9000;`는 그대로 두고, "minio"가 어디로 풀리는지만
+    // `proxy_pass http://versitygw:7070;`는 그대로 두고, "versitygw"가 어디로 풀리는지만
     // 컨테이너별로 바꾼다 — DNS 별칭 대신 정적 hosts 매핑이라 커스텀 네트워크가
     // 필요 없다.
-    const minioNetworkName = minioContainer.getNetworkNames()[0];
-    const minioIp = minioContainer.getIpAddress(minioNetworkName);
+    const s3NetworkName = s3Container.getNetworkNames()[0];
+    const s3Ip = s3Container.getIpAddress(s3NetworkName);
 
     const { certPath, keyPath } = generateSelfSignedCert();
     nginxContainer = await new GenericContainer('nginx:1.27-alpine')
@@ -111,7 +111,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
       // HostPortWaitStrategy(포트 TCP 접속 대기) 대신 nginx 워커 기동 로그로
       // 준비 완료를 판정한다.
       .withExposedPorts(80, 443)
-      .withExtraHosts([{ host: 'minio', ipAddress: minioIp }])
+      .withExtraHosts([{ host: 'versitygw', ipAddress: s3Ip }])
       .withCopyFilesToContainer([
         { source: certPath, target: '/etc/nginx/certs/nginx.crt' },
         { source: keyPath, target: '/etc/nginx/certs/nginx.key' },
@@ -125,11 +125,11 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     process.env.STORIX_DB_USERNAME = postgresContainer.getUsername();
     process.env.STORIX_DB_PASSWORD = postgresContainer.getPassword();
     process.env.STORIX_DB_NAME = postgresContainer.getDatabase();
-    process.env.STORIX_STORAGE_ENDPOINT = minioContainer.getHost();
-    process.env.STORIX_STORAGE_PORT = String(minioContainer.getPort());
+    process.env.STORIX_STORAGE_ENDPOINT = s3Container.getHost();
+    process.env.STORIX_STORAGE_PORT = String(s3Container.getPort());
     process.env.STORIX_STORAGE_USE_SSL = 'false';
-    process.env.STORIX_STORAGE_ACCESS_KEY = minioContainer.getUsername();
-    process.env.STORIX_STORAGE_SECRET_KEY = minioContainer.getPassword();
+    process.env.STORIX_STORAGE_ACCESS_KEY = s3Container.getUsername();
+    process.env.STORIX_STORAGE_SECRET_KEY = s3Container.getPassword();
     process.env.STORIX_STORAGE_BUCKET = 'storix-nginx-proxy-test';
     // 이 값들이 presigned URL 서명에 들어간다 — 이 테스트가 nginx에 접근할 때
     // 쓰는 host/port/scheme과 반드시 일치해야 한다.
@@ -149,11 +149,11 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
     const minioClient = new MinioClient({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
 
@@ -181,7 +181,7 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     await app.close();
     await migrationDataSource.destroy();
     await postgresContainer.stop();
-    await minioContainer.stop();
+    await s3Container.stop();
     await nginxContainer.stop();
   });
 

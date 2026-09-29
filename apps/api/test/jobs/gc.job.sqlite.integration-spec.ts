@@ -1,4 +1,4 @@
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { Client } from 'minio';
 import { DataSource } from 'typeorm';
 import { runGcJobSharedTests } from './gc.job.shared-tests.js';
@@ -18,9 +18,9 @@ import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(blob.repository.sqlite.integration-spec.ts와
 // 동일 관례) — 그 외 실행에서는 jest.integration.config.cjs의 testPathIgnorePatterns가 제외한다.
-// MinIO는 Postgres 버전과 동일하게 testcontainers로 띄운다 — object storage는 드라이버와 무관.
+// S3 스토리지(VersityGW)는 Postgres 버전과 동일하게 testcontainers로 띄운다 — object storage는 드라이버와 무관.
 describe('GcJob 통합 (SQLite)', () => {
-  let minioContainer: StartedMinioContainer;
+  let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
   let storage: MinioBlobStorage;
@@ -36,7 +36,7 @@ describe('GcJob 통합 (SQLite)', () => {
         'STORIX_DB_DRIVER=sqlite 환경변수 없이 이 파일을 실행하면 엔티티의 bytea/timestamptz 대체 상수가 postgres 값으로 고정돼 의미가 없다',
       );
     }
-    minioContainer = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    s3Container = await startS3Container();
 
     dataSource = new DataSource({
       type: 'better-sqlite3',
@@ -69,11 +69,11 @@ describe('GcJob 통합 (SQLite)', () => {
     fileExpiry = new VfsFileExpiryRepository(dataSource, nodeRepository);
 
     const client = new Client({
-      endPoint: minioContainer.getHost(),
-      port: minioContainer.getPort(),
+      endPoint: s3Container.getHost(),
+      port: s3Container.getPort(),
       useSSL: false,
-      accessKey: minioContainer.getUsername(),
-      secretKey: minioContainer.getPassword(),
+      accessKey: s3Container.getUsername(),
+      secretKey: s3Container.getPassword(),
     });
     await client.makeBucket(bucket);
     storage = new MinioBlobStorage(client, bucket, null);
@@ -85,7 +85,7 @@ describe('GcJob 통합 (SQLite)', () => {
 
   afterAll(async () => {
     await dataSource.destroy();
-    await minioContainer.stop();
+    await s3Container.stop();
   });
 
   runGcJobSharedTests(() => ({

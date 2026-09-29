@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { MinioContainer, StartedMinioContainer } from '@testcontainers/minio';
+import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { Client as MinioClient } from 'minio';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -25,8 +25,8 @@ import { encodeRevision } from '../../src/vfs/revision.js';
 import { snapshotPost, treeSnapshotContract } from './vfs-snapshot-tree.test-support.js';
 import { registerVfsTrashHttpContract } from './vfs-trash.http.shared-tests.js';
 
-describe('SQLite file + MinIO snapshot HTTP durability', () => {
-  let container: StartedMinioContainer | undefined;
+describe('SQLite file + S3 snapshot HTTP durability', () => {
+  let container: StartedS3Container | undefined;
   let directory: string | undefined;
   let app: INestApplication;
   const previous = { ...process.env };
@@ -50,7 +50,7 @@ describe('SQLite file + MinIO snapshot HTTP durability', () => {
     if (process.env.STORIX_DB_DRIVER !== 'sqlite') throw new Error('Run with STORIX_DB_DRIVER=sqlite');
     directory = await mkdtemp(join(tmpdir(), 'storix-snapshot-http-'));
     process.env.STORIX_DB_SQLITE_PATH = join(directory, 'snapshot.sqlite');
-    container = await new MinioContainer('docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z').start();
+    container = await startS3Container();
     Object.assign(process.env, {
       STORIX_STORAGE_ENDPOINT: container.getHost(),
       STORIX_STORAGE_PORT: String(container.getPort()),
