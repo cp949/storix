@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-30
+
 ### Changed
 
 - `openapi.yaml`을 1.0.0으로 확정했다. `info.version`의 `-draft` 접미사와 "초안 상태" 문단을 제거했다. 첫 릴리즈 태그는 `v1.0.0`이다. 기록은 `apps/api/docs/adr/0030`이다.
