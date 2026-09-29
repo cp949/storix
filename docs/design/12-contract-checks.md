@@ -1,0 +1,61 @@
+# 계약 검증(contract)
+
+## 목적
+
+`apps/contract`는 소비자가 공개 HTTP API에 기대하는 동작을 실제 서버에 실행해 보장한다. 결정 배경은 `docs/adr/0029-contract-checks.md`다.
+
+## 구성
+
+- `src/define-contract.ts`: 계약 정의 API와 컨텍스트 타입.
+- `src/contracts/<영역>/<id>.ts`: 계약 파일. 하나에 계약 하나다.
+- `src/runner/`: 서버·DB·blob 기동, 계약 발견·검증·실행.
+- `src/client/api-client.ts`: 계약이 쓰는 HTTP 클라이언트.
+- `src/cli.ts`: `pnpm contract`의 진입점.
+
+## 계약 정의
+
+- `defineContract({ id, title, rq, profile?, run })`이 입력을 검증한다.
+- `id`는 소문자 kebab-case이고 전체에서 유일하다.
+- `rq`는 필수이고 각 값은 `docs/requirements/file-storage.md`에 있는 `RQ-NNN`이다.
+- `skip`·`only` 옵션은 없다. 알 수 없는 옵션은 오류다.
+- 계약 파일은 `default export`로 계약을 내보낸다. 파일을 추가하면 실행 대상이 된다.
+- `run(ctx)`는 `node:assert/strict`로 검증하고 위반 시 throw한다.
+
+## 작성 규약
+
+- 계약은 `apps/api` 소스를 import하지 않는다. `apps/contract`는 `@cp949/storix-api`에 의존하지 않는다.
+- 계약끼리 의존하지 않는다. 계약은 `ctx.createNamespace()`로 받은 자기 namespace만 쓴다.
+- 정리 코드를 쓰지 않는다. 서버 종료가 정리한다.
+- 시간 대기에 `sleep`을 쓰지 않는다.
+- 파일 머리 주석에 소비자 기대 한 문장과 대응 RQ를 쓴다.
+
+## 실행 흐름
+
+1. 계약을 발견하고 `id` 중복과 문서에 없는 RQ를 검사한다. 위반이면 서버를 기동하지 않고 종료 코드 1로 끝난다.
+2. VersityGW 컨테이너를 한 번 기동하고 버킷을 만든다. 시작할 때 이전 실행이 남긴 `storix-contract-` 컨테이너를 제거한다.
+3. 프로필별로 그룹화한다. 그룹마다 새 SQLite 파일에 migration을 적용하고 API 서버를 한 번 기동한다.
+4. 계약을 순차 실행한다. 한 계약의 실패는 다음 계약 실행을 막지 않는다.
+5. 실패가 하나라도 있거나 실행한 계약이 없으면 종료 코드 1이다. 실패하면 작업 디렉터리와 서버 로그 경로를 출력하고 보존한다.
+6. SIGINT는 서버 프로세스와 컨테이너를 정리한 뒤 종료 코드 130으로 끝난다. 서버 기동을 기다리는 중이어도 프로세스를 남기지 않는다.
+
+API 서버 env는 러너가 명시적으로 만든다. 부모 프로세스의 `STORIX_*`를 상속하지 않고 서버 cwd는 `.env`가 없는 임시 디렉터리다.
+
+## 프로필
+
+- 서버를 다시 띄워야 하는 이유는 기동 설정 차이뿐이다. 전역 한도 같은 값은 프로세스 시작 시 한 번만 읽힌다(`docs/design/04-namespace-logical-quota.md` "계약").
+- 상태 격리는 namespace가 맡으므로 상태 오염은 재시작 이유가 아니다.
+- 현재 프로필은 `default` 하나다. `default`는 서버 기본값을 그대로 쓴다.
+
+## 실행 옵션
+
+- `pnpm contract [id...]`: 지정한 계약만 실행한다. 없으면 전체다.
+- `--shuffle`: 실행 순서를 섞어 계약 간 숨은 의존을 드러낸다.
+- `--coverage`: 계약이 없는 RQ를 출력한다. 서버를 기동하지 않고 종료 코드 0이다.
+- `--contracts-dir <경로>`: 계약 디렉터리를 바꾼다.
+- `--db`: `sqlite`만 지원한다. Postgres 실행은 구현하지 않았다.
+
+## 검증 범위
+
+- 러너 로직(계약 정의, 발견·검증·그룹화, 요구사항 파서, env 구성, 결과 집계)은 `src/**/*.spec.ts` 단위 테스트가 고정한다.
+- 서버 기동·재시작, 기동 대기 중 중단 시 서버 프로세스 정리, 기동 중 종료 오류, 잔여 컨테이너 제거는 `src/runner/runner-boot.integration-spec.ts`가 고정한다.
+- 계약이 통과해도 Postgres 드라이버, 컨테이너 이미지 기동, 운영 배포, 특정 소비자 연동은 검증한 것이 아니다.

@@ -54,7 +54,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-005 존재하지 않는 파일의 조건부 생성
 
 - [x] **진행 상태:** 로컬 코드·통합 검증 완료
-- **판정 근거:** 조건부 콘텐츠 생성의 `resource.id`(VFS 노드 UUID)·정규 경로·`resource.revision`·수정 시각을 공개한다. PostgreSQL `fs.integration-spec.ts` L1 140/140에서 동시 생성의 단일 승자, receipt 재생, 이동·교체 시 ID 유지를 확인했다. 삭제·동일 경로 FILE 재생성 시 새 ID를 확인하는 단언은 전체 실행 뒤 보강했으며 해당 사례만 단독 1/1 통과했다. 최종 PostgreSQL L2의 파일 HTTP suite는 통과했고 SQLite L2는 12 suites/213 tests 통과했다. PostgreSQL L2 전체는 기존 412 repository 기대값의 `id` 누락으로 26 suites 통과·1 suite 실패했으며, 기대값 수정 뒤 해당 spec 114/114가 통과했다.
+- **판정 근거:** 조건부 콘텐츠 생성의 `resource.id`(VFS 노드 UUID)·정규 경로·`resource.revision`·수정 시각을 공개한다. PostgreSQL `fs.integration-spec.ts` L1 140/140에서 동시 생성의 단일 승자, receipt 재생, 이동·교체 시 ID 유지를 확인했다. 삭제·동일 경로 FILE 재생성 시 새 ID를 확인하는 단언은 전체 실행 뒤 보강했으며 해당 사례만 단독 1/1 통과했다. 최종 PostgreSQL L2의 파일 HTTP suite는 통과했고 SQLite L2는 12 suites/213 tests 통과했다. PostgreSQL L2 전체는 기존 412 repository 기대값의 `id` 누락으로 26 suites 통과·1 suite 실패했으며, 기대값 수정 뒤 해당 spec 114/114가 통과했다. SQLite 계약 검증(`pnpm contract`)에서 `conditional-create`(존재하는 경로의 412와 기존 바이트 보존)와 `conditional-create-race`(동시 생성의 단일 승자와 바이너리 무손실) 2개가 통과했다.
 - 호출자는 지정 경로에 파일이 없을 때만 전체 바이트를 생성할 수 있어야 한다. 이미 파일이 있으면 기존 파일을 보존하고 충돌 오류를 반환해야 한다. 성공 결과에는 파일 ID, 정규 경로, revision, 수정 시각이 포함되어야 한다.
 - **수용 조건:** 같은 경로에 대한 동시 조건부 생성 두 건 중 최대 한 건만 성공하고, 성공한 파일의 바이트가 온전하다.
 

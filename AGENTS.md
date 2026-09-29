@@ -29,6 +29,18 @@ User-facing changes go in `CHANGELOG.md` (Keep a Changelog format) under `## [Un
 
 브레인스토밍으로 확정한 작업이나 `docs/ROADMAP.md` 항목 하나처럼 한 번에 끝내기 큰 작업은 rubber-workflow(DELTA 단위, 탄력적 추가, `dev` 브랜치 + 재그룹화 병합)를 따른다. See `docs/agents/rubber-workflow.md`.
 
+### 계약 검증 (contract)
+
+공개 HTTP 계약을 실제 서버에 실행하는 검증이다. 위치는 `apps/contract`, 실행은 `pnpm contract`다. 설계는 `docs/design/12-contract-checks.md`, 결정은 `docs/adr/0029-contract-checks.md`.
+
+- 대상: `apps/contract/src/contracts/**`와 `apps/contract/src/define-contract.ts`.
+- 승인 없이 기존 계약의 기대값·`rq`·`profile`을 수정하거나 삭제하지 않는다.
+- 계약이 실패하면 구현을 고친다. 계약이 틀렸다고 판단하면 변경안과 이유를 사용자에게 제시하고 승인 후 수정한다.
+- 새 계약 추가는 승인 없이 한다. 작업 보고에 추가한 계약을 적는다.
+- 계약 변경은 구현 변경과 별도 커밋(`test(contract): ...`)으로 분리한다.
+- RQ 수용 조건을 바꾸는 변경도 같은 승인 대상이다.
+- 계약 코드는 `apps/api` 소스를 import하지 않는다. `skip`·`only`를 도입하지 않는다.
+
 ### 문서·주석 작성
 
 소스·테스트 주석과 `docs/` 문서를 새로 쓰거나 고칠 때 `docs/agents/writing-styles.md`를 따른다.

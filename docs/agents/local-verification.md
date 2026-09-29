@@ -78,3 +78,13 @@ postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다
 - `@cp949/storix-demo1-was` suite는 해당 환경 변수가 설정되고 실제 Storix 인스턴스를 사용할
   수 있을 때 별도로 실행한다. L2 계획에서 명시적으로 요구하지 않는 한 기본 게이트에
   포함하지 않는다.
+
+## 계약 검증 실행
+
+- `pnpm contract`는 docker가 필요하다. VersityGW 컨테이너와 `apps/api` 빌드를 쓴다.
+- 인자 없이 실행하면 전체 계약을 실행한다. `pnpm contract <id>`는 한 계약만 실행한다.
+- 실패하면 작업 디렉터리(`/tmp/storix-contract-*`)와 서버 로그 경로를 출력하고 보존한다. 확인한 뒤 직접 지운다.
+- 실행 도중 중단(Ctrl+C)해도 작업 디렉터리는 남는다. 서버 프로세스와 컨테이너는 정리된다.
+- 이전 실행이 중단되어 컨테이너가 남으면 다음 실행이 시작할 때 제거한다. 직접 지우려면 `docker rm -f $(docker ps -aq --filter name=storix-contract-)`를 쓴다.
+- `pnpm contract`를 동시에 두 번 실행하지 않는다. 두 번째 실행이 첫 번째 실행의 컨테이너를 제거한다.
+- 러너 단위 테스트는 `pnpm --filter @cp949/storix-contract test`, 기동 통합 테스트는 `pnpm --filter @cp949/storix-contract test:integration`이다.
