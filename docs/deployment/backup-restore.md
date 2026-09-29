@@ -67,6 +67,9 @@ STORIX_RESTORE_SOURCE_DIR=/backups/2026-09-08T12-00-00-000Z STORIX_RESTORE_FORCE
 백업 시점 상태로 교체된다.
 ```
 
+백업 디렉터리에 `blobs/` 외의 하위 디렉터리가 있으면 `RestoreUnsupportedBackupError`로
+기존 데이터를 지우기 전에 중단한다. 이전 형식의 백업은 복구할 수 없다.
+
 복구가 끝나면 `app`을 다시 올린다.
 
 ```bash

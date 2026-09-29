@@ -7,7 +7,7 @@ import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
-import { RestoreTargetNotEmptyError } from './restore.errors.js';
+import { RestoreTargetNotEmptyError, RestoreUnsupportedBackupError } from './restore.errors.js';
 
 export interface RestoreResult {
   readonly sourceDir: string;
@@ -46,6 +46,9 @@ export class RestoreJob {
     // 파일이 없는지 스택에 남긴다.
     const dumpFilePath = path.join(this.sourceDir, this.dumpTool.dumpFileName);
     await fs.access(dumpFilePath);
+    // 'blobs/' 대신 다른 미러 디렉터리가 있는 백업은 dump만 복구되고 blob 참조가 끊긴 채 성공으로
+    // 끝난다. 파괴적 작업 전에 알려진 구조인지 확인한다.
+    await this.assertSupportedLayout();
 
     const hasExistingData = await this.backupRepository.hasExistingNamespaces();
     if (hasExistingData && !this.force) {
@@ -66,6 +69,16 @@ export class RestoreJob {
 
     this.logger.log(`복구 완료: ${this.sourceDir} (object ${restoredObjectCount}건)`);
     return { sourceDir: this.sourceDir, restoredObjectCount };
+  }
+
+  private async assertSupportedLayout(): Promise<void> {
+    const entries = await fs.readdir(this.sourceDir, { withFileTypes: true });
+    const unknownDirectories = entries
+      .filter((entry) => entry.isDirectory() && entry.name !== 'blobs')
+      .map((entry) => entry.name);
+    if (unknownDirectories.length > 0) {
+      throw new RestoreUnsupportedBackupError(unknownDirectories);
+    }
   }
 
   private async clearExistingObjects(): Promise<void> {
