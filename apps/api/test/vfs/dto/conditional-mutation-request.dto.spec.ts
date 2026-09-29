@@ -86,6 +86,67 @@ describe('conditional mutation request', () => {
     );
   });
 
+  it('setMimeType은 정규 경로와 정규화된 mimeType, segments를 반환한다', () => {
+    expect(
+      parseConditionalMutation({
+        kind: 'setMimeType',
+        path: '/a//b',
+        ifRevision: revision,
+        mimeType: 'IMAGE/PNG',
+      }),
+    ).toEqual({
+      kind: 'setMimeType',
+      path: '/a/b',
+      segments: ['a', 'b'],
+      ifRevision: revision,
+      mimeType: 'image/png',
+    });
+  });
+
+  it('setMimeType에 ifRevision이 없으면 428이다', () => {
+    expect(() =>
+      parseConditionalMutation({ kind: 'setMimeType', path: '/a', mimeType: 'text/plain' }),
+    ).toThrow(VfsPreconditionRequiredError);
+  });
+
+  it.each([
+    {},
+    { mimeType: 'text/plain; charset=utf-8' },
+    { mimeType: 'not-a-mime-type' },
+  ])('setMimeType의 mimeType 누락·세미콜론 포함·형식 오류 %j는 400이다', (overrides) => {
+    expect(() =>
+      parseConditionalMutation({
+        kind: 'setMimeType',
+        path: '/a',
+        ifRevision: revision,
+        ...overrides,
+      }),
+    ).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
+  it('setMimeType에 허용 목록 외 키가 있으면 400이다', () => {
+    expect(() =>
+      parseConditionalMutation({
+        kind: 'setMimeType',
+        path: '/a',
+        ifRevision: revision,
+        mimeType: 'text/plain',
+        recursive: true,
+      }),
+    ).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
+  it('setMimeType에 루트 경로(path: "/")를 지정하면 400이다', () => {
+    expect(() =>
+      parseConditionalMutation({
+        kind: 'setMimeType',
+        path: '/',
+        ifRevision: revision,
+        mimeType: 'text/plain',
+      }),
+    ).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
   it('canonicalizes paths and keeps explicit conditions', () => {
     expect(parseConditionalMutation({ kind: 'mkdir', path: '/a//./b', ifAbsent: true })).toEqual({
       kind: 'mkdir',

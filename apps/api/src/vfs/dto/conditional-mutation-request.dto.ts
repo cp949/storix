@@ -1,5 +1,6 @@
 import { PathResolver } from '../path-resolver.js';
 import { decodeRevision } from '../revision.js';
+import { assertStrictMimeType } from '../mime.js';
 import {
   assertExpirySeconds,
   DEFAULT_FILE_EXPIRY_BOUNDS,
@@ -25,6 +26,13 @@ export type ConditionalMutation =
       readonly path: string;
       readonly segments: string[];
       readonly ifRevision: string;
+    }
+  | {
+      readonly kind: 'setMimeType';
+      readonly path: string;
+      readonly segments: string[];
+      readonly ifRevision: string;
+      readonly mimeType: string;
     }
   | {
       readonly kind: 'move' | 'copy';
@@ -117,6 +125,19 @@ export function parseConditionalMutation(
       const path = pathOf(record.path, false);
       const ifRevision = requiredRevision(record, 'ifRevision');
       return { kind: 'persist', path: path.canonical, segments: path.segments, ifRevision };
+    }
+    case 'setMimeType': {
+      requireKeys(record, ['kind', 'path', 'ifRevision', 'mimeType']);
+      const path = pathOf(record.path, false);
+      const ifRevision = requiredRevision(record, 'ifRevision');
+      const mimeType = assertStrictMimeType(record.mimeType);
+      return {
+        kind: 'setMimeType',
+        path: path.canonical,
+        segments: path.segments,
+        ifRevision,
+        mimeType,
+      };
     }
     case 'move':
     case 'copy': {

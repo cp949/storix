@@ -362,6 +362,39 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     ).toBeNull();
   });
 
+  it('만료 예정 FILE의 setMimeType과 GC 만료 삭제가 경합해도 DB 상태가 일관된다', async () => {
+    const { dataSource, nodeRepository } = getContext();
+    const fixture = await createExpiringFixture(false, ['a']);
+    await makeOverdue(fixture.ids[0]);
+    const node = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({ id: fixture.ids[0] });
+    const cutoff = await readDbNow(dataSource.manager);
+
+    const [expired, mimeTypeChanged] = await Promise.allSettled([
+      nodeRepository.expireNode(fixture.namespaceId, node.id, cutoff),
+      nodeRepository.withMutation(fixture.namespaceId, fixture.rootId, (tx) =>
+        nodeRepository.applyConditionalMutation(tx, {
+          kind: 'setMimeType',
+          path: '/a',
+          segments: ['a'],
+          ifRevision: encodeRevision(node),
+          mimeType: 'image/png',
+        }),
+      ),
+    ]);
+
+    // setMimeType은 expiresAt을 읽지도 쓰지도 않으므로(persist와 달리 만료를 해제하지 않는다),
+    // 실행 순서와 무관하게 GC는 항상 만료 삭제에 성공한다.
+    expect(expired).toEqual({ status: 'fulfilled', value: { size: '7' } });
+    expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: node.id })).toBeNull();
+    if (mimeTypeChanged.status === 'rejected') {
+      // GC가 먼저 삭제한 경우: setMimeType은 404로 끝난다.
+      expect(mimeTypeChanged.reason).toBeInstanceOf(VfsNodeNotFoundError);
+    } else {
+      // setMimeType이 먼저 확정한 경우: 변경 자체는 성공하지만 만료는 그대로라 뒤이어 GC가 삭제한다.
+      expect(mimeTypeChanged.value.value.status).toBe(200);
+    }
+  });
+
   it('GC 결과에 만료 삭제 건수와 바이트를 기록한다', async () => {
     const { storage, blobRepository, fileExpiry } = getContext();
     const fixture = await createExpiringFixture(false, ['a']);

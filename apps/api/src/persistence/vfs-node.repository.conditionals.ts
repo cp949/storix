@@ -43,7 +43,12 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     tx: MutationTx,
     command: ConditionalMutation,
   ): Promise<{ status: 200 | 201; resource: VfsNodeResponseDto | null; trashId?: string }> {
-    if (command.kind === 'mkdir' || command.kind === 'delete' || command.kind === 'persist') {
+    if (
+      command.kind === 'mkdir' ||
+      command.kind === 'delete' ||
+      command.kind === 'persist' ||
+      command.kind === 'setMimeType'
+    ) {
       assertConditionalSegments(command.segments);
     } else {
       assertConditionalSegments(command.sourceSegments);
@@ -62,6 +67,16 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
 
     if (command.kind === 'persist') {
       return this.persistNode(tx, command.path, command.segments, command.ifRevision);
+    }
+
+    if (command.kind === 'setMimeType') {
+      return this.setMimeTypeNode(
+        tx,
+        command.path,
+        command.segments,
+        command.ifRevision,
+        command.mimeType,
+      );
     }
 
     const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
@@ -157,6 +172,38 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     target.expiresAt = null;
     // save()가 @VersionColumn과 updatedAt을 올리므로 withMutation의 추가 bump는 요청하지 않는다.
     await this.markAncestorChain(tx, parentId);
+    const saved = await tx.manager.getRepository(VfsNodeEntity).save(target);
+    this.markChanged(tx, saved.id, false);
+    return { status: 200, resource: toNodeResponse(toRecord(saved), path) };
+  }
+
+  // namespace root 잠금 아래에서 대상 파일의 mimeType만 바꾼다. bytes/Blob/usage는 건드리지 않고
+  // expiresAt도 읽지도 쓰지도 않는다(persist와 달리 만료를 해제하지 않는다).
+  private async setMimeTypeNode(
+    tx: MutationTx,
+    path: string,
+    segments: string[],
+    ifRevision: string,
+    mimeType: string,
+  ): Promise<{ status: 200; resource: VfsNodeResponseDto }> {
+    const parentId = await this.lockParentChain(
+      tx.manager,
+      tx.namespaceId,
+      tx.rootId,
+      segments,
+      false,
+      tx,
+      false,
+    );
+    const target = await this.lockTargetNode(tx.manager, tx.namespaceId, parentId, segments.at(-1)!, tx);
+    if (!target) throw new VfsNodeNotFoundError(path);
+    if (target.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
+    this.assertRevision(target, ifRevision, path);
+    if (target.mimeType === mimeType) return { status: 200, resource: toNodeResponse(toRecord(target), path) };
+    if (target.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
+    await this.markAncestorChain(tx, parentId);
+    target.mimeType = mimeType;
+    // save()가 @VersionColumn과 updatedAt을 올리므로 withMutation의 추가 bump는 요청하지 않는다.
     const saved = await tx.manager.getRepository(VfsNodeEntity).save(target);
     this.markChanged(tx, saved.id, false);
     return { status: 200, resource: toNodeResponse(toRecord(saved), path) };
