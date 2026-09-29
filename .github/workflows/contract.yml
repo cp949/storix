@@ -1,0 +1,71 @@
+name: 계약 검증
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "apps/api/**"
+      - "apps/contract/**"
+      - "docs/requirements/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "turbo.json"
+      - ".github/workflows/contract.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/contract/**"
+      - "docs/requirements/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "turbo.json"
+      - ".github/workflows/contract.yml"
+  workflow_dispatch:
+  schedule:
+    # 매주 월요일 03:00 KST(일요일 18:00 UTC)
+    - cron: "0 18 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  sqlite:
+    name: 계약 검증(SQLite)
+    # push·PR에서 실행한다. Postgres 실행은 수동·주 1회 job이 맡는다.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+      - name: Node 설정
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - name: 의존성 설치
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: 계약 실행
+        run: pnpm contract
+
+  postgres:
+    name: 계약 검증(Postgres)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+      - name: Node 설정
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - name: 의존성 설치
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: 계약 실행
+        run: pnpm contract --db postgres
