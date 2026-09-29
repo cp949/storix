@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import { StorixApiError, StorixUnreachableError } from './storix-client.errors.js';
+import { storixTransport } from './storix-transport.js';
 
 interface StorixErrorBody {
   readonly code: string;
@@ -42,13 +43,13 @@ export class StorixHttpClient {
 
     let response: Response;
     try {
-      // Node fetch(undici)는 스트리밍 요청 본문에 duplex 옵션을 요구한다.
-      response = await fetch(url, {
+      // fetch(undici)는 스트리밍 요청 본문에 duplex 옵션을 요구한다.
+      response = (await storixTransport.fetch(url, {
         method: options.method,
         headers,
         body,
         duplex: options.duplex,
-      } as RequestInit);
+      } as Parameters<typeof storixTransport.fetch>[1])) as unknown as Response;
     } catch (cause) {
       throw new StorixUnreachableError(cause);
     }

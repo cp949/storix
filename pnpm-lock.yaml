@@ -202,6 +202,9 @@ importers:
       rxjs:
         specifier: 7.8.2
         version: 7.8.2
+      undici:
+        specifier: 8.10.2
+        version: 8.10.2
     devDependencies:
       '@jest/globals':
         specifier: 30.5.2

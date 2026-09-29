@@ -1,9 +1,10 @@
 import { jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
-import { mockFetchOnce } from '../../test/fetch-mock.js';
+import { mockFetchOnce, transportResponse } from '../../test/fetch-mock.js';
 import { StorixClient } from './storix-client.service.js';
 import { StorixHttpClient } from './storix-http.client.js';
+import { storixTransport } from './storix-transport.js';
 import { derivePublicPath } from './public-path.js';
 
 describe('StorixClient — namespace 부트스트랩', () => {
@@ -315,13 +316,15 @@ describe('StorixClient — 다운로드/공개 발행', () => {
       },
     });
     const getSpy = jest
-      .spyOn(globalThis, 'fetch')
+      .spyOn(storixTransport, 'fetch')
       .mockResolvedValueOnce(
-        new Response(bodyStream, { status: 200, headers: { 'content-type': 'text/plain' } }),
+        transportResponse(
+          new Response(bodyStream, { status: 200, headers: { 'content-type': 'text/plain' } }),
+        ),
       );
     const putSpy = jest
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }));
+      .spyOn(storixTransport, 'fetch')
+      .mockResolvedValueOnce(transportResponse(new Response(JSON.stringify({}), { status: 201 })));
 
     const link = await client.publish('/documents/alice/a.txt');
     const expectedPublicPath = derivePublicPath('/documents/alice/a.txt');

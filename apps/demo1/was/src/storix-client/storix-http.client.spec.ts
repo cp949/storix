@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
@@ -8,6 +10,7 @@ import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import { mockFetchOnce } from '../../test/fetch-mock.js';
 import { StorixUnreachableError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
+import { storixTransport } from './storix-transport.js';
 
 describe('StorixHttpClient', () => {
   let client: StorixHttpClient;
@@ -74,7 +77,7 @@ describe('StorixHttpClient', () => {
   });
 
   it('네트워크 오류는 StorixUnreachableError로 감싼다', async () => {
-    jest.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    jest.spyOn(storixTransport, 'fetch').mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
     await expect(client.requestJson({ method: 'GET', path: '/api/v2/probe' })).rejects.toBeInstanceOf(
       StorixUnreachableError,
@@ -128,5 +131,57 @@ describe('StorixHttpClient', () => {
     }
 
     expect(pulledBytes).toBeLessThan(readAheadLimitBytes);
+  });
+
+  it('수신 측이 본문을 즉시 소비하면 전송을 마친 청크를 요청이 끝날 때까지 보유하지 않는다', async () => {
+    const chunkBytes = 64 * 1024;
+    const totalChunks = 512;
+    const heldLimitBytes = 8 * 1024 * 1024;
+
+    // 강제 GC 뒤의 arrayBuffers만 남은(살아 있는) 참조로 본다.
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    gc();
+    const baselineBytes = process.memoryUsage().arrayBuffers;
+    let heldBytes = Number.POSITIVE_INFINITY;
+    let pulledChunks = 0;
+
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.setHeader('content-type', 'application/json');
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise((resolve) => setImmediate(resolve));
+        if (pulledChunks >= totalChunks) {
+          // 마지막 청크를 요청하는 시점: 앞서 보낸 본문이 아직 붙들려 있는지 잰다.
+          gc();
+          heldBytes = process.memoryUsage().arrayBuffers - baselineBytes;
+          controller.close();
+          return;
+        }
+        pulledChunks += 1;
+        controller.enqueue(new Uint8Array(chunkBytes));
+      },
+    });
+    const streamingClient = new StorixHttpClient({
+      storixBaseUrl: `http://127.0.0.1:${port}`,
+      storixApiKey: 'secret-key',
+    } as DemoWasConfig);
+
+    try {
+      await streamingClient.request({ method: 'PUT', path: '/api/v2/probe', body, duplex: 'half' });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    expect(pulledChunks).toBe(totalChunks);
+    expect(heldBytes).toBeLessThan(heldLimitBytes);
   });
 });
