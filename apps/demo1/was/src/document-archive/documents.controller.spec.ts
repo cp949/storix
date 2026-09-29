@@ -7,6 +7,62 @@ import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StorixClient } from '../storix-client/storix-client.service.js';
 import { DocumentsController } from './documents.controller.js';
 
+describe('DocumentsController — PATCH MIME type', () => {
+  let app: INestApplication;
+  const setMimeType = jest.fn<StorixClient['setMimeType']>();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [DocumentsController],
+      providers: [{ provide: StorixClient, useValue: { setMimeType } }],
+    }).compile();
+    app = moduleRef.createNestApplication({ bodyParser: false });
+    configureBodyParsers(app);
+    app.useGlobalFilters(new DomainErrorFilter());
+    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
+      req.requestId = 'req-1';
+      next();
+    });
+    await app.init();
+  });
+
+  afterAll(async () => app.close());
+
+  beforeEach(() => setMimeType.mockReset());
+
+  it('사용자 경로로 조건부 MIME 변경을 호출하고 결과 경로를 외부 경로로 반환한다', async () => {
+    setMimeType.mockResolvedValue({
+      path: '/documents/alice/a.txt',
+      name: 'a.txt',
+      type: 'FILE',
+      size: 5,
+      mimeType: 'application/json',
+      createdAt: '',
+      updatedAt: '',
+      version: 2,
+    });
+
+    const response = await request(app.getHttpServer())
+      .patch('/demo-api/documents/mime-type')
+      .set('X-Demo-User', 'alice')
+      .send({ path: '/a.txt', mimeType: 'application/json' })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ path: '/a.txt', mimeType: 'application/json' });
+    expect(setMimeType).toHaveBeenCalledWith('/documents/alice/a.txt', 'application/json');
+  });
+
+  it('다른 사용자 경로 수정 요청을 거부하고 StorixClient를 호출하지 않는다', async () => {
+    await request(app.getHttpServer())
+      .patch('/demo-api/documents/mime-type')
+      .set('X-Demo-User', 'alice')
+      .send({ path: '../bob/a.txt', mimeType: 'application/json' })
+      .expect(403);
+
+    expect(setMimeType).not.toHaveBeenCalled();
+  });
+});
+
 describe('DocumentsController — PUT content', () => {
   let app: INestApplication;
   const upload = jest.fn<StorixClient['upload']>();

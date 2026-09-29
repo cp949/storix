@@ -8,6 +8,7 @@ import {
   completeUploadSession,
   cancelUploadSession,
   listDocuments,
+  setDocumentMimeType,
 } from "./client";
 
 describe("listDocuments", () => {
@@ -77,6 +78,33 @@ describe("createDirectory", () => {
     );
 
     await expect(createDirectory("alice", "/reports")).resolves.toBeUndefined();
+  });
+});
+
+describe("setDocumentMimeType", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("path와 MIME type을 JSON body로 보내고 갱신된 파일을 반환한다", async () => {
+    const file = { path: "/a.txt", mimeType: "application/json" };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(file), { status: 200 }));
+
+    await expect(
+      setDocumentMimeType("alice", "/a.txt", "application/json"),
+    ).resolves.toEqual(file);
+
+    const [route, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(route).toBe("/demo-api/documents/mime-type");
+    expect(init.method).toBe("PATCH");
+    expect(init.headers).toMatchObject({
+      "Content-Type": "application/json",
+      "X-Demo-User": "alice",
+    });
+    expect(JSON.parse(String(init.body))).toEqual({
+      path: "/a.txt",
+      mimeType: "application/json",
+    });
   });
 });
 

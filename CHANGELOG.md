@@ -15,7 +15,7 @@
 
 ### Added
 
-- 조건부 mutation에 `setMimeType` 명령을 추가했다. bytes 변경 없이 파일 mimeType만 갱신한다.
+- 조건부 mutation에 `setMimeType` 명령을 추가했다. bytes 변경 없이 파일 mimeType만 갱신하며, demo1 웹에서도 선택 파일 MIME type을 수정할 수 있다.
 
 - 새 FILE의 만료를 조건부 content의 `X-Expires-In`, 재개 업로드와 조건부 copy의 `expiresInSeconds`로 지정할 수 있다(기본 60~2592000초, 설정으로 조정 가능). 파일 metadata의 `expiresAt`으로 만료를 조회하고 `persist`로 확정하면 만료가 해제된다. 만료된 미확정 파일은 GC가 namespace 휴지통 정책에 따라 삭제한다. 만료 예정 파일은 PUBLIC namespace의 인증 없는 `content`·`download`에서 404로 숨기고 확정 뒤 공개한다.
 

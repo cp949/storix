@@ -9,6 +9,10 @@ export interface FileEntry {
   readonly version: number;
 }
 
+export interface FileStat extends FileEntry {
+  readonly revision: string;
+}
+
 export interface EntryPage {
   readonly items: FileEntry[];
   readonly nextCursor: string | null;

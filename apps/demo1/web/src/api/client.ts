@@ -140,6 +140,18 @@ export function uploadDocument(
   });
 }
 
+export function setDocumentMimeType(
+  user: DemoUser,
+  path: string,
+  mimeType: string,
+): Promise<FileEntry> {
+  return request(user, "/documents/mime-type", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, mimeType }),
+  });
+}
+
 export function createUploadSession(
   user: DemoUser,
   path: string,

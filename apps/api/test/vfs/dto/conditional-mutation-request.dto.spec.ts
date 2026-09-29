@@ -109,20 +109,19 @@ describe('conditional mutation request', () => {
     ).toThrow(VfsPreconditionRequiredError);
   });
 
-  it.each([
-    {},
-    { mimeType: 'text/plain; charset=utf-8' },
-    { mimeType: 'not-a-mime-type' },
-  ])('setMimeType의 mimeType 누락·세미콜론 포함·형식 오류 %j는 400이다', (overrides) => {
-    expect(() =>
-      parseConditionalMutation({
-        kind: 'setMimeType',
-        path: '/a',
-        ifRevision: revision,
-        ...overrides,
-      }),
-    ).toThrow(expect.objectContaining({ status: 400 }));
-  });
+  it.each([{}, { mimeType: 'text/plain; charset=utf-8' }, { mimeType: 'not-a-mime-type' }])(
+    'setMimeType의 mimeType 누락·세미콜론 포함·형식 오류 %j는 400이다',
+    (overrides) => {
+      expect(() =>
+        parseConditionalMutation({
+          kind: 'setMimeType',
+          path: '/a',
+          ifRevision: revision,
+          ...overrides,
+        }),
+      ).toThrow(expect.objectContaining({ status: 400 }));
+    },
+  );
 
   it('setMimeType에 허용 목록 외 키가 있으면 400이다', () => {
     expect(() =>

@@ -180,6 +180,47 @@ describe('StorixClient — VFS 조작', () => {
     expect(url.searchParams.get('recursive')).toBe('true');
   });
 
+  it('setMimeType은 revision을 읽은 뒤 조건부 mutation을 보낸다', async () => {
+    const fetchSpy = mockFetchOnce(200, {
+      path: '/a.txt',
+      name: 'a.txt',
+      type: 'FILE',
+      size: 5,
+      mimeType: 'text/plain',
+      createdAt: '',
+      updatedAt: '',
+      version: 1,
+      revision: 'r1.ABC',
+    });
+    mockFetchOnce(200, {
+      path: '/a.txt',
+      name: 'a.txt',
+      type: 'FILE',
+      size: 5,
+      mimeType: 'application/json',
+      createdAt: '',
+      updatedAt: '',
+      version: 2,
+    });
+
+    const result = await client.setMimeType('/a.txt', 'application/json');
+
+    expect(result.mimeType).toBe('application/json');
+    const [statUrl] = fetchSpy.mock.calls[0] as [URL];
+    expect(statUrl.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/stat');
+    expect(statUrl.searchParams.get('path')).toBe('/a.txt');
+    const [mutationUrl, mutationInit] = fetchSpy.mock.calls[1] as [URL, RequestInit];
+    expect(mutationUrl.pathname).toBe('/api/v2/namespaces/ns-private-id/fs/mutations');
+    expect((mutationInit.headers as Headers).get('idempotency-key')).toMatch(/^[0-9a-f-]{36}$/);
+    expect((mutationInit.headers as Headers).get('x-mutation-scope')).toBe('demo1-was:set-mime-type');
+    expect(JSON.parse(mutationInit.body as string)).toEqual({
+      kind: 'setMimeType',
+      path: '/a.txt',
+      ifRevision: 'r1.ABC',
+      mimeType: 'application/json',
+    });
+  });
+
   it('find는 path/name/cursor 쿼리로 find를 호출한다', async () => {
     const page = { items: [], nextCursor: null };
     const spy = mockFetchOnce(200, page);

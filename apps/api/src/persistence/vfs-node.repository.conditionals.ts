@@ -70,13 +70,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     }
 
     if (command.kind === 'setMimeType') {
-      return this.setMimeTypeNode(
-        tx,
-        command.path,
-        command.segments,
-        command.ifRevision,
-        command.mimeType,
-      );
+      return this.setMimeTypeNode(tx, command.path, command.segments, command.ifRevision, command.mimeType);
     }
 
     const namespace = await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: namespaceId });
@@ -199,7 +193,8 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     if (!target) throw new VfsNodeNotFoundError(path);
     if (target.type === 'DIRECTORY') throw new VfsIsDirectoryError(path);
     this.assertRevision(target, ifRevision, path);
-    if (target.mimeType === mimeType) return { status: 200, resource: toNodeResponse(toRecord(target), path) };
+    if (target.mimeType === mimeType)
+      return { status: 200, resource: toNodeResponse(toRecord(target), path) };
     if (target.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
     await this.markAncestorChain(tx, parentId);
     target.mimeType = mimeType;

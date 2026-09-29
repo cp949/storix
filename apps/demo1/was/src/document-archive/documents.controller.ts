@@ -1,11 +1,13 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
   Headers,
   HttpCode,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -67,6 +69,27 @@ export class DocumentsController {
     const internalPath = resolveInternalPath(user, firstQueryValue(path) ?? '');
     const page = await this.storixClient.list(internalPath, firstQueryValue(cursor));
     return { items: page.items.map((entry) => toExternalEntry(user, entry)), nextCursor: page.nextCursor };
+  }
+
+  @Patch('mime-type')
+  async setMimeType(
+    @Headers('x-demo-user') demoUserHeader: string | undefined,
+    @Body() body: unknown,
+  ): Promise<FileEntry> {
+    const user = parseDemoUser(demoUserHeader);
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      typeof (body as Record<string, unknown>).path !== 'string' ||
+      typeof (body as Record<string, unknown>).mimeType !== 'string'
+    ) {
+      throw new BadRequestException('path와 mimeType이 필요함');
+    }
+    const request = body as { path: string; mimeType: string };
+    const internalPath = resolveInternalPath(user, request.path);
+    const entry = await this.storixClient.setMimeType(internalPath, request.mimeType);
+    return toExternalEntry(user, entry);
   }
 
   @Get('search')

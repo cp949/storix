@@ -16,6 +16,7 @@ import {
   createDownload,
   publishDocument,
   unpublishDocument,
+  setDocumentMimeType,
 } from "../api/client";
 import type { EntryPage } from "../api/types";
 import { ErrorPanel } from "../error/ErrorPanel";
@@ -42,6 +43,7 @@ vi.mock("../api/client", async (importOriginal) => {
     createDownload: vi.fn(),
     publishDocument: vi.fn(),
     unpublishDocument: vi.fn(),
+    setDocumentMimeType: vi.fn(),
   };
 });
 
@@ -86,6 +88,7 @@ describe("DocumentArchive", () => {
     localStorage.clear();
     vi.mocked(listDocuments).mockReset();
     vi.mocked(searchDocuments).mockReset();
+    vi.mocked(setDocumentMimeType).mockReset();
     vi.mocked(FolderTree).mockClear();
     vi.mocked(FolderTree).mockImplementation(
       (() => null) as unknown as typeof FolderTree,
@@ -103,6 +106,36 @@ describe("DocumentArchive", () => {
 
     expect(await screen.findByText("a.txt", { exact: false })).toBeTruthy();
     expect(listDocuments).toHaveBeenCalledWith("alice", "/");
+  });
+
+  it("선택 파일 MIME type 수정 성공 시 목록 메타데이터를 갱신한다", async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+    vi.mocked(setDocumentMimeType).mockResolvedValue({
+      ...entryA,
+      mimeType: "application/json",
+      version: 2,
+    });
+
+    render(
+      <ErrorProvider>
+        <DocumentArchive user="alice" />
+      </ErrorProvider>,
+    );
+    await selectRow("a.txt");
+    fireEvent.click(screen.getByText("MIME type 변경"));
+    fireEvent.change(screen.getByLabelText("MIME type"), {
+      target: { value: "application/json" },
+    });
+    fireEvent.click(screen.getByText("저장"));
+
+    await waitFor(() =>
+      expect(setDocumentMimeType).toHaveBeenCalledWith(
+        "alice",
+        "/a.txt",
+        "application/json",
+      ),
+    );
+    expect(await screen.findByText("application/json")).toBeTruthy();
   });
 
   it("사이드바 트리에서 폴더로 이동하면 그 경로로 목록을 다시 불러온다", async () => {

@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import type {
   EntryPage,
   FileEntry,
+  FileStat,
   PresignedDownload,
   PublicLink,
   UploadMetadata,
@@ -67,6 +69,24 @@ export class StorixClient implements StorixClientPort {
       method: 'GET',
       path: `/api/v2/namespaces/${this.requireDemoNamespaceId()}/fs/ls`,
       query: { path, cursor },
+    });
+  }
+
+  async setMimeType(path: string, mimeType: string): Promise<FileEntry> {
+    const namespaceId = this.requireDemoNamespaceId();
+    const stat = await this.http.requestJson<FileStat>({
+      method: 'GET',
+      path: `/api/v2/namespaces/${namespaceId}/fs/stat`,
+      query: { path },
+    });
+    return this.http.requestJson<FileEntry>({
+      method: 'POST',
+      path: `/api/v2/namespaces/${namespaceId}/fs/mutations`,
+      headers: {
+        'idempotency-key': randomUUID(),
+        'x-mutation-scope': 'demo1-was:set-mime-type',
+      },
+      json: { kind: 'setMimeType', path, ifRevision: stat.revision, mimeType },
     });
   }
 
@@ -260,6 +280,7 @@ export interface StorixClientPort {
   ensureDemoNamespace(): Promise<string>;
   ensurePublicNamespace(): Promise<string>;
   list(path: string, cursor?: string): Promise<EntryPage>;
+  setMimeType(path: string, mimeType: string): Promise<FileEntry>;
   createDirectory(path: string): Promise<void>;
   upload(path: string, body: ReadableStream, metadata: UploadMetadata): Promise<FileEntry>;
   createUploadSession(

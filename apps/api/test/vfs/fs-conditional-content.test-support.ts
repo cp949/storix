@@ -130,16 +130,13 @@ export function registerFsConditionalContentContract(ctx: FsHttpContext) {
 
       // 첫 응답을 잃었다고 가정하고 새 key + 원래(이제는 낡은) revision으로 재시도하면 412다.
       // current.mimeType이 이미 바뀐 값이면 첫 mutation이 완료됐다고 판정할 수 있다.
-      const retried = await setMimeType(
-        randomUUID(),
-        created.body.resource.revision,
-        'image/gif',
-      ).expect(412);
+      const retried = await setMimeType(randomUUID(), created.body.resource.revision, 'image/gif').expect(
+        412,
+      );
       expect(retried.body.current).toMatchObject({ id: created.body.resource.id, mimeType: 'image/png' });
 
-      const stat = (
-        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/doc.bin' }).expect(200)
-      ).body;
+      const stat = (await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/doc.bin' }).expect(200))
+        .body;
       expect(stat.mimeType).toBe('image/png');
       expect(stat.revision).not.toBe(created.body.resource.revision);
     });
@@ -148,9 +145,8 @@ export function registerFsConditionalContentContract(ctx: FsHttpContext) {
       const namespaceId = await ctx.createNamespace('set-mimetype-http-errors');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;
       await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
-      const dirStat = (
-        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/dir' }).expect(200)
-      ).body;
+      const dirStat = (await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/dir' }).expect(200))
+        .body;
       const dirResult = await request(ctx.httpServer)
         .post(`${base}/mutations`)
         .set('Idempotency-Key', randomUUID())

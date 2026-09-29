@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { FileEntry, PublicLink } from "../api/types";
 
 export interface EntryListProps {
@@ -14,6 +15,7 @@ export interface EntryListProps {
   readonly onPublish: (item: FileEntry) => void;
   readonly onUnpublish: (item: FileEntry) => void;
   readonly onCopyLink: (url: string) => void;
+  readonly onSetMimeType: (item: FileEntry, mimeType: string) => void;
 }
 
 export function EntryList({
@@ -30,7 +32,10 @@ export function EntryList({
   onPublish,
   onUnpublish,
   onCopyLink,
+  onSetMimeType,
 }: EntryListProps) {
+  const [editingMimeType, setEditingMimeType] = useState(false);
+  const [mimeTypeDraft, setMimeTypeDraft] = useState("");
   const selectedItem = items.find((item) => item.path === selectedPath) ?? null;
   const publishedLink = selectedItem
     ? publishedLinks[selectedItem.path]
@@ -59,6 +64,17 @@ export function EntryList({
               다운로드
             </button>
           )}
+          {selectedItem.type === "FILE" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMimeTypeDraft(selectedItem.mimeType ?? "");
+                setEditingMimeType(true);
+              }}
+            >
+              MIME type 변경
+            </button>
+          )}
           {selectedItem.type === "FILE" &&
             (publishedLink ? (
               <button type="button" onClick={() => onUnpublish(selectedItem)}>
@@ -70,6 +86,30 @@ export function EntryList({
               </button>
             ))}
         </div>
+      )}
+
+      {editingMimeType && selectedItem?.type === "FILE" && (
+        <form
+          aria-label="MIME type 수정"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSetMimeType(selectedItem, mimeTypeDraft);
+            setEditingMimeType(false);
+          }}
+        >
+          <label>
+            MIME type
+            <input
+              value={mimeTypeDraft}
+              onChange={(event) => setMimeTypeDraft(event.target.value)}
+              required
+            />
+          </label>
+          <button type="submit">저장</button>
+          <button type="button" onClick={() => setEditingMimeType(false)}>
+            취소
+          </button>
+        </form>
       )}
 
       {publishedLink && (
@@ -93,6 +133,7 @@ export function EntryList({
             <tr>
               <th>이름</th>
               <th>유형</th>
+              <th>MIME type</th>
             </tr>
           </thead>
           <tbody>
@@ -100,12 +141,16 @@ export function EntryList({
               <tr
                 key={item.path}
                 aria-selected={item.path === selectedPath}
-                onClick={() => onSelect(item)}
+                onClick={() => {
+                  setEditingMimeType(false);
+                  onSelect(item);
+                }}
               >
                 <td>
                   {item.type === "DIRECTORY" ? "📁" : "📄"} {item.name}
                 </td>
                 <td>{item.type === "DIRECTORY" ? "폴더" : "파일"}</td>
+                <td>{item.mimeType ?? "—"}</td>
               </tr>
             ))}
           </tbody>

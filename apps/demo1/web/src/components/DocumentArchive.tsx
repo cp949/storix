@@ -8,6 +8,7 @@ import {
   removeEntry,
   searchDocuments,
   uploadDocument,
+  setDocumentMimeType,
   createDownload,
   publishDocument,
   unpublishDocument,
@@ -206,6 +207,21 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
     }
   }
 
+  async function handleSetMimeType(item: FileEntry, mimeType: string) {
+    try {
+      const updated = await setDocumentMimeType(user, item.path, mimeType);
+      const replace = (entries: FileEntry[]) =>
+        entries.map((entry) => (entry.path === updated.path ? updated : entry));
+      setItems(replace);
+      setSearchResults((current) =>
+        current === null ? null : replace(current),
+      );
+      clearError();
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
   async function handlePublish(item: FileEntry) {
     if (
       !window.confirm(
@@ -367,6 +383,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
           onPublish={handlePublish}
           onUnpublish={handleUnpublish}
           onCopyLink={copyToClipboard}
+          onSetMimeType={handleSetMimeType}
         />
       </div>
     </section>

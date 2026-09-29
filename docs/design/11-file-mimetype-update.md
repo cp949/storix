@@ -17,7 +17,12 @@ content PUT으로 다시 쓴다. 응답을 잃고 재시도하는 사이 다른 
 `POST /api/v2/namespaces/{namespaceId}/fs/mutations`의 body:
 
 ```json
-{ "kind": "setMimeType", "path": "/a/b.bin", "ifRevision": "r1.…", "mimeType": "image/png" }
+{
+  "kind": "setMimeType",
+  "path": "/a/b.bin",
+  "ifRevision": "r1.…",
+  "mimeType": "image/png"
+}
 ```
 
 `Idempotency-Key`와 `X-Mutation-Scope`가 필요하고 `ifRevision` 누락은 428

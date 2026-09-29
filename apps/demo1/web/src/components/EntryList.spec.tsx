@@ -43,6 +43,7 @@ interface OverrideProps {
   onPublish?: (item: FileEntry) => void;
   onUnpublish?: (item: FileEntry) => void;
   onCopyLink?: (url: string) => void;
+  onSetMimeType?: (item: FileEntry, mimeType: string) => void;
 }
 
 function renderList(overrides: OverrideProps = {}) {
@@ -60,6 +61,7 @@ function renderList(overrides: OverrideProps = {}) {
     onPublish: overrides.onPublish ?? noop,
     onUnpublish: overrides.onUnpublish ?? noop,
     onCopyLink: overrides.onCopyLink ?? noop,
+    onSetMimeType: overrides.onSetMimeType ?? noop,
   };
   return render(<EntryList {...props} />);
 }
@@ -98,7 +100,21 @@ describe("EntryList", () => {
     expect(within(toolbar).getByText("삭제")).toBeTruthy();
     expect(within(toolbar).getByText("다운로드")).toBeTruthy();
     expect(within(toolbar).getByText("발행")).toBeTruthy();
+    expect(within(toolbar).getByText("MIME type 변경")).toBeTruthy();
     expect(within(toolbar).queryByText("열기")).toBeNull();
+  });
+
+  it("선택한 파일 MIME type을 수정 요청한다", () => {
+    const onSetMimeType = vi.fn();
+    renderList({ selectedPath: "/a.txt", onSetMimeType });
+
+    fireEvent.click(screen.getByText("MIME type 변경"));
+    fireEvent.change(screen.getByLabelText("MIME type"), {
+      target: { value: "application/json" },
+    });
+    fireEvent.click(screen.getByText("저장"));
+
+    expect(onSetMimeType).toHaveBeenCalledWith(fileA, "application/json");
   });
 
   it("디렉터리를 선택하면 열기·이동·복사·삭제만 나타나고 다운로드·발행은 없다", () => {

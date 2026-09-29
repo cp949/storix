@@ -107,9 +107,9 @@ export function runMimeTypeUpdateTests(helpers: VfsNodeRepositoryTestHelpers): v
       const dir = await getRepo().ensureDirectory(namespace.id, root.id, ['dir'], false);
       const stale = encodeRevision({ id: dir.node.id, version: dir.node.version + 5 });
 
-      await expect(
-        setMimeType(namespace.id, root.id, '/dir', stale, 'image/png'),
-      ).rejects.toBeInstanceOf(VfsIsDirectoryError);
+      await expect(setMimeType(namespace.id, root.id, '/dir', stale, 'image/png')).rejects.toBeInstanceOf(
+        VfsIsDirectoryError,
+      );
     });
 
     it('대상이 없으면 404다', async () => {
