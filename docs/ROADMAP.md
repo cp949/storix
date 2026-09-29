@@ -48,8 +48,8 @@ Node 엔진 하한(`>=24.18`)에 맞게 갱신. 자세한 내용은 아래 "0. �
 3. **apps/demo 구현 및 반복 개선**: 실사용 시나리오로 fs API와 `SEC-01`(서비스
    인증)의 사용성을 검증하고, `STORAGE-02`/`STORAGE-03`(presigned URL + nginx
    reverse-proxy)을 실제로 재현해 검증한다. 발견된 불편함을 api에 반영한다.
-   `apps/demo1`을 구현했고 전체 스택 HTTP smoke 20단계를 통과했다. 브라우저 UI·다운로드
-   응답 헤더 검증은 남아 있어 이 단계는 완료로 표시하지 않는다.
+   `apps/demo1`을 구현했고 전체 스택 HTTP smoke 20단계와 Chromium의 MIME 변경·다운로드 응답
+   헤더 확인을 통과했다. 남은 조건은 "5. API 계약 고정"의 1.0 확정 조건이 추적한다.
 4. **배포/온보딩 + API 계약 고정**: `DEPLOY-01`~~`DEPLOY-06`, `API-01`~~`API-03`.
    apps/demo로 API 모양이 검증된 뒤 스펙과 버저닝을 고정한다 — 먼저 고정하면
    demo 피드백으로 다시 깨야 한다.
@@ -329,7 +329,9 @@ WORM/Object Lock은 규제·감사 요구가 구체화될 때 별도 항목으�
 다음을 모두 만족해야 한다. 확정 기록은 ADR-0020 지시에 따라 새 ADR 또는
 `CHANGELOG.md` 항목으로 남긴다.
 
-- [ ] demo1 실사용 검증 완료: 브라우저에서 MIME 변경 UI와 다운로드 응답 헤더 확인
+- [x] demo1 실사용 검증 완료: Chromium으로 MIME 변경 UI와 presigned 다운로드 응답 헤더를
+      확인했다. 다운로드 `Content-Type`이 변경한 MIME을 반영하지 않던 결함을 고쳤다.
+      Firefox·WebKit과 그 밖의 브라우저 UI(이동·복사·공개 링크 등)는 확인하지 않았다.
 - [ ] WAS 업로드 메모리 상한 판정: 16 MiB 업로드 RSS가 smoke 기준(8 MiB)을 넘은 원인을
       정리해 기준을 조정하거나 코드를 고친다. 현재는 정보성 기록이다.
 - [ ] 릴리즈 태그 정책 확인: 현재 태그가 없고 `CHANGELOG.md`는 `[0.1.0]` baseline만
