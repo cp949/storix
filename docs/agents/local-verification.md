@@ -82,6 +82,7 @@ postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다
 ## 계약 검증 실행
 
 - `pnpm contract`는 docker가 필요하다. VersityGW 컨테이너와 `apps/api` 빌드를 쓴다.
+- `pnpm contract --db postgres`는 `postgres:16-alpine` 컨테이너도 기동한다(첫 실행에 이미지 pull). 계약은 같고 드라이버만 다르다.
 - 인자 없이 실행하면 전체 계약을 실행한다. `pnpm contract <id>`는 한 계약만 실행한다.
 - 계약이 실패하거나 러너가 오류로 종료하면 작업 디렉터리(`/tmp/storix-contract-*`)를 출력하고 보존한다. 계약 실패는 서버 로그 경로도 출력한다. 확인한 뒤 직접 지운다.
 - 통과하거나 실행 도중 중단(Ctrl+C)하면 작업 디렉터리, 서버 프로세스, 컨테이너를 모두 정리한다.

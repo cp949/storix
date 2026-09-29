@@ -55,10 +55,18 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
 - `--shuffle`: 실행 순서를 섞어 계약 간 숨은 의존을 드러낸다.
 - `--coverage`: 계약이 없는 RQ를 출력한다. 서버를 기동하지 않고 종료 코드 0이다.
 - `--contracts-dir <경로>`: 계약 디렉터리를 바꾼다.
-- `--db`: `sqlite`만 지원한다. Postgres 실행은 구현하지 않았다.
+- `--db sqlite|postgres`: 기본은 `sqlite`다. `postgres`는 러너가 docker CLI로 `postgres:16-alpine` 컨테이너를 실행당 1회 기동하고, 프로필마다 새 database(`storix_<실행 ID>_<프로필>`)를 만들어 같은 migration 진입점을 적용한다. 계약 코드는 드라이버를 모르며 차이는 `runner/database.ts`·`runner/postgres.ts`에만 있다. 드라이버 간 결과가 다르면 계약 위반 또는 문서화된 차이로 다룬다.
 
 ## 검증 범위
 
 - 러너 로직(계약 정의, 발견·검증·그룹화, 요구사항 파서, env 구성, 결과 집계)은 `src/**/*.spec.ts` 단위 테스트가 고정한다.
 - 서버 기동·재시작, 기동 대기 중 중단 시 서버 프로세스 정리, 기동 중 종료 오류, 잔여 컨테이너 제거는 `src/runner/runner-boot.integration-spec.ts`가 고정한다.
-- 계약이 통과해도 Postgres 드라이버, 컨테이너 이미지 기동, 운영 배포, 특정 소비자 연동은 검증한 것이 아니다.
+- 계약 통과는 그 실행의 드라이버(`--db`) 위에서 공개 HTTP 계약이 지켜졌다는 뜻이다. 배포 이미지·compose 기동, 운영 배포, 특정 소비자 연동은 검증한 것이 아니다.
+
+## CI
+
+`.github/workflows/contract.yml`이 실행한다.
+
+- push(`dev`)·pull request: `pnpm contract`(SQLite). `apps/api/**`, `apps/contract/**`, `docs/requirements/**`, 루트 패키지·turbo 설정, 워크플로 파일이 바뀔 때만 실행한다.
+- `workflow_dispatch`와 매주 월요일 03:00 KST: `pnpm contract --db postgres`.
+- `release.yml`의 게이트로 연결하지 않았다.
