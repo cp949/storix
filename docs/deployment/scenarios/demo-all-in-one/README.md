@@ -38,11 +38,16 @@ Nginx(:8080) ──/demo-api/──────> Demo WAS ──────> St
   string을 기록하지 않는 로그 형식
 - [`compose.demo.yml`](compose.demo.yml): base + versitygw + postgres 위에
   `demo-was`/`nginx` 서비스를 추가하는 override
+- [`compose.resumable.yml`](compose.resumable.yml): 재개 업로드용 설정 파일을 `app`·`gc`에 주입하는
+  override. `enable-resumable-upload.sh` 실행 뒤에만 `-f` 목록에 넣는다
+- [`enable-resumable-upload.sh`](enable-resumable-upload.sh): 기동 중인 스택의 `demo` namespace에서
+  `resumable-upload`를 활성화한다. 설정 템플릿은 [`resumable/`](resumable/)에 있다
 - [`env/development.env.example`](env/development.env.example): 개발 설정
   예시(운영 자격증명 아님)
 - [`smoke-test.sh`](smoke-test.sh): 실제 스택 대상 업로드→목록→검색→복사→
   이동→인가된 다운로드→영구 공개 발행/취소→삭제→상한 초과/경로 충돌 자동 검증
   - 업로드 시 demo-was RSS 증가량 기록(정보성, 판정 기준 아님)
+  - 재개 업로드 단계(20)는 활성화한 스택에서만 실행하고 비활성이면 건너뜀
 
 `apps/demo1/was/Dockerfile`은 이 시나리오 전용이 아니라 `apps/demo1/was` 자체
 소유다(다른 배포 조합에서도 재사용 가능하도록).
@@ -64,6 +69,26 @@ docker compose \
 
 기동 후 `http://localhost:8080/`을 연다.
 
+## 재개 업로드 활성화
+
+재개 업로드는 Storix에서 기본 비활성이다. 활성화 설정은 namespace UUID를 담아야 하고
+API는 시작할 때 그 UUID가 DB에 있는지 확인한다. UUID는 `demo-was`가 namespace를 만들 때
+정해지므로 스택을 먼저 기동한 뒤 스크립트를 실행한다.
+
+```bash
+ENV_FILE=docs/deployment/scenarios/demo-all-in-one/env/development.env.example \
+  docs/deployment/scenarios/demo-all-in-one/enable-resumable-upload.sh
+```
+
+- `ENV_FILE`은 기동에 `--env-file`을 썼을 때만 지정한다. 루트 `.env`를 쓰면 생략한다.
+- 스크립트는 UUID를 조회해 `resumable/generated/`(git 미추적)에 설정을 만들고, `compose.resumable.yml`을
+  겹쳐 `app`만 다시 기동한다. 같은 스택에서 다시 실행해도 결과가 같다.
+- 이후 이 스택에 `docker compose`를 실행할 때는 `-f docs/deployment/scenarios/demo-all-in-one/compose.resumable.yml`을
+  `-f` 목록 끝에 추가한다. 빼면 다음 `up`이 `app`을 설정 없이 다시 만들어 기능이 꺼진다.
+- 완료·취소된 세션의 조각은 `gc`를 실행할 때까지 staging에 남고 `maxStagedBytes` 한도를 차지한다.
+  `docker compose ... -f compose.resumable.yml --profile gc run --rm gc`로 정리한다.
+- 설정한 한도는 로컬 데모용이다(조각 16 MiB, namespace staging 512 MiB, 활성 세션 4개).
+
 ## 검증
 
 ```bash
@@ -73,7 +98,8 @@ docs/deployment/scenarios/demo-all-in-one/smoke-test.sh
 이 스크립트가 확인하는 것: mkdir·경로 충돌(409)·대용량 업로드(RSS는 기록만)·
 목록·검색·복사·이동·다른 사용자 경로 이탈(403)·인가된 presigned 다운로드·
 query 변조 실패·영구 공개 발행·무인증 공개 다운로드·미발행 경로 404·발행
-취소·재귀 삭제·업로드 상한 초과(413). 자세한 단계별 대응은
+취소·재귀 삭제·업로드 상한 초과(413)와 그 뒤 WAS 생존·재개 업로드(조각 순서 뒤집기·누락 완료 409·
+재개·SHA-256 확인, 활성화한 스택에서만). 자세한 단계별 대응은
 [`_works/demo-proposals.md`](../../../../_works/demo-proposals.md) 섹션
 13.3을 참고한다(로컬 참고자료, git 미추적).
 

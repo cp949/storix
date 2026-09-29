@@ -61,7 +61,7 @@ jobs:
         run: pnpm --filter @cp949/storix-demo1-web test
 
   smoke:
-    name: 문서 아카이브 전체 흐름 + RSS 기록
+    name: 문서 아카이브 전체 흐름 + 재개 업로드 + RSS 기록
     needs: demo-build
     runs-on: ubuntu-24.04
     steps:
@@ -88,6 +88,9 @@ jobs:
           done
           echo "::error::nginx가 /health에 응답하지 않음(60초 타임아웃)" >&2
           exit 1
+
+      - name: 재개 업로드 활성화
+        run: docs/deployment/scenarios/demo-all-in-one/enable-resumable-upload.sh
 
       - name: smoke test 실행
         run: docs/deployment/scenarios/demo-all-in-one/smoke-test.sh

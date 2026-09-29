@@ -1,0 +1,15 @@
+{
+  "global": {
+    "maxStagedBytes": "1073741824",
+    "maxActiveSessions": 8,
+    "partSizeBytes": 16777216,
+    "inactivitySeconds": 86400,
+    "maxLifetimeSeconds": 604800
+  },
+  "namespaces": {
+    "__NAMESPACE_ID__": {
+      "maxStagedBytes": "536870912",
+      "maxActiveSessions": 4
+    }
+  }
+}

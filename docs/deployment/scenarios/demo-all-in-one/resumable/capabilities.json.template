@@ -1,0 +1,6 @@
+{
+  "globalAllowedCapabilities": ["resumable-upload"],
+  "namespaceAllowedCapabilities": {
+    "__NAMESPACE_ID__": ["resumable-upload"]
+  }
+}

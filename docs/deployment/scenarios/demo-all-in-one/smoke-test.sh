@@ -8,6 +8,7 @@
 #   BASE_URL             기본 http://localhost:8080
 #   CONTAINER_RUNTIME    docker 또는 podman(기본: 자동 탐지)
 #   DEMO_WAS_CONTAINER   RSS 기록에 쓸 컨테이너 이름(기본: 자동 탐지)
+# 20단계(재개 업로드)는 enable-resumable-upload.sh로 활성화한 스택에서만 실행하고, 비활성이면 건너뛴다.
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
@@ -197,5 +198,65 @@ oversized_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
   -H 'X-Demo-User: alice' -H 'Content-Type: application/octet-stream' \
   --data-binary "@$WORKDIR/oversized.bin" || echo "000")
 require_status 413 "$oversized_status" "업로드 상한 초과"
+
+# 상한 초과로 본문 전송이 중간에 끊겨도 WAS가 살아 있어야 한다.
+# Readable.toWeb 어댑터가 이 경로에서 프로세스를 종료시킨 적이 있다(request-body-stream.ts).
+alive_status=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/demo-api/documents?path=/" -H 'X-Demo-User: alice')
+require_status 200 "$alive_status" "업로드 상한 초과 뒤 WAS 생존"
+
+log "20) 재개 업로드(enable-resumable-upload.sh로 활성화한 스택에서만)"
+new_uuid() { uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid; }
+RESUMABLE_DIR="/resumable-${RUN_ID}"
+RESUMABLE_PART_BYTES=16777216
+RESUMABLE_BYTES=$((RESUMABLE_PART_BYTES + 1048576))
+mkdir_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/demo-api/directories" \
+  -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
+  -d "{\"path\":\"${RESUMABLE_DIR}\"}")
+require_status 204 "$mkdir_status" "POST /demo-api/directories(재개 업로드)"
+head -c "$RESUMABLE_BYTES" /dev/urandom > "$WORKDIR/resumable.bin"
+resumable_sha256=$(sha256sum "$WORKDIR/resumable.bin" | awk '{print $1}')
+head -c "$RESUMABLE_PART_BYTES" "$WORKDIR/resumable.bin" > "$WORKDIR/part0.bin"
+tail -c +"$((RESUMABLE_PART_BYTES + 1))" "$WORKDIR/resumable.bin" > "$WORKDIR/part1.bin"
+
+create_status=$(curl -s -o "$WORKDIR/session.json" -w '%{http_code}' -X POST "$BASE_URL/demo-api/documents/upload-sessions" \
+  -H 'X-Demo-User: alice' -H "Idempotency-Key: $(new_uuid)" -H 'Content-Type: application/json' \
+  -d "{\"path\":\"${RESUMABLE_DIR}/resumed.bin\",\"sizeBytes\":\"${RESUMABLE_BYTES}\",\"mimeType\":\"application/octet-stream\",\"ifAbsent\":true,\"sha256\":\"${resumable_sha256}\"}")
+if [ "$create_status" = "409" ] && jq -e '.code == "VFS_FEATURE_DISABLED"' "$WORKDIR/session.json" >/dev/null 2>&1; then
+  log "   resumable-upload가 비활성이라 건너뜀(enable-resumable-upload.sh로 활성화)"
+else
+  require_status 201 "$create_status" "POST /demo-api/documents/upload-sessions"
+  session_id=$(jq -r '.sessionId' "$WORKDIR/session.json")
+  jq -e '.partSizeBytes == '"$RESUMABLE_PART_BYTES"' and .partCount == 2' "$WORKDIR/session.json" >/dev/null \
+    || fail "세션 응답의 조각 크기·개수가 기대와 다름: $(cat "$WORKDIR/session.json")"
+  session_url="$BASE_URL/demo-api/documents/upload-sessions/${session_id}"
+
+  part1_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$session_url/parts/1" \
+    -H 'X-Demo-User: alice' -H 'Content-Type: application/octet-stream' --data-binary "@$WORKDIR/part1.bin")
+  require_status 200 "$part1_status" "PUT 조각 1(순서 뒤집어 전송)"
+  incomplete_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$session_url/complete" -H 'X-Demo-User: alice')
+  require_status 409 "$incomplete_status" "조각 누락 상태의 완료"
+  bob_status=$(curl -s -o /dev/null -w '%{http_code}' "$session_url" -H 'X-Demo-User: bob')
+  require_status 404 "$bob_status" "다른 사용자의 세션 조회"
+
+  # 재개: 서버에 저장된 조각 index만 확인하고 빠진 조각을 보낸다.
+  curl -sf "$session_url" -H 'X-Demo-User: alice' | jq -e '[.parts[].index] == [1]' >/dev/null \
+    || fail "세션 상태의 저장된 조각이 [1]이 아님"
+  part0_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$session_url/parts/0" \
+    -H 'X-Demo-User: alice' -H 'Content-Type: application/octet-stream' --data-binary "@$WORKDIR/part0.bin")
+  require_status 200 "$part0_status" "PUT 조각 0(재개)"
+  complete_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$session_url/complete" -H 'X-Demo-User: alice')
+  require_status 201 "$complete_status" "POST 완료"
+
+  resumable_download=$(curl -sf -X POST "$BASE_URL/demo-api/documents/download" \
+    -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
+    -d "{\"path\":\"${RESUMABLE_DIR}/resumed.bin\"}" | jq -r '.url')
+  curl -sf "$resumable_download" -o "$WORKDIR/resumed-downloaded.bin"
+  [ "$(sha256sum "$WORKDIR/resumed-downloaded.bin" | awk '{print $1}')" = "$resumable_sha256" ] \
+    || fail "재개 업로드 파일 SHA-256 불일치"
+  closed_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$session_url/parts/0" \
+    -H 'X-Demo-User: alice' -H 'Content-Type: application/octet-stream' --data-binary "@$WORKDIR/part0.bin")
+  require_status 409 "$closed_status" "완료된 세션에 조각 추가"
+fi
+curl -s -o /dev/null -X DELETE "$BASE_URL/demo-api/entries?path=${RESUMABLE_DIR}&recursive=true" -H 'X-Demo-User: alice'
 
 log "전체 smoke test 통과"

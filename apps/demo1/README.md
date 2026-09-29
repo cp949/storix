@@ -60,6 +60,9 @@ pnpm --filter @cp949/storix-demo1-web dev
 
 ### 재개 업로드용 private namespace 준비
 
+all-in-one 스택(compose)에서는 아래 수동 절차 대신
+[`enable-resumable-upload.sh`](../../docs/deployment/scenarios/demo-all-in-one/README.md#재개-업로드-활성화)를 쓴다.
+
 재개 업로드는 Storix API에서 기본 비활성이다. API는 시작할 때 capability 설정의
 namespace UUID가 이미 존재하는지 확인하므로 다음 순서로 준비한다. 아래 한도 값은
 로컬 데모 예시이며, 실제 환경에서는 용량과 동시 세션 수를 따로 결정한다.

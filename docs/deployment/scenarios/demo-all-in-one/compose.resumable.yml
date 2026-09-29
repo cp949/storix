@@ -1,0 +1,17 @@
+# 재개 업로드(resumable-upload) 활성화 override — compose.demo.yml 뒤에 5번째 -f로 겹쳐 쓴다.
+# 설정 파일은 enable-resumable-upload.sh가 resumable/generated/에 만든다.
+# 스크립트를 실행하기 전에는 이 파일을 -f 목록에 넣지 않는다. 설정 파일이 없으면 app 시작이 실패한다.
+#
+# gc도 같은 설정을 읽어야 한다. gc는 종결 세션의 staging 조각을 삭제한다.
+x-resumable-config: &resumable-config
+  environment:
+    STORIX_VFS_CAPABILITIES_CONFIG_PATH: /etc/storix-demo/capabilities.json
+    STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH: /etc/storix-demo/upload-sessions.json
+  volumes:
+    - ./docs/deployment/scenarios/demo-all-in-one/resumable/generated:/etc/storix-demo:ro
+
+services:
+  app:
+    <<: *resumable-config
+  gc:
+    <<: *resumable-config

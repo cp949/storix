@@ -30,3 +30,6 @@ docs/deployment/scenarios/**/pki/generated/
 
 # Local isolated implementation worktrees
 .worktrees/
+
+# 재개 업로드 시나리오 설정(enable-resumable-upload.sh가 생성)
+docs/deployment/scenarios/**/resumable/generated/
