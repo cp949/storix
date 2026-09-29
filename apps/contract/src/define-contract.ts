@@ -133,6 +133,39 @@ export interface ApiClient {
     body: object,
     options?: { readonly idempotencyKey?: string | null },
   ): Promise<ApiResponse>;
+
+  /**
+   * `PATCH /api/v2/admin/namespaces/{id}/trash`로 namespace 휴지통 정책을 바꾼다.
+   * `adminKey`로 인증하고 `body`는 JSON으로 직렬화한다. `idempotencyKey`를 생략하면 새 키를 쓰고 `null`이면 헤더를 보내지 않는다.
+   */
+  updateNamespaceTrashPolicy(
+    namespaceId: string,
+    adminKey: string,
+    body: object,
+    options?: { readonly idempotencyKey?: string | null },
+  ): Promise<ApiResponse>;
+
+  /** `GET /fs/trash`로 미만료 휴지통 항목을 페이지 단위로 읽는다. */
+  listTrash(
+    namespaceId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<ApiResponse>;
+
+  /** `POST /fs/trash/{id}/restore`로 휴지통 항목을 복구한다. `body`는 `{ targetPath? }`다. */
+  restoreTrash(
+    namespaceId: string,
+    trashId: string,
+    body: object,
+    options?: MutationOptions,
+  ): Promise<ApiResponse>;
+
+  /** `POST /fs/trash/{id}/purge`로 휴지통 항목을 영구 삭제한다. 관리자 전용이라 `adminKey`로 인증한다. */
+  purgeTrash(
+    namespaceId: string,
+    trashId: string,
+    adminKey: string,
+    options?: MutationOptions,
+  ): Promise<ApiResponse>;
 }
 
 /** 계약 전용으로 만든 namespace. */

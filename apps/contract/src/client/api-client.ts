@@ -152,6 +152,45 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
       });
     },
 
+    updateNamespaceTrashPolicy(
+      namespaceId: string,
+      adminKey: string,
+      body: object,
+      options: { readonly idempotencyKey?: string | null } = {},
+    ) {
+      const idempotencyKey = options.idempotencyKey === undefined ? randomUUID() : options.idempotencyKey;
+      return request('PATCH', `/api/v2/admin/namespaces/${namespaceId}/trash`, {
+        headers: {
+          Authorization: `Bearer ${adminKey}`,
+          'Content-Type': 'application/json',
+          ...(idempotencyKey === null ? {} : { 'Idempotency-Key': idempotencyKey }),
+        },
+        body: JSON.stringify(body),
+      });
+    },
+
+    listTrash(namespaceId: string, options = {}) {
+      const query = new URLSearchParams();
+      if (options.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options.limit !== undefined) query.set('limit', String(options.limit));
+      const suffix = query.size === 0 ? '' : `?${query}`;
+      return request('GET', `/api/v2/namespaces/${namespaceId}/fs/trash${suffix}`);
+    },
+
+    restoreTrash(namespaceId: string, trashId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/trash/${trashId}/restore`, {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
+    purgeTrash(namespaceId: string, trashId: string, adminKey: string, options: MutationOptions = {}) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/trash/${trashId}/purge`, {
+        headers: { ...jsonHeaders(options), Authorization: `Bearer ${adminKey}` },
+        body: JSON.stringify({}),
+      });
+    },
+
     getSnapshot(namespaceId: string, snapshotId: string) {
       return request('GET', snapshotUrl(namespaceId, `/${snapshotId}`));
     },
