@@ -124,6 +124,46 @@ describe('presigned-download HTTP 계약', () => {
     expect(fetched.headers.get('content-disposition')).toContain('report.txt');
   });
 
+  it('setMimeType으로 바꾼 MIME type이 presigned 응답 Content-Type에 반영된다', async () => {
+    const namespaceId = await createNamespace(`presigned-mime-${randomUUID()}`);
+    const base = `/api/v2/namespaces/${namespaceId}/fs`;
+    const created = await request(httpServer)
+      .post(`${base}/content/conditional`)
+      .query({ path: '/report.txt' })
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'presigned-mime')
+      .set('X-If-Absent', 'true')
+      .set('Content-Type', 'text/plain')
+      .send('mime presigned')
+      .expect(201);
+
+    const before = await request(httpServer)
+      .get(`${base}/presigned-download`)
+      .query({ path: '/report.txt' })
+      .expect(200);
+    expect((await fetch(before.body.url as string)).headers.get('content-type')).toBe('text/plain');
+
+    await request(httpServer)
+      .post(`${base}/mutations`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'presigned-mime')
+      .send({
+        kind: 'setMimeType',
+        path: '/report.txt',
+        ifRevision: created.body.resource.revision,
+        mimeType: 'application/pdf',
+      })
+      .expect(200);
+
+    const after = await request(httpServer)
+      .get(`${base}/presigned-download`)
+      .query({ path: '/report.txt' })
+      .expect(200);
+    const fetched = await fetch(after.body.url as string);
+    expect(fetched.headers.get('content-type')).toBe('application/pdf');
+    expect(await fetched.text()).toBe('mime presigned');
+  });
+
   it('존재하지 않는 경로는 404를 반환한다', async () => {
     const namespaceId = await createNamespace(`presigned-404-${randomUUID()}`);
 

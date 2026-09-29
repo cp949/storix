@@ -99,6 +99,16 @@ describe('S3BlobStorage', () => {
     expect(response.headers.get('content-disposition')).toBe('attachment; filename="report.txt"');
   });
 
+  it('contentType을 넘기면 저장된 ContentType 대신 응답 헤더에 반영된다', async () => {
+    const key = 'blobs/ab/test-presigned-content-type';
+    await storage.put(key, Readable.from(Buffer.from('typed')), 'text/plain');
+
+    const url = await storage.getPresignedUrl(key, 300, undefined, 'application/pdf');
+    const response = await fetch(url);
+
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+  });
+
   it('presignedClient가 없으면 에러를 던진다', async () => {
     const storageWithoutPublicClient = new S3BlobStorage(client, bucket, null);
 

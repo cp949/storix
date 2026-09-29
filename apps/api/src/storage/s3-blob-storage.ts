@@ -128,7 +128,12 @@ export class S3BlobStorage implements BlobStorage {
     }
   }
 
-  async getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string> {
+  async getPresignedUrl(
+    key: string,
+    expirySeconds: number,
+    contentDisposition?: string,
+    contentType?: string,
+  ): Promise<string> {
     if (!this.presignClient) {
       throw new StorageFailureError(
         'STORIX_STORAGE_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음',
@@ -141,6 +146,7 @@ export class S3BlobStorage implements BlobStorage {
           Bucket: this.bucket,
           Key: key,
           ResponseContentDisposition: contentDisposition,
+          ResponseContentType: contentType,
         }),
         { expiresIn: expirySeconds },
       );

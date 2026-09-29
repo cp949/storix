@@ -1550,7 +1550,12 @@ paths:
     get:
       operationId: getPresignedDownloadUrl
       summary: Presigned 다운로드 URL 발급(`STORAGE-02`)
-      description: '`ENCRYPTED` namespace는 지원하지 않는다(`VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`).'
+      description: |
+        `ENCRYPTED` namespace는 지원하지 않는다(`VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`).
+
+        URL로 받는 응답의 `Content-Type`은 발급 시점의 파일 `mimeType`이고 `Content-Disposition`은
+        `attachment`와 파일 이름이다. 발급 뒤 `setMimeType`으로 값을 바꿔도 이미 발급된 URL은 만료 전까지
+        이전 `Content-Type`을 응답한다.
       tags: [fs]
       parameters:
         - $ref: '#/components/parameters/NamespaceId'

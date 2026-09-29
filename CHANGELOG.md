@@ -138,6 +138,8 @@
 
 ### Fixed
 
+- `GET /fs/presigned-download`가 발급한 URL의 응답 `Content-Type`이 `setMimeType`으로 바꾼 MIME type을 무시하고 업로드 시 저장된 값을 돌려주던 문제를 고쳤다. URL이 노드의 MIME type을 `response-content-type`으로 서명하므로 `GET /fs/content`·공개 URL과 같은 값을 응답한다. 이미 발급된 URL은 만료 전까지 이전 값을 응답한다.
+
 - 변경 feed는 한 transaction에서 자식을 생성·삭제한 뒤에도 커밋된 디렉터리 listing revision이 바뀌면 최종 revision의 `updated` 이벤트를 기록한다. 최종 상태가 부재인 자식의 이벤트는 기록하지 않는다.
 
 - namespace·파일 API에서 발생한 500 오류가 `STORIX_SENTRY_DSN`을 설정해도 Sentry로 보고되지 않던 문제를 고쳤다. 컨트롤러 단위 예외 필터에 오류 보고기가 주입되지 않았다.

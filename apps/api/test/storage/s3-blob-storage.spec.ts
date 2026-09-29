@@ -197,5 +197,22 @@ describe('S3BlobStorage', () => {
 
       expect(url.searchParams.get('response-content-disposition')).toBe('attachment; filename="a.txt"');
     });
+
+    it('contentType을 넘기면 response-content-type으로 서명에 포함한다', async () => {
+      const storage = new S3BlobStorage({} as S3Client, 'bucket', presignClient);
+
+      const url = new URL(await storage.getPresignedUrl('key', 300, undefined, 'application/pdf'));
+
+      expect(url.searchParams.get('response-content-type')).toBe('application/pdf');
+      expect(url.searchParams.has('response-content-disposition')).toBe(false);
+    });
+
+    it('contentType을 넘기지 않으면 response-content-type을 서명하지 않는다', async () => {
+      const storage = new S3BlobStorage({} as S3Client, 'bucket', presignClient);
+
+      const url = new URL(await storage.getPresignedUrl('key', 300));
+
+      expect(url.searchParams.has('response-content-type')).toBe(false);
+    });
   });
 });

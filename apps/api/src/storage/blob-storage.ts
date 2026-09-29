@@ -15,5 +15,14 @@ export interface BlobStorage {
   get(key: string, range?: BlobRange): Promise<Readable>;
   delete(key: string): Promise<void>;
   list(prefix?: string): AsyncIterable<BlobObjectInfo>;
-  getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string>;
+  /**
+   * 객체를 직접 받을 수 있는 서명 URL을 발급한다.
+   * `contentDisposition`·`contentType`은 응답 헤더 재정의로 서명에 포함된다. `contentType`이 없으면 객체에 저장된 값이 응답된다.
+   */
+  getPresignedUrl(
+    key: string,
+    expirySeconds: number,
+    contentDisposition?: string,
+    contentType?: string,
+  ): Promise<string>;
 }

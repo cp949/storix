@@ -304,6 +304,8 @@ export class ContentService {
       storageKey,
       this.presignedUrlExpirySeconds,
       buildContentDisposition(target.name),
+      // Blob은 COW로 공유되어 객체 메타데이터를 노드별로 바꿀 수 없으므로 노드 MIME을 응답 헤더로 재정의한다.
+      target.mimeType ?? 'application/octet-stream',
     );
     const expiresAt = new Date(issuedAt + this.presignedUrlExpirySeconds * 1000).toISOString();
 
