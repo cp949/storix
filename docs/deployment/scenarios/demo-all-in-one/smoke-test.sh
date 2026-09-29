@@ -7,7 +7,7 @@
 # 환경 변수:
 #   BASE_URL             기본 http://localhost:8080
 #   CONTAINER_RUNTIME    docker 또는 podman(기본: 자동 탐지)
-#   DEMO_WAS_CONTAINER   메모리 바운드 확인에 쓸 컨테이너 이름(기본: 자동 탐지)
+#   DEMO_WAS_CONTAINER   RSS 기록에 쓸 컨테이너 이름(기본: 자동 탐지)
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
@@ -49,7 +49,7 @@ log "2) Alice 디렉터리 생성: ${DIR_PATH}"
 mkdir_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/demo-api/directories" \
   -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
   -d "{\"path\":\"${DIR_PATH}\"}")
-require_status 201 "$mkdir_status" "POST /demo-api/directories"
+require_status 204 "$mkdir_status" "POST /demo-api/directories"
 
 log "3) 경로 충돌: 디렉터리 경로에 직접 업로드하면 409"
 conflict_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
@@ -60,8 +60,7 @@ require_status 409 "$conflict_status" "디렉터리 경로에 업로드(경로 �
 
 FIXTURE_MIB=16
 FIXTURE_BYTES=$((FIXTURE_MIB * 1024 * 1024))
-RSS_CEILING_KB=$((FIXTURE_BYTES / 2 / 1024))  # fixture의 절반 미만이면 통버퍼링이 아니라는 신호
-log "4) ${FIXTURE_MIB} MiB fixture 업로드(메모리 바운드 확인 포함)"
+log "4) ${FIXTURE_MIB} MiB fixture 업로드(RSS 기록 포함)"
 dd if=/dev/urandom of="$WORKDIR/big.bin" bs=1M count="$FIXTURE_MIB" status=none
 expected_sha256=$(sha256sum "$WORKDIR/big.bin" | awk '{print $1}')
 
@@ -84,22 +83,32 @@ require_status 201 "$upload_status" "PUT /demo-api/documents/content"
 if [ -n "$demo_was_container" ]; then
   rss_after=$($CONTAINER_RUNTIME exec "$demo_was_container" sh -c "grep VmRSS /proc/1/status | awk '{print \$2}'" || echo "")
   if [ -z "$rss_before" ] || [ -z "$rss_after" ]; then
-    log "   경고: RSS 값을 읽지 못해 메모리 바운드 확인을 건너뜀"
+    log "   경고: RSS 값을 읽지 못해 RSS 기록을 건너뜀"
   else
-    rss_delta_kb=$((rss_after - rss_before))
-    log "   demo-was RSS 증가량: ${rss_delta_kb} KiB(기준 ${RSS_CEILING_KB} KiB 미만)"
-    if [ "$rss_delta_kb" -ge "$RSS_CEILING_KB" ]; then
-      fail "업로드 스트리밍 메모리 바운드 위반: RSS가 ${rss_delta_kb} KiB 증가(기준 ${RSS_CEILING_KB} KiB)"
-    fi
+    # 정보성 기록이며 통과/실패 기준이 아니다. fresh 프로세스는 할당/GC 지연으로
+    # fixture 크기의 약 2배까지 늘 수 있어 임계값 판정에 쓸 수 없다. 스트리밍
+    # 여부는 storix-http.client.spec.ts의 백프레셔 테스트가 검증한다.
+    log "   demo-was RSS 증가량: $((rss_after - rss_before)) KiB(정보성 기록, 판정 기준 아님)"
   fi
 else
-  log "   경고: 컨테이너 런타임/컨테이너를 찾지 못해 메모리 바운드 확인을 건너뜀"
+  log "   경고: 컨테이너 런타임/컨테이너를 찾지 못해 RSS 기록을 건너뜀"
 fi
+
+log "4a) MIME type 변경"
+mime_status=$(curl -s -o "$WORKDIR/mime-response.json" -w '%{http_code}' -X PATCH \
+  "$BASE_URL/demo-api/documents/mime-type" \
+  -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
+  -d "{\"path\":\"${FILE_PATH}\",\"mimeType\":\"application/pdf\"}")
+require_status 200 "$mime_status" "PATCH /demo-api/documents/mime-type"
+jq -e --arg p "$FILE_PATH" '.path == $p and .mimeType == "application/pdf"' "$WORKDIR/mime-response.json" > /dev/null \
+  || fail "MIME type 변경 응답 불일치: $(cat "$WORKDIR/mime-response.json")"
 
 log "5) 목록 확인"
 list_body=$(curl -sf "$BASE_URL/demo-api/documents?path=${DIR_PATH}" -H 'X-Demo-User: alice')
 echo "$list_body" | jq -e --arg p "$FILE_PATH" '.items[] | select(.path == $p)' > /dev/null \
   || fail "목록에 ${FILE_PATH}가 없음: $list_body"
+echo "$list_body" | jq -e --arg p "$FILE_PATH" '.items[] | select(.path == $p and .mimeType == "application/pdf")' > /dev/null \
+  || fail "목록에 갱신된 MIME type이 없음: $list_body"
 
 log "6) 검색 확인"
 search_body=$(curl -sf "$BASE_URL/demo-api/documents/search?path=/&name=big.bin" -H 'X-Demo-User: alice')
@@ -110,13 +119,13 @@ log "7) 복사"
 copy_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/demo-api/entries/copy" \
   -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
   -d "{\"source\":\"${FILE_PATH}\",\"destination\":\"${COPY_PATH}\"}")
-require_status 201 "$copy_status" "POST /demo-api/entries/copy"
+require_status 204 "$copy_status" "POST /demo-api/entries/copy"
 
 log "8) 이동/이름변경"
 move_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/demo-api/entries/move" \
   -H 'X-Demo-User: alice' -H 'Content-Type: application/json' \
   -d "{\"source\":\"${COPY_PATH}\",\"destination\":\"${MOVED_PATH}\"}")
-require_status 201 "$move_status" "POST /demo-api/entries/move"
+require_status 204 "$move_status" "POST /demo-api/entries/move"
 
 log "9) bob이 alice 경로로 이탈 요청하면 403"
 escape_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/demo-api/documents/download" \

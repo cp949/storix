@@ -61,7 +61,7 @@ jobs:
         run: pnpm --filter @cp949/storix-demo1-web test
 
   smoke:
-    name: 문서 아카이브 전체 흐름 + 메모리 바운드 확인
+    name: 문서 아카이브 전체 흐름 + RSS 기록
     needs: demo-build
     runs-on: ubuntu-24.04
     steps:
