@@ -95,7 +95,7 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .expect(400);
   });
 
-  it('디렉터리 생성 → 업로드 → 목록 → 검색 → 복사 → 이동 → bob의 경로 이탈 요청은 403 → 재귀 삭제', async () => {
+  it('디렉터리 생성 → 업로드 → MIME 변경 → 목록 → 검색 → 복사 → 이동 → bob의 경로 이탈 요청은 403 → 재귀 삭제', async () => {
     const dirPath = `/reports-${Date.now()}`;
     const filePath = `${dirPath}/big.bin`;
     const copyPath = `${dirPath}/big-copy.bin`;
@@ -106,7 +106,7 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .post('/demo-api/directories')
       .set('X-Demo-User', 'alice')
       .send({ path: dirPath })
-      .expect(201);
+      .expect(204);
 
     await request(app.getHttpServer())
       .put(`/demo-api/documents/content?path=${filePath}`)
@@ -115,11 +115,24 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .send(content)
       .expect(201);
 
+    const mimeTypeUpdate = await request(app.getHttpServer())
+      .patch('/demo-api/documents/mime-type')
+      .set('X-Demo-User', 'alice')
+      .send({ path: filePath, mimeType: 'application/pdf' })
+      .expect(200);
+    expect(mimeTypeUpdate.body.path).toBe(filePath);
+    expect(mimeTypeUpdate.body.mimeType).toBe('application/pdf');
+
     const listResponse = await request(app.getHttpServer())
       .get(`/demo-api/documents?path=${dirPath}`)
       .set('X-Demo-User', 'alice')
       .expect(200);
-    expect(listResponse.body.items.map((item: { path: string }) => item.path)).toContain(filePath);
+    expect(
+      listResponse.body.items.some(
+        (item: { path: string; mimeType: string }) =>
+          item.path === filePath && item.mimeType === 'application/pdf',
+      ),
+    ).toBe(true);
 
     const searchResponse = await request(app.getHttpServer())
       .get('/demo-api/documents/search?path=/&name=big.bin')
@@ -131,13 +144,13 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
       .post('/demo-api/entries/copy')
       .set('X-Demo-User', 'alice')
       .send({ source: filePath, destination: copyPath })
-      .expect(201);
+      .expect(204);
 
     await request(app.getHttpServer())
       .post('/demo-api/entries/move')
       .set('X-Demo-User', 'alice')
       .send({ source: copyPath, destination: movedPath })
-      .expect(201);
+      .expect(204);
 
     await request(app.getHttpServer())
       .post('/demo-api/documents/download')

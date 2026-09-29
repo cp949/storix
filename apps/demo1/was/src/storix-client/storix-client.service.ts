@@ -79,7 +79,7 @@ export class StorixClient implements StorixClientPort {
       path: `/api/v2/namespaces/${namespaceId}/fs/stat`,
       query: { path },
     });
-    return this.http.requestJson<FileEntry>({
+    const result = await this.http.requestJson<{ resource: FileEntry }>({
       method: 'POST',
       path: `/api/v2/namespaces/${namespaceId}/fs/mutations`,
       headers: {
@@ -88,6 +88,7 @@ export class StorixClient implements StorixClientPort {
       },
       json: { kind: 'setMimeType', path, ifRevision: stat.revision, mimeType },
     });
+    return result.resource;
   }
 
   async createDirectory(path: string): Promise<void> {

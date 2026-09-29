@@ -2,7 +2,7 @@ import { derivePublicPath } from './public-path.js';
 
 describe('derivePublicPath', () => {
   it('16자리 16진수 접두어와 원본 파일명으로 구성된 경로를 반환한다', () => {
-    expect(derivePublicPath('/documents/alice/reports/a.txt')).toMatch(/^[0-9a-f]{16}\/a\.txt$/);
+    expect(derivePublicPath('/documents/alice/reports/a.txt')).toMatch(/^\/[0-9a-f]{16}\/a\.txt$/);
   });
 
   it('같은 internalPath는 항상 같은 결과를 반환한다(publish/unpublish가 같은 공개 경로를 가리켜야 함)', () => {

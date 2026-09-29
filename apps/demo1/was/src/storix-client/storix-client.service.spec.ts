@@ -193,14 +193,17 @@ describe('StorixClient — VFS 조작', () => {
       revision: 'r1.ABC',
     });
     mockFetchOnce(200, {
-      path: '/a.txt',
-      name: 'a.txt',
-      type: 'FILE',
-      size: 5,
-      mimeType: 'application/json',
-      createdAt: '',
-      updatedAt: '',
-      version: 2,
+      resource: {
+        path: '/a.txt',
+        name: 'a.txt',
+        type: 'FILE',
+        size: 5,
+        mimeType: 'application/json',
+        createdAt: '',
+        updatedAt: '',
+        version: 2,
+      },
+      affectedRevisions: [],
     });
 
     const result = await client.setMimeType('/a.txt', 'application/json');
