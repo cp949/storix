@@ -41,7 +41,7 @@ cp .env.example .env
 | `STORIX_VERSITYGW_DATA_PATH`                                                                         | 비움 또는 `/`로 시작하는 절대 경로      | 비우면 named volume `versitygw-data`. NAS면 절대 경로                                                        |
 | `STORIX_DB_HOST` / `STORIX_DB_PORT` / `STORIX_DB_USERNAME` / `STORIX_DB_PASSWORD` / `STORIX_DB_NAME` | 외부 Postgres 접속 정보                 | `docker-compose.postgres.yml`을 겹치면 컨테이너 쪽은 `postgres:5432`로 재정의                                |
 | `STORIX_STORAGE_PUBLIC_ENDPOINT` / `STORIX_STORAGE_PUBLIC_PORT` / `STORIX_STORAGE_PUBLIC_USE_SSL`    | 클라이언트가 접근 가능한 VersityGW 주소 | presigned download를 쓸 때만. 비우면 그 API만 실패                                                           |
-| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                         | 비우면 `us-east-1`. VersityGW를 `--region`으로 띄웠다면 같은 값(이 저장소의 compose는 `us-east-1`)                |
+| `STORIX_STORAGE_REGION`                                                                              | 예: `us-east-1`                         | 비우면 `us-east-1`. VersityGW를 `--region`으로 띄웠다면 같은 값(이 저장소의 compose는 `us-east-1`)           |
 
 override가 덮어써서 무시되는 값: `STORIX_STORAGE_ENDPOINT` / `STORIX_STORAGE_PORT` /
 `STORIX_STORAGE_USE_SSL`(`versitygw` / `7070` / `false`로 고정).
