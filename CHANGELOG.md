@@ -15,6 +15,8 @@
 
 ### Added
 
+- 조건부 mutation에 `setMimeType` 명령을 추가했다. bytes 변경 없이 파일 mimeType만 갱신한다.
+
 - 새 FILE의 만료를 조건부 content의 `X-Expires-In`, 재개 업로드와 조건부 copy의 `expiresInSeconds`로 지정할 수 있다(기본 60~2592000초, 설정으로 조정 가능). 파일 metadata의 `expiresAt`으로 만료를 조회하고 `persist`로 확정하면 만료가 해제된다. 만료된 미확정 파일은 GC가 namespace 휴지통 정책에 따라 삭제한다. 만료 예정 파일은 PUBLIC namespace의 인증 없는 `content`·`download`에서 404로 숨기고 확정 뒤 공개한다.
 
 - 파일·디렉터리 삭제를 30일 복구 가능한 휴지통으로 옮기고 목록·원래 ID 복구·관리자 영구 삭제 API를 추가했다. namespace별 기본 100000 node 보존 상한과 live·snapshot·휴지통 논리 quota, 만료 항목의 GC 배치 purge를 적용한다.

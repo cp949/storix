@@ -523,7 +523,10 @@ paths:
                     kind: { type: string, enum: [setMimeType] }
                     path: { type: string }
                     ifRevision: { type: string, pattern: '^r1\.' }
-                    mimeType: { type: string, maxLength: 255 }
+                    mimeType:
+                      type: string
+                      maxLength: 255
+                      pattern: '^[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*/[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*$'
                 - type: object
                   required: [kind, source, destination, sourceRevision, destinationAbsent]
                   additionalProperties: false
@@ -578,7 +581,7 @@ paths:
         '409':
           description: |
             도메인 충돌(`VFS_NOT_DIRECTORY` 경로 중간이 파일, `VFS_DIRECTORY_NOT_EMPTY` 비재귀 delete,
-            `VFS_INVALID_OPERATION` 디렉터리를 자기 subtree로 move/copy, persist 대상
+            `VFS_INVALID_OPERATION` 디렉터리를 자기 subtree로 move/copy, persist·setMimeType 대상
             DIRECTORY의 `VFS_IS_DIRECTORY`, `VFS_REVISION_EXHAUSTED`)은
             receipt로 재생된다. key 재사용(`MUTATION_KEY_REUSED`)과 진행 중인 claim
             (`MUTATION_IN_PROGRESS`, Retry-After 헤더 반환)은 재생 대상이 아니다.

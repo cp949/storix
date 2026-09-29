@@ -29,6 +29,13 @@ _Avoid_: 엔트리, 아이템
 만료 예정 FILE의 만료를 해제하는 조건부 변경. 성공하면 같은 Node의 revision이
 바뀌고, 이미 만료가 없는 FILE에는 변경이 없다.
 
+**mimeType 변경(setMimeType)**:
+바이트·Blob·논리 사용량을 그대로 두고 FILE Node의 mimeType만 바꾸는 조건부
+변경. persist와 달리 만료(`expires_at`)는 읽지도 쓰지도 않는다. 요청 값은
+upload-session과 같은 엄격 검증(파라미터 포함 시 거부)을 거치며, 현재 값과
+같으면 revision을 소모하지 않는다. 계약 전체는
+[`docs/design/11-file-mimetype-update.md`](../../docs/design/11-file-mimetype-update.md) 참고.
+
 **Blob**:
 FILE Node의 콘텐츠를 담는 불변 저장 단위로, 사용자 파일명과 무관한 UUID 기반
 storage key로 저장된다. 여러 FILE Node가 같은 Blob을 공유해 참조할 수 있으며,

@@ -21,3 +21,4 @@
 | [08-namespace-change-feed.md](./08-namespace-change-feed.md)     | namespace 변경 journal·checkpoint·cursor, capability 연속성, 보존·GC와 소비자 재동기화 불변식                                             |
 | [09-vfs-trash-and-recovery.md](./09-vfs-trash-and-recovery.md)   | 삭제 manifest, 30일 복구, 원래 ID와 새 revision, quota·Blob 수명, 명시적/자동 purge 계약                                                  |
 | [10-file-expiry.md](./10-file-expiry.md)                         | 생성 시 파일 만료 지정, `persist` 확정, GC 만료 삭제, 공개 읽기 제외와 연산별 만료 전파                                                   |
+| [11-file-mimetype-update.md](./11-file-mimetype-update.md)       | FILE mimeType만 바꾸는 조건부 mutation `setMimeType`: 엄격 검증, no-op 규칙, revision·만료 상호작용, fingerprint 계산                     |
