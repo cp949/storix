@@ -1,0 +1,21 @@
+{
+  "name": "@cp949/storix-contract",
+  "version": "0.1.0",
+  "description": "실제 Storix 서버에 공개 HTTP 계약을 실행하는 계약 검증",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.18"
+  },
+  "scripts": {
+    "contract": "node src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"src/**/*.spec.ts\"",
+    "test:integration": "node --test --test-concurrency=1 \"src/**/*.integration-spec.ts\""
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "3.1140.0",
+    "@types/node": "22.15.0",
+    "typescript": "6.0.3"
+  }
+}
