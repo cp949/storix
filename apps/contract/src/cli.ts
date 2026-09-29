@@ -26,7 +26,7 @@ import {
 import { loadRequirementIds } from './runner/rq.ts';
 import { runContract, summarize, type ContractResult } from './runner/run.ts';
 import { buildServerEnv } from './runner/server-env.ts';
-import { findFreePort, startServer, stopAllServers } from './runner/server.ts';
+import { findFreePort, refuseNewServers, startServer, stopAllServers } from './runner/server.ts';
 
 /** 종료 시 거꾸로 실행할 정리 작업. SIGINT도 같은 목록을 실행한다. */
 const cleanups: Array<() => Promise<void>> = [];
@@ -112,7 +112,11 @@ async function main(): Promise<number> {
   const postgres = values.db === 'postgres' ? await startPostgres(runId) : undefined;
   if (postgres !== undefined) cleanups.push(() => postgres.stop());
   // 서버 기동을 기다리는 중에 중단돼도 서버 프로세스가 남지 않도록 핸들과 별도로 등록한다.
-  cleanups.push(async () => void (await stopAllServers()));
+  cleanups.push(async () => {
+    // 실행 중이던 계약이 정리 뒤에 `restart()`로 서버를 다시 띄우지 못하게 먼저 막는다.
+    refuseNewServers();
+    await stopAllServers();
+  });
 
   for (const [profile, group] of groups) {
     if (interrupted) return 130;

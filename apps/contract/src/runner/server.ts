@@ -59,6 +59,18 @@ interface RunningServer {
   readonly exit: Promise<void>;
 }
 
+/** 중단 정리가 시작됐는가. true이면 `startServer`와 `restart()`가 서버를 새로 띄우지 않는다. */
+let refusing = false;
+
+/**
+ * 이후 서버 기동을 모두 거부한다. 되돌릴 수 없다.
+ * 중단 정리가 서버를 종료한 뒤 실행 중이던 계약이 `restart()`로 서버를 다시 띄우면 정리에서 빠져 남기 때문에,
+ * 정리 시작 전에 호출한다.
+ */
+export function refuseNewServers(): void {
+  refusing = true;
+}
+
 /** 아직 종료하지 않은 서버. 기동 대기 중인 서버도 포함해 중단할 때 한꺼번에 정리한다. */
 const active = new Set<RunningServer>();
 
@@ -99,6 +111,7 @@ export async function startServer(options: StartServerOptions): Promise<ServerHa
   };
 
   const launch = async (): Promise<void> => {
+    if (refusing) throw new Error('러너가 중단 중이라 서버를 새로 기동하지 않는다.');
     const logFd = openSync(logFile, 'a');
     const proc = spawn(process.execPath, [API_MAIN], {
       cwd: options.workDir,
