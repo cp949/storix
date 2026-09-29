@@ -88,3 +88,4 @@ postgres`로 죽는다. 코드 결함이 아니다 — 재진단하지 않는다
 - 이전 실행이 중단되어 컨테이너가 남으면 다음 실행이 시작할 때 제거한다. 직접 지우려면 `docker rm -f $(docker ps -aq --filter name=storix-contract-)`를 쓴다.
 - `pnpm contract`를 동시에 두 번 실행하지 않는다. 두 번째 실행이 첫 번째 실행의 컨테이너를 제거한다.
 - 러너 단위 테스트는 `pnpm --filter @cp949/storix-contract test`, 기동 통합 테스트는 `pnpm --filter @cp949/storix-contract test:integration`이다.
+- 루트 `pnpm test:integration`도 이 통합 테스트를 실행한다. turbo가 `apps/api` 빌드를 먼저 실행하고, docker가 필요하다.

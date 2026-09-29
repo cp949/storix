@@ -20,6 +20,11 @@
       "outputs": [],
       "cache": false
     },
+    "@cp949/storix-contract#test:integration": {
+      "dependsOn": ["@cp949/storix-api#build"],
+      "outputs": [],
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true
