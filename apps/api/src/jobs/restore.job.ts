@@ -75,19 +75,19 @@ export class RestoreJob {
   }
 
   private async restoreObjectsFromLocalDir(sourceDir: string): Promise<number> {
-    const minioDir = path.join(sourceDir, 'minio');
-    if (!(await this.pathExists(minioDir))) {
-      // 백업 시점에 MinIO object가 하나도 없었다면 BackupJob이 'minio/'
+    const blobDir = path.join(sourceDir, 'blobs');
+    if (!(await this.pathExists(blobDir))) {
+      // 백업 시점에 스토리지 object가 하나도 없었다면 BackupJob이 'blobs/'
       // 디렉터리 자체를 만들지 않는다(mirrorObjectsToLocalDir의 mkdir이
       // list() 루프 본문 안에서만 실행되므로). 이 경우는 정상적인
       // "object 0건짜리 백업"이지 오류가 아니다.
       return 0;
     }
 
-    const filePaths = await this.listFilesRecursively(minioDir);
+    const filePaths = await this.listFilesRecursively(blobDir);
     let count = 0;
     for (const filePath of filePaths) {
-      const key = path.relative(minioDir, filePath).split(path.sep).join('/');
+      const key = path.relative(blobDir, filePath).split(path.sep).join('/');
       await this.storage.put(key, createReadStream(filePath));
       count += 1;
     }

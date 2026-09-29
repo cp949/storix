@@ -4,7 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { createTestBucket, createTestS3Client, readTestObject } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -23,7 +24,7 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
   let postgresContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
   let migrationDataSource: DataSource;
-  let minioClient: MinioClient;
+  let s3Client: S3Client;
   let app: INestApplication;
   let httpServer: ReturnType<INestApplication['getHttpServer']>;
 
@@ -47,14 +48,8 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
     process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
     process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
-    minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -104,15 +99,12 @@ describe('ENCRYPTED namespace 콘텐츠 암복호화', () => {
        WHERE vn.namespace_id = $1 AND vn.name = $2`,
       [namespaceId, path],
     );
-    const stream = await minioClient.getObject(
+    const raw = await readTestObject(
+      s3Client,
       process.env.STORIX_STORAGE_BUCKET as string,
       rows[0].storage_key,
     );
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(chunk as Buffer);
-    }
-    return { raw: Buffer.concat(chunks), iv: rows[0].encryption_iv };
+    return { raw, iv: rows[0].encryption_iv };
   }
 
   it('저장된 오브젝트는 평문과 다른 바이트이고, IV가 기록된다', async () => {

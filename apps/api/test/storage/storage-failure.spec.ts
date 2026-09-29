@@ -1,8 +1,8 @@
-import { S3Error } from 'minio';
+import { S3ServiceException } from '@aws-sdk/client-s3';
 import { classifyBlobFailure } from '../../src/storage/storage-failure.js';
 
-function s3(code: string): S3Error {
-  return Object.assign(new S3Error('private object key'), { code });
+function s3(name: string): S3ServiceException {
+  return new S3ServiceException({ name, $fault: 'server', $metadata: {}, message: 'private object key' });
 }
 
 describe('classifyBlobFailure', () => {
@@ -36,7 +36,7 @@ describe('classifyBlobFailure', () => {
 
   it('message만 같은 오류, 일반 code 모방, DomainError 및 미확인 코드는 분류하지 않는다', () => {
     expect(classifyBlobFailure(new Error('ECONNRESET SlowDown'))).toBeNull();
-    expect(classifyBlobFailure({ code: 'SlowDown' })).toBeNull();
+    expect(classifyBlobFailure({ name: 'SlowDown' })).toBeNull();
     expect(classifyBlobFailure(s3('SomeFutureError'))).toBeNull();
   });
 });

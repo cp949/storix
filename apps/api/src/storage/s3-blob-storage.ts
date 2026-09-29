@@ -1,9 +1,22 @@
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  paginateListObjectsV2,
+  type S3Client,
+} from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'node:stream';
-import type { Client } from 'minio';
 import type { BlobObjectInfo, BlobRange, BlobStorage } from './blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 import { StorageFailureError } from '../common/storage-failure.errors.js';
 import { classifyBlobFailure } from './storage-failure.js';
+
+// 크기를 모르는 stream 업로드의 멀티파트 크기. lib-storage는 전송 중인 파트와 누적 중인 잔여분을
+// 함께 들고 있어 버퍼링 메모리는 PART_SIZE의 약 2배(QUEUE_SIZE=1 기준)이며 파일 크기와 무관하다.
+const PART_SIZE = 16 * 1024 * 1024;
+const QUEUE_SIZE = 1;
 
 function sdkFailure(error: unknown): unknown {
   return classifyBlobFailure(error) ?? error;
@@ -30,15 +43,15 @@ async function* prependChunk(first: Buffer, rest: AsyncIterator<Buffer>): AsyncG
   }
 }
 
-export class MinioBlobStorage implements BlobStorage {
+export class S3BlobStorage implements BlobStorage {
   constructor(
-    private readonly client: Client,
+    private readonly client: S3Client,
     private readonly bucket: string,
-    private readonly presignedClient: Client | null,
+    private readonly presignClient: S3Client | null,
   ) {}
 
   async put(key: string, stream: Readable, contentType?: string): Promise<void> {
-    const metaData = { 'Content-Type': contentType ?? 'application/octet-stream' };
+    const ContentType = contentType ?? 'application/octet-stream';
     let sourceError: unknown;
     const rememberSourceError = (error: Error): void => {
       sourceError = error;
@@ -53,17 +66,24 @@ export class MinioBlobStorage implements BlobStorage {
       }
 
       if (first.done) {
-        await this.client.putObject(this.bucket, key, Buffer.alloc(0), 0, metaData);
+        await this.client.send(
+          new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: Buffer.alloc(0), ContentType }),
+        );
         return;
       }
 
-      await this.client.putObject(
-        this.bucket,
-        key,
-        Readable.from(prependChunk(first.value, iterator)),
-        undefined,
-        metaData,
-      );
+      await new Upload({
+        client: this.client,
+        params: {
+          Bucket: this.bucket,
+          Key: key,
+          Body: Readable.from(prependChunk(first.value, iterator)),
+          ContentType,
+        },
+        partSize: PART_SIZE,
+        queueSize: QUEUE_SIZE,
+        leavePartsOnError: false,
+      }).done();
     } catch (error) {
       if (sourceError !== undefined) throw sourceError;
       throw sdkFailure(error);
@@ -73,21 +93,16 @@ export class MinioBlobStorage implements BlobStorage {
   }
 
   async get(key: string, range?: BlobRange): Promise<Readable> {
+    let Range: string | undefined;
     if (range) {
       if (range.start < 0 || (range.end !== undefined && range.end < range.start)) {
         throw new VfsInvalidRangeError(range.start, range.end ?? range.start);
       }
-      const length = range.end !== undefined ? range.end - range.start + 1 : undefined;
-      try {
-        return classifyReturnedStream(
-          await this.client.getPartialObject(this.bucket, key, range.start, length),
-        );
-      } catch (error) {
-        throw sdkFailure(error);
-      }
+      Range = `bytes=${range.start}-${range.end ?? ''}`;
     }
     try {
-      return classifyReturnedStream(await this.client.getObject(this.bucket, key));
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key, Range }));
+      return classifyReturnedStream(response.Body as Readable);
     } catch (error) {
       throw sdkFailure(error);
     }
@@ -95,30 +110,39 @@ export class MinioBlobStorage implements BlobStorage {
 
   async delete(key: string): Promise<void> {
     try {
-      await this.client.removeObject(this.bucket, key);
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
     } catch (error) {
       throw sdkFailure(error);
     }
   }
 
   async *list(prefix?: string): AsyncIterable<BlobObjectInfo> {
-    const stream = this.client.listObjectsV2(this.bucket, prefix, true);
-    for await (const item of stream) {
-      if (item.name && item.lastModified) {
-        yield { key: item.name, lastModified: item.lastModified };
+    const pages = paginateListObjectsV2({ client: this.client }, { Bucket: this.bucket, Prefix: prefix });
+    for await (const page of pages) {
+      for (const item of page.Contents ?? []) {
+        if (item.Key && item.LastModified) {
+          yield { key: item.Key, lastModified: item.LastModified };
+        }
       }
     }
   }
 
   async getPresignedUrl(key: string, expirySeconds: number, contentDisposition?: string): Promise<string> {
-    if (!this.presignedClient) {
+    if (!this.presignClient) {
       throw new StorageFailureError(
         'STORIX_STORAGE_PUBLIC_ENDPOINT가 설정되지 않아 presigned URL을 발급할 수 없음',
       );
     }
-    const reqParams = contentDisposition ? { 'response-content-disposition': contentDisposition } : undefined;
     try {
-      return await this.presignedClient.presignedGetObject(this.bucket, key, expirySeconds, reqParams);
+      return await getSignedUrl(
+        this.presignClient,
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ResponseContentDisposition: contentDisposition,
+        }),
+        { expiresIn: expirySeconds },
+      );
     } catch (error) {
       throw sdkFailure(error);
     }

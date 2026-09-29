@@ -25,7 +25,7 @@ async function bootstrap(): Promise<void> {
     });
     process.exitCode = 1;
   } finally {
-    // 실패 경로에서도 반드시 닫는다 — 열린 DB/MinIO 연결이 event loop를 붙잡아
+    // 실패 경로에서도 반드시 닫는다 — 열린 DB/스토리지 연결이 event loop를 붙잡아
     // cron으로 뜬 컨테이너가 종료되지 않고 쌓이는 것을 막는다.
     await app?.close();
   }

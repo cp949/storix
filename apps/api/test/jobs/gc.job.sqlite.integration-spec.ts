@@ -1,5 +1,5 @@
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
-import { Client } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import { DataSource } from 'typeorm';
 import { runGcJobSharedTests } from './gc.job.shared-tests.js';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
@@ -14,7 +14,7 @@ import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.r
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { installSqliteGate } from '../../src/persistence/sqlite-gate.js';
-import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
+import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(blob.repository.sqlite.integration-spec.ts와
 // 동일 관례) — 그 외 실행에서는 jest.integration.config.cjs의 testPathIgnorePatterns가 제외한다.
@@ -23,7 +23,7 @@ describe('GcJob 통합 (SQLite)', () => {
   let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
-  let storage: MinioBlobStorage;
+  let storage: S3BlobStorage;
   let namespaceId: string;
   let nodeRepository: VfsNodeRepository;
   let trashRetention: VfsTrashRetentionRepository;
@@ -68,15 +68,9 @@ describe('GcJob 통합 (SQLite)', () => {
     trashRetention = new VfsTrashRetentionRepository(dataSource, nodeRepository);
     fileExpiry = new VfsFileExpiryRepository(dataSource, nodeRepository);
 
-    const client = new Client({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await client.makeBucket(bucket);
-    storage = new MinioBlobStorage(client, bucket, null);
+    const client = createTestS3Client(s3Container);
+    await createTestBucket(client, bucket);
+    storage = new S3BlobStorage(client, bucket, null);
 
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'gc-job-owner' }));

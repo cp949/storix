@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -51,14 +51,8 @@ describe('presigned-download HTTP 계약', () => {
     process.env.STORIX_PRESIGNED_URL_EXPIRY_SECONDS = '300';
     process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
-    const minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    const s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

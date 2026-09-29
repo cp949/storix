@@ -54,7 +54,7 @@ async function bootstrap(): Promise<void> {
   } finally {
     // 락을 못 얻었거나 이미 반납한 상태에서도 안전한 no-op이다(GcLock.release 참고).
     await gcLock?.release();
-    // 실패 경로에서도 반드시 닫는다 — 열린 DB/MinIO 연결이 event loop를 붙잡아
+    // 실패 경로에서도 반드시 닫는다 — 열린 DB/스토리지 연결이 event loop를 붙잡아
     // cron으로 뜬 컨테이너가 종료되지 않고 쌓이는 것을 막는다.
     await app?.close();
   }

@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { ConfigService } from '@nestjs/config';
-import { Client } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import { DataSource } from 'typeorm';
 import { BackupJob } from '../../src/jobs/backup.job.js';
 import { PgDumpCliTool } from '../../src/jobs/pg-dump-cli.tool.js';
@@ -18,14 +18,14 @@ import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
-import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
+import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 describe('RestoreJob 통합', () => {
   let pgContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let backupRepository: BackupRepository;
-  let storage: MinioBlobStorage;
+  let storage: S3BlobStorage;
   let backupRootDir: string;
   let backupDir: string;
   let seededStorageKey: string;
@@ -78,15 +78,9 @@ describe('RestoreJob 통합', () => {
     await dataSource.runMigrations();
     backupRepository = new BackupRepository(dataSource);
 
-    const client = new Client({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await client.makeBucket(bucket);
-    storage = new MinioBlobStorage(client, bucket, null);
+    const client = createTestS3Client(s3Container);
+    await createTestBucket(client, bucket);
+    storage = new S3BlobStorage(client, bucket, null);
 
     backupRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-restore-test-'));
 
@@ -119,7 +113,7 @@ describe('RestoreJob 통합', () => {
     await fs.rm(backupRootDir, { recursive: true, force: true });
   });
 
-  it('빈 대상에 복구하면 백업된 namespace와 MinIO object가 그대로 복원된다', async () => {
+  it('빈 대상에 복구하면 백업된 namespace와 스토리지 object가 그대로 복원된다', async () => {
     const job = new RestoreJob(
       storage,
       backupRepository,
@@ -218,7 +212,7 @@ describe('RestoreJob 통합', () => {
 
   it('object가 0건인 백업을 복구해도 ENOENT 없이 성공하고 restoredObjectCount는 0이다', async () => {
     // BackupJob.mirrorObjectsToLocalDir는 storage.list() 루프 본문 안에서만
-    // mkdir을 호출하므로, 백업 시점에 MinIO object가 0건이면 <backupDir>/minio
+    // mkdir을 호출하므로, 백업 시점에 스토리지 object가 0건이면 <backupDir>/blobs
     // 디렉터리 자체가 생성되지 않는다. 이 케이스를 그대로 재현해 RestoreJob이
     // fs.readdir(ENOENT)로 죽지 않고 0건으로 정상 종료하는지 검증한다.
     await dataSource.query('TRUNCATE namespace CASCADE');
@@ -233,7 +227,7 @@ describe('RestoreJob 통합', () => {
     );
     const emptyBackupResult = await backupJob.run();
     expect(emptyBackupResult.copiedObjectCount).toBe(0);
-    await expect(fs.access(path.join(emptyBackupResult.backupDir, 'minio'))).rejects.toThrow();
+    await expect(fs.access(path.join(emptyBackupResult.backupDir, 'blobs'))).rejects.toThrow();
 
     // 복구 대상도 다시 완전히 비운 상태로 되돌린다(이 백업 자체가 namespace
     // 0건짜리이므로, 복구 대상 상태는 이 검증과 무관하다).
@@ -262,7 +256,7 @@ describe('RestoreJob 통합', () => {
     await fs.rm(emptyBackupRootDir, { recursive: true, force: true });
   });
 
-  it('STORIX_RESTORE_SOURCE_DIR에 postgres.dump가 없으면 force여도 MinIO object를 지우기 전에 실패한다', async () => {
+  it('STORIX_RESTORE_SOURCE_DIR에 postgres.dump가 없으면 force여도 스토리지 object를 지우기 전에 실패한다', async () => {
     // 경로 오타로 force 복구를 돌리는 상황. clearExistingObjects()가 먼저 돌면
     // 버킷만 비워지고 pg_restore는 실패해, 복구 전보다 나쁜 상태로 끝난다.
     await dataSource.query('TRUNCATE namespace CASCADE');

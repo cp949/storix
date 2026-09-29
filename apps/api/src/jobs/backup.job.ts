@@ -36,8 +36,8 @@ export class BackupJob {
 
   async run(): Promise<BackupResult> {
     // 작업 중에는 `<timestamp>.partial/`에 쓰고, 전부 성공한 뒤에만 최종 이름으로
-    // rename한다. 중간에 실패하면(예: MinIO 연결 끊김) 완전한 dump 파일 옆에
-    // 잘린 minio/가 남아 정상 백업과 구분되지 않는데, 운영자의 보존/회전
+    // rename한다. 중간에 실패하면(예: 스토리지 연결 끊김) 완전한 dump 파일 옆에
+    // 잘린 blobs/가 남아 정상 백업과 구분되지 않는데, 운영자의 보존/회전
     // 스크립트는 디렉터리 목록만 보고 이를 정상 백업으로 취급한다. 같은
     // 파일시스템 안의 rename은 POSIX에서 원자적이다.
     const finalDir = path.join(this.backupRootDir, formatBackupTimestamp(new Date()));
@@ -51,9 +51,9 @@ export class BackupJob {
       );
     }
 
-    // DB 스냅샷을 MinIO보다 먼저 뜬다 — 업로드가 object-먼저-metadata-나중
+    // DB 스냅샷을 스토리지 미러보다 먼저 뜬다 — 업로드가 object-먼저-metadata-나중
     // 순서이므로(content.service.ts), 이 순서에서만 DB 스냅샷이 참조하는
-    // 모든 blob이 이미 MinIO에 존재함이 보장된다(ADR-0015).
+    // 모든 blob이 이미 스토리지에 존재함이 보장된다(ADR-0015).
     await this.dumpTool.dump(path.join(workingDir, this.dumpTool.dumpFileName));
 
     const copiedObjectCount = await this.mirrorObjectsToLocalDir(workingDir);
@@ -65,22 +65,22 @@ export class BackupJob {
   }
 
   private async mirrorObjectsToLocalDir(backupDir: string): Promise<number> {
-    const minioDir = path.join(backupDir, 'minio');
+    const blobDir = path.join(backupDir, 'blobs');
     let count = 0;
     for await (const item of this.storage.list()) {
-      const destPath = path.join(minioDir, item.key);
+      const destPath = path.join(blobDir, item.key);
       // Storix가 만드는 key는 항상 `blobs/{shard}/{uuid}`라 현재는 '..'가 없지만,
       // 버킷 목록은 외부 입력이므로 백업 디렉터리 밖으로 나가는 key를 막는다.
       // 경계 판정은 경로 구분자까지 본다 — 단순히 '..' prefix만 보면 '..foo'
       // 같은 정상 key(디렉터리를 벗어나지 않음)까지 막혀, 버킷에 Storix가
       // 만들지 않은 object가 섞여 있을 때 백업 전체가 실패한다.
-      const relativeDest = path.relative(minioDir, destPath);
+      const relativeDest = path.relative(blobDir, destPath);
       if (
         relativeDest === '..' ||
         relativeDest.startsWith(`..${path.sep}`) ||
         path.isAbsolute(relativeDest)
       ) {
-        throw new Error(`MinIO object key가 백업 디렉터리를 벗어남: ${item.key}`);
+        throw new Error(`object key가 백업 디렉터리를 벗어남: ${item.key}`);
       }
       await fs.mkdir(path.dirname(destPath), { recursive: true });
       const stream = await this.storage.get(item.key);

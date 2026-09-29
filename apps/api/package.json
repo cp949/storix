@@ -30,6 +30,9 @@
     "restore:run:prod": "node dist/restore-main.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1140.0",
+    "@aws-sdk/lib-storage": "3.1140.0",
+    "@aws-sdk/s3-request-presigner": "3.1140.0",
     "@nestjs/common": "12.1.0",
     "@nestjs/config": "12.0.1",
     "@nestjs/core": "12.1.0",
@@ -40,7 +43,6 @@
     "@sentry/node": "10.73.0",
     "better-sqlite3": "^12.11.1",
     "express": "5.2.1",
-    "minio": "8.0.7",
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",

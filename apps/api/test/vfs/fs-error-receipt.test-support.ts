@@ -1,7 +1,7 @@
 import type { FsHttpContext } from './fs-http-fixture.test-support.js';
 import { randomUUID } from 'node:crypto';
 import { jest } from '@jest/globals';
-import { Client as MinioClient, S3Error } from 'minio';
+import { PutObjectCommand, S3ServiceException, type S3Client } from '@aws-sdk/client-s3';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
@@ -11,6 +11,7 @@ import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import { STORAGE_CLIENT } from '../../src/storage/storage.constants.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
+import { interceptCommand } from '../storage/s3-client.test-support.js';
 import { withoutStatHash, InjectedUnavailableError } from './fs-http-fixture.test-support.js';
 
 export function registerFsErrorReceiptContract(ctx: FsHttpContext) {
@@ -94,16 +95,17 @@ export function registerFsErrorReceiptContract(ctx: FsHttpContext) {
       ).toBe('/a/file');
     });
 
-    it('MinIO SDK 일시·영구 실패는 안전한 코드로 응답하고 일시 실패는 같은 key로 성공한다', async () => {
+    it('스토리지 SDK 일시·영구 실패는 안전한 코드로 응답하고 일시 실패는 같은 key로 성공한다', async () => {
       const namespaceId = await ctx.createNamespace('error-receipt-blob-sdk');
-      const client = ctx.app.get<MinioClient>(STORAGE_CLIENT);
-      const putSpy = jest.spyOn(client, 'putObject');
+      const client = ctx.app.get<S3Client>(STORAGE_CLIENT);
       const transientKey = randomUUID();
       const permanentKey = randomUUID();
+      const putSpy = interceptCommand(
+        client,
+        PutObjectCommand,
+        Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }),
+      );
       try {
-        putSpy.mockRejectedValueOnce(
-          Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }),
-        );
         const transient = await upload(namespaceId, transientKey, '/transient', {
           'X-If-Absent': 'true',
         }).expect(503);
@@ -127,9 +129,16 @@ export function registerFsErrorReceiptContract(ctx: FsHttpContext) {
             .countBy({ namespaceId, name: 'transient' }),
         ).toBe(1);
 
-        const permanentSpy = jest
-          .spyOn(client, 'putObject')
-          .mockRejectedValueOnce(Object.assign(new S3Error('private object key'), { code: 'AccessDenied' }));
+        const permanentSpy = interceptCommand(
+          client,
+          PutObjectCommand,
+          new S3ServiceException({
+            name: 'AccessDenied',
+            $fault: 'client',
+            $metadata: {},
+            message: 'private object key',
+          }),
+        );
         try {
           const permanent = await upload(namespaceId, permanentKey, '/permanent', {
             'X-If-Absent': 'true',

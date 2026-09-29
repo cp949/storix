@@ -51,9 +51,9 @@ export async function uploadStream(
     for await (const chunk of source as AsyncIterable<Buffer>) {
       total += chunk.length;
       if (total > maxBytes) {
-        // sink.destroy(error)로 중단하면 minio-js 내부의 body.pipe(chunker)가
-        // 'error'를 전파받지 못해(Node pipe()의 알려진 한계) chunker가 영원히
-        // 대기하며 교착 상태에 빠진다. break로 정상 종료시켜 우회한다.
+        // sink.destroy(error)로 중단하면 SDK 내부의 pipe()가 'error'를 전파받지 못해
+        // (Node pipe()의 알려진 한계) 소비자가 영원히 대기하며 교착 상태에 빠질 수 있다.
+        // break로 정상 종료시켜 우회한다.
         exceeded = true;
         break;
       }
@@ -73,13 +73,13 @@ export async function uploadStream(
     sink.end();
   } catch (error) {
     // 클라이언트 연결 끊김 등 진짜 source 오류. sink.destroy(error)로 중단하면
-    // minio-js 내부 body.pipe(chunker)가 'error'를 전파받지 못해 미처리 예외로
-    // 프로세스가 죽는다(exceeded 분기와 동일한 근본 원인). sink.end()로 정상
-    // 종료시켜 minio 업로드를 완료시킨 뒤 즉시 정리하고 원래 오류를 다시 던진다.
+    // SDK 내부 pipe()가 'error'를 전파받지 못해 미처리 예외로 프로세스가 죽을 수
+    // 있다(exceeded 분기와 동일한 근본 원인). sink.end()로 정상 종료시켜 업로드를
+    // 완료시킨 뒤 즉시 정리하고 원래 오류를 다시 던진다.
     sink.end();
     const putFailureOnSourceError = await putSettled;
     if (putFailureOnSourceError === undefined) {
-      // 정상 종료 덕분에 MinIO에는 불완전한 데이터의 객체가 실제로 생성된다.
+      // 정상 종료 덕분에 스토리지에는 불완전한 데이터의 객체가 실제로 생성된다.
       // 어차피 버릴 데이터이므로 즉시 정리한다(정리 실패는 GC가 나중에 처리).
       await storage.delete(key).catch(() => undefined);
     }
@@ -90,7 +90,7 @@ export async function uploadStream(
 
   if (exceeded) {
     if (putFailure === undefined) {
-      // 정상 종료 덕분에 MinIO에는 한도 이하 크기의 잘린 객체가 실제로 생성된다.
+      // 정상 종료 덕분에 스토리지에는 한도 이하 크기의 잘린 객체가 실제로 생성된다.
       // 어차피 버릴 데이터이므로 즉시 정리한다(정리 실패는 GC가 나중에 처리).
       await storage.delete(key).catch(() => undefined);
     }

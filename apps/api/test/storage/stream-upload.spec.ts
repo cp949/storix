@@ -41,7 +41,7 @@ class RecordingBlobStorage implements BlobStorage {
 // backpressure 상황(drain 대기)에서 put 실패가 무한 대기를 깨우는지 검증하는 데 사용한다.
 class PromptlyFailingBlobStorage implements BlobStorage {
   async put(_key: string, _stream: Readable, _contentType?: string): Promise<void> {
-    throw new Error('minio 연결 실패');
+    throw new Error('스토리지 연결 실패');
   }
 
   async get(_key: string, _range?: BlobRange): Promise<Readable> {
@@ -152,11 +152,11 @@ describe('uploadStream', () => {
 
   it('storage.put이 실패하면 해당 오류를 전파한다', async () => {
     const storage = new RecordingBlobStorage();
-    storage.putError = new Error('minio down');
+    storage.putError = new Error('storage down');
     const source = Readable.from(chunksOf('hello', 2));
 
     await expect(uploadStream(storage, 'blobs/00/key', source, 'text/plain', 1024)).rejects.toThrow(
-      'minio down',
+      'storage down',
     );
   });
 
@@ -205,7 +205,7 @@ describe('uploadStream', () => {
 
   it('storage.put이 실패한 상태에서 maxBytes도 초과하면 VfsFileTooLargeError를 우선 반환하고 delete는 호출하지 않는다', async () => {
     const storage = new RecordingBlobStorage();
-    storage.putError = new Error('minio down');
+    storage.putError = new Error('storage down');
     const source = Readable.from(chunksOf('this content is too long', 4));
 
     await expect(uploadStream(storage, 'blobs/00/key', source, 'text/plain', 5)).rejects.toThrow(
@@ -267,7 +267,7 @@ describe('uploadStream', () => {
 
     await expect(
       uploadStream(storage, 'blobs/00/key', source, 'application/octet-stream', 200 * 1024),
-    ).rejects.toThrow('minio 연결 실패');
+    ).rejects.toThrow('스토리지 연결 실패');
   });
 });
 

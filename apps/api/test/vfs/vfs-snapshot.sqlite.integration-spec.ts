@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,7 +19,7 @@ import { VfsSnapshotEntryEntity } from '../../src/persistence/entities/vfs-snaps
 import { VfsMutationReceiptEntity } from '../../src/persistence/entities/vfs-mutation-receipt.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
-import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
+import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { snapshotPost, treeSnapshotContract } from './vfs-snapshot-tree.test-support.js';
@@ -42,7 +42,7 @@ describe('SQLite file + S3 snapshot HTTP durability', () => {
     configureBodyParsers(next);
     await next.init();
     await next.listen(0);
-    expect(next.get(BLOB_STORAGE)).toBeInstanceOf(MinioBlobStorage);
+    expect(next.get(BLOB_STORAGE)).toBeInstanceOf(S3BlobStorage);
     return next;
   }
 
@@ -59,14 +59,8 @@ describe('SQLite file + S3 snapshot HTTP durability', () => {
       STORIX_STORAGE_SECRET_KEY: container.getPassword(),
       STORIX_STORAGE_BUCKET: 'snapshot-sqlite',
     });
-    const client = new MinioClient({
-      endPoint: container.getHost(),
-      port: container.getPort(),
-      useSSL: false,
-      accessKey: container.getUsername(),
-      secretKey: container.getPassword(),
-    });
-    await client.makeBucket('snapshot-sqlite');
+    const client = createTestS3Client(container);
+    await createTestBucket(client, 'snapshot-sqlite');
     const migration = new DataSource({
       type: 'better-sqlite3',
       database: process.env.STORIX_DB_SQLITE_PATH,

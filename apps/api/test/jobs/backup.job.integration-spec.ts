@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { ConfigService } from '@nestjs/config';
-import { Client } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import { DataSource } from 'typeorm';
 import { BackupJob } from '../../src/jobs/backup.job.js';
 import { PgDumpCliTool } from '../../src/jobs/pg-dump-cli.tool.js';
@@ -16,14 +16,14 @@ import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
-import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
+import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 describe('BackupJob 통합', () => {
   let pgContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
   let dataSource: DataSource;
   let backupRepository: BackupRepository;
-  let storage: MinioBlobStorage;
+  let storage: S3BlobStorage;
   let backupRootDir: string;
   const bucket = 'storix-backup-job-test';
 
@@ -68,15 +68,9 @@ describe('BackupJob 통합', () => {
     await dataSource.runMigrations();
     backupRepository = new BackupRepository(dataSource);
 
-    const client = new Client({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await client.makeBucket(bucket);
-    storage = new MinioBlobStorage(client, bucket, null);
+    const client = createTestS3Client(s3Container);
+    await createTestBucket(client, bucket);
+    storage = new S3BlobStorage(client, bucket, null);
 
     backupRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-backup-test-'));
   }, 180000);
@@ -87,7 +81,7 @@ describe('BackupJob 통합', () => {
     await fs.rm(backupRootDir, { recursive: true, force: true });
   });
 
-  it('Postgres 스냅샷과 MinIO object를 로컬 디렉터리에 남기고, ENCRYPTED namespace 개수를 센다', async () => {
+  it('Postgres 스냅샷과 스토리지 object를 로컬 디렉터리에 남기고, ENCRYPTED namespace 개수를 센다', async () => {
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     await namespaceRepo.save(namespaceRepo.create({ name: 'backup-test-plain', encryptionPolicy: 'NONE' }));
     await namespaceRepo.save(
@@ -118,7 +112,7 @@ describe('BackupJob 통합', () => {
     expect(result.backupDir.endsWith('.partial')).toBe(false);
     await expect(fs.access(`${result.backupDir}.partial`)).rejects.toThrow();
 
-    const mirroredContent = await fs.readFile(path.join(result.backupDir, 'minio', storageKey));
+    const mirroredContent = await fs.readFile(path.join(result.backupDir, 'blobs', storageKey));
     expect(mirroredContent.equals(content)).toBe(true);
   });
 });

@@ -209,7 +209,7 @@ export class UploadSessionPartService {
         uploaded = await Promise.race([upload, deadline.promise]);
       } catch (error) {
         if (deadline.expired() && !uploadSettled) {
-          // MinIO PUT는 취소·종료 보장이 없다. HTTP deadline 후에도 소유 lease와
+          // 스토리지 PUT는 취소·종료 보장이 없다. HTTP deadline 후에도 소유 lease와
           // 예약 과금을 유지하고 실제 PUT가 끝난 뒤 key별로 정리한다.
           lateCleanup = true;
           void upload

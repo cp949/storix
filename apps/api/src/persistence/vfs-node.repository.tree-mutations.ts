@@ -59,7 +59,7 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
         throw new Error('FILE node에 blobId가 없음 — 데이터 일관성 위반');
       }
 
-      // COW: MinIO I/O 없이 같은 Blob을 가리키는 새 Node만 만들고 참조 수를 늘린다.
+      // COW: 스토리지 I/O 없이 같은 Blob을 가리키는 새 Node만 만들고 참조 수를 늘린다.
       await blobRepo.increment({ id: sourceNode.blobId }, 'referenceCount', 1);
       const created = await nodeRepo.save(
         nodeRepo.create({

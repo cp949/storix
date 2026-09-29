@@ -5,10 +5,15 @@ import { Readable } from 'node:stream';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { jest } from '@jest/globals';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient, S3Error } from 'minio';
+import { GetObjectCommand, S3ServiceException, type S3Client } from '@aws-sdk/client-s3';
+import {
+  createTestBucket,
+  createTestS3Client,
+  getObjectResult,
+  interceptCommand,
+} from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -136,6 +141,10 @@ function getInterruptedDownload(
   });
 }
 
+function s3Exception(name: string): S3ServiceException {
+  return new S3ServiceException({ name, $fault: 'client', $metadata: {}, message: 'private object key' });
+}
+
 describe('대용량 스트리밍', () => {
   let postgresContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
@@ -162,14 +171,8 @@ describe('대용량 스트리밍', () => {
     process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
     process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
 
-    const minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    const s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',
@@ -237,7 +240,7 @@ describe('대용량 스트리밍', () => {
 
   it('업로드한 파일을 스트리밍으로 다운로드하면 내용이 동일하다', async () => {
     const namespaceId = await createNamespace('streaming-download-ns');
-    // minio-js partSize(16MiB)보다 커야 실제로 여러 part로 나뉘어 업로드된다.
+    // 업로드 partSize(16MiB)보다 커야 실제로 여러 part로 나뉘어 업로드된다.
     // 40MiB(1MiB * 40)는 16MiB part 기준 3개 이상의 part로 나뉘므로, part 경계를
     // 넘나드는 멀티파트 업로드에서도 바이트가 손상되지 않는지 검증한다.
     const chunkCount = 40;
@@ -267,7 +270,7 @@ describe('대용량 스트리밍', () => {
     expect(downloaded.sha256).toBe(expectedHash.digest('hex'));
   });
 
-  it('MinIO 객체를 열기 전 일시·영구 실패는 안전한 JSON 코드로 응답한다', async () => {
+  it('스토리지 객체를 열기 전 일시·영구 실패는 안전한 JSON 코드로 응답한다', async () => {
     const namespaceId = await createNamespace('streaming-open-failure');
     const path = '/open.bin';
     await request(app.getHttpServer())
@@ -277,11 +280,13 @@ describe('대용량 스트리밍', () => {
       .send(Buffer.from('complete file'))
       .expect(201);
 
-    const client = app.get<MinioClient>(STORAGE_CLIENT);
-    const spy = jest
-      .spyOn(client, 'getObject')
-      .mockRejectedValueOnce(Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }))
-      .mockRejectedValueOnce(Object.assign(new S3Error('private object key'), { code: 'AccessDenied' }));
+    const client = app.get<S3Client>(STORAGE_CLIENT);
+    const spy = interceptCommand(
+      client,
+      GetObjectCommand,
+      Object.assign(new Error('private blob endpoint'), { code: 'ECONNRESET' }),
+      s3Exception('AccessDenied'),
+    );
     try {
       const response = await request(app.getHttpServer())
         .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
@@ -312,7 +317,7 @@ describe('대용량 스트리밍', () => {
       .send(fullBytes)
       .expect(201);
 
-    const client = app.get<MinioClient>(STORAGE_CLIENT);
+    const client = app.get<S3Client>(STORAGE_CLIENT);
     let signalFirstData!: () => void;
     const firstDataObserved = new Promise<void>((resolve) => {
       signalFirstData = resolve;
@@ -324,7 +329,7 @@ describe('대용량 스트리밍', () => {
         throw Object.assign(new Error('private stream failure'), { code: 'ECONNRESET' });
       })(),
     );
-    const spy = jest.spyOn(client, 'getObject').mockResolvedValueOnce(source);
+    const spy = interceptCommand(client, GetObjectCommand, getObjectResult(source));
     try {
       const downloaded = await getInterruptedDownload(
         serverPort,

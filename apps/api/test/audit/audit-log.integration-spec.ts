@@ -6,7 +6,8 @@ import type { NextFunction, Request, Response } from 'express';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -54,7 +55,7 @@ describe('감사 로그 end-to-end', () => {
   let postgresContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
   let migrationDataSource: DataSource;
-  let minioClient: MinioClient;
+  let s3Client: S3Client;
   let app: INestApplication;
   let httpServer: ReturnType<INestApplication['getHttpServer']>;
 
@@ -77,14 +78,8 @@ describe('감사 로그 end-to-end', () => {
     process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
     process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
 
-    minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

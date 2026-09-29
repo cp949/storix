@@ -5,7 +5,7 @@ import { jest } from '@jest/globals';
 import { HealthIndicatorResult, TerminusModule, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import request from 'supertest';
 import { HealthController } from '../../src/health/health.controller.js';
-import { MinioHealthIndicator } from '../../src/health/minio-health.indicator.js';
+import { StorageHealthIndicator } from '../../src/health/storage-health.indicator.js';
 import { IS_PUBLIC_KEY } from '../../src/auth/public.decorator.js';
 
 describe('HealthController', () => {
@@ -29,7 +29,7 @@ describe('HealthController', () => {
           provide: TypeOrmHealthIndicator,
           useValue: { pingCheck: dbPingCheck },
         },
-        { provide: MinioHealthIndicator, useValue: { check: storageCheck } },
+        { provide: StorageHealthIndicator, useValue: { check: storageCheck } },
       ],
     }).compile();
 

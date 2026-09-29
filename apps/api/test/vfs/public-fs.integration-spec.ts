@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AuthModule } from '../../src/auth/auth.module.js';
@@ -65,14 +65,8 @@ describe('public namespace 다운로드 HTTP 계약', () => {
     process.env.STORIX_STORAGE_BUCKET = 'storix-public-fs-test';
     process.env.STORIX_API_KEY = API_KEY;
 
-    const minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    const s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

@@ -1,13 +1,13 @@
+import { HeadBucketCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import { Inject, Injectable } from '@nestjs/common';
 import { HealthIndicatorResult, HealthIndicatorService } from '@nestjs/terminus';
-import { Client } from 'minio';
 import { STORAGE_BUCKET, STORAGE_CLIENT } from '../storage/storage.constants.js';
 
 @Injectable()
-export class MinioHealthIndicator {
+export class StorageHealthIndicator {
   constructor(
     private readonly healthIndicatorService: HealthIndicatorService,
-    @Inject(STORAGE_CLIENT) private readonly client: Client,
+    @Inject(STORAGE_CLIENT) private readonly client: S3Client,
     @Inject(STORAGE_BUCKET) private readonly bucket: string,
   ) {}
 
@@ -15,12 +15,12 @@ export class MinioHealthIndicator {
     const indicator = this.healthIndicatorService.check(key);
 
     try {
-      const exists = await this.client.bucketExists(this.bucket);
-      if (!exists) {
-        return indicator.down(`bucket not found: ${this.bucket}`);
-      }
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       return indicator.up();
     } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) {
+        return indicator.down(`bucket not found: ${this.bucket}`);
+      }
       return indicator.down(error instanceof Error ? error.message : 'unknown error');
     }
   }

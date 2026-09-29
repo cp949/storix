@@ -10,7 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { DataSource } from 'typeorm';
@@ -136,26 +136,14 @@ describe('nginx reverse-proxy 경유 presigned download (STORAGE-03)', () => {
     process.env.STORIX_STORAGE_PUBLIC_ENDPOINT = nginxContainer.getHost();
     process.env.STORIX_STORAGE_PUBLIC_PORT = String(nginxContainer.getMappedPort(443));
     process.env.STORIX_STORAGE_PUBLIC_USE_SSL = 'true';
-    // STORIX_STORAGE_REGION을 비워두면 minio-js가 리전 자동조회(getBucketRegionAsync)를
-    // presignedClient(자체 self-signed 인증서를 쓰는 nginx)로 실제 HTTPS 요청해
-    // rejectUnauthorized 기본값(true) 때문에 인증서 검증에서 그대로 실패한다
-    // (Task 1이 컨테이너 loopback 시나리오에서 같은 근본 원인의 다른 증상을
-    // 실측했다). region을 명시하면 이 요청 자체가 스킵된다.
-    process.env.STORIX_STORAGE_REGION = 'us-east-1';
     process.env.STORIX_MAX_FILE_SIZE_BYTES = String(1024 * 1024 * 1024);
     process.env.STORIX_MAX_SYNC_DELETE_NODES = '1000';
     process.env.STORIX_MAX_SYNC_COPY_NODES = '1000';
     process.env.STORIX_PRESIGNED_URL_EXPIRY_SECONDS = '300';
     process.env.STORIX_ENCRYPTION_MASTER_KEY = MASTER_KEY_HEX;
 
-    const minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    const s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

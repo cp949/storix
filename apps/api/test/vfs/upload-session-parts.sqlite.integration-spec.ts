@@ -7,7 +7,7 @@ import { startS3Container, StartedS3Container } from '../storage/s3-container.te
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AuthModule } from '../../src/auth/auth.module.js';
@@ -141,14 +141,8 @@ describe('upload parts (SQLite + S3)', () => {
     });
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
-    const client = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await client.makeBucket('storix-upload-parts');
+    const client = createTestS3Client(s3Container);
+    await createTestBucket(client, 'storix-upload-parts');
     migrations = new DataSource({
       type: 'better-sqlite3',
       database: process.env.STORIX_DB_SQLITE_PATH,

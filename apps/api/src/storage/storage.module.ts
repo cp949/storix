@@ -1,67 +1,77 @@
+import type { S3ClientConfig } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ClientOptions } from 'minio';
-import { Client } from 'minio';
 import { parseBoolean, parseOptionalString, parsePositiveInt } from '../common/env-parsing.js';
 import { BLOB_STORAGE, STORAGE_BUCKET, STORAGE_CLIENT, STORAGE_PUBLIC_CLIENT } from './storage.constants.js';
-import { MinioBlobStorage } from './minio-blob-storage.js';
+import { S3BlobStorage } from './s3-blob-storage.js';
 import { StorageKeyGenerator } from './storage-key-generator.js';
 
-export function buildMinioClientOptions(config: ConfigService): ClientOptions {
+// IPv6 리터럴은 URL에서 대괄호가 필요하다.
+function toEndpoint(host: string, port: number, useSsl: boolean): string {
+  const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  return `${useSsl ? 'https' : 'http'}://${authority}:${port}`;
+}
+
+function buildClientConfig(config: ConfigService, endpoint: string): S3ClientConfig {
   return {
-    endPoint: config.getOrThrow<string>('STORIX_STORAGE_ENDPOINT'),
-    port: parsePositiveInt(config.get<string>('STORIX_STORAGE_PORT'), 9000),
-    useSSL: parseBoolean(config.get<string>('STORIX_STORAGE_USE_SSL'), false),
-    accessKey: config.getOrThrow<string>('STORIX_STORAGE_ACCESS_KEY'),
-    secretKey: config.getOrThrow<string>('STORIX_STORAGE_SECRET_KEY'),
-    // S3/VersityGW 등 MinIO 외 백엔드를 겨냥할 때만 조정한다. 기본값(true/미설정)은
-    // 번들 MinIO 대상 기존 동작과 동일하다.
-    pathStyle: parseBoolean(config.get<string>('STORIX_STORAGE_PATH_STYLE'), true),
-    region: parseOptionalString(config.get<string>('STORIX_STORAGE_REGION')),
-    // minio-js는 putObject에 size를 넘기지 않으면(스트리밍 업로드) 내부적으로
-    // size를 maxObjectSize(5TiB)로 간주해 파트 크기를 수백MB 단위로 계산한다.
-    // 그 결과 실제 파일이 계산된 파트 크기보다 작으면 파트 하나에 파일 전체가
-    // 담겨 업로드 전에 WAS 메모리에 통째로 버퍼링된다. partSize를 고정하면
-    // overRidePartSize가 켜져 이 크기 추정 로직을 건너뛰고 항상 이 값을 파트
-    // 크기로 사용하므로, 총 크기를 모르는 업로드도 실제로 스트리밍된다.
-    partSize: 16 * 1024 * 1024,
+    endpoint,
+    // SDK는 리전을 자동 조회하지 않는다. 백엔드가 리전을 지정해 운영되면(AWS S3 버킷 리전, VersityGW
+    // --region) 같은 값을 STORIX_STORAGE_REGION에 설정해야 한다.
+    region: parseOptionalString(config.get<string>('STORIX_STORAGE_REGION')) ?? 'us-east-1',
+    credentials: {
+      accessKeyId: config.getOrThrow<string>('STORIX_STORAGE_ACCESS_KEY'),
+      secretAccessKey: config.getOrThrow<string>('STORIX_STORAGE_SECRET_KEY'),
+    },
+    forcePathStyle: parseBoolean(config.get<string>('STORIX_STORAGE_PATH_STYLE'), true),
+    // 업로드 stream은 재생할 수 없고, 저장 장애는 호출자가 분류해 응답한다. SDK 자동 재시도를 끈다.
+    maxAttempts: 1,
+    // 기본값(WHEN_SUPPORTED)은 요청에 CRC32 체크섬과 aws-chunked 인코딩을 붙인다.
+    // 일부 S3 호환 백엔드가 이를 거부하므로 서비스가 요구할 때만 계산한다.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   };
+}
+
+export function buildS3ClientConfig(config: ConfigService): S3ClientConfig {
+  const endpoint = toEndpoint(
+    config.getOrThrow<string>('STORIX_STORAGE_ENDPOINT'),
+    parsePositiveInt(config.get<string>('STORIX_STORAGE_PORT'), 9000),
+    parseBoolean(config.get<string>('STORIX_STORAGE_USE_SSL'), false),
+  );
+  return buildClientConfig(config, endpoint);
 }
 
 // presigned URL 서명은 서명 시점 Client의 host/port/scheme으로 만들어진다. 외부에서
 // 접근 가능한 값(STORIX_STORAGE_PUBLIC_*)이 내부 통신용(STORIX_STORAGE_ENDPOINT 등)과 다를 수 있어
 // 별도 Client로 분리한다(ADR-0013). STORIX_STORAGE_PUBLIC_ENDPOINT가 없으면 presigned 기능을
-// 안 쓰는 배포로 보고 null을 반환한다 — MinioBlobStorage.getPresignedUrl 호출 시점에
+// 안 쓰는 배포로 보고 null을 반환한다 — S3BlobStorage.getPresignedUrl 호출 시점에
 // 에러가 나며, 부팅 자체는 막지 않는다.
-export function buildMinioPublicClientOptions(config: ConfigService): ClientOptions | null {
-  const endPoint = parseOptionalString(config.get<string>('STORIX_STORAGE_PUBLIC_ENDPOINT'));
-  if (!endPoint) {
+export function buildS3PublicClientConfig(config: ConfigService): S3ClientConfig | null {
+  const host = parseOptionalString(config.get<string>('STORIX_STORAGE_PUBLIC_ENDPOINT'));
+  if (!host) {
     return null;
   }
-
-  return {
-    endPoint,
-    port: parsePositiveInt(config.get<string>('STORIX_STORAGE_PUBLIC_PORT'), 9000),
-    useSSL: parseBoolean(config.get<string>('STORIX_STORAGE_PUBLIC_USE_SSL'), false),
-    accessKey: config.getOrThrow<string>('STORIX_STORAGE_ACCESS_KEY'),
-    secretKey: config.getOrThrow<string>('STORIX_STORAGE_SECRET_KEY'),
-    pathStyle: parseBoolean(config.get<string>('STORIX_STORAGE_PATH_STYLE'), true),
-    region: parseOptionalString(config.get<string>('STORIX_STORAGE_REGION')),
-  };
+  const endpoint = toEndpoint(
+    host,
+    parsePositiveInt(config.get<string>('STORIX_STORAGE_PUBLIC_PORT'), 9000),
+    parseBoolean(config.get<string>('STORIX_STORAGE_PUBLIC_USE_SSL'), false),
+  );
+  return buildClientConfig(config, endpoint);
 }
 
 @Module({
   providers: [
     {
       provide: STORAGE_CLIENT,
-      useFactory: (config: ConfigService) => new Client(buildMinioClientOptions(config)),
+      useFactory: (config: ConfigService) => new S3Client(buildS3ClientConfig(config)),
       inject: [ConfigService],
     },
     {
       provide: STORAGE_PUBLIC_CLIENT,
       useFactory: (config: ConfigService) => {
-        const options = buildMinioPublicClientOptions(config);
-        return options ? new Client(options) : null;
+        const clientConfig = buildS3PublicClientConfig(config);
+        return clientConfig ? new S3Client(clientConfig) : null;
       },
       inject: [ConfigService],
     },
@@ -72,8 +82,8 @@ export function buildMinioPublicClientOptions(config: ConfigService): ClientOpti
     },
     {
       provide: BLOB_STORAGE,
-      useFactory: (client: Client, bucket: string, publicClient: Client | null) =>
-        new MinioBlobStorage(client, bucket, publicClient),
+      useFactory: (client: S3Client, bucket: string, publicClient: S3Client | null) =>
+        new S3BlobStorage(client, bucket, publicClient),
       inject: [STORAGE_CLIENT, STORAGE_BUCKET, STORAGE_PUBLIC_CLIENT],
     },
     StorageKeyGenerator,

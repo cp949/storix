@@ -23,10 +23,10 @@ export function incrementCounter(iv: Buffer, blocks: number): Buffer {
 }
 
 // Node의 Readable.pipe()는 destination에만 'error' 리스너를 붙인다. 그래서 source
-// (실제로는 MinIO HTTP 응답 스트림)가 중간에 실패하면 그 오류가 destination으로
+// (실제로는 스토리지 HTTP 응답 스트림)가 중간에 실패하면 그 오류가 destination으로
 // 전파되지 않아 소비자는 영원히 대기하고, 아무도 처리하지 않은 source의 'error'는
 // uncaughtException이 되어 프로세스를 죽인다. 반대로 소비자가 결과 스트림을 파괴해도
-// source는 살아남아 MinIO HTTP 소켓이 샌다. pipeline()은 양방향으로 오류를 전파하고
+// source는 살아남아 스토리지 HTTP 소켓이 샌다. pipeline()은 양방향으로 오류를 전파하고
 // 한쪽이 끝나거나 파괴되면 나머지도 파괴하므로 두 문제를 모두 없앤다.
 // 콜백은 비워둔다 — 오류는 destination에도 그대로 전파되므로 호출자가 처리한다.
 function pipeThrough<T extends Duplex>(source: Readable, destination: T): T {

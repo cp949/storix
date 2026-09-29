@@ -17,11 +17,11 @@ import { NamespaceProvisioningRepository } from '../../src/persistence/namespace
 import { readDbNow } from '../../src/persistence/vfs-node.repository.helpers.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
-import { MinioBlobStorage } from '../../src/storage/minio-blob-storage.js';
+import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 export interface GcJobTestContext {
   readonly dataSource: DataSource;
-  readonly storage: MinioBlobStorage;
+  readonly storage: S3BlobStorage;
   readonly blobRepository: BlobRepository;
   readonly namespaceId: string;
   readonly nodeRepository: VfsNodeRepository;
@@ -514,7 +514,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await expect(storage.get(referenced.storageKey)).resolves.toBeDefined();
   });
 
-  it('metadata 없이 grace period가 지난 orphan MinIO object를 회수한다', async () => {
+  it('metadata 없이 grace period가 지난 orphan 스토리지 object를 회수한다', async () => {
     const { storage, blobRepository } = getContext();
     const orphanKey = `blobs/ab/${randomUUID()}`;
     await storage.put(orphanKey, Readable.from(Buffer.from('orphan')));
@@ -529,7 +529,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await expect(storage.get(orphanKey)).rejects.toThrow();
   });
 
-  it('metadata 없어도 grace period 이내면 orphan MinIO object를 보존한다', async () => {
+  it('metadata 없어도 grace period 이내면 orphan 스토리지 object를 보존한다', async () => {
     const { storage, blobRepository } = getContext();
     const freshOrphanKey = `blobs/ab/${randomUUID()}`;
     await storage.put(freshOrphanKey, Readable.from(Buffer.from('fresh orphan')));

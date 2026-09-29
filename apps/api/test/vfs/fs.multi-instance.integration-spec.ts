@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { startS3Container, StartedS3Container } from '../storage/s3-container.test-support.js';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client as MinioClient } from 'minio';
+import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
 import request from 'supertest';
 import { DataSource, IsNull } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -58,14 +58,8 @@ describe('공유 PostgreSQL의 다중 API 인스턴스 계약', () => {
     process.env.STORIX_STORAGE_SECRET_KEY = s3Container.getPassword();
     process.env.STORIX_STORAGE_BUCKET = 'storix-multi-instance-test';
 
-    const minioClient = new MinioClient({
-      endPoint: s3Container.getHost(),
-      port: s3Container.getPort(),
-      useSSL: false,
-      accessKey: s3Container.getUsername(),
-      secretKey: s3Container.getPassword(),
-    });
-    await minioClient.makeBucket(process.env.STORIX_STORAGE_BUCKET);
+    const s3Client = createTestS3Client(s3Container);
+    await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);
 
     migrationDataSource = new DataSource({
       type: 'postgres',

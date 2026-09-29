@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import { Public } from '../auth/public.decorator.js';
-import { MinioHealthIndicator } from './minio-health.indicator.js';
+import { StorageHealthIndicator } from './storage-health.indicator.js';
 
 @Public()
 @Controller('health')
@@ -9,7 +9,7 @@ export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
     private readonly db: TypeOrmHealthIndicator,
-    private readonly minio: MinioHealthIndicator,
+    private readonly storage: StorageHealthIndicator,
   ) {}
 
   @Get('live')
@@ -20,6 +20,6 @@ export class HealthController {
   @Get('ready')
   @HealthCheck()
   ready() {
-    return this.health.check([() => this.db.pingCheck('database'), () => this.minio.check('storage')]);
+    return this.health.check([() => this.db.pingCheck('database'), () => this.storage.check('storage')]);
   }
 }

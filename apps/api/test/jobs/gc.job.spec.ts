@@ -69,11 +69,11 @@ describe('GcJob', () => {
     expect(pruneExpired).toHaveBeenCalledWith(expect.any(Date));
   });
 
-  it('MinIO object 삭제가 실패한 blob은 metadata row를 삭제하지 않는다', async () => {
+  it('스토리지 object 삭제가 실패한 blob은 metadata row를 삭제하지 않는다', async () => {
     const deleteMock = jest
       .fn<(key: string) => Promise<void>>()
       .mockImplementationOnce(() => Promise.resolve())
-      .mockImplementationOnce(() => Promise.reject(new Error('minio down')));
+      .mockImplementationOnce(() => Promise.reject(new Error('storage down')));
     const storage: Pick<BlobStorage, 'list' | 'delete'> = {
       list: emptyList,
       delete: deleteMock,
@@ -102,7 +102,7 @@ describe('GcJob', () => {
     expect(deleteBlobRows).toHaveBeenCalledWith(['blob-ok']);
   });
 
-  it('metadata 없이 grace period가 지난 MinIO object만 orphan으로 센다', async () => {
+  it('metadata 없이 grace period가 지난 스토리지 object만 orphan으로 센다', async () => {
     const now = Date.now();
     const staleItem: BlobObjectInfo = { key: 'blobs/ab/stale', lastModified: new Date(now - 2 * 3600_000) };
     const freshItem: BlobObjectInfo = { key: 'blobs/ab/fresh', lastModified: new Date(now) };
