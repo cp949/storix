@@ -5,7 +5,7 @@
  */
 
 /** 서버 기동 설정 이름. 프로필마다 서버를 한 번 기동한다. */
-export type ProfileName = 'default';
+export type ProfileName = 'default' | 'small-limits';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -88,8 +88,28 @@ export interface ApiClient {
   /** `POST /fs/mkdir`로 디렉터리를 만든다. `parents`가 true일 때만 없는 부모를 만든다. */
   mkdir(namespaceId: string, dirPath: string, parents?: boolean): Promise<ApiResponse>;
 
-  /** `GET /fs/content`로 전체 파일 바이트를 읽는다. */
-  getContent(namespaceId: string, filePath: string): Promise<ApiResponse>;
+  /** `GET /fs/content`로 파일 바이트를 읽는다. `headers`에 `Range`를 주면 부분 응답을 받는다. */
+  getContent(
+    namespaceId: string,
+    filePath: string,
+    options?: { readonly headers?: Readonly<Record<string, string>> },
+  ): Promise<ApiResponse>;
+
+  /** `GET /fs/ls`로 디렉터리의 직계 자식을 페이지 단위로 읽는다. `consistency: 'revision'`이면 디렉터리 revision에 묶인 cursor를 쓴다. */
+  listDirectory(
+    namespaceId: string,
+    dirPath: string,
+    options?: { readonly cursor?: string; readonly limit?: number; readonly consistency?: 'revision' },
+  ): Promise<ApiResponse>;
+
+  /** `POST /fs/mv`로 이동한다. `body`는 `{ source, destination, destinationParents? }`다. */
+  move(namespaceId: string, body: object): Promise<ApiResponse>;
+
+  /** `POST /fs/cp`로 복사한다. `body`는 `{ source, destination, destinationParents? }`다. */
+  copy(namespaceId: string, body: object): Promise<ApiResponse>;
+
+  /** `POST /fs/rm`으로 삭제한다. `recursive`가 true일 때만 비어 있지 않은 디렉터리를 지운다. */
+  remove(namespaceId: string, targetPath: string, recursive?: boolean): Promise<ApiResponse>;
 }
 
 /** 계약 전용으로 만든 namespace. */

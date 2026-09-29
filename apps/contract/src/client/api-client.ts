@@ -61,8 +61,37 @@ export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
       });
     },
 
-    getContent(namespaceId: string, filePath: string) {
-      return request('GET', contentUrl(namespaceId, 'content', filePath));
+    getContent(namespaceId: string, filePath: string, options = {}) {
+      return request('GET', contentUrl(namespaceId, 'content', filePath), { headers: options.headers });
+    },
+
+    listDirectory(namespaceId: string, dirPath: string, options = {}) {
+      const query = new URLSearchParams({ path: dirPath });
+      if (options.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options.limit !== undefined) query.set('limit', String(options.limit));
+      if (options.consistency !== undefined) query.set('consistency', options.consistency);
+      return request('GET', `/api/v2/namespaces/${namespaceId}/fs/ls?${query}`);
+    },
+
+    move(namespaceId: string, body: object) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/mv`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    },
+
+    copy(namespaceId: string, body: object) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/cp`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    },
+
+    remove(namespaceId: string, targetPath: string, recursive = false) {
+      return request(
+        'POST',
+        `${contentUrl(namespaceId, 'rm', targetPath)}&recursive=${recursive ? 'true' : 'false'}`,
+      );
     },
 
     getStat(namespaceId: string, filePath: string) {
