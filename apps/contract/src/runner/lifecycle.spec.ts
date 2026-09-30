@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import { defineContract } from '../define-contract.ts';
 import { ExecutionCleanupError } from './cleanup.ts';
 import { runContractLifecycle, type ContractLifecycleDependencies } from './lifecycle.ts';
+import { runProfileLifecycle } from './profile-lifecycle.ts';
 
 /** 공유 자원과 프로파일의 취득·정리 순서를 관찰한다. */
 function fixture() {
@@ -91,6 +92,7 @@ function fixture() {
       };
     },
     cleanupTimeoutMs: 30_000,
+    activeProfileGraceMs: 10_000,
   };
   return { input, dependencies, events, controller, blob, postgres };
 }
@@ -290,5 +292,159 @@ describe('실행 lifecycle', () => {
     assert.equal(result.exitCode, 1);
     assert.deepEqual(result.cleanupErrors, [cleanupError]);
     assert.equal(result.workDir, '/test-work');
+  });
+});
+
+// 취소 후 미완료 profile은 유예만 기다리고 서버 정리부터 실행한다.
+describe('활성 프로파일 취소 유예', () => {
+  it('기본 유예는 취소 후 10초까지 기다린 다음 정리를 시작한다', async (test) => {
+    const current = fixture();
+    test.mock.timers.enable({ apis: ['setTimeout'] });
+    const started = Promise.withResolvers<void>();
+    current.dependencies.runProfileLifecycle = async () => {
+      started.resolve();
+      return new Promise(() => {});
+    };
+    const { activeProfileGraceMs: _grace, ...dependencies } = current.dependencies;
+    const running = runContractLifecycle(current.input, dependencies);
+    await started.promise;
+    current.controller.abort();
+    // 기본 시간 제한이 바뀌면 실제 cleanup 시작 경계가 달라진다.
+    test.mock.timers.tick(9_999);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(current.events.includes('servers-stop'), false);
+    test.mock.timers.tick(1);
+    const outcome = await running;
+    assert.equal(outcome.exitCode, 130);
+    assert.deepEqual(current.events.slice(-4), ['servers-stop', 'postgres-stop', 'blob-stop', 'stale']);
+  });
+
+  it('유예 안에 끝난 profile의 결과를 보존하고 즉시 정리한다', async () => {
+    const current = fixture();
+    current.dependencies.activeProfileGraceMs = 100;
+    const runProfile = current.dependencies.runProfileLifecycle;
+    current.dependencies.runProfileLifecycle = async (input) => {
+      current.controller.abort();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return runProfile(input);
+    };
+    const outcome = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.exitCode, 130);
+    assert.equal(outcome.contracts.length, 1);
+    assert.equal(outcome.workDir, '/test-work');
+    assert.equal(current.events.includes('profile:small-limits'), false);
+  });
+
+  it('미완료 profile을 기다리지 않고 유예 뒤 서버 정리를 마친 다음 공유 자원을 정리한다', async () => {
+    const current = fixture();
+    current.dependencies.activeProfileGraceMs = 20;
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const stopped = Promise.withResolvers<void>();
+    current.dependencies.runProfileLifecycle = async () => {
+      started.resolve();
+      await release.promise;
+      throw new Error('유예 뒤 늦은 오류');
+    };
+    current.dependencies.stopServers = async () => {
+      current.events.push('servers-stop');
+      await stopped.promise;
+      current.events.push('servers-stopped');
+    };
+    const running = runContractLifecycle(current.input, current.dependencies);
+    await started.promise;
+    current.controller.abort();
+    // 두 번째 abort는 유예를 갱신하거나 cleanup을 생략하지 않는다.
+    current.controller.abort();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    try {
+      assert.equal(current.events.at(-1), 'servers-stop');
+      assert.equal(current.events.includes('postgres-stop'), false);
+      stopped.resolve();
+      const outcome = await running;
+      assert.equal(outcome.exitCode, 130);
+      assert.equal(outcome.workDir, '/test-work');
+      assert.equal(outcome.contracts.length, 0);
+      assert.deepEqual(current.events.slice(-5), [
+        'servers-stop',
+        'servers-stopped',
+        'postgres-stop',
+        'blob-stop',
+        'stale',
+      ]);
+      assert.equal(current.events.includes('profile:small-limits'), false);
+      release.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      stopped.resolve();
+      release.resolve();
+      await running;
+    }
+  });
+
+  it('유예 뒤 재개한 실제 profile은 context 제어와 다음 계약 및 저장소 복구를 막는다', async () => {
+    const current = fixture();
+    current.dependencies.activeProfileGraceMs = 5;
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let active: ReturnType<typeof runProfileLifecycle> | undefined;
+    current.blob.ensureRunning = async () => {
+      current.events.push('ensure');
+    };
+    current.dependencies.runProfileLifecycle = (input) => {
+      active = runProfileLifecycle(input, {
+        prepareDatabase: () => ({ env: {} }),
+        findFreePort: async () => 1234,
+        startServer: async () => ({
+          baseUrl: 'http://127.0.0.1:1',
+          logFile: '/test-work/default.log',
+          async stop() {
+            current.events.push('profile-stop');
+          },
+          async restart() {
+            current.events.push('restart');
+          },
+        }),
+        async runContract(contract, context) {
+          current.events.push(`contract:${contract.id}`);
+          started.resolve();
+          await release.promise;
+          for (const action of [
+            () => context.createNamespace(),
+            () => context.server.restart(),
+            () => context.blobStorage.start(),
+            () => context.blobStorage.stop(),
+            () => context.blobStorage.deleteAllObjects(),
+          ])
+            await assert.rejects(action, { name: 'AbortError' });
+          return { id: contract.id, rq: contract.rq, passed: true, durationMs: 1 };
+        },
+      });
+      return active;
+    };
+    const running = runContractLifecycle(current.input, current.dependencies);
+    await started.promise;
+    current.controller.abort();
+    try {
+      const outcome = await running;
+      assert.equal(outcome.exitCode, 130);
+      assert.equal(outcome.contracts.length, 0);
+      release.resolve();
+      await active;
+      assert.equal(current.events.includes('restart'), false);
+      assert.equal(current.events.includes('ensure'), false);
+      assert.equal(current.events.includes('profile:small-limits'), false);
+      assert.deepEqual(current.events.slice(-5), [
+        'servers-stop',
+        'postgres-stop',
+        'blob-stop',
+        'stale',
+        'profile-stop',
+      ]);
+    } finally {
+      release.resolve();
+      await running;
+      await active;
+    }
   });
 });

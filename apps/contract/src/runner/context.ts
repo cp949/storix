@@ -10,6 +10,9 @@ import type {
 
 /** `createContractContext` 입력. */
 export interface ContractContextInput {
+  /** HTTP 요청과 context 제어의 새 부수 효과를 중단한다. 생략하면 취소되지 않는 실행 신호를 만든다. */
+  readonly signal?: AbortSignal;
+
   readonly baseUrl: string;
   readonly apiKey: string;
 
@@ -47,16 +50,30 @@ export async function createApiNamespace(client: ApiClient, contractId: string):
 }
 
 /** 계약 하나에 전달할 컨텍스트를 만든다. namespace 이름에 무작위 접미사를 붙여 반복 실행에서 충돌하지 않는다. */
-export function createContractContext(input: ContractContextInput): ContractContext {
-  const client = createApiClient(input.baseUrl, input.apiKey);
-  return {
+export function createContractContext(
+  input: ContractContextInput,
+  dependencies: { readonly fetch?: typeof fetch } = {},
+): ContractContext {
+  const signal = input.signal ?? new AbortController().signal;
+  const client = createApiClient(input.baseUrl, input.apiKey, signal, dependencies.fetch);
+  const control = async (action: () => Promise<void>): Promise<void> => {
+    signal.throwIfAborted();
+    await action();
+  };
+  const context = {
+    signal,
     baseUrl: input.baseUrl,
     apiKey: input.apiKey,
     adminKey: input.adminKey,
     client,
-    server: input.server,
-    blobStorage: input.blobStorage,
-    async createNamespace(options): Promise<NamespaceInfo> {
+    server: { restart: () => control(() => input.server.restart()) },
+    blobStorage: {
+      stop: () => control(() => input.blobStorage.stop()),
+      start: () => control(() => input.blobStorage.start()),
+      deleteAllObjects: () => control(() => input.blobStorage.deleteAllObjects()),
+    },
+    async createNamespace(options?: { readonly withoutCapabilities?: boolean }): Promise<NamespaceInfo> {
+      signal.throwIfAborted();
       if (options?.withoutCapabilities !== true && input.provisioned !== undefined) {
         const next = input.provisioned.shift();
         if (next === undefined) {
@@ -67,4 +84,5 @@ export function createContractContext(input: ContractContextInput): ContractCont
       return createApiNamespace(client, input.contractId);
     },
   };
+  return context;
 }

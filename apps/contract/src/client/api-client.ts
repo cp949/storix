@@ -8,9 +8,16 @@ const MUTATION_SCOPE = 'storix-contract';
  * 서비스 API key(`Authorization: Bearer`)로 인증하는 HTTP 클라이언트를 만든다.
  * 공개 HTTP 계약만 호출한다. 응답 본문은 항상 바이트로 읽어 둔다.
  */
-export function createApiClient(baseUrl: string, apiKey: string): ApiClient {
+export function createApiClient(
+  baseUrl: string,
+  apiKey: string,
+  signal: AbortSignal,
+  fetchRequest: typeof fetch = fetch,
+): ApiClient {
   const request: ApiClient['request'] = async (method, path, options = {}) => {
-    const response = await fetch(`${baseUrl}${path}`, {
+    signal.throwIfAborted();
+    const response = await fetchRequest(`${baseUrl}${path}`, {
+      signal,
       method,
       headers: { Authorization: `Bearer ${apiKey}`, ...options.headers },
       body: options.body,

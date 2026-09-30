@@ -260,3 +260,71 @@ describe('프로파일 실행 lifecycle', () => {
     assert.deepEqual(result.cleanupErrors, [cleanupError]);
   });
 });
+
+// 기동과 provision의 늦은 완료가 취소 뒤 새 부수 효과로 이어지지 않아야 한다.
+describe('프로파일 취소 경계', () => {
+  for (const phase of ['port', 'config', 'server', 'provision'] as const) {
+    it(`${phase} 준비 뒤 취소를 검사한다`, async () => {
+      const current = fixture('change-feed');
+      if (phase === 'port')
+        current.dependencies.findFreePort = async () => {
+          current.controller.abort();
+          return 1234;
+        };
+      if (phase === 'config')
+        current.dependencies.writeCapabilitiesConfig = async () => {
+          current.events.push('config');
+          current.controller.abort();
+        };
+      if (phase === 'server')
+        current.dependencies.startServer = async () => {
+          current.events.push('server-start');
+          current.controller.abort();
+          return current.server;
+        };
+      if (phase === 'provision')
+        current.dependencies.provisionCapabilityNamespaces = async (input) => {
+          assert.equal(input.signal, current.controller.signal);
+          current.events.push('provision');
+          current.controller.abort();
+          await input.restart();
+          return [];
+        };
+      await assert.rejects(runProfileLifecycle(current.input, current.dependencies), { name: 'AbortError' });
+      const expected = ['database:sqlite:change-feed'];
+      if (phase !== 'port') expected.push('config');
+      if (phase === 'server' || phase === 'provision') expected.push('server-start');
+      if (phase === 'provision') expected.push('provision');
+      if (phase === 'server' || phase === 'provision') expected.push('server-stop');
+      assert.deepEqual(current.events, expected);
+    });
+  }
+
+  it('취소 뒤 늦게 끝난 계약은 다음 계약과 저장소 복구를 실행하지 않는다', async () => {
+    const current = fixture();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    current.dependencies.runContract = async (contract, context) => {
+      current.events.push(`contract:${contract.id}`);
+      started.resolve();
+      await release.promise;
+      assert.equal(context.signal, current.controller.signal);
+      for (const action of [() => context.server.restart(), () => context.blobStorage.start()]) {
+        await assert.rejects(action, { name: 'AbortError' });
+      }
+      return result(contract);
+    };
+    const running = runProfileLifecycle(current.input, current.dependencies);
+    await started.promise;
+    current.controller.abort();
+    release.resolve();
+    const outcome = await running;
+    assert.equal(outcome.contracts.length, 1);
+    assert.deepEqual(current.events, [
+      'database:sqlite:default',
+      'server-start',
+      'contract:first',
+      'server-stop',
+    ]);
+  });
+});

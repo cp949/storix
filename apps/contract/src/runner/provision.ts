@@ -25,6 +25,9 @@ export const EMPTY_CAPABILITIES_CONFIG: CapabilitiesConfig = buildCapabilitiesCo
 
 /** `provisionCapabilityNamespaces` 입력. */
 export interface ProvisionInput {
+  /** namespace 생성·설정 쓰기·restart 전에 검사하는 실행 취소 신호다. */
+  readonly signal: AbortSignal;
+
   readonly baseUrl: string;
   readonly apiKey: string;
 
@@ -41,21 +44,36 @@ export interface ProvisionInput {
   restart(): Promise<void>;
 }
 
+/** provisioning의 HTTP 전송과 설정 쓰기를 교체하는 의존성이다. */
+export interface ProvisionDependencies {
+  /** 모든 namespace 생성 요청에 실행 신호를 전달한다. */
+  readonly fetch: typeof fetch;
+
+  /** 서버가 읽을 capability 설정 파일을 쓴다. */
+  writeCapabilitiesConfig(configPath: string, contents: string): Promise<void>;
+}
+
 /**
  * capability 설정은 namespace ID를 시작 시 검증하므로 namespace를 먼저 만든 뒤 설정을 쓰고 재시작한다.
  * 서버는 `EMPTY_CAPABILITIES_CONFIG`를 담은 설정 파일로 이미 기동한 상태여야 한다.
  */
-export async function provisionCapabilityNamespaces(input: ProvisionInput): Promise<NamespaceInfo[]> {
-  const client = createApiClient(input.baseUrl, input.apiKey);
+export async function provisionCapabilityNamespaces(
+  input: ProvisionInput,
+  dependencies: Partial<ProvisionDependencies> = {},
+): Promise<NamespaceInfo[]> {
+  const client = createApiClient(input.baseUrl, input.apiKey, input.signal, dependencies.fetch);
   const namespaces: NamespaceInfo[] = [];
   for (let index = 0; index < input.count; index += 1) {
+    input.signal.throwIfAborted();
     namespaces.push(await createApiNamespace(client, 'provisioned'));
   }
   const config = buildCapabilitiesConfig(
     input.capabilities,
     namespaces.map((namespace) => namespace.id),
   );
-  await writeFile(input.configPath, JSON.stringify(config));
+  input.signal.throwIfAborted();
+  await (dependencies.writeCapabilitiesConfig ?? writeFile)(input.configPath, JSON.stringify(config));
+  input.signal.throwIfAborted();
   await input.restart();
   return namespaces;
 }

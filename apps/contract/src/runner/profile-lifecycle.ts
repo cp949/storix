@@ -108,11 +108,14 @@ export async function runProfileLifecycle(
   const apiKey = randomBytes(16).toString('hex');
   const adminKey = randomBytes(16).toString('hex');
   const port = await deps.findFreePort();
+  input.signal.throwIfAborted();
   const capabilities = PROFILE_CAPABILITIES[input.profile] ?? [];
   const capabilitiesConfigPath = path.join(input.workDir, `${input.profile}.capabilities.json`);
   if (capabilities.length > 0) {
+    input.signal.throwIfAborted();
     await deps.writeCapabilitiesConfig(capabilitiesConfigPath, JSON.stringify(EMPTY_CAPABILITIES_CONFIG));
   }
+  input.signal.throwIfAborted();
   const server = await deps.startServer({
     port,
     workDir: input.workDir,
@@ -134,23 +137,30 @@ export async function runProfileLifecycle(
   let executionFailed = false;
   let executionError: unknown;
   try {
+    input.signal.throwIfAborted();
     // 계약별 namespace 생성에 필요한 수보다 여유 있게 준비한다.
     const provisioned =
       capabilities.length > 0
         ? await deps.provisionCapabilityNamespaces({
+            signal: input.signal,
             baseUrl: server.baseUrl,
             apiKey,
             capabilities,
             count: input.contracts.length * 2,
             configPath: capabilitiesConfigPath,
-            restart: () => server.restart(),
+            restart: async () => {
+              input.signal.throwIfAborted();
+              await server.restart();
+            },
           })
         : undefined;
+    input.signal.throwIfAborted();
     for (const contract of input.contracts) {
       if (input.signal.aborted) break;
       const result = await deps.runContract(
         contract,
         createContractContext({
+          signal: input.signal,
           baseUrl: server.baseUrl,
           apiKey,
           adminKey,

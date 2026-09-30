@@ -11,6 +11,7 @@ import { removeStaleContainers, startBlobStorage } from './blob-storage.ts';
 import { CLEANUP_TIMEOUT_MS, cleanupError, ExecutionCleanupError, withCleanupTimeout } from './cleanup.ts';
 import { startPostgres } from './postgres.ts';
 import { runProfileLifecycle } from './profile-lifecycle.ts';
+import type { ProfileLifecycleResult } from './profile-lifecycle.ts';
 import { summarize, type ContractResult } from './run.ts';
 import { refuseNewServers, stopAllServers } from './server.ts';
 
@@ -54,6 +55,9 @@ export interface ContractLifecycleDependencies {
 
   /** 정리 작업 하나의 제한 시간이다. */
   cleanupTimeoutMs: number;
+
+  /** 취소 뒤 미완료 profile을 기다리는 상한이다. */
+  activeProfileGraceMs: number;
 }
 
 /** CLI가 출력하고 종료 상태를 결정할 실행 결과다. */
@@ -93,7 +97,31 @@ const defaultDependencies: ContractLifecycleDependencies = {
   },
   runProfileLifecycle,
   cleanupTimeoutMs: CLEANUP_TIMEOUT_MS,
+  activeProfileGraceMs: 10_000,
 };
+
+/** 취소 후 활성 profile만 유예한다. 늦은 reject도 소비하며 후속 실행에는 결과를 돌려주지 않는다. */
+async function waitForActiveProfile(
+  running: Promise<ProfileLifecycleResult>,
+  signal: AbortSignal,
+  graceMs: number,
+): Promise<ProfileLifecycleResult | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: () => void = () => {};
+  const cancelled = new Promise<undefined>((resolve) => {
+    onAbort = () => {
+      timer = setTimeout(() => resolve(undefined), graceMs);
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([running, cancelled]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+  }
+}
 
 /** 공유 자원을 한 번 준비한다. 실패한 정리 뒤에도 나머지 정리를 계속한다. */
 export async function runContractLifecycle(
@@ -124,7 +152,7 @@ export async function runContractLifecycle(
     cleanups.push({ label: 'API 서버', run: () => deps.stopServers() });
     for (const [profile, contracts] of input.groups) {
       if (input.signal.aborted) break;
-      const outcome = await deps.runProfileLifecycle({
+      const running = deps.runProfileLifecycle({
         profile,
         contracts,
         workDir,
@@ -134,6 +162,8 @@ export async function runContractLifecycle(
         blob,
         signal: input.signal,
       });
+      const outcome = await waitForActiveProfile(running, input.signal, deps.activeProfileGraceMs);
+      if (outcome === undefined) break;
       results.push(...outcome.contracts);
       cleanupErrors.push(...outcome.cleanupErrors);
       if (outcome.contracts.some((entry) => !entry.passed)) serverLogFiles.push(outcome.serverLogFile);
