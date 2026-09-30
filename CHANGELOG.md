@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Security
+
+- API 이미지 베이스를 `node:24.20.0-alpine`으로 바꿨다. Debian 12 베이스에는 수정판이 없는 OS 취약점이 남아 있었다. 변경 후 Trivy 검사에서 최종 이미지의 HIGH·CRITICAL 취약점은 0건이다. 기록은 `apps/api/docs/adr/0031`이다.
+- 간접 의존성 `@grpc/grpc-js`(1.14.5)·`brace-expansion`·`fast-uri`와 pnpm(11.28.3)을 취약점 수정 버전으로 올렸다.
+
+### Changed
+
+- API 이미지는 musl 기반이다. 이미지에 npm·npx·yarn·`bash`·`curl`이 없다. 컨테이너 안 명령은 `node`·`pnpm`·busybox `sh`를 쓴다.
+
 ## [1.0.0] - 2026-09-30
 
 ### Changed

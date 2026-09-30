@@ -88,9 +88,9 @@ docker compose run --rm migrate
 
 이 기능의 통합 테스트는 호스트에 Postgres major 16 이상의
 `pg_dump`/`pg_restore` 클라이언트를 요구한다. Debian/Ubuntu 기본 apt 저장소는
-그보다 낮은 버전을 주는 경우가 많고, 낮은 client는 16 서버에 대해 버전 불일치로
-하드 실패한다(운영 이미지가 PGDG 저장소를 쓰는 이유와 같다 —
-`apps/api/Dockerfile`의 설치 단계 참고).
+그보다 낮은 버전을 주는 경우가 많다. 낮은 client는 16 서버에 대해 버전 불일치로
+하드 실패한다. 운영 이미지는 같은 이유로 `postgresql16-client`를 설치한다
+(`apps/api/Dockerfile`의 runtime stage).
 
 ## 범위 밖
 
