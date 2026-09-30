@@ -3,18 +3,14 @@
  * 인자는 `parseArgs` 정의가 원천이다. 실행 흐름은 docs/design/12-contract-checks.md "실행 흐름".
  */
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { removeStaleContainers, startBlobStorage } from './runner/blob-storage.ts';
-import type { NamespaceInfo } from './define-contract.ts';
-import { createContractContext } from './runner/context.ts';
-import { prepareSqliteDatabase } from './runner/database.ts';
-import { preparePostgresDatabase, startPostgres } from './runner/postgres.ts';
+import { startPostgres } from './runner/postgres.ts';
+import { runProfileLifecycle } from './runner/profile-lifecycle.ts';
 import { CONTRACTS_DIR } from './runner/paths.ts';
-import { PROFILE_CAPABILITIES, PROFILE_ENV } from './runner/profiles.ts';
-import { EMPTY_CAPABILITIES_CONFIG, provisionCapabilityNamespaces } from './runner/provision.ts';
 import {
   discoverContracts,
   findUncoveredRqs,
@@ -25,14 +21,16 @@ import {
 } from './runner/registry.ts';
 import { loadRequirementIds } from './runner/rq.ts';
 import { runContract, summarize, type ContractResult } from './runner/run.ts';
-import { buildServerEnv } from './runner/server-env.ts';
-import { findFreePort, refuseNewServers, startServer, stopAllServers } from './runner/server.ts';
+import { refuseNewServers, stopAllServers } from './runner/server.ts';
 
 /** 종료 시 거꾸로 실행할 정리 작업. SIGINT도 같은 목록을 실행한다. */
 const cleanups: Array<() => Promise<void>> = [];
 
 /** SIGINT를 받았는가. 정리 중 들어오는 반복 신호를 무시하고 중단 뒤의 진행·오류 출력을 막는 데 쓴다. */
 let interrupted = false;
+
+/** 프로파일이 중단 뒤 저장소 복구와 다음 계약 실행을 시작하지 않게 한다. */
+const abortController = new AbortController();
 
 /** 작업 디렉터리를 지우지 않고 남길지. 실패·오류 종료에서 서버 로그를 확인할 수 있게 한다. */
 let keepWorkDir = false;
@@ -121,73 +119,27 @@ async function main(): Promise<number> {
   for (const [profile, group] of groups) {
     if (interrupted) return 130;
     console.log(`\n프로필 ${profile}: 계약 ${group.length}개`);
-    const database =
-      postgres === undefined
-        ? prepareSqliteDatabase(workDir, profile)
-        : preparePostgresDatabase(postgres, runId, profile);
-    const apiKey = randomBytes(16).toString('hex');
-    const adminKey = randomBytes(16).toString('hex');
-    const port = await findFreePort();
-    // capability를 허용하는 프로필은 설정 파일이 필요하다. 처음에는 아무것도 허용하지 않는 설정으로 기동한다.
-    const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
-    const capabilitiesConfigPath = path.join(workDir, `${profile}.capabilities.json`);
-    if (capabilities.length > 0) {
-      await writeFile(capabilitiesConfigPath, JSON.stringify(EMPTY_CAPABILITIES_CONFIG));
-    }
-    const server = await startServer({
-      port,
-      workDir,
-      label: profile,
-      env: buildServerEnv({
-        port,
-        apiKey,
-        adminKey,
-        profileEnv: {
-          ...PROFILE_ENV[profile],
-          ...(capabilities.length > 0 ? { STORIX_VFS_CAPABILITIES_CONFIG_PATH: capabilitiesConfigPath } : {}),
+    const outcome = await runProfileLifecycle(
+      {
+        profile,
+        contracts: group,
+        workDir,
+        runId,
+        db: values.db,
+        postgres,
+        blob,
+        signal: abortController.signal,
+      },
+      {
+        async runContract(contract, context) {
+          const result = await runContract(contract, context);
+          printResult(result);
+          return result;
         },
-        databaseEnv: database.env,
-        storageEnv: blob.env,
-      }),
-    });
-    // 계약이 `createNamespace()`를 한 번씩 부른다고 보고 여유를 두어 준비한다.
-    const provisioned: NamespaceInfo[] | undefined =
-      capabilities.length > 0
-        ? await provisionCapabilityNamespaces({
-            baseUrl: server.baseUrl,
-            apiKey,
-            capabilities,
-            count: group.length * 2,
-            configPath: capabilitiesConfigPath,
-            restart: () => server.restart(),
-          })
-        : undefined;
-
-    for (const contract of group) {
-      if (interrupted) return 130;
-      const result = await runContract(
-        contract,
-        createContractContext({
-          baseUrl: server.baseUrl,
-          apiKey,
-          adminKey,
-          server: { restart: () => server.restart() },
-          blobStorage: {
-            stop: () => blob.interrupt(),
-            start: () => blob.resume(),
-            deleteAllObjects: () => blob.deleteAllObjects(),
-          },
-          contractId: contract.id,
-          provisioned,
-        }),
-      );
-      // 저장소를 멈춘 채 끝나거나 실패한 계약이 다음 계약의 저장소를 막지 않도록 되살린다.
-      await blob.ensureRunning();
-      results.push(result);
-      printResult(result);
-      if (!result.passed) failedLogs.add(server.logFile);
-    }
-    await server.stop();
+      },
+    );
+    results.push(...outcome.contracts);
+    if (outcome.contracts.some((result) => !result.passed)) failedLogs.add(outcome.serverLogFile);
   }
 
   const summary = summarize(results);
@@ -203,6 +155,7 @@ async function main(): Promise<number> {
 process.on('SIGINT', () => {
   if (interrupted) return;
   interrupted = true;
+  abortController.abort();
   void runCleanups().finally(() => process.exit(130));
 });
 
