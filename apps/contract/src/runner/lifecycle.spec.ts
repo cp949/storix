@@ -9,6 +9,15 @@ import { ExecutionCleanupError } from './cleanup.ts';
 import { runContractLifecycle, type ContractLifecycleDependencies } from './lifecycle.ts';
 import { runProfileLifecycle } from './profile-lifecycle.ts';
 
+/** ES2023 lib 범위에서 테스트의 시작·재개 시점을 제어한다. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 /** 공유 자원과 프로파일의 취득·정리 순서를 관찰한다. */
 function fixture() {
   const events: string[] = [];
@@ -300,7 +309,7 @@ describe('활성 프로파일 취소 유예', () => {
   it('기본 유예는 취소 후 10초까지 기다린 다음 정리를 시작한다', async (test) => {
     const current = fixture();
     test.mock.timers.enable({ apis: ['setTimeout'] });
-    const started = Promise.withResolvers<void>();
+    const started = deferred();
     current.dependencies.runProfileLifecycle = async () => {
       started.resolve();
       return new Promise(() => {});
@@ -338,9 +347,9 @@ describe('활성 프로파일 취소 유예', () => {
   it('미완료 profile을 기다리지 않고 유예 뒤 서버 정리를 마친 다음 공유 자원을 정리한다', async () => {
     const current = fixture();
     current.dependencies.activeProfileGraceMs = 20;
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    const stopped = Promise.withResolvers<void>();
+    const started = deferred();
+    const release = deferred();
+    const stopped = deferred();
     current.dependencies.runProfileLifecycle = async () => {
       started.resolve();
       await release.promise;
@@ -385,8 +394,8 @@ describe('활성 프로파일 취소 유예', () => {
   it('유예 뒤 재개한 실제 profile은 context 제어와 다음 계약 및 저장소 복구를 막는다', async () => {
     const current = fixture();
     current.dependencies.activeProfileGraceMs = 5;
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started = deferred();
+    const release = deferred();
     let active: ReturnType<typeof runProfileLifecycle> | undefined;
     current.blob.ensureRunning = async () => {
       current.events.push('ensure');

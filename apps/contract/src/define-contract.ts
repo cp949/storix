@@ -197,6 +197,9 @@ export interface ContractBlobStorage {
 
 /** 계약의 `run`이 받는 컨텍스트. */
 export interface ContractContext {
+  /** 실행 취소 신호다. 직접 HTTP 요청과 계약 내부 대기에도 전달한다. */
+  readonly signal: AbortSignal;
+
   /** 서버 기본 URL. 끝에 `/`가 없다. */
   readonly baseUrl: string;
 

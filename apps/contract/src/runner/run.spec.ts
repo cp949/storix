@@ -4,6 +4,7 @@ import { defineContract, type ContractContext } from '../define-contract.ts';
 import { runContract, summarize } from './run.ts';
 
 const fakeContext: ContractContext = {
+  signal: new AbortController().signal,
   baseUrl: 'http://127.0.0.1:1',
   apiKey: 'test-key',
   adminKey: 'test-admin-key',

@@ -74,7 +74,9 @@ export default defineContract({
         name: '인증 실패',
         status: 401,
         code: 'UNAUTHORIZED',
-        response: await fetch(`${ctx.baseUrl}/api/v2/namespaces/${ns}/fs/content?path=%2Fdoc.txt`),
+        response: await fetch(`${ctx.baseUrl}/api/v2/namespaces/${ns}/fs/content?path=%2Fdoc.txt`, {
+          signal: ctx.signal,
+        }),
       },
       {
         name: 'namespace 없음',

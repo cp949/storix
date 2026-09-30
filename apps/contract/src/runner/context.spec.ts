@@ -18,6 +18,7 @@ describe('계약 컨텍스트의 사전 준비 namespace 풀', () => {
       server,
       blobStorage,
       contractId: 'sample',
+      signal: new AbortController().signal,
       provisioned: [
         { id: 'id-1', name: 'one' },
         { id: 'id-2', name: 'two' },
@@ -35,6 +36,7 @@ describe('계약 컨텍스트의 사전 준비 namespace 풀', () => {
       server,
       blobStorage,
       contractId: 'sample',
+      signal: new AbortController().signal,
       provisioned: [],
     });
     await assert.rejects(() => ctx.createNamespace(), /사전 준비한 namespace/);
@@ -50,8 +52,86 @@ describe('계약 컨텍스트의 관리자 key', () => {
       server,
       blobStorage,
       contractId: 'sample',
+      signal: new AbortController().signal,
     });
     assert.equal(ctx.apiKey, 'service');
     assert.equal(ctx.adminKey, 'admin');
+  });
+});
+
+// 취소 이후 풀 소비와 HTTP·서버·blob 제어를 모두 막는다.
+describe('계약 컨텍스트의 취소', () => {
+  it('client 요청에 실행 신호를 전달한다', async () => {
+    const controller = new AbortController();
+    const ctx = createContractContext(
+      {
+        baseUrl: 'http://example.test',
+        apiKey: 'key',
+        adminKey: 'admin',
+        contractId: 'sample',
+        server,
+        blobStorage,
+        signal: controller.signal,
+      },
+      {
+        async fetch(_url, options) {
+          assert.equal(options?.signal, controller.signal);
+          return new Response('ok');
+        },
+      },
+    );
+    assert.equal(ctx.signal, controller.signal);
+    assert.equal((await ctx.client.getContent('namespace', '/file')).text(), 'ok');
+  });
+
+  it('취소 뒤 namespace와 context 제어는 부수 효과를 시작하지 않는다', async () => {
+    const controller = new AbortController();
+    const effects: string[] = [];
+    const pool = [{ id: 'prepared', name: 'prepared' }];
+    const ctx = createContractContext(
+      {
+        baseUrl: 'http://example.test',
+        apiKey: 'key',
+        adminKey: 'admin',
+        contractId: 'sample',
+        signal: controller.signal,
+        provisioned: pool,
+        server: {
+          async restart() {
+            effects.push('restart');
+          },
+        },
+        blobStorage: {
+          async stop() {
+            effects.push('stop');
+          },
+          async start() {
+            effects.push('start');
+          },
+          async deleteAllObjects() {
+            effects.push('delete');
+          },
+        },
+      },
+      {
+        async fetch() {
+          effects.push('fetch');
+          return new Response('{}');
+        },
+      },
+    );
+    controller.abort();
+    for (const action of [
+      () => ctx.createNamespace(),
+      () => ctx.createNamespace({ withoutCapabilities: true }),
+      () => ctx.client.request('POST', '/namespace'),
+      () => ctx.server.restart(),
+      () => ctx.blobStorage.stop(),
+      () => ctx.blobStorage.start(),
+      () => ctx.blobStorage.deleteAllObjects(),
+    ])
+      await assert.rejects(action, { name: 'AbortError' });
+    assert.deepEqual(effects, []);
+    assert.equal(pool.length, 1);
   });
 });

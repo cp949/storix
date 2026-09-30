@@ -23,10 +23,10 @@ export default defineContract({
     const readPath = (filePath: string) =>
       `/api/v2/namespaces/${namespace.id}/fs/content?path=${encodeURIComponent(filePath)}`;
     const withoutKey = (path: string, authorization?: string) =>
-      fetch(
-        `${ctx.baseUrl}${path}`,
-        authorization === undefined ? {} : { headers: { Authorization: authorization } },
-      );
+      fetch(`${ctx.baseUrl}${path}`, {
+        signal: ctx.signal,
+        ...(authorization === undefined ? {} : { headers: { Authorization: authorization } }),
+      });
 
     // 자격이 유효하지 않은 세 경우(헤더 없음, 잘못된 key, Bearer가 아닌 방식)는 같은 방식으로 거부된다.
     const rejected = [
@@ -51,6 +51,7 @@ export default defineContract({
     const forged = await fetch(
       `${ctx.baseUrl}/api/v2/namespaces/${namespace.id}/fs/content/conditional?path=${encodeURIComponent('/forged.txt')}`,
       {
+        signal: ctx.signal,
         method: 'POST',
         headers: {
           'Idempotency-Key': randomUUID(),

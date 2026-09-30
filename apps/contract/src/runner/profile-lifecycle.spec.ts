@@ -13,6 +13,15 @@ import {
 } from './profile-lifecycle.ts';
 import type { ContractResult } from './run.ts';
 
+/** ES2023 lib 범위에서 테스트의 시작·재개 시점을 제어한다. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 /** 자원 제어 호출 순서를 기록하는 프로파일 입력과 대역을 만든다. */
 function fixture(profile: ProfileName = 'default') {
   const events: string[] = [];
@@ -302,8 +311,8 @@ describe('프로파일 취소 경계', () => {
 
   it('취소 뒤 늦게 끝난 계약은 다음 계약과 저장소 복구를 실행하지 않는다', async () => {
     const current = fixture();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started = deferred();
+    const release = deferred();
     current.dependencies.runContract = async (contract, context) => {
       current.events.push(`contract:${contract.id}`);
       started.resolve();
