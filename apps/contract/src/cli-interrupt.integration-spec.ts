@@ -55,9 +55,9 @@ function startCli(args: string[]) {
   return {
     cli,
     output: () => output,
-    async exit() {
+    async exit(timeoutMs = 45_000) {
       await waitUntil(async () => closed, {
-        timeoutMs: 45_000,
+        timeoutMs,
         intervalMs: 20,
         description: `CLI 정리와 종료\n${output}`,
       });
@@ -96,6 +96,49 @@ async function cleanup(run: ReturnType<typeof startCli>, before: ReadonlySet<str
 
 // 컨테이너 취득 시점과 실제 HTTP 요청 수신 시점을 관찰한 뒤 OS 신호를 보낸다.
 describe('CLI 중단(SIGINT)', () => {
+  it('취소되지 않는 interval 계약도 유예 뒤 CLI를 130으로 종료한다', { timeout: 90_000 }, async () => {
+    const before = workDirs();
+    const contractsDir = await mkdtemp(path.join(tmpdir(), 'storix-unabortable-contracts-'));
+    await writeFile(
+      path.join(contractsDir, 'active.ts'),
+      `
+import { defineContract } from ${JSON.stringify(DEFINE_CONTRACT)};
+export default defineContract({
+  id: 'lifecycle-unabortable', title: '취소를 따르지 않는 활성 계약을 검증한다', rq: ['RQ-001'],
+  async run(ctx) {
+    setInterval(() => {}, 1_000);
+    console.log('LIFECYCLE_UNABORTABLE ' + ctx.baseUrl);
+    await new Promise(() => {});
+  },
+});
+`,
+    );
+    const run = startCli(['--db', 'sqlite', '--contracts-dir', contractsDir]);
+    let pids: number[] = [];
+    try {
+      await waitUntil(async () => run.output().includes('LIFECYCLE_UNABORTABLE '), {
+        timeoutMs: 30_000,
+        intervalMs: 20,
+        description: '취소되지 않는 계약의 interval 시작',
+      });
+      const baseUrl = /LIFECYCLE_UNABORTABLE (http:\/\/127\.0\.0\.1:\d+)/.exec(run.output())?.[1];
+      assert.ok(baseUrl, run.output());
+      pids = serverPids(run.cli.pid!);
+      assert.equal(pids.length, 1, run.output());
+      assert.equal((await fetch(`${baseUrl}/health/ready`)).status, 200);
+      assert.ok(run.cli.kill('SIGINT'));
+      // 기본 10초 유예와 자원 정리가 끝나도 interval이 살아 있으면 이 상한을 넘는다.
+      assert.deepEqual(await run.exit(15_000), { code: 130, signal: null }, run.output());
+      for (const pid of pids) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+      await assert.rejects(fetch(`${baseUrl}/health/ready`, { signal: AbortSignal.timeout(2_000) }));
+      assert.equal(containers(), '');
+      assertRetainedWorkDir(before, run.output());
+    } finally {
+      await cleanup(run, before, pids);
+      await rm(contractsDir, { recursive: true, force: true });
+    }
+  });
+
   it(
     'VersityGW가 준비되기를 기다리는 중에 중단하면 자원을 정리하고 작업 디렉터리를 보존한다',
     { timeout: 90_000 },

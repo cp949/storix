@@ -20,6 +20,9 @@ import { runContract, type ContractResult } from './runner/run.ts';
 /** 반복 SIGINT는 동일한 신호를 한 번만 취소한다. */
 const abortController = new AbortController();
 
+/** 자원 정리와 계약이 성공해 마지막 작업 디렉터리 삭제에 들어갔는가. */
+let finalizing = false;
+
 function printResult(result: ContractResult): void {
   const mark = result.passed ? '✔' : '✘';
   console.log(`${mark} ${result.id} (${result.rq.join(', ')}) ${result.durationMs}ms`);
@@ -64,7 +67,14 @@ async function main(): Promise<number> {
   const selected = selectContracts(contracts, positionals);
   const groups = groupByProfile(values.shuffle ? shuffle(selected) : selected);
   const outcome = await runContractLifecycle(
-    { groups, db: values.db, signal: abortController.signal },
+    {
+      groups,
+      db: values.db,
+      signal: abortController.signal,
+      onFinalizing: () => {
+        finalizing = true;
+      },
+    },
     {
       runProfileLifecycle(input) {
         console.log(`\n프로필 ${input.profile}: 계약 ${input.contracts.length}개`);
@@ -87,7 +97,7 @@ async function main(): Promise<number> {
 }
 
 process.on('SIGINT', () => {
-  if (!abortController.signal.aborted) abortController.abort();
+  if (!finalizing && !abortController.signal.aborted) abortController.abort();
 });
 
 try {
@@ -95,4 +105,14 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = abortController.signal.aborted ? 130 : 1;
+}
+
+if (process.exitCode === 130) {
+  // 정리 결과 출력이 전달된 뒤 취소를 따르지 않는 계약의 열린 핸들도 종료한다.
+  await Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),
+    ),
+  );
+  process.exit(130);
 }

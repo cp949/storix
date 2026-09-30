@@ -108,6 +108,31 @@ function fixture() {
 
 // 정리 누락·정리 오류로 인한 원래 오류 덮어쓰기·실패 뒤 조기 종료를 고정한다.
 describe('실행 lifecycle', () => {
+  it('성공 디렉터리 삭제 도중 도착한 취소는 완료 경계를 지난 성공을 바꾸지 않는다', async () => {
+    const current = fixture();
+    const input = {
+      ...current.input,
+      onFinalizing: () => current.events.push('finalizing'),
+    };
+    current.dependencies.removeWorkDir = async () => {
+      current.events.push('workdir-remove');
+      current.controller.abort();
+      await Promise.resolve();
+    };
+    const result = await runContractLifecycle(input, current.dependencies);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.workDir, undefined);
+    assert.deepEqual(result.cleanupErrors, []);
+    assert.deepEqual(current.events.slice(-6), [
+      'servers-stop',
+      'postgres-stop',
+      'blob-stop',
+      'stale',
+      'finalizing',
+      'workdir-remove',
+    ]);
+  });
+
   it('공유 자원을 한 번 준비하고 서버부터 역순 정리한 뒤 성공 디렉터리를 삭제한다', async () => {
     const current = fixture();
     const result = await runContractLifecycle(current.input, current.dependencies);

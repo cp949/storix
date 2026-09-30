@@ -25,6 +25,9 @@ export interface ContractLifecycleInput {
 
   /** 취소 후 후속 프로파일을 시작하지 않는다. */
   readonly signal: AbortSignal;
+
+  /** 자원 정리에 성공해 작업 디렉터리 삭제로 완료를 확정하기 직전에 알린다. */
+  readonly onFinalizing?: () => void;
 }
 
 /** 외부 자원과 프로파일 실행을 교체하는 의존성이다. */
@@ -186,14 +189,17 @@ export async function runContractLifecycle(
     }
   }
   const summary = summarize(results);
+  // 모든 자원 정리 뒤 완료를 확정한다. 성공 디렉터리 삭제 중 신호는 결과를 바꾸지 않는다.
+  const interrupted = input.signal.aborted;
   if (
     workDir !== undefined &&
-    !input.signal.aborted &&
+    !interrupted &&
     !executionFailed &&
     summary.exitCode === 0 &&
     cleanupErrors.length === 0
   ) {
     try {
+      input.onFinalizing?.();
       await withCleanupTimeout('작업 디렉터리', () => deps.removeWorkDir(workDir!), deps.cleanupTimeoutMs);
       workDir = undefined;
     } catch (caught) {
@@ -201,7 +207,7 @@ export async function runContractLifecycle(
     }
   }
   return {
-    exitCode: input.signal.aborted ? 130 : executionFailed || cleanupErrors.length > 0 ? 1 : summary.exitCode,
+    exitCode: interrupted ? 130 : executionFailed || cleanupErrors.length > 0 ? 1 : summary.exitCode,
     summary,
     contracts: results,
     serverLogFiles,
