@@ -1,3 +1,9 @@
+/**
+ * VFS 콘텐츠 적재의 stream 크기 제한·SHA-256 계산·선택적 암호화 저장을 제공한다.
+ * byte 상한은 평문 기준으로 적용한다.
+ * 경로별 정책과 적재 성공 뒤 정리는 호출부가 담당한다.
+ * 암호화 저장 방식은 api ADR-0009.
+ */
 import { Inject, Injectable } from '@nestjs/common';
 import type { Readable } from 'node:stream';
 import { EncryptingPutTarget } from '../encryption/encrypted-content.js';
@@ -5,11 +11,6 @@ import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { hashStream, uploadStream } from '../storage/stream-upload.js';
-
-/** VFS 콘텐츠 적재의 stream 제한·해시·선택적 암호화를 제공한다.
- *
- * Byte cap은 평문 기준으로 적용한다. 호출부는 경로별 정책과 적재 성공 뒤 정리를 담당한다.
- */
 
 /** 콘텐츠 적재에서 계산한 평문 정보와 저장용 암호화 메타데이터다. */
 export interface ContentIngressResult {
