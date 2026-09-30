@@ -1,6 +1,7 @@
 /**
  * 잔여 컨테이너 정리를 가짜 docker 실행 파일로 검증한다.
  * 실제 Docker daemon과 컨테이너는 사용하지 않는다.
+ * 규칙은 docs/design/12-contract-checks.md "중단과 정리".
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

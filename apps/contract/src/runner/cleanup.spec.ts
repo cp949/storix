@@ -1,4 +1,7 @@
-/** 외부 프로세스의 정리 성공·실패·시간 제한을 짧은 Node 프로세스로 검증한다. */
+/**
+ * 외부 프로세스의 정리 성공·실패·시간 제한을 짧은 Node 프로세스로 검증한다.
+ * 규칙은 docs/design/12-contract-checks.md "중단과 정리".
+ */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CLEANUP_TIMEOUT_MS, runCleanupCommand, withCleanupTimeout } from './cleanup.ts';

@@ -1,4 +1,7 @@
-/** HTTP 요청과 응답 본문 대기를 실제 루프백 서버에서 취소한다. */
+/**
+ * HTTP 요청과 응답 본문 대기를 실제 루프백 서버에서 취소한다.
+ * 규칙은 docs/design/12-contract-checks.md "중단과 정리".
+ */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';

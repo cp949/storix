@@ -95,8 +95,9 @@ const defaultDependencies: ProfileLifecycleDependencies = {
 };
 
 /**
- * DB·서버·capability를 준비하고 계약을 순차 실행한다.
- * 계약 실패 결과 뒤에도 계속 실행한다. 운영 오류를 던질 때도 취득한 서버를 종료한다.
+ * - DB·서버·capability를 준비하고 계약을 순차 실행한다.
+ * - 계약 실패 결과 뒤에도 계속 실행한다.
+ * - 운영 오류를 던질 때도 취득한 서버를 종료한다.
  */
 export async function runProfileLifecycle(
   input: ProfileLifecycleInput,
