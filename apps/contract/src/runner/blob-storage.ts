@@ -5,6 +5,7 @@ import {
   ListObjectsV2Command,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { CLEANUP_TIMEOUT_MS, cleanupError, ExecutionCleanupError, runCleanupCommand } from './cleanup.ts';
 import { findFreePort } from './server.ts';
 import { waitUntil } from './wait.ts';
 
@@ -44,10 +45,19 @@ function docker(args: string[]): string {
  * 이전 실행이 남긴 `storix-contract-` 컨테이너를 모두 제거한다.
  * `pnpm contract`를 동시에 두 번 실행하지 않는다는 전제에서만 안전하다.
  */
-export function removeStaleContainers(): void {
-  const ids = docker(['ps', '-aq', '--filter', `name=${CONTAINER_PREFIX}`]);
+export async function removeStaleContainers(timeoutMs = CLEANUP_TIMEOUT_MS): Promise<void> {
+  const started = performance.now();
+  const ids = await runCleanupCommand(
+    'docker',
+    ['ps', '-aq', '--filter', `name=${CONTAINER_PREFIX}`],
+    timeoutMs,
+  );
   if (ids.length > 0) {
-    docker(['rm', '-f', '-v', ...ids.split('\n')]);
+    await runCleanupCommand(
+      'docker',
+      ['rm', '-f', '-v', ...ids.split('\n')],
+      Math.max(1, Math.floor(timeoutMs - (performance.now() - started))),
+    );
   }
 }
 
@@ -58,7 +68,7 @@ export function removeStaleContainers(): void {
  * 설정은 `docker-compose.versitygw.yml`과 같다.
  */
 export async function startBlobStorage(runId: string): Promise<BlobStorageHandle> {
-  removeStaleContainers();
+  await removeStaleContainers();
   const name = `${CONTAINER_PREFIX}vgw-${runId}`;
   const port = await findFreePort();
   docker([
@@ -84,7 +94,7 @@ export async function startBlobStorage(runId: string): Promise<BlobStorageHandle
     IMAGE,
   ]);
   const stop = async (): Promise<void> => {
-    docker(['rm', '-f', '-v', name]);
+    await runCleanupCommand('docker', ['rm', '-f', '-v', name]);
   };
   try {
     const waitHealthy = (): Promise<void> =>
@@ -135,7 +145,11 @@ export async function startBlobStorage(runId: string): Promise<BlobStorageHandle
       },
     };
   } catch (error) {
-    await stop();
+    try {
+      await stop();
+    } catch (cleanup) {
+      throw new ExecutionCleanupError(error, [cleanupError(cleanup)]);
+    }
     throw error;
   }
 }

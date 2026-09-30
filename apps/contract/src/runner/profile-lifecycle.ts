@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { Contract, ProfileName } from '../define-contract.ts';
 import type { BlobStorageHandle } from './blob-storage.ts';
 import { createContractContext } from './context.ts';
+import { CLEANUP_TIMEOUT_MS, cleanupError, ExecutionCleanupError, withCleanupTimeout } from './cleanup.ts';
 import { prepareSqliteDatabase, type DatabaseHandle } from './database.ts';
 import { preparePostgresDatabase, type PostgresHandle } from './postgres.ts';
 import { PROFILE_CAPABILITIES, PROFILE_ENV } from './profiles.ts';
@@ -62,6 +63,9 @@ export interface ProfileLifecycleDependencies {
 
   /** 계약을 실행하고 통과 또는 실패 결과를 반환한다. */
   runContract: typeof runContract;
+
+  /** 서버 정리 하나의 제한 시간이다. */
+  cleanupTimeoutMs: number;
 }
 
 /** 프로파일 계약 결과와 오류 조사에 사용할 서버 로그 경로다. */
@@ -71,6 +75,9 @@ export interface ProfileLifecycleResult {
 
   /** 프로파일 API 서버의 stdout·stderr 로그 파일이다. */
   readonly serverLogFile: string;
+
+  /** 계약 결과와 별도로 보고할 서버 정리 오류다. */
+  readonly cleanupErrors: readonly Error[];
 }
 
 const defaultDependencies: ProfileLifecycleDependencies = {
@@ -84,6 +91,7 @@ const defaultDependencies: ProfileLifecycleDependencies = {
   startServer,
   provisionCapabilityNamespaces,
   runContract,
+  cleanupTimeoutMs: CLEANUP_TIMEOUT_MS,
 };
 
 /**
@@ -121,6 +129,10 @@ export async function runProfileLifecycle(
       storageEnv: input.blob.env,
     }),
   });
+  const results: ContractResult[] = [];
+  const cleanupErrors: Error[] = [];
+  let executionFailed = false;
+  let executionError: unknown;
   try {
     // 계약별 namespace 생성에 필요한 수보다 여유 있게 준비한다.
     const provisioned =
@@ -134,7 +146,6 @@ export async function runProfileLifecycle(
             restart: () => server.restart(),
           })
         : undefined;
-    const results: ContractResult[] = [];
     for (const contract of input.contracts) {
       if (input.signal.aborted) break;
       const result = await deps.runContract(
@@ -157,8 +168,19 @@ export async function runProfileLifecycle(
       // 저장소를 멈춘 계약 뒤에도 다음 계약이 같은 저장소를 사용할 수 있게 한다.
       if (!input.signal.aborted) await input.blob.ensureRunning();
     }
-    return { contracts: results, serverLogFile: server.logFile };
+  } catch (error) {
+    executionFailed = true;
+    executionError = error;
   } finally {
-    await server.stop();
+    try {
+      await withCleanupTimeout('프로파일 API 서버', () => server.stop(), deps.cleanupTimeoutMs);
+    } catch (error) {
+      cleanupErrors.push(cleanupError(error));
+    }
   }
+  if (executionFailed) {
+    if (cleanupErrors.length > 0) throw new ExecutionCleanupError(executionError, cleanupErrors);
+    throw executionError;
+  }
+  return { contracts: results, serverLogFile: server.logFile, cleanupErrors };
 }

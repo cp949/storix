@@ -52,6 +52,7 @@ function fixture(profile: ProfileName = 'default') {
     },
   };
   const dependencies: ProfileLifecycleDependencies = {
+    cleanupTimeoutMs: 30_000,
     prepareDatabase(current) {
       events.push(`database:${current.db}:${current.profile}`);
       return { env: { STORIX_DB_DRIVER: current.db } };
@@ -220,5 +221,42 @@ describe('프로파일 실행 lifecycle', () => {
       'contract:first',
       'server-stop',
     ]);
+  });
+
+  for (const phase of ['contract', 'provision'] as const) {
+    it(`${phase} 실행 오류와 서버 정리 오류를 모두 보존한다`, async () => {
+      const current = fixture(phase === 'provision' ? 'change-feed' : 'default');
+      const executionError = { phase };
+      const cleanupError = new Error('서버 정리 오류');
+      if (phase === 'contract')
+        current.dependencies.runContract = async () => {
+          throw executionError;
+        };
+      else
+        current.dependencies.provisionCapabilityNamespaces = async () => {
+          throw executionError;
+        };
+      current.server.stop = async () => {
+        current.events.push('server-stop');
+        throw cleanupError;
+      };
+      await assert.rejects(runProfileLifecycle(current.input, current.dependencies), (actual) => {
+        assert.equal((actual as { executionError: unknown }).executionError, executionError);
+        assert.deepEqual((actual as { cleanupErrors: Error[] }).cleanupErrors, [cleanupError]);
+        return true;
+      });
+      assert.equal(current.events.at(-1), 'server-stop');
+    });
+  }
+
+  it('계약 성공 뒤 서버 정리 오류는 결과와 함께 반환한다', async () => {
+    const current = fixture();
+    const cleanupError = new Error('서버 정리 오류');
+    current.server.stop = async () => {
+      throw cleanupError;
+    };
+    const result = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(result.contracts.length, 2);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
   });
 });

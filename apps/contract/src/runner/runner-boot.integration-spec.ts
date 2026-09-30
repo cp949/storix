@@ -99,10 +99,10 @@ describe('러너 기동(SQLite + VersityGW)', () => {
     },
   );
 
-  it('시작할 때 이전 실행이 남긴 storix-contract 컨테이너를 제거한다', { timeout: 60_000 }, () => {
+  it('시작할 때 이전 실행이 남긴 storix-contract 컨테이너를 제거한다', { timeout: 60_000 }, async () => {
     const name = 'storix-contract-stale-test';
     execFileSync('docker', ['create', '--name', name, 'versity/versitygw:v1.8.0']);
-    removeStaleContainers();
+    await removeStaleContainers();
     const remaining = execFileSync('docker', ['ps', '-aq', '--filter', `name=${name}`], {
       encoding: 'utf-8',
     }).trim();

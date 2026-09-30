@@ -1,0 +1,294 @@
+/**
+ * 실행 lifecycle의 자원 소유권과 실패 처리를 외부 프로세스 없는 대역으로 검증한다.
+ * 규칙은 docs/design/12-contract-checks.md "실행 흐름".
+ */
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { defineContract } from '../define-contract.ts';
+import { ExecutionCleanupError } from './cleanup.ts';
+import { runContractLifecycle, type ContractLifecycleDependencies } from './lifecycle.ts';
+
+/** 공유 자원과 프로파일의 취득·정리 순서를 관찰한다. */
+function fixture() {
+  const events: string[] = [];
+  const controller = new AbortController();
+  const first = defineContract({ id: 'first', title: '첫 계약', rq: ['RQ-005'], async run() {} });
+  const second = defineContract({
+    id: 'second',
+    title: '둘째 계약',
+    rq: ['RQ-005'],
+    profile: 'small-limits',
+    async run() {},
+  });
+  const input = {
+    groups: new Map([
+      ['default', [first]],
+      ['small-limits', [second]],
+    ] as const),
+    db: 'postgres' as const,
+    signal: controller.signal,
+  };
+  const blob = {
+    env: {},
+    async stop() {
+      events.push('blob-stop');
+    },
+    async interrupt() {},
+    async resume() {},
+    async ensureRunning() {},
+    async deleteAllObjects() {},
+  };
+  const postgres = {
+    container: 'pg',
+    port: 5432,
+    async stop() {
+      events.push('postgres-stop');
+    },
+  };
+  const dependencies: ContractLifecycleDependencies = {
+    async createWorkDir() {
+      events.push('workdir');
+      return '/test-work';
+    },
+    async removeWorkDir(dir) {
+      assert.equal(dir, '/test-work');
+      events.push('workdir-remove');
+    },
+    createRunId() {
+      return 'run';
+    },
+    async removeStaleContainers() {
+      events.push('stale');
+    },
+    async startBlobStorage(runId) {
+      assert.equal(runId, 'run');
+      events.push('blob');
+      return blob;
+    },
+    async startPostgres(runId) {
+      assert.equal(runId, 'run');
+      events.push('postgres');
+      return postgres;
+    },
+    async stopServers() {
+      events.push('servers-stop');
+    },
+    async runProfileLifecycle(current) {
+      assert.equal(current.blob, blob);
+      assert.equal(current.postgres, current.db === 'postgres' ? postgres : undefined);
+      assert.equal(current.signal, controller.signal);
+      assert.equal(current.workDir, '/test-work');
+      events.push(`profile:${current.profile}`);
+      return {
+        contracts: current.contracts.map((contract) => ({
+          id: contract.id,
+          rq: contract.rq,
+          passed: true,
+          durationMs: 1,
+        })),
+        serverLogFile: `/test-work/${current.profile}.log`,
+        cleanupErrors: [],
+      };
+    },
+    cleanupTimeoutMs: 30_000,
+  };
+  return { input, dependencies, events, controller, blob, postgres };
+}
+
+// 정리 누락·정리 오류로 인한 원래 오류 덮어쓰기·실패 뒤 조기 종료를 고정한다.
+describe('실행 lifecycle', () => {
+  it('공유 자원을 한 번 준비하고 서버부터 역순 정리한 뒤 성공 디렉터리를 삭제한다', async () => {
+    const current = fixture();
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.workDir, undefined);
+    assert.deepEqual(result.summary, { passed: 2, failed: 0, exitCode: 0 });
+    assert.deepEqual(result.cleanupErrors, []);
+    assert.deepEqual(current.events, [
+      'workdir',
+      'stale',
+      'blob',
+      'postgres',
+      'profile:default',
+      'profile:small-limits',
+      'servers-stop',
+      'postgres-stop',
+      'blob-stop',
+      'stale',
+      'workdir-remove',
+    ]);
+  });
+
+  it('SQLite 실행은 Postgres를 준비하지 않는다', async () => {
+    const current = fixture();
+    const result = await runContractLifecycle({ ...current.input, db: 'sqlite' }, current.dependencies);
+    assert.equal(result.exitCode, 0);
+    assert.equal(current.events.includes('postgres'), false);
+    assert.equal(current.events.includes('postgres-stop'), false);
+  });
+
+  it('계약 실패 뒤 모든 프로파일을 실행하고 작업 디렉터리와 실패 로그를 보존한다', async () => {
+    const current = fixture();
+    const runProfile = current.dependencies.runProfileLifecycle;
+    current.dependencies.runProfileLifecycle = async (input) => {
+      const result = await runProfile(input);
+      return {
+        ...result,
+        contracts: result.contracts.map((entry) => ({ ...entry, passed: input.profile !== 'default' })),
+      };
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(result.summary, { passed: 1, failed: 1, exitCode: 1 });
+    assert.deepEqual(result.serverLogFiles, ['/test-work/default.log']);
+    assert.ok(current.events.includes('profile:small-limits'));
+    assert.equal(current.events.includes('workdir-remove'), false);
+  });
+
+  it('중간 정리가 실패해도 나머지 정리를 수행하고 작업 디렉터리를 보존한다', async () => {
+    const current = fixture();
+    const error = new Error('Postgres 정리 오류');
+    current.postgres.stop = async () => {
+      current.events.push('postgres-stop');
+      throw error;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.cleanupErrors, [error]);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(current.events.slice(-4), ['servers-stop', 'postgres-stop', 'blob-stop', 'stale']);
+  });
+
+  it('실행 오류의 원래 값을 정리 오류보다 우선 보존한다', async () => {
+    const current = fixture();
+    const executionError = { reason: '원래 실행 오류' };
+    const cleanupError = new Error('blob 정리 오류');
+    current.dependencies.runProfileLifecycle = async () => {
+      throw executionError;
+    };
+    current.blob.stop = async () => {
+      current.events.push('blob-stop');
+      throw cleanupError;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.error, executionError);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.equal(result.workDir, '/test-work');
+    assert.ok(current.events.includes('stale'));
+  });
+
+  it('blob 준비 실패 뒤에도 잔여 컨테이너를 정리한다', async () => {
+    const current = fixture();
+    const error = new Error('blob 준비 오류');
+    current.dependencies.startBlobStorage = async () => {
+      throw error;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.error, error);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(current.events, ['workdir', 'stale', 'stale']);
+  });
+
+  it('정리 시간이 제한을 넘으면 오류를 기록하고 다음 정리를 수행한다', async () => {
+    const current = fixture();
+    current.dependencies.cleanupTimeoutMs = 5;
+    current.postgres.stop = () => new Promise(() => {});
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.cleanupErrors.length, 1);
+    assert.match(result.cleanupErrors[0]!.message, /Postgres.*5ms/);
+    assert.ok(current.events.includes('blob-stop'));
+    assert.equal(current.events.at(-1), 'stale');
+  });
+
+  it('SIGINT를 받으면 후속 프로파일을 실행하지 않고 정리 오류와 디렉터리를 보존한다', async () => {
+    const current = fixture();
+    const runProfile = current.dependencies.runProfileLifecycle;
+    current.dependencies.runProfileLifecycle = async (input) => {
+      current.controller.abort();
+      return runProfile(input);
+    };
+    const cleanupError = new Error('서버 정리 오류');
+    current.dependencies.stopServers = async () => {
+      current.events.push('servers-stop');
+      throw cleanupError;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 130);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.equal(current.events.includes('profile:small-limits'), false);
+    assert.equal(current.events.at(-1), 'stale');
+  });
+
+  it('작업 디렉터리 생성 실패도 원래 오류로 반환한다', async () => {
+    const current = fixture();
+    const error = new Error('디렉터리 생성 오류');
+    current.dependencies.createWorkDir = async () => {
+      throw error;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.error, error);
+    assert.equal(result.workDir, undefined);
+    assert.deepEqual(result.cleanupErrors, []);
+    assert.deepEqual(current.events, []);
+  });
+
+  it('프로파일의 실행·서버 정리 이중 오류를 분리해 반환한다', async () => {
+    const current = fixture();
+    const executionError = { source: 'profile' };
+    const cleanupError = new Error('프로파일 서버 정리 오류');
+    current.dependencies.runProfileLifecycle = async () => {
+      throw new ExecutionCleanupError(executionError, [cleanupError]);
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.error, executionError);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.workDir, '/test-work');
+  });
+
+  it('프로파일의 정리 오류만 있어도 종료 코드는 실패다', async () => {
+    const current = fixture();
+    const cleanupError = new Error('프로파일 서버 정리 오류');
+    const runProfile = current.dependencies.runProfileLifecycle;
+    current.dependencies.runProfileLifecycle = async (input) => {
+      const outcome = await runProfile(input);
+      return { ...outcome, cleanupErrors: input.profile === 'default' ? [cleanupError] : [] };
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.error, undefined);
+    assert.equal(result.summary.passed, 2);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.workDir, '/test-work');
+  });
+
+  it('undefined로 던진 실행 오류도 성공으로 오인하지 않는다', async () => {
+    const current = fixture();
+    current.dependencies.runProfileLifecycle = async () => {
+      throw undefined;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.ok('error' in result);
+    assert.equal(result.error, undefined);
+    assert.equal(result.workDir, '/test-work');
+  });
+
+  it('성공 뒤 디렉터리 삭제가 실패하면 정리 오류와 경로를 반환한다', async () => {
+    const current = fixture();
+    const cleanupError = new Error('디렉터리 삭제 오류');
+    current.dependencies.removeWorkDir = async () => {
+      throw cleanupError;
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.equal(result.workDir, '/test-work');
+  });
+});

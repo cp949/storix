@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { CONTAINER_PREFIX } from './blob-storage.ts';
+import { cleanupError, ExecutionCleanupError, runCleanupCommand } from './cleanup.ts';
 import { runMigrations, type DatabaseHandle } from './database.ts';
 import { waitUntil } from './wait.ts';
 
@@ -61,7 +62,7 @@ export async function startPostgres(runId: string): Promise<PostgresHandle> {
     IMAGE,
   ]);
   const stop = async (): Promise<void> => {
-    docker(['rm', '-f', '-v', container]);
+    await runCleanupCommand('docker', ['rm', '-f', '-v', container]);
   };
   try {
     const port = Number(/:(\d+)$/m.exec(docker(['port', container, '5432/tcp']))![1]);
@@ -79,7 +80,11 @@ export async function startPostgres(runId: string): Promise<PostgresHandle> {
     );
     return { container, port, stop };
   } catch (error) {
-    await stop();
+    try {
+      await stop();
+    } catch (cleanup) {
+      throw new ExecutionCleanupError(error, [cleanupError(cleanup)]);
+    }
     throw error;
   }
 }
