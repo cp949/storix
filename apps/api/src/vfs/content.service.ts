@@ -4,14 +4,13 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { buildContentDisposition } from './content-disposition.js';
-import { EncryptingPutTarget, getEncrypted } from '../encryption/encrypted-content.js';
+import { getEncrypted } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { EncryptionPolicy } from '../persistence/entities/namespace.entity.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { uploadStream } from '../storage/stream-upload.js';
 import {
   NamespaceResourceLimits,
   VfsContentBlobRef,
@@ -31,6 +30,7 @@ import {
   VfsNodeNotFoundError,
   VfsPresignedEncryptedUnsupportedError,
 } from './vfs.errors.js';
+import { ContentIngressService } from './content-ingress.service.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
 
@@ -85,6 +85,7 @@ export class ContentService {
     private readonly keyGenerator: StorageKeyGenerator,
     @Inject(BLOB_STORAGE) private readonly blobStorage: BlobStorage,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
+    private readonly contentIngress: ContentIngressService,
     config: ConfigService,
   ) {
     this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
@@ -160,19 +161,26 @@ export class ContentService {
 
     const mimeType = normalizeMimeType(options.contentType);
     const storageKey = this.keyGenerator.generate();
-    const putTarget =
-      limits.encryptionPolicy === 'ENCRYPTED'
-        ? new EncryptingPutTarget(this.blobStorage, this.requireMasterKey())
-        : this.blobStorage;
-    const uploaded = await uploadStream(putTarget, storageKey, source, mimeType, maxFileSizeBytes);
-    const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
+    const uploaded = await this.contentIngress.upload(
+      storageKey,
+      source,
+      mimeType,
+      maxFileSizeBytes,
+      limits.encryptionPolicy === 'ENCRYPTED',
+    );
 
     const outcome = await this.repo.putFileContent(
       namespaceId,
       root.id,
       segments,
       options.parents,
-      { storageKey, size: String(uploaded.size), mimeType, sha256: uploaded.sha256, encryptionIv },
+      {
+        storageKey,
+        size: String(uploaded.size),
+        mimeType,
+        sha256: uploaded.sha256,
+        encryptionIv: uploaded.encryptionIv,
+      },
       parseIfMatch(options.ifMatch),
       options.force,
     );
@@ -318,14 +326,14 @@ export class ContentService {
     contentType: string,
     encryptionPolicy: EncryptionPolicy,
   ): Promise<Buffer | null> {
-    if (encryptionPolicy !== 'ENCRYPTED') {
-      await this.blobStorage.put(storageKey, stream, contentType);
-      return null;
-    }
-
-    const target = new EncryptingPutTarget(this.blobStorage, this.requireMasterKey());
-    await target.put(storageKey, stream, contentType);
-    return target.getIv();
+    const uploaded = await this.contentIngress.upload(
+      storageKey,
+      stream,
+      contentType,
+      0,
+      encryptionPolicy === 'ENCRYPTED',
+    );
+    return uploaded.encryptionIv;
   }
 
   private requireMasterKey(): Buffer {

@@ -11,6 +11,7 @@ import {
   VfsNodeRepository,
 } from '../../src/persistence/vfs-node.repository.js';
 import { ContentService } from '../../src/vfs/content.service.js';
+import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';
 import { VfsIsDirectoryError, VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
 import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
@@ -77,6 +78,7 @@ describe('ContentService', () => {
       new StorageKeyGenerator(),
       blobStorage as unknown as BlobStorage,
       masterKey,
+      new ContentIngressService(blobStorage as unknown as BlobStorage, masterKey),
       config as unknown as ConfigService,
     );
   }

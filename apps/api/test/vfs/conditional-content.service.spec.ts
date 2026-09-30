@@ -8,6 +8,7 @@ import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation
 import { StorageKeyGenerator } from '../../src/storage/storage-key-generator.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { ConditionalContentService } from '../../src/vfs/conditional-content.service.js';
+import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 import type {
   VfsConditionalContentResourceDto,
   VfsPreconditionCurrentDto,
@@ -50,7 +51,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     receipts,
     { generate: () => 'object-key' } as StorageKeyGenerator,
     { put, delete: deleteObject } as unknown as BlobStorage,
-    null,
+    new ContentIngressService({ put, delete: deleteObject } as unknown as BlobStorage, null),
     { get: () => undefined } as unknown as ConfigService,
   );
 

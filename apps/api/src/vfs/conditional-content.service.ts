@@ -4,9 +4,7 @@ import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
-import { EncryptingPutTarget } from '../encryption/encrypted-content.js';
 import { FileExpiryBounds, parseExpiresInHeader, resolveFileExpiryBounds } from './file-expiry-policy.js';
-import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import {
   mutationLeaseSeconds,
   VfsMutationReceiptRepository,
@@ -17,7 +15,6 @@ import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { hashStream, uploadStream } from '../storage/stream-upload.js';
 import { busyResponse, ErrorReceiptOwner, replayReceipt, storeErrorReceipt } from './mutation-receipt.js';
 import { hashParts, identityOf, MutationHttpResult } from './mutation.service.js';
 import { normalizeMimeType } from './mime.js';
@@ -31,6 +28,7 @@ import {
   VfsInvalidMutationRequestError,
   VfsPreconditionRequiredError,
 } from './vfs.errors.js';
+import { ContentIngressService } from './content-ingress.service.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -91,7 +89,7 @@ export class ConditionalContentService {
     private readonly receipts: VfsMutationReceiptRepository,
     private readonly keys: StorageKeyGenerator,
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
-    @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
+    private readonly contentIngress: ContentIngressService,
     config: ConfigService,
   ) {
     this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
@@ -170,7 +168,7 @@ export class ConditionalContentService {
         const lease =
           claim.kind === 'owner' && parseError ? this.startLeaseRenewal(identity, claim.generation) : null;
         try {
-          const replayed = await hashStream(source, replayMaxBytes);
+          const replayed = await this.contentIngress.hash(source, replayMaxBytes);
           const currentFingerprint = fingerprint(
             path,
             conditionKey,
@@ -203,19 +201,21 @@ export class ConditionalContentService {
 
       const validCondition = condition as ContentPrecondition;
       const storageKey = this.keys.generate();
-      const putTarget =
-        limits.encryptionPolicy === 'ENCRYPTED'
-          ? new EncryptingPutTarget(this.storage, this.requireMasterKey())
-          : this.storage;
       const lease = this.startLeaseRenewal(identity, claim.generation);
       const durationTimer = setTimeout(
         () => source.destroy(new Error('mutation upload duration exceeded')),
         this.maxUploadDurationMs,
       );
       durationTimer.unref();
-      let uploaded: Awaited<ReturnType<typeof uploadStream>>;
+      let uploaded: Awaited<ReturnType<ContentIngressService['upload']>>;
       try {
-        uploaded = await uploadStream(putTarget, storageKey, source, mimeType, maxBytes);
+        uploaded = await this.contentIngress.upload(
+          storageKey,
+          source,
+          mimeType,
+          maxBytes,
+          limits.encryptionPolicy === 'ENCRYPTED',
+        );
       } finally {
         clearTimeout(durationTimer);
         await lease.stop();
@@ -234,7 +234,6 @@ export class ConditionalContentService {
         if (lease.lost || !(await this.receipts.renew(identity, claim.generation))) {
           throw new Error('VFS mutation claim lost');
         }
-        const encryptionIv = putTarget instanceof EncryptingPutTarget ? putTarget.getIv() : null;
         const applied = await this.nodes.withMutation(
           namespaceId,
           root.id,
@@ -244,7 +243,7 @@ export class ConditionalContentService {
               size: String(uploaded.size),
               mimeType,
               sha256: uploaded.sha256,
-              encryptionIv,
+              encryptionIv: uploaded.encryptionIv,
             }),
           (tx, result) =>
             this.receipts.complete(
@@ -275,11 +274,6 @@ export class ConditionalContentService {
       if (claim.kind === 'owner') await this.receipts.release(identity, claim.generation);
       throw error;
     }
-  }
-
-  private requireMasterKey(): Buffer {
-    if (!this.masterKey) throw new Error('ENCRYPTED namespace master key missing');
-    return this.masterKey;
   }
 
   private startLeaseRenewal(identity: ReceiptIdentity, generation: number) {

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
 import { isUuid } from '../common/uuid.js';
-import { EncryptingPutTarget, getEncrypted } from '../encryption/encrypted-content.js';
+import { getEncrypted } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import type { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-part.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -11,11 +11,11 @@ import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.re
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
-import { uploadStream } from '../storage/stream-upload.js';
 import type { MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
 import { VfsChecksumMismatchError, VfsNamespaceNotFoundError } from './vfs.errors.js';
+import { ContentIngressService } from './content-ingress.service.js';
 
 class UploadFinalizeError extends DomainError {
   constructor(
@@ -38,6 +38,7 @@ export class UploadSessionFinalizeService {
     private readonly keys: StorageKeyGenerator,
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
+    private readonly contentIngress: ContentIngressService,
   ) {}
 
   async complete(namespaceId: string, sessionId: string, requestId: string): Promise<MutationHttpResult> {
@@ -60,19 +61,16 @@ export class UploadSessionFinalizeService {
     try {
       const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
       const encrypted = limits.encryptionPolicy === 'ENCRYPTED';
-      const target = encrypted
-        ? new EncryptingPutTarget(this.storage, this.requireMasterKey())
-        : this.storage;
       const source = Readable.from(this.readParts(parts, encrypted));
       const lease = this.startLeaseRenewal(namespaceId, sessionId, token, source);
-      let uploaded: Awaited<ReturnType<typeof uploadStream>>;
+      let uploaded: Awaited<ReturnType<ContentIngressService['upload']>>;
       try {
-        uploaded = await uploadStream(
-          target,
+        uploaded = await this.contentIngress.upload(
           storageKey,
           source,
           session.mimeType,
           Number(session.sizeBytes),
+          encrypted,
         );
       } catch (error) {
         if (lease.lost) throw new Error('Upload finalize claim lost');
@@ -145,7 +143,7 @@ export class UploadSessionFinalizeService {
             size: String(uploaded.size),
             mimeType: session.mimeType,
             sha256: uploaded.sha256,
-            encryptionIv: target instanceof EncryptingPutTarget ? target.getIv() : null,
+            encryptionIv: uploaded.encryptionIv,
           });
         },
         (tx, result) =>

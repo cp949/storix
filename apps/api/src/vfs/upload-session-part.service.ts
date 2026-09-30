@@ -6,18 +6,16 @@ import { CapabilityService } from '../capability/capability.service.js';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { isUuid } from '../common/uuid.js';
-import { EncryptingPutTarget } from '../encryption/encrypted-content.js';
-import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-part.entity.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { hashStream, uploadStream } from '../storage/stream-upload.js';
 import { requireRootWithLimits } from './require-root.js';
 import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
+import { ContentIngressService } from './content-ingress.service.js';
 
 class UploadPartError extends DomainError {
   constructor(
@@ -46,7 +44,7 @@ export class UploadSessionPartService {
     private readonly capabilities: CapabilityService,
     @Inject(UPLOAD_SESSION_POLICY) private readonly policy: UploadSessionPolicy | null,
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
-    @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
+    private readonly contentIngress: ContentIngressService,
     config: ConfigService,
   ) {
     this.maxDurationMs =
@@ -195,15 +193,17 @@ export class UploadSessionPartService {
     let commitAttempted = false;
     let commitResolved = false;
     try {
-      const target =
-        limits.encryptionPolicy === 'ENCRYPTED'
-          ? new EncryptingPutTarget(this.storage, this.requireMasterKey())
-          : this.storage;
-      const upload = uploadStream(target, stagingKey, source, 'application/octet-stream', expected).finally(
-        () => {
+      const upload = this.contentIngress
+        .upload(
+          stagingKey,
+          source,
+          'application/octet-stream',
+          expected,
+          limits.encryptionPolicy === 'ENCRYPTED',
+        )
+        .finally(() => {
           uploadSettled = true;
-        },
-      );
+        });
       let uploaded: Awaited<typeof upload>;
       try {
         uploaded = await Promise.race([upload, deadline.promise]);
@@ -224,7 +224,7 @@ export class UploadSessionPartService {
       }
       if (uploaded.size !== expected)
         throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '실제 조각 크기 불일치');
-      const encryptionIv = target instanceof EncryptingPutTarget ? target.getIv().toString('hex') : null;
+      const encryptionIv = uploaded.encryptionIv?.toString('hex') ?? null;
       commitAttempted = true;
       committed = await Promise.race([
         this.sessions
@@ -316,9 +316,9 @@ export class UploadSessionPartService {
   ): Promise<UploadedPartResult> {
     const deadline = this.durationDeadline(source);
     try {
-      let hashed: Awaited<ReturnType<typeof hashStream>>;
+      let hashed: Awaited<ReturnType<ContentIngressService['hash']>>;
       try {
-        hashed = await Promise.race([hashStream(source, expected), deadline.promise]);
+        hashed = await Promise.race([this.contentIngress.hash(source, expected), deadline.promise]);
       } catch (error) {
         if (error instanceof VfsFileTooLargeError)
           throw new UploadPartError('VFS_UPLOAD_PART_CONFLICT', 409, '기존 조각과 크기 불일치');
@@ -362,10 +362,5 @@ export class UploadSessionPartService {
       () => false,
     );
     await this.sessions.releasePartReservation(sessionId, index, !deleted, key);
-  }
-
-  private requireMasterKey(): Buffer {
-    if (!this.masterKey) throw new Error('ENCRYPTED namespace master key missing');
-    return this.masterKey;
   }
 }

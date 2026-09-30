@@ -22,6 +22,7 @@ import { ChangeFeedService } from './change-feed.service.js';
 import { VfsTrashController } from './vfs-trash.controller.js';
 import { VfsTrashService } from './vfs-trash.service.js';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
+import { ContentIngressService } from './content-ingress.service.js';
 
 @Module({
   imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
@@ -45,6 +46,7 @@ import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
     UploadSessionFinalizeService,
     ChangeFeedService,
     VfsTrashService,
+    ContentIngressService,
     AdminApiKeyGuard,
   ],
 })

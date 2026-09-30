@@ -6,6 +6,7 @@ import type { VfsNodeRepository } from '../../src/persistence/vfs-node.repositor
 import type { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
 import type { CapabilityService } from '../../src/capability/capability.service.js';
 import { UploadSessionPartService } from '../../src/vfs/upload-session-part.service.js';
+import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 
 const namespaceId = randomUUID();
 const sessionId = randomUUID();
@@ -157,7 +158,7 @@ function fixture(
     capabilities,
     policy,
     storage,
-    Buffer.alloc(32, 7),
+    new ContentIngressService(storage, Buffer.alloc(32, 7)),
     new ConfigService(durationSeconds ? { STORIX_MUTATION_MAX_UPLOAD_SECONDS: durationSeconds } : {}),
   );
   return {

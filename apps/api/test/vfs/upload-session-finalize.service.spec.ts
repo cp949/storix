@@ -7,6 +7,7 @@ import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import type { StorageKeyGenerator } from '../../src/storage/storage-key-generator.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';
 import { UploadSessionFinalizeService } from '../../src/vfs/upload-session-finalize.service.js';
+import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 
 describe('UploadSessionFinalizeService', () => {
   it('rejects missing parts before publishing a final object', async () => {
@@ -28,6 +29,7 @@ describe('UploadSessionFinalizeService', () => {
       { generate: () => 'blobs/test' } as StorageKeyGenerator,
       storage,
       null,
+      new ContentIngressService(storage, null),
     );
     await expect(service.complete(namespaceId, sessionId, 'request')).rejects.toMatchObject({
       code: 'VFS_UPLOAD_PARTS_INCOMPLETE',
@@ -128,6 +130,7 @@ describe('UploadSessionFinalizeService', () => {
       { generate: () => 'blobs/test' } as StorageKeyGenerator,
       storage,
       null,
+      new ContentIngressService(storage, null),
     );
     const first = await service.complete(namespaceId, sessionId, 'first-request');
     expect(final).toBe('abcdefgh');
@@ -208,6 +211,7 @@ describe('UploadSessionFinalizeService', () => {
       { generate: () => 'blobs/test' } as StorageKeyGenerator,
       storage,
       null,
+      new ContentIngressService(storage, null),
     );
     try {
       const pending = service.complete(namespaceId, sessionId, 'request');
