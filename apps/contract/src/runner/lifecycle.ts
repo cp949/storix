@@ -74,7 +74,7 @@ export interface ContractLifecycleResult {
   /** 완료한 계약 결과다. */
   readonly contracts: readonly ContractResult[];
 
-  /** 실패한 계약이 있는 프로파일의 서버 로그다. */
+  /** 계약 실패나 서버 기동 뒤 실행 오류가 있는 프로파일의 서버 로그다. */
   readonly serverLogFiles: readonly string[];
 
   /** 보존한 작업 디렉터리 경로다. */
@@ -169,7 +169,12 @@ export async function runContractLifecycle(
       if (outcome === undefined) break;
       results.push(...outcome.contracts);
       cleanupErrors.push(...outcome.cleanupErrors);
-      if (outcome.contracts.some((entry) => !entry.passed)) serverLogFiles.push(outcome.serverLogFile);
+      const profileFailed = 'error' in outcome;
+      if (profileFailed || outcome.contracts.some((entry) => !entry.passed)) {
+        serverLogFiles.push(outcome.serverLogFile);
+      }
+      // 완료한 결과를 누적한 뒤 원래 실행 오류로 후속 프로파일을 중단한다.
+      if (profileFailed) throw outcome.error;
     }
   } catch (caught) {
     executionFailed = true;

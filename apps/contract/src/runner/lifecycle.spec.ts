@@ -274,11 +274,11 @@ describe('실행 lifecycle', () => {
     assert.deepEqual(current.events, []);
   });
 
-  it('프로파일의 실행·서버 정리 이중 오류를 분리해 반환한다', async () => {
+  it('blob 준비의 실행·정리 이중 오류를 분리해 반환한다', async () => {
     const current = fixture();
-    const executionError = { source: 'profile' };
-    const cleanupError = new Error('프로파일 서버 정리 오류');
-    current.dependencies.runProfileLifecycle = async () => {
+    const executionError = { source: 'blob' };
+    const cleanupError = new Error('blob 기동 실패 정리 오류');
+    current.dependencies.startBlobStorage = async () => {
       throw new ExecutionCleanupError(executionError, [cleanupError]);
     };
     const result = await runContractLifecycle(current.input, current.dependencies);
@@ -286,6 +286,45 @@ describe('실행 lifecycle', () => {
     assert.deepEqual(result.cleanupErrors, [cleanupError]);
     assert.equal(result.exitCode, 1);
     assert.equal(result.workDir, '/test-work');
+  });
+
+  it('프로파일 실행 오류 전에 완료한 계약 결과와 서버 로그를 보존한다', async () => {
+    const current = fixture();
+    const executionError = new Error('저장소 복구 오류');
+    const cleanupError = new Error('프로파일 서버 정리 오류');
+    const profiles: string[] = [];
+    current.blob.ensureRunning = async () => {
+      throw executionError;
+    };
+    current.dependencies.runProfileLifecycle = (input) => {
+      profiles.push(input.profile);
+      return runProfileLifecycle(input, {
+        prepareDatabase: () => ({ env: {} }),
+        findFreePort: async () => 1234,
+        startServer: async () => ({
+          baseUrl: 'http://127.0.0.1:1',
+          logFile: `/test-work/${input.profile}.log`,
+          async stop() {
+            throw cleanupError;
+          },
+          async restart() {},
+        }),
+        runContract: async (contract) => ({ id: contract.id, rq: contract.rq, passed: true, durationMs: 1 }),
+      });
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.error, executionError);
+    assert.deepEqual(result.cleanupErrors, [cleanupError]);
+    assert.deepEqual(
+      result.contracts.map((entry) => entry.id),
+      ['first'],
+    );
+    assert.deepEqual(result.summary, { passed: 1, failed: 0, exitCode: 0 });
+    assert.deepEqual(result.serverLogFiles, ['/test-work/default.log']);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(profiles, ['default']);
+    assert.deepEqual(current.events.slice(-4), ['servers-stop', 'postgres-stop', 'blob-stop', 'stale']);
   });
 
   it('프로파일의 정리 오류만 있어도 종료 코드는 실패다', async () => {
@@ -314,6 +353,56 @@ describe('실행 lifecycle', () => {
     assert.ok('error' in result);
     assert.equal(result.error, undefined);
     assert.equal(result.workDir, '/test-work');
+  });
+
+  it('서버 기동 뒤 취소된 프로파일의 결과와 서버 로그를 보존하고 취소로 끝낸다', async () => {
+    const current = fixture();
+    const profiles: string[] = [];
+    current.blob.ensureRunning = async () => {
+      current.controller.abort();
+      current.input.signal.throwIfAborted();
+    };
+    current.dependencies.runProfileLifecycle = (input) => {
+      profiles.push(input.profile);
+      return runProfileLifecycle(input, {
+        prepareDatabase: () => ({ env: {} }),
+        findFreePort: async () => 1234,
+        startServer: async () => ({
+          baseUrl: 'http://127.0.0.1:1',
+          logFile: `/test-work/${input.profile}.log`,
+          async stop() {},
+          async restart() {},
+        }),
+        runContract: async (contract) => ({ id: contract.id, rq: contract.rq, passed: true, durationMs: 1 }),
+      });
+    };
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 130);
+    assert.equal((result.error as Error).name, 'AbortError');
+    assert.deepEqual(
+      result.contracts.map((entry) => entry.id),
+      ['first'],
+    );
+    assert.deepEqual(result.serverLogFiles, ['/test-work/default.log']);
+    assert.equal(result.workDir, '/test-work');
+    assert.deepEqual(profiles, ['default']);
+  });
+
+  it('프로파일이 undefined 실행 오류를 반환해도 성공으로 오인하지 않는다', async () => {
+    const current = fixture();
+    const runProfile = current.dependencies.runProfileLifecycle;
+    current.dependencies.runProfileLifecycle = async (input) => ({
+      ...(await runProfile(input)),
+      error: undefined,
+    });
+    const result = await runContractLifecycle(current.input, current.dependencies);
+    assert.equal(result.exitCode, 1);
+    assert.ok('error' in result);
+    assert.equal(result.error, undefined);
+    assert.equal(result.contracts.length, 1);
+    assert.deepEqual(result.serverLogFiles, ['/test-work/default.log']);
+    assert.equal(result.workDir, '/test-work');
+    assert.equal(current.events.includes('profile:small-limits'), false);
   });
 
   it('성공 뒤 디렉터리 삭제가 실패하면 정리 오류와 경로를 반환한다', async () => {

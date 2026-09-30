@@ -137,17 +137,41 @@ describe('프로파일 실행 lifecycle', () => {
     ]);
   });
 
-  it('계약 실행 운영 오류를 전달하고 서버를 종료한다', async () => {
+  it('계약 실행 운영 오류를 결과로 반환하고 서버를 종료한다', async () => {
     const current = fixture();
     const error = new Error('계약 실행 운영 오류');
     current.dependencies.runContract = async () => {
       throw error;
     };
-    await assert.rejects(
-      runProfileLifecycle(current.input, current.dependencies),
-      (actual) => actual === error,
-    );
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.error, error);
+    assert.deepEqual(outcome.contracts, []);
+    assert.equal(outcome.serverLogFile, current.server.logFile);
     assert.deepEqual(current.events, ['database:sqlite:default', 'server-start', 'server-stop']);
+  });
+
+  it('저장소 복구 오류 전에 완료한 계약 결과와 서버 로그를 오류와 함께 반환한다', async () => {
+    const current = fixture();
+    const error = new Error('저장소 복구 오류');
+    current.input.blob.ensureRunning = async () => {
+      current.events.push('ensure');
+      throw error;
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.error, error);
+    assert.deepEqual(
+      outcome.contracts.map((entry) => entry.id),
+      ['first'],
+    );
+    assert.equal(outcome.serverLogFile, current.server.logFile);
+    assert.deepEqual(outcome.cleanupErrors, []);
+    assert.deepEqual(current.events, [
+      'database:sqlite:default',
+      'server-start',
+      'contract:first',
+      'ensure',
+      'server-stop',
+    ]);
   });
 
   it('capability 설정과 provision 및 restart 뒤 계약을 순차 실행한다', async () => {
@@ -168,16 +192,40 @@ describe('프로파일 실행 lifecycle', () => {
     ]);
   });
 
-  it('provision 오류가 발생해도 서버를 종료한다', async () => {
-    const current = fixture('change-feed');
-    const error = new Error('provision 오류');
-    current.dependencies.provisionCapabilityNamespaces = async () => {
+  it('undefined 실행 오류도 실행 실패로 반환한다', async () => {
+    const current = fixture();
+    current.dependencies.runContract = async () => {
+      throw undefined;
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.ok('error' in outcome);
+    assert.equal(outcome.error, undefined);
+    assert.equal(current.events.at(-1), 'server-stop');
+  });
+
+  it('서버 기동 전 오류는 결과 없이 거부한다', async () => {
+    const current = fixture();
+    const error = new Error('서버 기동 오류');
+    current.dependencies.startServer = async () => {
+      current.events.push('server-start');
       throw error;
     };
     await assert.rejects(
       runProfileLifecycle(current.input, current.dependencies),
       (actual) => actual === error,
     );
+    assert.deepEqual(current.events, ['database:sqlite:default', 'server-start']);
+  });
+
+  it('provision 오류가 발생해도 서버를 종료한다', async () => {
+    const current = fixture('change-feed');
+    const error = new Error('provision 오류');
+    current.dependencies.provisionCapabilityNamespaces = async () => {
+      throw error;
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.error, error);
+    assert.deepEqual(outcome.contracts, []);
     assert.deepEqual(current.events, [
       'database:sqlite:change-feed',
       'config',
@@ -249,11 +297,9 @@ describe('프로파일 실행 lifecycle', () => {
         current.events.push('server-stop');
         throw cleanupError;
       };
-      await assert.rejects(runProfileLifecycle(current.input, current.dependencies), (actual) => {
-        assert.equal((actual as { executionError: unknown }).executionError, executionError);
-        assert.deepEqual((actual as { cleanupErrors: Error[] }).cleanupErrors, [cleanupError]);
-        return true;
-      });
+      const outcome = await runProfileLifecycle(current.input, current.dependencies);
+      assert.equal(outcome.error, executionError);
+      assert.deepEqual(outcome.cleanupErrors, [cleanupError]);
       assert.equal(current.events.at(-1), 'server-stop');
     });
   }
@@ -299,7 +345,17 @@ describe('프로파일 취소 경계', () => {
           await input.restart();
           return [];
         };
-      await assert.rejects(runProfileLifecycle(current.input, current.dependencies), { name: 'AbortError' });
+      // 서버 기동 전 취소는 거부한다.
+      // 서버 기동 뒤 취소는 서버 로그 경로와 함께 반환한다.
+      if (phase === 'port' || phase === 'config') {
+        await assert.rejects(runProfileLifecycle(current.input, current.dependencies), {
+          name: 'AbortError',
+        });
+      } else {
+        const outcome = await runProfileLifecycle(current.input, current.dependencies);
+        assert.equal((outcome.error as Error).name, 'AbortError');
+        assert.equal(outcome.serverLogFile, current.server.logFile);
+      }
       const expected = ['database:sqlite:change-feed'];
       if (phase !== 'port') expected.push('config');
       if (phase === 'server' || phase === 'provision') expected.push('server-start');

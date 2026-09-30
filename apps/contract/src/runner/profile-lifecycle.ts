@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { Contract, ProfileName } from '../define-contract.ts';
 import type { BlobStorageHandle } from './blob-storage.ts';
 import { createContractContext } from './context.ts';
-import { CLEANUP_TIMEOUT_MS, cleanupError, ExecutionCleanupError, withCleanupTimeout } from './cleanup.ts';
+import { CLEANUP_TIMEOUT_MS, cleanupError, withCleanupTimeout } from './cleanup.ts';
 import { prepareSqliteDatabase, type DatabaseHandle } from './database.ts';
 import { preparePostgresDatabase, type PostgresHandle } from './postgres.ts';
 import { PROFILE_CAPABILITIES, PROFILE_ENV } from './profiles.ts';
@@ -68,9 +68,9 @@ export interface ProfileLifecycleDependencies {
   cleanupTimeoutMs: number;
 }
 
-/** 프로파일 계약 결과와 오류 조사에 사용할 서버 로그 경로다. */
+/** 서버 기동 뒤 프로파일 실행의 계약 결과·서버 로그 경로·정리 오류·실행 오류다. */
 export interface ProfileLifecycleResult {
-  /** 취소 전까지 실행을 완료한 계약 결과다. */
+  /** 취소나 실행 오류 전까지 실행을 완료한 계약 결과다. */
   readonly contracts: readonly ContractResult[];
 
   /** 프로파일 API 서버의 stdout·stderr 로그 파일이다. */
@@ -78,6 +78,9 @@ export interface ProfileLifecycleResult {
 
   /** 계약 결과와 별도로 보고할 서버 정리 오류다. */
   readonly cleanupErrors: readonly Error[];
+
+  /** 서버 기동 뒤 발생한 실행 오류의 원래 값이다. 속성이 있으면 `undefined` 값도 실행 실패다. */
+  readonly error?: unknown;
 }
 
 const defaultDependencies: ProfileLifecycleDependencies = {
@@ -97,7 +100,8 @@ const defaultDependencies: ProfileLifecycleDependencies = {
 /**
  * - DB·서버·capability를 준비하고 계약을 순차 실행한다.
  * - 계약 실패 결과 뒤에도 계속 실행한다.
- * - 운영 오류를 던질 때도 취득한 서버를 종료한다.
+ * - 서버 기동 전 오류는 던진다.
+ * - 서버 기동 뒤 실행 오류는 서버를 종료한 뒤 완료한 계약 결과·서버 로그·정리 오류와 함께 반환한다.
  */
 export async function runProfileLifecycle(
   input: ProfileLifecycleInput,
@@ -189,9 +193,10 @@ export async function runProfileLifecycle(
       cleanupErrors.push(cleanupError(error));
     }
   }
-  if (executionFailed) {
-    if (cleanupErrors.length > 0) throw new ExecutionCleanupError(executionError, cleanupErrors);
-    throw executionError;
-  }
-  return { contracts: results, serverLogFile: server.logFile, cleanupErrors };
+  return {
+    contracts: results,
+    serverLogFile: server.logFile,
+    cleanupErrors,
+    ...(executionFailed ? { error: executionError } : {}),
+  };
 }
