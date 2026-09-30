@@ -6,12 +6,19 @@ import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { hashStream, uploadStream } from '../storage/stream-upload.js';
 
+/** VFS 콘텐츠 적재의 stream 제한·해시·선택적 암호화를 제공한다.
+ *
+ * Byte cap은 평문 기준으로 적용한다. 호출부는 경로별 정책과 적재 성공 뒤 정리를 담당한다.
+ */
+
 /** 콘텐츠 적재에서 계산한 평문 정보와 저장용 암호화 메타데이터다. */
 export interface ContentIngressResult {
   /** 저장 전에 소비한 평문 byte 수다. */
   readonly size: number;
+
   /** 저장 전에 계산한 평문 SHA-256이다. */
   readonly sha256: string;
+
   /** 암호화 저장이면 복호화 IV고, 평문 저장이면 `null`이다. */
   readonly encryptionIv: Buffer | null;
 }
