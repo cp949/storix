@@ -28,6 +28,8 @@ describe('ConditionalContentService 오류 receipt', () => {
   const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
   const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
   const release = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const renew = jest.fn<VfsMutationReceiptRepository['renew']>();
+  const namespaceIsActive = jest.fn<() => Promise<boolean>>();
   const put = jest.fn<BlobStorage['put']>();
   const deleteObject = jest.fn<BlobStorage['delete']>();
   const nodes = {
@@ -40,7 +42,8 @@ describe('ConditionalContentService 오류 receipt', () => {
   } as unknown as VfsNodeRepository;
   const receipts = {
     claim,
-    renew: async () => true,
+    renew,
+    namespaceIsActive,
     complete,
     completeAfterRollback,
     release,
@@ -57,6 +60,8 @@ describe('ConditionalContentService 오류 receipt', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    renew.mockResolvedValue(true);
+    namespaceIsActive.mockResolvedValue(true);
     claim.mockResolvedValue({ kind: 'owner', generation: 2 });
     complete.mockResolvedValue(undefined);
     completeAfterRollback.mockResolvedValue(undefined);
@@ -299,6 +304,30 @@ describe('ConditionalContentService 오류 receipt', () => {
 
     await expect(upload('/valid', 'true', undefined)).rejects.toThrow('database unavailable');
     expect(deleteObject).toHaveBeenCalledWith('object-key');
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('잘못된 path를 hash한 뒤 삭제로 claim이 소실되면 receipt 저장 없이 404를 반환한다', async () => {
+    renew.mockResolvedValue(false);
+    namespaceIsActive.mockResolvedValue(false);
+
+    await expect(upload('/é', 'true', undefined)).rejects.toMatchObject({
+      code: 'NAMESPACE_NOT_FOUND',
+      status: 404,
+    });
+    expect(namespaceIsActive).toHaveBeenCalledWith(namespaceId);
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('ACTIVE namespace에서 hash 뒤 claim 소실은 claim lost로 유지한다', async () => {
+    renew.mockResolvedValue(false);
+
+    await expect(upload('/é', 'true', undefined)).rejects.toThrow('VFS mutation claim lost');
+    expect(namespaceIsActive).toHaveBeenCalledWith(namespaceId);
     expect(completeAfterRollback).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
   });

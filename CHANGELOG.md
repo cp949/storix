@@ -12,6 +12,10 @@
 
 - 관리자 전용 namespace 삭제 접수 `POST /api/v2/admin/namespaces/{namespaceId}/delete`와 상태 조회 `GET /api/v2/admin/namespaces/{namespaceId}/deletion`을 추가했다. 접수 뒤 데이터 접근을 차단하고 이름을 새 UUID로 재사용할 수 있다. GC가 live·snapshot·휴지통·재개 업로드 데이터를 비동기로 정리하며 미정착 PUT는 완료를 보류한다. 삭제 취소와 복원은 지원하지 않는다.
 
+### Fixed
+
+- namespace 삭제 GC와 경합한 조건부 content 요청에서 receipt claim이 소실되면 비활성 namespace에 `404 NAMESPACE_NOT_FOUND`를 반환한다. ACTIVE namespace의 claim 경합과 상태 조회 장애는 원래 오류를 유지한다.
+
 ### Security
 
 - API 이미지 베이스를 `node:24.20.0-alpine`으로 바꿨다. Debian 12 베이스에는 수정판이 없는 OS 취약점이 남아 있었다. 변경 후 Trivy 검사에서 최종 이미지의 HIGH·CRITICAL 취약점은 0건이다. 기록은 `apps/api/docs/adr/0031`이다.

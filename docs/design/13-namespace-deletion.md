@@ -91,6 +91,10 @@ DELETING·DELETED에서는 다음 요청을 `404 NAMESPACE_NOT_FOUND`로 차단�
 
 - 일반 VFS 읽기·쓰기, presigned 발급.
 - conditional mutation·content와 완료 receipt 재생.
+  - 처리 중 receipt claim이 소실되면 namespace의 ACTIVE 상태를 다시 조회한다.
+  - 비활성이면 `404 NAMESPACE_NOT_FOUND`를 반환한다. 이 응답은 receipt에 저장하지 않는다.
+  - ACTIVE이거나 상태 조회가 실패하면 원래 claim-lost 오류를 전파한다.
+  - raw claim-lost와 오류 receipt 완료의 fencing 실패에 같은 규칙을 적용한다.
 - snapshot·trash, change-feed·checkpoint, capability.
 - upload session 생성·part PUT·complete·GET·DELETE와 완료 replay.
 - PUBLIC content·download.
@@ -250,4 +254,5 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 - `apps/api/test/namespace/namespace-deletion.http.shared-tests.ts`는 입력·receipt·HTTP와 인증·PUBLIC·upload 접근 차단을 고정한다.
 - `apps/api/test/persistence/namespace-deletion.repository.shared-tests.ts`는 writer·upload admission과 삭제의 경합을 고정한다.
 - `apps/api/test/jobs/namespace-deletion.cleanup.shared-tests.ts`는 정산·재시작·grace·완료 보류·실패 격리를 고정한다.
+- `apps/api/test/vfs/conditional-content.namespace-deletion.sqlite.integration-spec.ts`는 삭제 GC의 receipt 제거 뒤 업로드 재개가 404이며 live 데이터를 반영하지 않음을 고정한다.
 - 실제 소비자·브라우저·운영 GC 예약·운영 백업 복원은 별도 검증 대상이다.

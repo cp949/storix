@@ -76,10 +76,12 @@ export function errorResponse(error: DomainError, requestId: string): ReceiptRes
 /**
  * 롤백된 요청의 오류를 receipt로 확정하고 응답을 반환한다.
  *
- * 저장 대상이 아니면 오류를 그대로 다시 던진다(호출부가 claim을 해제한다).
- * 저장은 작업 트랜잭션이 롤백된 뒤 별도 트랜잭션에서 generation·lease로 fencing하며,
- * 응답은 저장이 끝난 뒤에만 반환한다. fencing 실패가 claim lost이고 namespace 삭제가
- * 확인되면 저장 불가한 404를 반환하며, 그 외에는 원래 완료 오류를 전파한다.
+ * 저장은 작업 트랜잭션이 롤백된 뒤 별도 트랜잭션에서 generation·lease로 fencing한다.
+ * 응답은 저장이 끝난 뒤에만 반환한다.
+ * 저장 대상이 아닌 오류와 완료 실패는 같은 claim 소실 판정을 거친다.
+ * - claim lost이며 namespace가 비활성이면 저장하지 않는 404를 던진다.
+ * - namespace가 ACTIVE이거나 상태 조회가 실패하면 원래 오류를 전파한다.
+ * - claim lost가 아닌 오류는 상태 조회 없이 전파한다.
  */
 export async function storeErrorReceipt(
   receipts: VfsMutationReceiptRepository,
@@ -87,7 +89,9 @@ export async function storeErrorReceipt(
   error: unknown,
   requestId: string,
 ): Promise<ReceiptResponse> {
-  if (!isReplayableMutationError(error)) throw error;
+  if (!isReplayableMutationError(error)) {
+    return throwMutationError(receipts, owner.identity.namespaceId, error);
+  }
   const response = errorResponse(error, requestId);
   try {
     await receipts.completeAfterRollback(
@@ -99,18 +103,26 @@ export async function storeErrorReceipt(
       owner.requestBodyBytes,
     );
   } catch (completionError) {
-    if (completionError instanceof Error && completionError.message === 'VFS mutation claim lost') {
-      try {
-        if (!(await receipts.namespaceExists(owner.identity.namespaceId))) {
-          throw new VfsNamespaceNotFoundError(owner.identity.namespaceId);
-        }
-      } catch (namespaceError) {
-        if (namespaceError instanceof VfsNamespaceNotFoundError) throw namespaceError;
-      }
-    }
-    throw completionError;
+    return throwMutationError(receipts, owner.identity.namespaceId, completionError);
   }
   return response;
+}
+
+/** 삭제로 소실된 receipt와 ACTIVE namespace 안의 claim 경합을 구분한다. */
+async function throwMutationError(
+  receipts: VfsMutationReceiptRepository,
+  namespaceId: string,
+  error: unknown,
+): Promise<never> {
+  if (!(error instanceof Error) || error.message !== 'VFS mutation claim lost') throw error;
+  let active: boolean;
+  try {
+    active = await receipts.namespaceIsActive(namespaceId);
+  } catch {
+    throw error;
+  }
+  if (!active) throw new VfsNamespaceNotFoundError(namespaceId);
+  throw error;
 }
 
 /**

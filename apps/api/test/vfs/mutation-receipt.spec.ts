@@ -99,12 +99,12 @@ describe('storeErrorReceipt', () => {
 
   function receipts(
     completeAfterRollback = jest.fn(async () => undefined),
-    namespaceExists = jest.fn(async () => true),
+    namespaceIsActive = jest.fn(async () => true),
   ) {
     return {
-      repository: { completeAfterRollback, namespaceExists } as unknown as VfsMutationReceiptRepository,
+      repository: { completeAfterRollback, namespaceIsActive } as unknown as VfsMutationReceiptRepository,
       completeAfterRollback,
-      namespaceExists,
+      namespaceIsActive,
     };
   }
 
@@ -186,16 +186,17 @@ describe('storeErrorReceipt', () => {
   });
 
   it('fencing 실패(claim lost)는 응답 대신 완료 오류를 전파한다', async () => {
-    const { repository, namespaceExists } = receipts(
+    const error = new Error('VFS mutation claim lost');
+    const { repository, namespaceIsActive } = receipts(
       jest.fn(async () => {
-        throw new Error('VFS mutation claim lost');
+        throw error;
       }),
     );
 
-    await expect(
-      storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1'),
-    ).rejects.toThrow('VFS mutation claim lost');
-    expect(namespaceExists).toHaveBeenCalledWith(owner.identity.namespaceId);
+    await expect(storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1')).rejects.toBe(
+      error,
+    );
+    expect(namespaceIsActive).toHaveBeenCalledWith(owner.identity.namespaceId);
   });
 
   it('fencing 실패 뒤 namespace가 삭제됐으면 NAMESPACE_NOT_FOUND를 반환한다', async () => {
@@ -214,23 +215,72 @@ describe('storeErrorReceipt', () => {
     });
   });
   it('claim lost 뒤 namespace 조회가 실패하면 원래 claim-lost 오류를 전파한다', async () => {
-    const { repository, namespaceExists } = receipts(
+    const error = new Error('VFS mutation claim lost');
+    const { repository, namespaceIsActive } = receipts(
       jest.fn(async () => {
-        throw new Error('VFS mutation claim lost');
+        throw error;
       }),
       jest.fn(async () => {
         throw new Error('database unavailable');
       }),
     );
 
-    await expect(
-      storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1'),
-    ).rejects.toThrow('VFS mutation claim lost');
-    expect(namespaceExists).toHaveBeenCalledWith(owner.identity.namespaceId);
+    await expect(storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1')).rejects.toBe(
+      error,
+    );
+    expect(namespaceIsActive).toHaveBeenCalledWith(owner.identity.namespaceId);
   });
 
+  it('비활성 또는 없는 namespace의 raw claim lost는 404로 변환한다', async () => {
+    const { repository, completeAfterRollback, namespaceIsActive } = receipts(
+      undefined,
+      jest.fn(async () => false),
+    );
+
+    await expect(
+      storeErrorReceipt(repository, owner, new Error('VFS mutation claim lost'), 'req-1'),
+    ).rejects.toMatchObject({ code: 'NAMESPACE_NOT_FOUND', status: 404 });
+    expect(namespaceIsActive).toHaveBeenCalledWith(owner.identity.namespaceId);
+    expect(completeAfterRollback).not.toHaveBeenCalled();
+  });
+
+  it('ACTIVE namespace의 raw claim lost는 원래 오류 인스턴스를 전파한다', async () => {
+    const { repository, namespaceIsActive } = receipts();
+    const error = new Error('VFS mutation claim lost');
+
+    await expect(storeErrorReceipt(repository, owner, error, 'req-1')).rejects.toBe(error);
+    expect(namespaceIsActive).toHaveBeenCalledWith(owner.identity.namespaceId);
+  });
+
+  it('raw claim lost 뒤 상태 조회 실패는 원래 오류 인스턴스를 전파한다', async () => {
+    const { repository, namespaceIsActive } = receipts(
+      undefined,
+      jest.fn(async () => {
+        throw new Error('status lookup failed');
+      }),
+    );
+    const error = new Error('VFS mutation claim lost');
+
+    await expect(storeErrorReceipt(repository, owner, error, 'req-1')).rejects.toBe(error);
+    expect(namespaceIsActive).toHaveBeenCalledWith(owner.identity.namespaceId);
+  });
+
+  it.each([new Error('database unavailable'), 'VFS mutation claim lost'])(
+    '일반 raw 오류 %s는 비활성 namespace에서도 그대로 전파하고 상태를 조회하지 않는다',
+    async (error) => {
+      const { repository, completeAfterRollback, namespaceIsActive } = receipts(
+        undefined,
+        jest.fn(async () => false),
+      );
+
+      await expect(storeErrorReceipt(repository, owner, error, 'req-1')).rejects.toBe(error);
+      expect(namespaceIsActive).not.toHaveBeenCalled();
+      expect(completeAfterRollback).not.toHaveBeenCalled();
+    },
+  );
+
   it('claim lost가 아닌 receipt 완료 오류에서는 namespace를 조회하지 않는다', async () => {
-    const { repository, namespaceExists } = receipts(
+    const { repository, namespaceIsActive } = receipts(
       jest.fn(async () => {
         throw new Error('receipt write failed');
       }),
@@ -239,7 +289,7 @@ describe('storeErrorReceipt', () => {
     await expect(
       storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1'),
     ).rejects.toThrow('receipt write failed');
-    expect(namespaceExists).not.toHaveBeenCalled();
+    expect(namespaceIsActive).not.toHaveBeenCalled();
   });
 });
 

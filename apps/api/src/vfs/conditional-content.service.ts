@@ -179,9 +179,10 @@ export class ConditionalContentService {
           if (claim.kind === 'complete') {
             return replayReceipt(claim.receipt, 'POST', currentFingerprint, requestId);
           }
-          if (lease?.lost || !(await this.receipts.renew(identity, claim.generation))) {
-            throw new Error('VFS mutation claim lost');
-          }
+          const error =
+            lease?.lost || !(await this.receipts.renew(identity, claim.generation))
+              ? new Error('VFS mutation claim lost')
+              : parseError;
           return await storeErrorReceipt(
             this.receipts,
             {
@@ -191,7 +192,7 @@ export class ConditionalContentService {
               method: 'POST',
               requestBodyBytes: replayed.size,
             },
-            parseError,
+            error,
             requestId,
           );
         } finally {

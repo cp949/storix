@@ -180,9 +180,14 @@ export class VfsMutationReceiptRepository {
     );
   }
 
+  /** tombstone을 제외하고 데이터 요청을 허용하는 ACTIVE namespace만 확인한다. */
   @classifyPersistenceOperation
-  async namespaceExists(namespaceId: string): Promise<boolean> {
-    return (await this.dataSource.getRepository(NamespaceEntity).findOneBy({ id: namespaceId })) !== null;
+  async namespaceIsActive(namespaceId: string): Promise<boolean> {
+    return (
+      (await this.dataSource
+        .getRepository(NamespaceEntity)
+        .findOneBy({ id: namespaceId, status: 'ACTIVE' })) !== null
+    );
   }
 
   // 보존 기한은 claim 시점이 아니라 완료 시점부터 RECEIPT_DAYS다.
