@@ -11,6 +11,7 @@ export class CapabilityService {
   private readonly definitions: ReadonlyMap<CapabilityId, CapabilityDefinition>;
   private readonly globalAllowed: ReadonlySet<CapabilityId>;
   private readonly namespaceAllowed: ReadonlyMap<string, ReadonlySet<CapabilityId>>;
+  private readonly defaultEnabled: ReadonlySet<CapabilityId>;
 
   constructor(config: CapabilityConfig, registry: readonly CapabilityDefinition[] = CAPABILITY_REGISTRY) {
     validateCapabilityRegistry(registry);
@@ -23,22 +24,29 @@ export class CapabilityService {
       ]),
     );
 
+    this.defaultEnabled = new Set(config.defaultEnabledCapabilities ?? []);
+
     for (const id of this.globalAllowed) this.requireRegistered(id);
+    for (const id of this.defaultEnabled) this.requireRegistered(id, 'default');
     for (const [namespaceId, ids] of this.namespaceAllowed) {
       for (const id of ids) this.requireRegistered(id, namespaceId);
     }
-    for (const [namespaceId, ids] of this.namespaceAllowed) {
-      for (const id of ids) {
-        if (!this.globalAllowed.has(id)) continue;
-        for (const dependency of this.definitions.get(id)!.dependencies) {
-          if (!this.globalAllowed.has(dependency)) {
-            throw new Error(`Capability dependency ${dependency} must be globally allowed for ${id}`);
-          }
-          if (!ids.has(dependency)) {
-            throw new Error(
-              `Capability dependency ${dependency} must be allowed in namespace ${namespaceId} for ${id}`,
-            );
-          }
+    this.requireDependencies(this.defaultEnabled, 'default');
+    for (const [namespaceId, ids] of this.namespaceAllowed) this.requireDependencies(ids, namespaceId);
+  }
+
+  // 목록에 든 capability의 의존이 전역 허용과 같은 목록에 모두 있어야 한다.
+  private requireDependencies(ids: ReadonlySet<CapabilityId>, scope: string): void {
+    for (const id of ids) {
+      if (!this.globalAllowed.has(id)) continue;
+      for (const dependency of this.definitions.get(id)!.dependencies) {
+        if (!this.globalAllowed.has(dependency)) {
+          throw new Error(`Capability dependency ${dependency} must be globally allowed for ${id}`);
+        }
+        if (!ids.has(dependency)) {
+          throw new Error(
+            `Capability dependency ${dependency} must be allowed in namespace ${scope} for ${id}`,
+          );
         }
       }
     }
@@ -53,8 +61,8 @@ export class CapabilityService {
   isEnabled(namespaceId: string, capabilityId: CapabilityId): boolean {
     const definition = this.definitions.get(capabilityId);
     if (!definition || !this.globalAllowed.has(capabilityId)) return false;
-    const allowed = this.namespaceAllowed.get(namespaceId.toLowerCase());
-    if (!allowed?.has(capabilityId)) return false;
+    const allowed = this.namespaceAllowed.get(namespaceId.toLowerCase()) ?? this.defaultEnabled;
+    if (!allowed.has(capabilityId)) return false;
     return definition.dependencies.every((dependency) => this.isEnabled(namespaceId, dependency));
   }
 

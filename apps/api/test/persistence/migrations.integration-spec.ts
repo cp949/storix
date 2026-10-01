@@ -69,6 +69,24 @@ describe('Migration: InitSchema', () => {
     }
   });
 
+  it('ENCRYPTED namespace 부분 인덱스를 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      const names = async () => (await runner.getTable('namespace'))!.indices.map((index) => index.name);
+      expect(await names()).toContain('idx_namespace_encrypted');
+      const Migration = ALL_MIGRATIONS.find(
+        (migration) => migration.name === 'AddNamespaceEncryptedIndex1791700000013',
+      )!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await names()).not.toContain('idx_namespace_encrypted');
+      await migration.up(runner);
+      expect(await names()).toContain('idx_namespace_encrypted');
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('GC cursor 테이블을 만들고 down에서 제거한다', async () => {
     const runner = dataSource.createQueryRunner();
     try {

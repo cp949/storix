@@ -1,6 +1,6 @@
 # VFS 선택 capability
 
-기존 VFS-01 파일 API는 항상 활성이다. 선택 기능은 소비자 사용 사례를 완성하는 연산 묶음을 하나의 capability로 등록한다. 선택 capability의 기본 상태는 비활성이다. 현재 production registry에는 `resumable-upload`가 등록되어 있다. 인증된 `GET /api/v2/namespaces/{id}/capabilities`는 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다.
+기존 VFS-01 파일 API는 항상 활성이다. 선택 기능은 소비자 사용 사례를 완성하는 연산 묶음을 하나의 capability로 등록한다. 선택 capability의 기본 상태는 비활성이다. 현재 production registry에는 `resumable-upload`와 `change-feed`가 등록되어 있다. 인증된 `GET /api/v2/namespaces/{id}/capabilities`는 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다.
 
 ## 시작 설정
 
@@ -13,13 +13,15 @@
 }
 ```
 
-두 최상위 필드는 필수이며 추가 필드는 허용하지 않는다. 전역 필드는 capability ID 문자열 배열, namespace 필드는 namespace UUID를 키로 하고 capability ID 문자열 배열을 값으로 하는 객체다. namespace UUID는 소문자로 정규화하며 정규화 후 중복된 키는 거부한다. namespace ID가 실제 DB에 없으면 시작을 거부한다. capability ID는 소문자 `kebab-case` 단일 식별자다. 별칭이나 대소문자 정규화는 없다.
+앞의 두 최상위 필드는 필수이고 선택 필드 `defaultEnabledCapabilities`(capability ID 문자열 배열)만 더 허용한다. 그 밖의 추가 필드는 허용하지 않는다. 전역 필드는 capability ID 문자열 배열, namespace 필드는 namespace UUID를 키로 하고 capability ID 문자열 배열을 값으로 하는 객체다. namespace UUID는 소문자로 정규화하며 정규화 후 중복된 키는 거부한다. 설정에 적힌 namespace ID가 실제 DB에 없으면 시작을 거부한다. 존재 확인은 항목 수와 무관한 질의 횟수로 한다(PostgreSQL 한 번, SQLite는 1000개씩). capability ID는 소문자 `kebab-case` 단일 식별자다. 별칭이나 대소문자 정규화는 없다.
+
+`defaultEnabledCapabilities`는 `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정을 읽은 뒤 만든 namespace 포함)에 적용하는 기본 활성 목록이다. 키가 없으면 기본 활성이 없고 namespace 항목이 없는 namespace의 선택 기능은 비활성이다. 기본 목록을 쓰면 namespace를 설정에 나열하지 않아도 되고 새 namespace를 재시작 없이 쓸 수 있다.
 
 ## Registry와 활성 판정
 
-capability 정의는 코드의 정적 registry에 등록한다. 정의에는 namespace 범위, 기본 비활성, 전역 상한과 namespace 명시적 허용, 의존 capability, 비활성 오류, 데이터 보존, 유효 상태 조회 노출 정책이 포함된다. 중복 ID, 잘못된 메타데이터, 미등록·자기·순환 의존성은 시작 오류다. 설정에 미등록 ID가 있어도 시작을 거부한다. `resumable-upload`를 허용할 때는 `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 유한 전역·namespace별 정책이 필수다. 세션 계약은 [재개 업로드 설계](./07-resumable-upload.md)를 따른다.
+capability 정의는 코드의 정적 registry에 등록한다. 정의에는 namespace 범위, 기본 비활성, 전역 상한과 namespace 명시적 허용, 의존 capability, 비활성 오류, 데이터 보존, 유효 상태 조회 노출 정책이 포함된다. 중복 ID, 잘못된 메타데이터, 미등록·자기·순환 의존성은 시작 오류다. 설정에 미등록 ID가 있어도 시작을 거부한다. `resumable-upload`를 허용할 때는 `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 유한 전역 정책이 필수다. namespace별 정책은 선택 override다. 세션 계약은 [재개 업로드 설계](./07-resumable-upload.md)를 따른다.
 
-capability가 활성인 조건은 registry 등록, 전역 허용 목록 포함, 대상 namespace 허용 목록 포함, 모든 의존 capability 활성이다. namespace 설정은 전역 차단을 해제할 수 없고, 설정이 없는 namespace의 선택 기능은 비활성이다. 활성 capability에 필요한 의존성이 전역 또는 해당 namespace에서 허용되지 않으면 시작을 거부한다.
+capability가 활성인 조건은 registry 등록, 전역 허용 목록 포함, 대상 namespace의 허용 목록 포함, 모든 의존 capability 활성이다. 대상 namespace의 허용 목록은 `namespaceAllowedCapabilities`에 그 namespace 항목이 있으면 그 값이고 없으면 `defaultEnabledCapabilities`다. 항목이 있으면 기본 목록을 대신하며 빈 목록은 그 namespace를 비활성으로 한다. 전역 허용 목록이 모든 경우의 최종 상한이라 namespace 설정과 기본 목록은 전역 차단을 해제할 수 없다. 활성 capability에 필요한 의존성이 전역 또는 적용되는 목록(namespace 항목, 기본 목록)에서 허용되지 않으면 시작을 거부한다.
 
 ## 요청 오류와 데이터 경계
 

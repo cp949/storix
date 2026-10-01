@@ -42,6 +42,34 @@ describe('capability 시작 설정', () => {
     });
   });
 
+  it('선택 키 defaultEnabledCapabilities를 읽고 없으면 결과에 넣지 않는다', async () => {
+    await expect(
+      loadFile({
+        globalAllowedCapabilities: ['content-search'],
+        namespaceAllowedCapabilities: {},
+        defaultEnabledCapabilities: ['content-search'],
+      }),
+    ).resolves.toEqual({
+      globalAllowedCapabilities: ['content-search'],
+      namespaceAllowedCapabilities: {},
+      defaultEnabledCapabilities: ['content-search'],
+    });
+  });
+
+  it.each([
+    ['목록 타입', 'content-search'],
+    ['항목 타입', [1]],
+    ['식별자 형식', ['Content-Search']],
+  ])('defaultEnabledCapabilities의 %s이 잘못되면 거부한다', async (_label, value) => {
+    await expect(
+      loadFile({
+        globalAllowedCapabilities: [],
+        namespaceAllowedCapabilities: {},
+        defaultEnabledCapabilities: value,
+      }),
+    ).rejects.toThrow(/defaultEnabledCapabilities/);
+  });
+
   it('대문자 namespace UUID 키를 DB 조회용 소문자 정규형으로 반환한다', async () => {
     await expect(
       loadFile({

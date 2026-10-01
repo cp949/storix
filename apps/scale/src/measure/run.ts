@@ -132,12 +132,19 @@ function environmentInfo(): Record<string, unknown> {
   };
 }
 
-function capabilityEnv(spec: DatasetSpec, count: number, dir: string): Record<string, string> {
-  const numbers = pickActiveNumbers(spec, count);
+function capabilityEnv(
+  spec: DatasetSpec,
+  count: number,
+  dir: string,
+  mode: 'list' | 'default' = 'list',
+): Record<string, string> {
+  const numbers = mode === 'default' ? [] : pickActiveNumbers(spec, count);
   const ids = numbers.map((i) => activeNamespaceId(spec, i));
   const capabilities = {
     globalAllowedCapabilities: ['resumable-upload'],
     namespaceAllowedCapabilities: Object.fromEntries(ids.map((id) => [id, ['resumable-upload']])),
+    // 기본 활성 모드는 namespace를 나열하지 않고 기본 목록만 둔다.
+    ...(mode === 'default' ? { defaultEnabledCapabilities: ['resumable-upload'] } : {}),
   };
   const policy = {
     global: { maxStagedBytes: '1073741824', maxActiveSessions: 100 },
@@ -202,7 +209,13 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
     });
 
   try {
-    if (want('startup') || want('requests') || want('list') || want('startup-capability')) {
+    if (
+      want('startup') ||
+      want('requests') ||
+      want('list') ||
+      want('startup-capability') ||
+      want('startup-capability-default')
+    ) {
       console.log('API 단계: 템플릿 복원');
       const cloneStarted = Date.now();
       cloneDatabase(template, apiDb);
@@ -250,6 +263,26 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
           await api.stop();
           return {
             capabilityNamespaces: options.capabilityNamespaces,
+            startupMs: api.startupMs,
+            readyRssBytes: api.readyRssBytes,
+            peakRssBytes: peak,
+            db: diffCounters(before, await readDbCounters(apiDb)),
+          };
+        });
+      }
+      if (want('startup-capability-default')) {
+        phases['startup-capability-default'] = await phase('startup-capability-default', async () => {
+          const extra = capabilityEnv(spec, 0, WORK_DIR, 'default');
+          const before = await readDbCounters(apiDb);
+          const api = await startApi({
+            env: apiEnv(apiDb, extra),
+            port,
+            label: `${runId}-startup-cap-default`,
+          });
+          const peak = api.peakRssBytes();
+          await api.stop();
+          return {
+            capabilityNamespaces: 0,
             startupMs: api.startupMs,
             readyRssBytes: api.readyRssBytes,
             peakRssBytes: peak,

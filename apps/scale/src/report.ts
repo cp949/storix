@@ -40,13 +40,13 @@ export function renderReport(results: readonly ReportInput[]): string {
   );
   const lines: string[] = [];
   lines.push(
-    '| label | namespace | API 시작 | 시작 RSS(MiB) | 시작+capability | GC wall | GC 최대 RSS(MiB) | list 응답 | list 크기(MiB) | list 최대 RSS(MiB) | 요청 최대 RSS(MiB) |',
+    '| label | namespace | API 시작 | 시작 RSS(MiB) | 시작+capability(목록) | 시작+capability(기본 활성) | GC wall | GC 최대 RSS(MiB) | list 응답 | list 크기(MiB) | list 최대 RSS(MiB) | 요청 최대 RSS(MiB) |',
   );
   lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
   for (const r of sorted) {
     const p = r.phases;
     lines.push(
-      `| ${r.label} | ${r.spec.namespaces} | ${cell(p.startup, (d) => ms(d.startupMs))} | ${cell(p.startup, (d) => mib(d.readyRssBytes))} | ${cell(p['startup-capability'], (d) => `${ms(d.startupMs)} (K=${d.capabilityNamespaces})`)} | ${cell(p.gc, (d) => ms(d.wallMs))} | ${cell(p.gc, (d) => mib(d.peakRssBytes))} | ${cell(p.list, (d) => (d.first.ok ? ms(d.first.ms) : `실패 ${d.first.error ?? d.first.status}`))} | ${cell(p.list, (d) => mib(d.first.bytes))} | ${cell(p.list, (d) => mib(d.peakRssBytes))} | ${cell(p.requests, (d) => mib(d.peakRssBytes))} |`,
+      `| ${r.label} | ${r.spec.namespaces} | ${cell(p.startup, (d) => ms(d.startupMs))} | ${cell(p.startup, (d) => mib(d.readyRssBytes))} | ${cell(p['startup-capability'], (d) => `${ms(d.startupMs)} (K=${d.capabilityNamespaces})`)} | ${cell(p['startup-capability-default'], (d) => ms(d.startupMs))} | ${cell(p.gc, (d) => ms(d.wallMs))} | ${cell(p.gc, (d) => mib(d.peakRssBytes))} | ${cell(p.list, (d) => (d.first.ok ? ms(d.first.ms) : `실패 ${d.first.error ?? d.first.status}`))} | ${cell(p.list, (d) => mib(d.first.bytes))} | ${cell(p.list, (d) => mib(d.peakRssBytes))} | ${cell(p.requests, (d) => mib(d.peakRssBytes))} |`,
     );
   }
   lines.push('');

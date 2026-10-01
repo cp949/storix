@@ -119,4 +119,59 @@ describe('CapabilityService', () => {
       }),
     );
   });
+
+  describe('기본 활성 목록(defaultEnabledCapabilities)', () => {
+    const withDefault = (global: string[], defaults: string[], namespaces: Record<string, string[]> = {}) =>
+      ({
+        globalAllowedCapabilities: global,
+        namespaceAllowedCapabilities: namespaces,
+        defaultEnabledCapabilities: defaults,
+      }) satisfies CapabilityConfig;
+
+    it('namespace 항목이 없는 모든 namespace에 기본 목록을 적용한다', () => {
+      const service = new CapabilityService(withDefault(['content-search'], ['content-search']), [search]);
+      expect(service.isEnabled(NS, 'content-search')).toBe(true);
+      expect(service.isEnabled(OTHER_NS, 'content-search')).toBe(true);
+      expect(service.listEnabled(NS)).toEqual(['content-search']);
+    });
+
+    it('namespace 항목이 있으면 기본 목록을 대신하고 빈 목록은 비활성이다', () => {
+      const service = new CapabilityService(
+        withDefault(['content-search', 'file-preview'], ['content-search'], {
+          [NS]: [],
+          [OTHER_NS]: ['content-search', 'file-preview'],
+        }),
+        [search, { ...preview, dependencies: [] }],
+      );
+      expect(service.isEnabled(NS, 'content-search')).toBe(false);
+      expect(service.isEnabled(OTHER_NS, 'file-preview')).toBe(true);
+      expect(service.isEnabled('123e4567-e89b-42d3-a456-426614174099', 'file-preview')).toBe(false);
+    });
+
+    it('기본 목록도 전역 허용을 넘지 못한다', () => {
+      const service = new CapabilityService(withDefault([], ['content-search']), [search]);
+      expect(service.isEnabled(NS, 'content-search')).toBe(false);
+    });
+
+    it('기본 목록이 없으면 이전과 같이 전역 허용만으로 켜지 않는다', () => {
+      const service = new CapabilityService(
+        { globalAllowedCapabilities: ['content-search'], namespaceAllowedCapabilities: {} },
+        [search],
+      );
+      expect(service.isEnabled(NS, 'content-search')).toBe(false);
+    });
+
+    it('기본 목록의 미등록 ID와 의존 누락은 시작 시 거부한다', () => {
+      expect(() => new CapabilityService(withDefault([], ['missing-feature']), [search])).toThrow(
+        /unknown|unregistered|미등록/i,
+      );
+      expect(
+        () =>
+          new CapabilityService(withDefault(['content-search', 'file-preview'], ['file-preview']), [
+            search,
+            preview,
+          ]),
+      ).toThrow(/depend|의존/i);
+    });
+  });
 });

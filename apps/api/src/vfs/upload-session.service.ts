@@ -21,7 +21,11 @@ import { hashParts, identityOf, type MutationHttpResult } from './mutation.servi
 import { PathResolver } from './path-resolver.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
-import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
+import {
+  resolveNamespaceUploadLimits,
+  UPLOAD_SESSION_POLICY,
+  type UploadSessionPolicy,
+} from './upload-session-config.js';
 import {
   VfsInvalidMutationRequestError,
   VfsInvalidExpiryError,
@@ -127,9 +131,9 @@ export class UploadSessionService {
     if (fileExpiresInSeconds !== null) {
       fileExpiresInSeconds = assertExpirySeconds(fileExpiresInSeconds, this.expiryBounds);
     }
-    const namespacePolicy = this.policy?.namespaces[namespaceId.toLowerCase()];
-    if (!this.policy || !namespacePolicy)
+    if (!this.policy)
       throw new UploadSessionError('VFS_FEATURE_DISABLED', 409, 'Upload session policy missing');
+    const namespacePolicy = resolveNamespaceUploadLimits(this.policy, namespaceId);
     const maxBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.globalMaxFileSizeBytes);
     const size = BigInt(parsed.sizeBytes);
     if (size > BigInt(maxBytes)) throw new VfsFileTooLargeError(maxBytes);

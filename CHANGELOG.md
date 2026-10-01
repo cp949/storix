@@ -10,10 +10,14 @@
 
 ### Added
 
+- capability 설정 파일의 선택 키 `defaultEnabledCapabilities`: `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정 이후 만든 namespace 포함)에 켤 capability 목록이다. 전역 허용이 최종 상한이고 namespace 항목이 있으면 그 값이 기본 목록을 대신한다(빈 목록은 비활성). 키가 없으면 이전 동작과 같다. 회원마다 namespace를 만드는 배포가 namespace를 설정에 나열하거나 재시작하지 않아도 된다.
 - `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 `200000`): GC가 한 실행에서 단계마다 처리하는 행 수 예산이다. 소진된 단계는 재개 위치를 `gc_cursor` 테이블에 저장하고 다음 실행이 이어간다. 대상 단계는 change feed 보존 정리, orphan object·blob 회수, 만료 session·staging 정리, 파일 만료 삭제, namespace 삭제 순회, receipt·휴지통 prune이다. GC 결과 JSON에 예산이 소진된 단계를 알리는 `budgetExhaustedStages`가 추가됐다.
 
 ### Changed
 
+- 업로드 세션 정책 파일의 `namespaces` 항목은 선택 override가 됐다. `resumable-upload`가 켜진 namespace의 항목이 없으면 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다. 이전에는 시작 오류(`Missing upload session policy for enabled namespace`)였다.
+- API 시작 시 `ENCRYPTED` namespace 존재 확인이 전체 `COUNT` 대신 `EXISTS`로 바뀌었다. 마스터 키가 없는 배포의 시작이 namespace 수에 비례해 읽던 비용을 없앤다. 부분 인덱스 `idx_namespace_encrypted`를 만드는 migration `AddNamespaceEncryptedIndex1791700000013`이 추가된다. down은 인덱스만 지운다.
+- capability 설정의 namespace 존재 확인을 항목마다 조회하지 않고 일괄 조회한다(PostgreSQL 1회, SQLite 1000개씩). 존재하지 않는 namespace를 적으면 시작을 거부하는 동작은 그대로다. 활동 namespace 10만 개를 설정에 나열한 API 시작이 24.9s에서 1.2s가 됐다(100만 namespace 데이터셋 측정).
 - GC가 metadata 없는 object를 찾을 때 storage 목록을 page(1000개)씩 읽고 그 page의 key만 DB 인덱스로 대조한다. 전체 `storage_key` 집합과 삭제 대상 목록을 메모리에 모으던 방식을 없앴다. 100만 namespace·object 약 51.5만 개 데이터셋에서 GC 프로세스가 이전에는 Node heap 상한 96MB에서 종료했고 지금은 48MB에서 통과한다. orphan blob 후보도 `(zero_since, id)` keyset으로 500개씩 읽는다. 삭제 규칙(grace period, 삭제에 성공한 object의 행만 삭제, staging 보호)은 그대로다.
 - GC가 처리 후보가 없을 때까지 batch를 끝없이 반복하던 단계(만료 session·staging 정리, 파일 만료 삭제, mutation receipt·terminal session·휴지통 prune, stale finalizing lease 복구, namespace 삭제 순회)가 단계 예산 안에서 batch를 이어 돌고 예산이 소진되면 다음 실행으로 넘긴다. 이전에는 receipt·terminal session prune과 만료 session 처리가 실행당 500건에서 멈췄다.
 - change feed 보존 정리의 후보 선택을 만료 이벤트 인덱스 순서 cursor로 바꿨다. 선두 이벤트가 유효한 namespace의 만료 이벤트가 많을 때 GC가 호출마다 그 이벤트를 다시 건너뛰던 비용을 없앴다(100만 namespace·막힌 이벤트 27,000개 구성에서 GC 84.4s → 4.8s). 삭제 규칙(만료된 연속 prefix만 삭제)은 그대로다. migration `AddGcCursor1791700000012`(새 테이블 `gc_cursor`)이 추가된다. down은 테이블을 지우며 저장된 재개 위치만 잃는다.

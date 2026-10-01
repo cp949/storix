@@ -13,7 +13,11 @@ import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
-import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
+import {
+  resolveNamespaceUploadLimits,
+  UPLOAD_SESSION_POLICY,
+  type UploadSessionPolicy,
+} from './upload-session-config.js';
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
 
@@ -74,9 +78,8 @@ export class UploadSessionPartService {
     if (session.state !== 'OPEN' || session.expiresAt <= new Date() || session.maxExpiresAt <= new Date())
       throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료 또는 만료');
     this.capabilities.requireEnabled(namespaceId, 'resumable-upload');
-    const namespacePolicy = this.policy?.namespaces[namespaceId.toLowerCase()];
-    if (!this.policy || !namespacePolicy)
-      throw new UploadPartError('VFS_FEATURE_DISABLED', 409, '업로드 세션 정책 없음');
+    if (!this.policy) throw new UploadPartError('VFS_FEATURE_DISABLED', 409, '업로드 세션 정책 없음');
+    const namespacePolicy = resolveNamespaceUploadLimits(this.policy, namespaceId);
     const expected =
       index === session.partCount - 1
         ? Number(BigInt(session.sizeBytes) - BigInt(index) * BigInt(session.partSizeBytes))

@@ -67,10 +67,23 @@ function limits(value: unknown, name: string): UploadSessionLimits {
   };
 }
 
-export function parseUploadSessionPolicy(
-  value: unknown,
-  capabilities: CapabilityConfig,
-): UploadSessionPolicy {
+/**
+ * namespace의 업로드 세션 한도를 돌려준다. namespace 항목이 있으면 그 값이고 없으면 전역 한도다.
+ * 두 업로드 서비스가 같은 규칙을 쓴다.
+ */
+export function resolveNamespaceUploadLimits(
+  policy: UploadSessionPolicy,
+  namespaceId: string,
+): UploadSessionLimits {
+  return (
+    policy.namespaces[namespaceId.toLowerCase()] ?? {
+      maxStagedBytes: policy.global.maxStagedBytes,
+      maxActiveSessions: policy.global.maxActiveSessions,
+    }
+  );
+}
+
+export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
   const root = object(value, ['global', 'namespaces'], ['global', 'namespaces'], 'root');
   const globalRow = object(
     root.global,
@@ -125,11 +138,6 @@ export function parseUploadSessionPolicy(
     }
     namespaces[normalized] = parsed;
   }
-  for (const [id, ids] of Object.entries(capabilities.namespaceAllowedCapabilities)) {
-    if (ids.includes('resumable-upload') && !Object.hasOwn(namespaces, id.toLowerCase())) {
-      throw new Error(`Missing upload session policy for enabled namespace: ${id}`);
-    }
-  }
   return { global, namespaces };
 }
 
@@ -159,5 +167,5 @@ export async function loadUploadSessionPolicy(
   } catch (cause) {
     throw new Error(`Invalid upload session policy JSON at ${path}`, { cause });
   }
-  return parseUploadSessionPolicy(value, capabilities);
+  return parseUploadSessionPolicy(value);
 }

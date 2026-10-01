@@ -65,6 +65,15 @@ describe('upload session policy', () => {
     });
   });
 
+  it('namespace 항목이 없어도 enabled namespace의 정책을 받아들인다(전역 한도를 쓴다)', async () => {
+    const policy = await load({
+      global: { maxStagedBytes: '100', maxActiveSessions: 1 },
+      namespaces: {},
+    });
+    expect(policy?.namespaces).toEqual({});
+    expect(policy?.global.maxStagedBytes).toBe(100n);
+  });
+
   it.each([
     {
       global: { maxStagedBytes: '0', maxActiveSessions: 1 },
@@ -98,7 +107,6 @@ describe('upload session policy', () => {
       global: { maxStagedBytes: '100', maxActiveSessions: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 2 } },
     },
-    { global: { maxStagedBytes: '100', maxActiveSessions: 1 }, namespaces: {} },
     {
       global: { maxStagedBytes: '100', maxActiveSessions: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1, extra: true } },

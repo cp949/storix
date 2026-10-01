@@ -4,7 +4,7 @@
 
 아래 세션·receipt·보존 계약은 ACTIVE namespace에 적용한다. namespace 관리자 삭제의 접근 차단과 세션 정리는 [namespace 삭제 설계](./13-namespace-deletion.md)의 "접근과 이름 재사용"·"UPLOADS"·"METADATA"를 따른다.
 
-`resumable-upload`는 namespace 선택 capability이며 기본 비활성이다. 전역과 해당 namespace에서 허용하고 유한한 세션 정책을 제공해야 새 세션과 조각을 받을 수 있다. 서비스 Bearer key가 모든 요청을 인증하며 최종 사용자 권한은 호출 서버가 판단한다. 기능을 끈 뒤에도 같은 생성 key의 응답 재생, 기존 세션의 조회·취소·정리, 모든 조각이 저장된 세션의 완료는 가능하다.
+`resumable-upload`는 namespace 선택 capability이며 기본 비활성이다. 전역에서 허용하고(namespace 항목 또는 기본 활성 목록으로 그 namespace에 켜고) 유한한 전역 세션 정책을 제공해야 새 세션과 조각을 받을 수 있다. 서비스 Bearer key가 모든 요청을 인증하며 최종 사용자 권한은 호출 서버가 판단한다. 기능을 끈 뒤에도 같은 생성 key의 응답 재생, 기존 세션의 조회·취소·정리, 모든 조각이 저장된 세션의 완료는 가능하다.
 
 `POST /api/v2/namespaces/{namespaceId}/fs/upload-sessions`는 UUID `Idempotency-Key`, 헤더로 전송된 최대 128 byte의 비어 있지 않은 `X-Mutation-Scope`와 JSON `{path,sizeBytes,mimeType,ifAbsent:true,sha256?}` 또는 `{path,sizeBytes,mimeType,ifRevision:"r1.…",sha256?}`를 받는다. `sizeBytes`는 0도 허용하는 10진 문자열이다. 선택적 `sha256`은 저장 전 전체 평문 파일 바이트의 SHA-256을 정확히 64자리 소문자 hex로 쓴다. `ENCRYPTED` namespace도 평문 기준이다. 잘못된 값은 세션 생성 전에 `400 VFS_INVALID_CHECKSUM`으로 거부한다. 부모 디렉터리는 미리 존재해야 한다. 요청 조건은 생성 때와 완료 때 검사한다. 같은 namespace/scope/key와 같은 정규 경로·크기·소문자 MIME·조건·checksum을 재시도하면 최초 `201` 본문과 `X-Request-Id`를 재생한다. FAILED 후 같은 생성 key의 재시도도 최초 `201` 본문(`state: OPEN`)을 재생하고 현재 상태는 `GET`으로 조회한다. checksum 또는 바이트를 고친 업로드에는 새 key와 세션이 필요하다. 입력이나 checksum을 바꿔 기존 key로 보내면 `409 MUTATION_KEY_REUSED`다. 응답은 `sessionId`, `state: OPEN`, `partSizeBytes`, `partCount`, `expiresAt`, `maxExpiresAt`이다. 0 byte는 조각 없이 완료한다.
 
@@ -14,7 +14,7 @@
 
 ## 설정과 만료
 
-`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 UTF-8 JSON은 `global`과 `namespaces`만 허용한다. `global`에는 양수 `maxStagedBytes`(10진 문자열, signed int64 이하), 양의 안전한 정수 `maxActiveSessions`가 필수다. `partSizeBytes`(기본 16777216, 최대 2147483647), `inactivitySeconds`(기본 86400), `maxLifetimeSeconds`(기본 604800)는 선택 양의 안전한 정수다. 비활동 기간은 최대 수명 이하여야 한다. `namespaces`는 UUID 키별로 필수 `maxStagedBytes`와 `maxActiveSessions`를 갖고 각각 전역 상한 이하여야 한다. 정규화한 UUID 중복, 알 수 없는 필드, 잘못된 값, 활성 namespace의 누락된 정책은 시작 오류다. 설정은 프로세스 시작 때 읽고 자동 reload하지 않는다.
+`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 UTF-8 JSON은 `global`과 `namespaces`만 허용한다. `global`에는 양수 `maxStagedBytes`(10진 문자열, signed int64 이하), 양의 안전한 정수 `maxActiveSessions`가 필수다. `partSizeBytes`(기본 16777216, 최대 2147483647), `inactivitySeconds`(기본 86400), `maxLifetimeSeconds`(기본 604800)는 선택 양의 안전한 정수다. 비활동 기간은 최대 수명 이하여야 한다. `namespaces`는 선택 override다. UUID 키별로 필수 `maxStagedBytes`와 `maxActiveSessions`를 갖고 각각 전역 상한 이하여야 한다. namespace 항목이 없으면 그 namespace에는 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다. 신규 namespace를 기본 활성 목록으로 켜는 배포가 namespace마다 항목을 만들지 않도록 한 규칙이다. 두 업로드 서비스는 `resolveNamespaceUploadLimits`로 같은 판정을 쓴다. 정규화한 UUID 중복, 알 수 없는 필드, 잘못된 값은 시작 오류다. 설정은 프로세스 시작 때 읽고 자동 reload하지 않는다.
 
 세션 생성 시 조각 크기와 생성 시각 기준 최대 만료 시각을 고정한다. 조각 저장·동일 조각 재시도의 활동은 비활동 만료를 갱신하되 최대 수명을 넘지 못한다. 만료된 OPEN은 GC에서 EXPIRED로 전환하고, 만료된 FINALIZING lease는 OPEN으로 복구한다. 완료·취소·만료·실패 세션은 활성 세션 한도에서 즉시 빠진다. 종결 세션과 완료·실패 응답은 종결 시점부터 최소 30일 보존하며, 그 뒤에도 조각이 모두 삭제된 경우에만 제거한다. 생성 크기는 namespace의 적용 `maxFileSizeBytes`와 전역 `STORIX_MAX_FILE_SIZE_BYTES`(기본 5 GiB) 중 낮은 값을 따른다. 생성 JSON에는 기존 16 KiB 본문 한도가 적용되고 조각 요청의 지속 시간은 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 86400초)로 제한한다.
 

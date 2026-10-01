@@ -31,7 +31,7 @@ describe('UploadSessionService lifecycle', () => {
     namespaces: { [namespaceId]: { maxStagedBytes: 1000n, maxActiveSessions: 1 } },
   };
 
-  function setup() {
+  function setup(activePolicy: UploadSessionPolicy = policy) {
     let expiryMax = '2592000';
     const sessions = new Map<string, VfsUploadSessionEntity>();
     const repo = {
@@ -109,7 +109,7 @@ describe('UploadSessionService lifecycle', () => {
       nodes as unknown as VfsNodeRepository,
       repo as unknown as VfsUploadSessionRepository,
       capability as unknown as CapabilityService,
-      policy,
+      activePolicy,
       {
         get: (name: string) =>
           name === 'STORIX_MAX_FILE_SIZE_BYTES'
@@ -135,6 +135,12 @@ describe('UploadSessionService lifecycle', () => {
       },
     };
   }
+
+  it('namespace 항목이 없는 정책은 전역 한도를 적용해 세션을 만든다', async () => {
+    const { service } = setup({ global: policy.global, namespaces: {} });
+    const created = await service.create(namespaceId, 'scope', key, request, 'req-1');
+    expect(created.status).toBe(201);
+  });
 
   it('replays the same creation and rejects a changed body for the same key', async () => {
     const { service } = setup();

@@ -171,8 +171,8 @@ COMMIT;
 `;
 }
 
-/** 적재 뒤 통계를 갱신한다. 측정 전 같은 계획이 선택되도록 한다. */
-export const ANALYZE_SQL = 'ANALYZE;';
+/** 적재·복제 뒤 통계를 갱신하고 vacuum한다. 같은 계획이 선택되고 측정 중 autovacuum이 끼어들지 않게 한다. */
+export const ANALYZE_SQL = 'VACUUM (ANALYZE);';
 
 /** 규모 검증용 행 수 질의. 결과 열은 `ExpectedCounts` 필드와 대응한다. */
 export const COUNT_SQL = `SELECT

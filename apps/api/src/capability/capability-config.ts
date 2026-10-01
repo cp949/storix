@@ -4,11 +4,21 @@ import { validate as isUuid } from 'uuid';
 import { CAPABILITY_ID_PATTERN } from './capability-registry.js';
 
 export interface CapabilityConfig {
+  /** 켤 수 있는 capability의 최종 상한이다. 어떤 모드에서도 넘지 못한다. */
   readonly globalAllowedCapabilities: readonly string[];
+
+  /** namespace별 명시 허용 목록. 항목이 있으면 `defaultEnabledCapabilities`를 대신하고 빈 목록은 비활성이다. */
   readonly namespaceAllowedCapabilities: Readonly<Record<string, readonly string[]>>;
+
+  /**
+   * `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정 이후 만든 namespace 포함)에 적용하는
+   * 기본 활성 목록이다. 키가 없으면 기본 활성이 없고 이전 동작과 같다.
+   */
+  readonly defaultEnabledCapabilities?: readonly string[];
 }
 
-const CONFIG_KEYS = ['globalAllowedCapabilities', 'namespaceAllowedCapabilities'];
+const REQUIRED_KEYS = ['globalAllowedCapabilities', 'namespaceAllowedCapabilities'];
+const OPTIONAL_KEYS = ['defaultEnabledCapabilities'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -27,8 +37,14 @@ function parseCapabilityList(value: unknown, field: string): readonly string[] {
 }
 
 function parseCapabilityConfig(value: unknown): CapabilityConfig {
-  if (!isRecord(value) || Object.keys(value).sort().join(',') !== CONFIG_KEYS.slice().sort().join(',')) {
-    throw new Error(`Invalid capability configuration: expected only ${CONFIG_KEYS.join(' and ')}`);
+  if (
+    !isRecord(value) ||
+    REQUIRED_KEYS.some((key) => !Object.hasOwn(value, key)) ||
+    Object.keys(value).some((key) => ![...REQUIRED_KEYS, ...OPTIONAL_KEYS].includes(key))
+  ) {
+    throw new Error(
+      `Invalid capability configuration: expected ${REQUIRED_KEYS.join(' and ')} and optional ${OPTIONAL_KEYS.join(', ')}`,
+    );
   }
   const globalAllowedCapabilities = parseCapabilityList(
     value.globalAllowedCapabilities,
@@ -50,6 +66,16 @@ function parseCapabilityConfig(value: unknown): CapabilityConfig {
       capabilities,
       `namespaceAllowedCapabilities.${namespaceId}`,
     );
+  }
+  if (Object.hasOwn(value, 'defaultEnabledCapabilities')) {
+    return {
+      globalAllowedCapabilities,
+      namespaceAllowedCapabilities,
+      defaultEnabledCapabilities: parseCapabilityList(
+        value.defaultEnabledCapabilities,
+        'defaultEnabledCapabilities',
+      ),
+    };
   }
   return { globalAllowedCapabilities, namespaceAllowedCapabilities };
 }
