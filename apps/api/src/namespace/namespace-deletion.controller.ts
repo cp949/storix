@@ -37,7 +37,8 @@ export class NamespaceDeletionController {
     @Res({ passthrough: true }) res: Response,
   ) {
     if (!key) throw new IdempotencyKeyRequiredError();
-    if (Buffer.byteLength(key, 'utf8') > 255) throw new NamespaceInvalidDeleteRequestError();
+    // Node는 헤더 값을 latin1로 읽어 문자 하나가 전송된 byte 하나이므로 문자 수가 곧 byte 수다.
+    if (key.length > 255) throw new NamespaceInvalidDeleteRequestError();
     const length = req.headers['content-length'];
     if ((length !== undefined && length !== '0') || req.headers['transfer-encoding'] !== undefined)
       throw new NamespaceInvalidDeleteRequestError();

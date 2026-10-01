@@ -427,7 +427,7 @@ paths:
       operationId: acceptNamespaceDeletion
       summary: Namespace 삭제 접수
       description: |
-        관리자 키와 body 없는 요청이 필요하다. 비어 있지 않은 Idempotency-Key는 UTF-8 255 byte 이하다.
+        관리자 키와 body 없는 요청이 필요하다. 비어 있지 않은 Idempotency-Key는 헤더로 전송된 255 byte 이하다.
         같은 namespace UUID·키는 최초 status와 body를 재생한다. 최초 202는 정리 완료 뒤에도 202다.
         새 키는 DELETING에서 202, DELETED에서 200을 반환한다. 이름은 접수 커밋부터 재사용할 수 있다.
         GC가 삭제를 진행한다. 완료 시간의 상한과 이미 전달 중인 스트림의 즉시 중단은 보장하지 않는다.
@@ -442,7 +442,7 @@ paths:
         - name: Idempotency-Key
           in: header
           required: true
-          description: 비어 있지 않은 문자열. UTF-8 255 byte 이하.
+          description: 비어 있지 않은 문자열. 헤더로 전송된 255 byte 이하. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
           schema: { type: string, minLength: 1, maxLength: 255 }
       responses:
         '202':

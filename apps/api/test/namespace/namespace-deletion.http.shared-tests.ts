@@ -110,6 +110,13 @@ export function registerNamespaceDeletionHttpTests(options: {
         'NAMESPACE_INVALID_DELETE_REQUEST',
       );
     });
+    // Node는 헤더 값을 latin1로 읽으므로 한글 85자(UTF-8 255 byte)는 서버에서 255자 문자열이 된다.
+    it('Idempotency-Key는 헤더로 전송된 byte 수 기준 255 byte까지 허용한다', async () => {
+      const id = await create();
+      const wire = (text: string) => Buffer.from(text, 'utf8').toString('latin1');
+      await accept(id, wire('한'.repeat(86))).expect(400);
+      await accept(id, wire('한'.repeat(85))).expect(202);
+    });
     it('잘못된 UUID와 없는 namespace는 404 NAMESPACE_NOT_FOUND다', async () => {
       for (const id of ['invalid', randomUUID()]) {
         expect((await accept(id, 'missing').expect(404)).body.code).toBe('NAMESPACE_NOT_FOUND');

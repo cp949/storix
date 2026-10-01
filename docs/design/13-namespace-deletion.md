@@ -33,7 +33,7 @@
 - api ADR-0018의 `POST` + 동사형 경로 규칙을 따른다.
 - `Idempotency-Key`는 비어 있지 않은 HTTP header 문자열이다. UUID로 제한하지 않는다.
 - 키 누락·빈 문자열은 `400 IDEMPOTENCY_KEY_REQUIRED`다.
-- 키가 255 UTF-8 byte를 넘으면 `400 NAMESPACE_INVALID_DELETE_REQUEST`다.
+- 키가 헤더로 전송된 255 byte를 넘으면 `400 NAMESPACE_INVALID_DELETE_REQUEST`다. Node는 헤더 값을 latin1로 읽으므로 서버는 문자 수로 센다.
 - 본문을 받지 않는다. `Content-Length`가 0보다 크거나 `Transfer-Encoding`이 있으면 같은 400이다.
 - JSON parser 오류는 인증보다 먼저 반환될 수 있다. 잘못된 JSON은 400, 16 KiB 초과는 `413 BAD_REQUEST`다.
 - 없는 namespace는 `404 NAMESPACE_NOT_FOUND`다.
