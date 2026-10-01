@@ -30,6 +30,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddGcCursor1791700000012',
       'AddNamespaceEncryptedIndex1791700000013',
       'AddIdempotencyKeyCreatedAtIndex1791700000014',
+      'AddNamespaceDeletionCompletedIndex1791700000015',
     ]);
   });
 });

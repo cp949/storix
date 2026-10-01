@@ -15,6 +15,7 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
 import { registerNamespaceListPageTests } from './namespace-list.http.shared-tests.js';
+import { registerNamespacePurgeHttpTests } from './namespace-purge.http.shared-tests.js';
 import { registerNamespaceReceiptRetentionTests } from './namespace-receipt-retention.http.shared-tests.js';
 import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
 
@@ -92,6 +93,27 @@ describe('Namespace HTTP contract', () => {
         )
         .then(() => undefined),
     receiptExists: async (key) => (await receiptCount(key)) > 0,
+  });
+
+  registerNamespacePurgeHttpTests({
+    app: () => app,
+    adminKey: 'quota-admin-secret',
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
+        .expect(201);
+      return response.body.id as string;
+    },
+    forceCompleted: async (namespaceId, days) => {
+      await migrationDataSource.query('DELETE FROM vfs_node WHERE namespace_id = $1', [namespaceId]);
+      await migrationDataSource.query("UPDATE namespace SET status = 'DELETED' WHERE id = $1", [namespaceId]);
+      await migrationDataSource.query(
+        "UPDATE namespace_deletion SET phase = 'COMPLETED', completed_at = now() - ($2::int * interval '1 day') WHERE namespace_id = $1",
+        [namespaceId, days],
+      );
+    },
   });
 
   registerNamespaceListPageTests({

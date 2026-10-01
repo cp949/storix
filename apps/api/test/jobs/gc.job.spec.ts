@@ -17,6 +17,10 @@ import type { VfsTrashRetentionRepository } from '../../src/persistence/vfs-tras
 import type { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
 import type { IdempotencyReceiptRetentionRepository } from '../../src/persistence/idempotency-receipt-retention.repository.js';
 import type { NamespaceDeletionCleanup } from '../../src/jobs/namespace-deletion.cleanup.js';
+import {
+  type NamespacePurgeRepository,
+  resolveNamespaceDeletedRetentionDays,
+} from '../../src/persistence/namespace-purge.repository.js';
 
 type PruneNext = (
   days: number,
@@ -510,6 +514,8 @@ describe('GcJob', () => {
       readonly trash?: Record<string, unknown>;
       readonly expiry?: Record<string, unknown>;
       readonly idempotency?: Record<string, unknown>;
+      readonly purge?: Record<string, unknown>;
+      readonly config?: Record<string, string>;
       readonly deletion?: Record<string, unknown>;
       readonly budget?: string;
       readonly cursors?: GcCursorRepository;
@@ -535,7 +541,8 @@ describe('GcJob', () => {
 
     function buildJob(deps: Deps): GcJob {
       const config = {
-        get: (key: string) => (key === 'STORIX_GC_MAX_ROWS_PER_STAGE' ? deps.budget : '3600'),
+        get: (key: string) =>
+          deps.config?.[key] ?? (key === 'STORIX_GC_MAX_ROWS_PER_STAGE' ? deps.budget : '3600'),
       } as unknown as ConfigService;
       return new GcJob(
         (deps.storage ?? new PagedStorage()).asBlobStorage(),
@@ -549,6 +556,7 @@ describe('GcJob', () => {
         deps.deletion as unknown as NamespaceDeletionCleanup,
         deps.cursors,
         deps.idempotency as unknown as IdempotencyReceiptRetentionRepository,
+        deps.purge as unknown as NamespacePurgeRepository,
       );
     }
 
@@ -634,6 +642,42 @@ describe('GcJob', () => {
       const limited = await buildJob({ idempotency: { pruneExpiredBatch: endless }, budget: '1000' }).run();
       expect(endless).toHaveBeenCalledTimes(2);
       expect(limited.budgetExhaustedStages).toEqual(['idempotency-receipt-prune']);
+    });
+
+    it('삭제 완료 namespace 물리 삭제는 보존 기간으로 cursor를 이어 합산하고 예산이 소진되면 cursor를 저장한다', async () => {
+      const cursor = { completedAt: '2026-01-01 00:00:00+00', namespaceId: 'ns-1' };
+      const purgeNext = jest
+        .fn<(days: number, after: unknown, limit: number) => Promise<unknown>>()
+        .mockResolvedValueOnce({ purged: 98, skipped: 2, examined: 100, next: cursor })
+        .mockResolvedValueOnce({ purged: 3, skipped: 0, examined: 3, next: null });
+      const done = await buildJob({
+        purge: { purgeNext },
+        config: { STORIX_NAMESPACE_DELETED_RETENTION_DAYS: '45' },
+      }).run();
+      expect(done.purgedNamespaces).toBe(101);
+      expect(purgeNext.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+        [45, null],
+        [45, cursor],
+      ]);
+
+      const memory = memoryCursors();
+      const endless = jest
+        .fn<(days: number, after: unknown, limit: number) => Promise<unknown>>()
+        .mockResolvedValue({ purged: 0, skipped: 100, examined: 100, next: cursor });
+      const limited = await buildJob({
+        purge: { purgeNext: endless },
+        budget: '100',
+        cursors: memory.repository,
+      }).run();
+      expect(limited.budgetExhaustedStages).toEqual(['deleted-namespace-purge']);
+      expect(JSON.parse(memory.stored.get('deleted-namespace-purge')!)).toEqual(cursor);
+    });
+
+    it('보존 기간 env가 없으면 30일이고 잘못된 값은 시작을 거부한다', () => {
+      expect(resolveNamespaceDeletedRetentionDays(undefined)).toBe(30);
+      expect(resolveNamespaceDeletedRetentionDays('7')).toBe(7);
+      for (const invalid of ['', '0', '-1', '1.5', '1e2', ' 2', '9007199254740992'])
+        expect(() => resolveNamespaceDeletedRetentionDays(invalid)).toThrow();
     });
 
     it('만료 파일 삭제는 cursor를 이어 합산하고 예산이 소진되면 cursor를 저장한다', async () => {

@@ -16,6 +16,11 @@ import {
 } from '../persistence/vfs-change-feed-retention.repository.js';
 import { GcCursorRepository } from '../persistence/gc-cursor.repository.js';
 import {
+  type NamespacePurgeCursor,
+  NamespacePurgeRepository,
+  resolveNamespaceDeletedRetentionDays,
+} from '../persistence/namespace-purge.repository.js';
+import {
   IDEMPOTENCY_RECEIPT_RETENTION_DAYS,
   IdempotencyReceiptRetentionRepository,
 } from '../persistence/idempotency-receipt-retention.repository.js';
@@ -49,6 +54,9 @@ export interface GcResult {
 
   /** 보존 기간을 넘겨 지운 namespace 생성·관리 receipt(`idempotency_key`) 수다. */
   readonly prunedIdempotencyReceipts: number;
+
+  /** 보존 기간이 지나 행을 물리 삭제한 삭제 완료 namespace 수다. */
+  readonly purgedNamespaces: number;
   readonly expiredUploadSessions: number;
   readonly recoveredUploadSessions: number;
   readonly deletedStagingObjects: number;
@@ -69,6 +77,7 @@ export class GcJob {
   private readonly gracePeriodSeconds: number;
   private readonly changeRetentionDays: number;
   private readonly stageBudgetLimit: number;
+  private readonly namespaceDeletedRetentionDays: number;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
@@ -82,11 +91,15 @@ export class GcJob {
     @Optional() private readonly namespaceDeletion?: NamespaceDeletionCleanup,
     @Optional() private readonly gcCursors?: GcCursorRepository,
     @Optional() private readonly idempotencyReceipts?: IdempotencyReceiptRetentionRepository,
+    @Optional() private readonly namespacePurge?: NamespacePurgeRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
     this.stageBudgetLimit = parsePositiveInt(
       config.get<string>('STORIX_GC_MAX_ROWS_PER_STAGE'),
       DEFAULT_GC_STAGE_BUDGET,
+    );
+    this.namespaceDeletedRetentionDays = resolveNamespaceDeletedRetentionDays(
+      config.get<string>('STORIX_NAMESPACE_DELETED_RETENTION_DAYS'),
     );
     this.changeRetentionDays = resolveChangeFeedRetentionDays(
       config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'),
@@ -112,6 +125,7 @@ export class GcJob {
     const settled = await this.visitNamespaceDeletions('namespace-deletion-settle', exhausted, (after) =>
       this.namespaceDeletion!.settle(cutoff, now, after, NAMESPACE_DELETION_PAGE_SIZE),
     );
+    const purgedNamespaces = await this.purgeDeletedNamespaces(exhausted);
     const prunedMutationReceipts = await this.pruneReceipts(exhausted);
     const prunedIdempotencyReceipts = await this.pruneIdempotencyReceipts(exhausted);
     const prunedUploadSessions = await this.pruneTerminalSessions(now, exhausted);
@@ -129,6 +143,7 @@ export class GcJob {
       deletedOrphanBlobs,
       prunedMutationReceipts,
       prunedIdempotencyReceipts,
+      purgedNamespaces,
       expiredUploadSessions,
       recoveredUploadSessions,
       deletedStagingObjects,
@@ -336,6 +351,37 @@ export class GcJob {
       return { done: count < CLEANUP_BATCH_SIZE, examined: count };
     });
     return pruned;
+  }
+
+  // 삭제가 끝나고 보존 기간이 지난 namespace 행을 물리 삭제한다(ADR-0035). 건너뛴 후보는 위치가 전진해 다시 읽지 않는다.
+  private async purgeDeletedNamespaces(exhausted: string[]): Promise<number> {
+    const purge = this.namespacePurge;
+    if (!purge) return 0;
+    let purged = 0;
+    await runCursorStage<NamespacePurgeCursor>(
+      this.stageContext,
+      'deleted-namespace-purge',
+      exhausted,
+      (raw) => {
+        const value = raw as Partial<NamespacePurgeCursor> | null;
+        return value !== null &&
+          typeof value === 'object' &&
+          typeof value.completedAt === 'string' &&
+          typeof value.namespaceId === 'string'
+          ? { completedAt: value.completedAt, namespaceId: value.namespaceId }
+          : null;
+      },
+      async (after) => {
+        const page = await purge.purgeNext(
+          this.namespaceDeletedRetentionDays,
+          after,
+          NAMESPACE_DELETION_PAGE_SIZE,
+        );
+        purged += page.purged;
+        return { next: page.next, examined: page.examined };
+      },
+    );
+    return purged;
   }
 
   private async pruneIdempotencyReceipts(exhausted: string[]): Promise<number> {

@@ -10,6 +10,7 @@
 
 ### Added
 
+- `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 `30`): 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간이다. 완료 시점부터 이 기간이 지나면 namespace·삭제 operation·삭제 receipt 행을 지운다(GC 결과 `purgedNamespaces`). 이후 `GET /api/v2/namespaces/{id}`·삭제 상태 조회·같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다(보존 기간 안에서는 `DELETED` 상태 응답과 최초 202 재생). 물리 삭제는 되돌릴 수 없고 복구에는 삭제 전 백업이 필요하다. 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)에 적은 namespace가 물리 삭제되면 시작이 거부되므로 삭제한 namespace는 설정에서 지운다. migration `AddNamespaceDeletionCompletedIndex1791700000015`(인덱스만 추가)가 필요하다. 결정은 api ADR-0035다.
 - `GET /api/v2/namespaces`의 page 모드: `limit`(기본 100·최대 1000)·`cursor`를 주면 `{ items, nextCursor }`를 `(name, id)` 순서의 keyset으로 반환한다. 잘못된 cursor는 400 `VFS_INVALID_CURSOR`다. 100만 namespace에서 첫 page가 9ms, 전체 순회(page 1000개)가 11.5s·API RSS 416MiB다. 이전 계약의 전체 배열은 100만 개에서 응답 364MiB·9.8s·RSS 2.6GiB였다.
 - capability 설정 파일의 선택 키 `defaultEnabledCapabilities`: `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정 이후 만든 namespace 포함)에 켤 capability 목록이다. 전역 허용이 최종 상한이고 namespace 항목이 있으면 그 값이 기본 목록을 대신한다(빈 목록은 비활성). 키가 없으면 이전 동작과 같다. 회원마다 namespace를 만드는 배포가 namespace를 설정에 나열하거나 재시작하지 않아도 된다.
 - `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 `200000`): GC가 한 실행에서 단계마다 처리하는 행 수 예산이다. 소진된 단계는 재개 위치를 `gc_cursor` 테이블에 저장하고 다음 실행이 이어간다. 대상 단계는 change feed 보존 정리, orphan object·blob 회수, 만료 session·staging 정리, 파일 만료 삭제, namespace 삭제 순회, receipt·휴지통 prune이다. GC 결과 JSON에 예산이 소진된 단계를 알리는 `budgetExhaustedStages`가 추가됐다.

@@ -37,6 +37,26 @@ describe('Migration: InitSchema', () => {
     await container.stop();
   });
 
+  // namespace_deletion 테이블을 지웠다 되살리는 아래 테스트보다 먼저 실행해야 이 인덱스가 남아 있다.
+  it('삭제 완료 namespace 보존 인덱스를 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      const names = async () =>
+        (await runner.getTable('namespace_deletion'))!.indices.map((index) => index.name);
+      expect(await names()).toContain('idx_namespace_deletion_completed');
+      const Migration = ALL_MIGRATIONS.find(
+        (migration) => migration.name === 'AddNamespaceDeletionCompletedIndex1791700000015',
+      )!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await names()).not.toContain('idx_namespace_deletion_completed');
+      await migration.up(runner);
+      expect(await names()).toContain('idx_namespace_deletion_completed');
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('namespace 삭제 테이블을 만들고 down에서 제거한다', async () => {
     const runner = dataSource.createQueryRunner();
     try {

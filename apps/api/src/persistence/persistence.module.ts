@@ -37,6 +37,7 @@ import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
 import { VfsChangeFeedRetentionRepository } from './vfs-change-feed-retention.repository.js';
 import { GcCursorRepository } from './gc-cursor.repository.js';
 import { IdempotencyReceiptRetentionRepository } from './idempotency-receipt-retention.repository.js';
+import { NamespacePurgeRepository } from './namespace-purge.repository.js';
 import { VfsTrashRepository } from './vfs-trash.repository.js';
 import { VfsTrashRetentionRepository } from './vfs-trash-retention.repository.js';
 import { VfsFileExpiryRepository } from './vfs-file-expiry.repository.js';
@@ -133,6 +134,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsChangeFeedRetentionRepository,
     GcCursorRepository,
     IdempotencyReceiptRetentionRepository,
+    NamespacePurgeRepository,
     SqliteCaseSensitiveLikeInitializer,
   ],
   exports: [
@@ -155,6 +157,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     VfsChangeFeedRetentionRepository,
     GcCursorRepository,
     IdempotencyReceiptRetentionRepository,
+    NamespacePurgeRepository,
   ],
 })
 export class PersistenceModule {}

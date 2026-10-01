@@ -233,11 +233,23 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 
 - live·snapshot·trash 데이터와 upload session이 없다.
 - Blob row로 추적하던 object와 과금 중 staging의 정리를 확인했다.
-- 삭제 상태·receipt·namespace tombstone·생성 receipt·audit log는 남는다.
+- 삭제 상태·receipt·namespace tombstone·생성 receipt·audit log는 남는다. tombstone·삭제 상태·삭제 receipt는 보존 기간 뒤 물리 삭제한다(아래 "보존과 물리 삭제").
 - DB 반영 전 업로드한 metadata 없는 object와 늦게 끝난 raw PUT·finalize PUT은 완료 판정에서 제외한다.
 - metadata 없는 object는 `collectOrphanObjects`가 storage listing과 grace를 거쳐 회수한다.
 - 반영 실패 시 raw object를 즉시 지우지 않는다. 커밋 여부가 불명확한 실패에서 참조 중 object를 지우는 것을 피한다.
 - backup·object versioning의 과거 버전·외부 cache의 삭제를 뜻하지 않는다.
+
+## 보존과 물리 삭제
+
+- `DELETED`로 끝난 namespace의 행은 영구히 두지 않는다. `namespace_deletion.completed_at`부터 `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 30일)가 지나면 GC 단계 `deleted-namespace-purge`가 물리 삭제한다. 결정은 api ADR-0035다.
+- 후보는 `phase = 'COMPLETED'`이고 namespace `status = 'DELETED'`인 행이다. DELETING·보류(`blockedReason`)·정산 미확정 operation은 후보가 아니다. 후보 조회는 `idx_namespace_deletion_completed`로 한다.
+- namespace마다 한 트랜잭션으로 `namespace_deletion_receipt` → `vfs_upload_usage`(0 값) → `namespace_deletion` → `namespace` 행을 지운다. 남은 참조 행이 있으면 FK 위반으로 롤백하고 그 namespace를 건너뛴다. 건너뛴 후보는 같은 실행에서 다시 읽지 않는다.
+- 생성 receipt(`idempotency_key`)는 이 단계의 대상이 아니다. 자체 보존 기간(ADR-0034)을 따른다. `audit_log`는 건드리지 않는다.
+- 물리 삭제 뒤:
+  - `GET /api/v2/namespaces/{id}`는 404다. 보존 기간 안에서는 `status: DELETED`를 반환한다.
+  - 삭제 상태 조회와 같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다. 보존 기간 안에서는 최초 202 재생이다.
+  - 같은 이름의 namespace 생성은 접수 커밋부터 가능하다. 이 점은 바뀌지 않는다.
+- 운영 주의: `STORIX_VFS_CAPABILITIES_CONFIG_PATH`에 namespace UUID를 적었다면 그 namespace가 물리 삭제된 뒤의 시작은 `unknown namespace ID` 오류로 거부된다. 삭제한 namespace는 설정에서 지운다.
 
 ## 배포와 복원
 
@@ -246,7 +258,7 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 롤백: 삭제 접수 뒤 ACTIVE 복귀를 지원하지 않는다. 데이터 제거 뒤에는 삭제 접수 이전 백업의 복원이 필요하다.
 ```
 
-- 상태·receipt migration은 additive다.
+- 상태·receipt migration은 additive다. 물리 삭제는 되돌릴 수 없으며 복구에는 삭제 전 백업이 필요하다.
 - 구버전 API는 데이터 경로의 ACTIVE 검사를 수행하지 않는다.
 - 기존 single-instance 배포의 API·GC 버전을 함께 교체한다. 버전 혼합 중에는 삭제를 접수하지 않는다.
 - 이미 제거된 데이터는 이미지 롤백으로 복원되지 않는다.
