@@ -41,6 +41,36 @@ describe('마이그레이션 체인 (SQLite)', () => {
     await dataSource.destroy();
   });
 
+  it('namespace 삭제 테이블을 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      expect(await runner.hasTable('namespace_deletion')).toBe(true);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(true);
+      expect((await runner.getTable('namespace_deletion'))!.columns.map((column) => column.name)).toContain(
+        'updated_at',
+      );
+      expect((await runner.getTable('namespace_deletion'))!.indices.map((index) => index.name)).toContain(
+        'idx_namespace_deletion_open',
+      );
+      expect(await runner.query('PRAGMA table_info(namespace_deletion_receipt)')).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'response_body', type: 'jsonb' })]),
+      );
+
+      const Migration = ALL_MIGRATIONS.find(
+        (migration) => migration.name === 'AddNamespaceDeletion1791700000011',
+      )!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await runner.hasTable('namespace_deletion')).toBe(false);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(false);
+      await migration.up(runner);
+      expect(await runner.hasTable('namespace_deletion')).toBe(true);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(true);
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
     const namespace = await dataSource
       .getRepository(NamespaceEntity)
@@ -265,7 +295,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
     ).toEqual([]);
   });
 
-  it('20개 마이그레이션이 전부 적용된다', async () => {
+  it('전체 마이그레이션이 순서대로 적용된다', async () => {
     const applied = await dataSource.query('SELECT name FROM migrations ORDER BY id');
     expect(applied.map((row: { name: string }) => row.name)).toEqual([
       'InitSchema1788637362016',
@@ -289,6 +319,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddAuditLogTrashId1791700000008',
       'AddNamespaceTrashEnabled1791700000009',
       'AddFileExpiry1791700000010',
+      'AddNamespaceDeletion1791700000011',
     ]);
   });
 

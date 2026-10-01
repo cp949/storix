@@ -1,3 +1,6 @@
+import { NamespaceDeletionRepository } from './namespace-deletion.repository.js';
+import { NamespaceDeletionEntity } from './entities/namespace-deletion.entity.js';
+import { NamespaceDeletionReceiptEntity } from './entities/namespace-deletion-receipt.entity.js';
 import { VfsSnapshotRepository } from './vfs-snapshot.repository.js';
 import { Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -37,6 +40,8 @@ import { VfsFileExpiryRepository } from './vfs-file-expiry.repository.js';
 
 const ENTITIES = [
   NamespaceEntity,
+  NamespaceDeletionEntity,
+  NamespaceDeletionReceiptEntity,
   VfsNodeEntity,
   BlobEntity,
   IdempotencyKeyEntity,
@@ -108,6 +113,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
   ],
   providers: [
     NamespaceProvisioningRepository,
+    NamespaceDeletionRepository,
     NamespaceCreationReceiptWriter,
     VfsNodeRepository,
     BlobRepository,
@@ -126,6 +132,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
   exports: [
     TypeOrmModule,
     NamespaceProvisioningRepository,
+    NamespaceDeletionRepository,
     NamespaceCreationReceiptWriter,
     VfsNodeRepository,
     BlobRepository,

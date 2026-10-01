@@ -37,6 +37,38 @@ describe('Migration: InitSchema', () => {
     await container.stop();
   });
 
+  it('namespace 삭제 테이블을 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      expect(await runner.hasTable('namespace_deletion')).toBe(true);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(true);
+      expect((await runner.getTable('namespace_deletion'))!.columns.map((column) => column.name)).toContain(
+        'updated_at',
+      );
+      expect((await runner.getTable('namespace_deletion'))!.indices.map((index) => index.name)).toContain(
+        'idx_namespace_deletion_open',
+      );
+      expect(
+        await runner.query(
+          "SELECT data_type FROM information_schema.columns WHERE table_name = 'namespace_deletion_receipt' AND column_name = 'response_body'",
+        ),
+      ).toEqual([{ data_type: 'jsonb' }]);
+
+      const Migration = ALL_MIGRATIONS.find(
+        (migration) => migration.name === 'AddNamespaceDeletion1791700000011',
+      )!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await runner.hasTable('namespace_deletion')).toBe(false);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(false);
+      await migration.up(runner);
+      expect(await runner.hasTable('namespace_deletion')).toBe(true);
+      expect(await runner.hasTable('namespace_deletion_receipt')).toBe(true);
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
     const namespace = await dataSource
       .getRepository(NamespaceEntity)

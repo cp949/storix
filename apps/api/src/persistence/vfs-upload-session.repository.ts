@@ -87,6 +87,11 @@ export class VfsUploadSessionRepository {
     return [global, await readLocked(namespaceKey)];
   }
 
+  /** root 잠금을 가진 삭제 접수가 기존 global → namespace usage 잠금을 공유한다. */
+  async lockUsageForNamespace(manager: EntityManager, namespaceId: string): Promise<void> {
+    await this.lockUsage(manager, namespaceId);
+  }
+
   private async changeUsage(
     manager: EntityManager,
     rows: readonly UsageCounters[],

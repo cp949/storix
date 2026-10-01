@@ -420,6 +420,106 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /api/v2/admin/namespaces/{namespaceId}/delete:
+    post:
+      operationId: acceptNamespaceDeletion
+      summary: Namespace 삭제 접수
+      description: |
+        관리자 키와 body 없는 요청이 필요하다. 비어 있지 않은 Idempotency-Key는 UTF-8 255 byte 이하다.
+        같은 namespace UUID·키는 최초 status와 body를 재생한다. 최초 202는 정리 완료 뒤에도 202다.
+        새 키는 DELETING에서 202, DELETED에서 200을 반환한다. 이름은 접수 커밋부터 재사용할 수 있다.
+        GC가 삭제를 진행한다. 완료 시간의 상한과 이미 전달 중인 스트림의 즉시 중단은 보장하지 않는다.
+        잘못된 JSON과 parser 크기 초과 오류는 인증 전에 반환될 수 있다.
+      security:
+        - AdminApiKeyAuth: []
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 비어 있지 않은 문자열. UTF-8 255 byte 이하.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        '202':
+          description: 삭제 접수 또는 최초 202 재생
+          headers:
+            Location:
+              description: namespace 삭제 상태 조회 경로
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceDeletionAccepted' }
+        '200':
+          description: 완료된 삭제 operation에 새 키로 요청
+          headers:
+            Location:
+              description: namespace 삭제 상태 조회 경로
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceDeletionAccepted' }
+        '400':
+          description: 키 누락 `IDEMPOTENCY_KEY_REQUIRED`, 키 byte 초과·body 동반 `NAMESPACE_INVALID_DELETE_REQUEST`, JSON parser 오류 `BAD_REQUEST`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 잘못된 UUID 또는 없는 namespace (`NAMESPACE_NOT_FOUND`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '413':
+          description: JSON body parser 크기 상한 초과 (`BAD_REQUEST`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: 일시적인 DB 장애 (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /api/v2/admin/namespaces/{namespaceId}/deletion:
+    get:
+      operationId: getNamespaceDeletionStatus
+      summary: Namespace 삭제 상태 조회
+      description: 현재 namespace 상태와 영속 operation 단계를 반환한다. ACTIVE이고 삭제 요청이 없으면 404다.
+      security:
+        - AdminApiKeyAuth: []
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 현재 삭제 상태
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceDeletionStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 잘못된 UUID·없는 namespace `NAMESPACE_NOT_FOUND`, 삭제 요청이 없음 `NAMESPACE_DELETION_NOT_FOUND`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: 일시적인 DB 장애 (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v2/namespaces/{namespaceId}/fs/mutations:
     post:
       operationId: conditionalMutation
@@ -2937,6 +3037,27 @@ components:
           type: string
           pattern: '^r1\.'
           description: 충돌 시점 노드의 revision. 이후 노드가 바뀌어도 이 값은 고정된다.
+    NamespaceDeletionAccepted:
+      type: object
+      additionalProperties: false
+      required: [namespaceId, status]
+      properties:
+        namespaceId: { type: string, format: uuid }
+        status: { type: string, enum: [DELETING, DELETED] }
+    NamespaceDeletionStatus:
+      type: object
+      additionalProperties: false
+      required: [namespaceId, status, phase, requestedAt, completedAt, blockedReason]
+      properties:
+        namespaceId: { type: string, format: uuid }
+        status: { type: string, enum: [DELETING, DELETED] }
+        phase: { type: string, enum: [UPLOADS, METADATA, OBJECTS, COMPLETED] }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        blockedReason:
+          type: string
+          nullable: true
+          enum: [UPLOAD_SETTLEMENT_UNKNOWN, STORAGE_DELETE_FAILED, DATA_INCONSISTENT, null]
     Namespace:
       type: object
       required: [id, name, encryptionPolicy, accessPolicy, status, limits, quota, createdAt, updatedAt]

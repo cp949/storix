@@ -26,6 +26,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddAuditLogTrashId1791700000008',
       'AddNamespaceTrashEnabled1791700000009',
       'AddFileExpiry1791700000010',
+      'AddNamespaceDeletion1791700000011',
     ]);
   });
 });

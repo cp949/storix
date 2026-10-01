@@ -1,3 +1,5 @@
+import { NamespaceDeletionEntity } from './entities/namespace-deletion.entity.js';
+import { NamespaceDeletionReceiptEntity } from './entities/namespace-deletion-receipt.entity.js';
 import 'reflect-metadata';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { loadDbConfig } from './db-config.js';
@@ -19,6 +21,8 @@ import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 
 const entities = [
   NamespaceEntity,
+  NamespaceDeletionEntity,
+  NamespaceDeletionReceiptEntity,
   VfsNodeEntity,
   BlobEntity,
   IdempotencyKeyEntity,

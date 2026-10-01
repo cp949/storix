@@ -1,3 +1,4 @@
+import { NamespaceDeletionController } from '../../src/namespace/namespace-deletion.controller.js';
 import { VfsSnapshotController } from '../../src/vfs/vfs-snapshot.controller.js';
 import { VfsTrashController } from '../../src/vfs/vfs-trash.controller.js';
 import 'reflect-metadata';
@@ -94,6 +95,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
       ...controllerRoutes(NamespaceController),
       ...controllerRoutes(NamespaceQuotaController),
       ...controllerRoutes(NamespaceTrashPolicyController),
+      ...controllerRoutes(NamespaceDeletionController),
       ...controllerRoutes(FsController),
       ...controllerRoutes(ChangeFeedController),
       ...controllerRoutes(VfsSnapshotController),
@@ -103,6 +105,20 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     ].sort();
 
     expect(specRoutes().sort()).toEqual(codeRoutes);
+  });
+
+  it('namespace 삭제 접수와 상태 조회는 일시 DB 장애의 503을 공개한다', () => {
+    const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+    for (const [path, method] of [
+      ['/api/v2/admin/namespaces/{namespaceId}/delete', 'post'],
+      ['/api/v2/admin/namespaces/{namespaceId}/deletion', 'get'],
+    ]) {
+      const response = spec.paths[path][method].responses['503'];
+      expect(response).toMatchObject({
+        description: expect.stringContaining('STORAGE_UNAVAILABLE'),
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
+      });
+    }
   });
 
   it('namespace 휴지통 정책 변경 경로의 관리자 인증·body·응답 계약을 명시한다', () => {

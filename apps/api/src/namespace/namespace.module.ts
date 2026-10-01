@@ -1,3 +1,5 @@
+import { NamespaceDeletionController } from './namespace-deletion.controller.js';
+import { NamespaceDeletionService } from './namespace-deletion.service.js';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
@@ -13,13 +15,29 @@ import { NamespaceService } from './namespace.service.js';
 
 @Module({
   imports: [PersistenceModule, EncryptionModule, CapabilityModule],
-  controllers: [NamespaceController, NamespaceQuotaController, NamespaceTrashPolicyController],
-  providers: [NamespaceService, NamespaceQuotaService, NamespaceTrashPolicyService, AdminApiKeyGuard],
+  controllers: [
+    NamespaceDeletionController,
+    NamespaceController,
+    NamespaceQuotaController,
+    NamespaceTrashPolicyController,
+  ],
+  providers: [
+    NamespaceDeletionService,
+    NamespaceService,
+    NamespaceQuotaService,
+    NamespaceTrashPolicyService,
+    AdminApiKeyGuard,
+  ],
 })
 export class NamespaceModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(RequestContextMiddleware)
-      .forRoutes(NamespaceController, NamespaceQuotaController, NamespaceTrashPolicyController);
+      .forRoutes(
+        NamespaceDeletionController,
+        NamespaceController,
+        NamespaceQuotaController,
+        NamespaceTrashPolicyController,
+      );
   }
 }

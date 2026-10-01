@@ -1,3 +1,4 @@
+import { AddNamespaceDeletion1791700000011 } from './1791700000011-AddNamespaceDeletion.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -51,4 +52,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddAuditLogTrashId1791700000008,
   AddNamespaceTrashEnabled1791700000009,
   AddFileExpiry1791700000010,
+  AddNamespaceDeletion1791700000011,
 ];

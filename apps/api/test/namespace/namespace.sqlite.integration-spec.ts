@@ -1,3 +1,4 @@
+import { registerNamespaceDeletionHttpTests } from './namespace-deletion.http.shared-tests.js';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -52,6 +53,19 @@ describe('Namespace HTTP contract (SQLite)', () => {
   }
 
   registerNamespaceTrashPolicyHttpTests({
+    app: () => app,
+    adminKey: 'namespace-admin-secret',
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
+        .expect(201);
+      return response.body.id as string;
+    },
+  });
+
+  registerNamespaceDeletionHttpTests({
     app: () => app,
     adminKey: 'namespace-admin-secret',
     createNamespace: async (name, key) => {

@@ -100,3 +100,19 @@ export class NamespaceQuotaLimitExceedsGlobalError extends DomainError {
     super('namespace quota가 Storix 전체 논리 바이트 상한을 초과함');
   }
 }
+
+export class NamespaceInvalidDeleteRequestError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_DELETE_REQUEST';
+  readonly status = 400;
+  constructor() {
+    super('namespace 삭제 요청은 body 없이 255 byte 이하 Idempotency-Key를 보내야 함');
+  }
+}
+
+export class NamespaceDeletionNotFoundError extends DomainError {
+  readonly code = 'NAMESPACE_DELETION_NOT_FOUND';
+  readonly status = 404;
+  constructor(readonly namespaceId: string) {
+    super(`삭제 작업이 없는 namespace: ${namespaceId}`);
+  }
+}
