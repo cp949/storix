@@ -36,11 +36,15 @@ export interface ContractContextInput {
 }
 
 /** API로 namespace를 만든다. 이름에 무작위 접미사를 붙여 반복 실행에서 충돌하지 않는다. */
-export async function createApiNamespace(client: ApiClient, contractId: string): Promise<NamespaceInfo> {
+export async function createApiNamespace(
+  client: ApiClient,
+  contractId: string,
+  accessPolicy?: 'PRIVATE' | 'PUBLIC',
+): Promise<NamespaceInfo> {
   const name = `${contractId}-${randomBytes(3).toString('hex')}`;
   const response = await client.request('POST', '/api/v2/namespaces', {
     headers: { 'Idempotency-Key': randomUUID(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(accessPolicy === undefined ? { name } : { name, accessPolicy }),
   });
   if (response.status !== 201) {
     throw new Error(`namespace 생성 실패(${response.status}): ${response.text()}`);
@@ -72,16 +76,24 @@ export function createContractContext(
       start: () => control(() => input.blobStorage.start()),
       deleteAllObjects: () => control(() => input.blobStorage.deleteAllObjects()),
     },
-    async createNamespace(options?: { readonly withoutCapabilities?: boolean }): Promise<NamespaceInfo> {
+    async createNamespace(options?: {
+      readonly withoutCapabilities?: boolean;
+      readonly accessPolicy?: 'PRIVATE' | 'PUBLIC';
+    }): Promise<NamespaceInfo> {
       signal.throwIfAborted();
-      if (options?.withoutCapabilities !== true && input.provisioned !== undefined) {
+      // 사전 준비 namespace는 모두 PRIVATE라 accessPolicy를 지정하면 풀을 쓰지 않고 API로 만든다.
+      if (
+        options?.withoutCapabilities !== true &&
+        options?.accessPolicy === undefined &&
+        input.provisioned !== undefined
+      ) {
         const next = input.provisioned.shift();
         if (next === undefined) {
           throw new Error('사전 준비한 namespace를 모두 썼다. 프로필 준비 수보다 많이 요청했다.');
         }
         return next;
       }
-      return createApiNamespace(client, input.contractId);
+      return createApiNamespace(client, input.contractId, options?.accessPolicy);
     },
   };
   return context;

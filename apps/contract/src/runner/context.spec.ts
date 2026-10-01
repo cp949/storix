@@ -43,6 +43,49 @@ describe('계약 컨텍스트의 사전 준비 namespace 풀', () => {
   });
 });
 
+describe('계약 컨텍스트의 namespace 접근 정책', () => {
+  const input = {
+    baseUrl: 'http://example.test',
+    apiKey: 'key',
+    adminKey: 'admin',
+    server,
+    blobStorage,
+    contractId: 'sample',
+  };
+
+  it('accessPolicy를 주면 사전 준비 풀을 쓰지 않고 API 요청 본문에 실어 만든다', async () => {
+    const bodies: unknown[] = [];
+    const ctx = createContractContext(
+      { ...input, provisioned: [{ id: 'id-1', name: 'one' }] },
+      {
+        async fetch(_url, options) {
+          bodies.push(JSON.parse(String(options?.body)));
+          return new Response(JSON.stringify({ id: 'public-id', name: 'sample-x' }), { status: 201 });
+        },
+      },
+    );
+    assert.deepEqual(await ctx.createNamespace({ accessPolicy: 'PUBLIC' }), {
+      id: 'public-id',
+      name: 'sample-x',
+    });
+    assert.equal((bodies[0] as { accessPolicy: string }).accessPolicy, 'PUBLIC');
+    // 풀의 namespace는 소비되지 않고 그대로 남는다.
+    assert.deepEqual(await ctx.createNamespace(), { id: 'id-1', name: 'one' });
+  });
+
+  it('accessPolicy를 주지 않으면 요청 본문에 필드를 넣지 않는다', async () => {
+    const bodies: unknown[] = [];
+    const ctx = createContractContext(input, {
+      async fetch(_url, options) {
+        bodies.push(JSON.parse(String(options?.body)));
+        return new Response(JSON.stringify({ id: 'private-id', name: 'sample-y' }), { status: 201 });
+      },
+    });
+    await ctx.createNamespace();
+    assert.equal('accessPolicy' in (bodies[0] as object), false);
+  });
+});
+
 describe('계약 컨텍스트의 관리자 key', () => {
   it('서비스 key와 별개로 관리자 key를 노출한다', () => {
     const ctx = createContractContext({

@@ -23,7 +23,7 @@
 - 계약 파일은 `default export`로 계약을 내보낸다. 파일을 추가하면 실행 대상이 된다.
 - `run(ctx)`는 `node:assert/strict`로 검증하고 위반 시 throw한다.
 - `ctx.signal`은 CLI의 실행 취소 신호다. `ctx.client`는 HTTP 요청과 응답 본문 대기에 같은 신호를 전달한다.
-- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다. 프로필이 capability를 허용하면 `createNamespace()`는 그 capability가 켜진 namespace를 주고, `withoutCapabilities: true`를 주면 허용되지 않은 새 namespace를 API로 만든다. `server.restart()`는 같은 포트·env·DB로 서버를 다시 띄우며, 재시작 뒤 지속성·멱등성 재생을 검증하는 계약만 쓴다. `blobStorage`는 VersityGW 컨테이너를 멈추거나 되살리고 버킷 객체를 지우며 저장 장애 계약(`contracts/storage/`)만 쓴다. `deleteAllObjects()`는 버킷 전체를 지우므로 계약은 자기 namespace의 파일만 다루고 앞 계약이 만든 파일에 기대지 않는다. 컨테이너는 고정 호스트 포트로 띄운다(`docker stop` 뒤 `start`에서 임의 포트는 바뀐다). 러너는 계약이 끝날 때마다 멈춘 저장소를 되살리므로 실패한 계약이 뒤 계약을 막지 않는다.
+- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다. 프로필이 capability를 허용하면 `createNamespace()`는 그 capability가 켜진 namespace를 주고, `withoutCapabilities: true`를 주면 허용되지 않은 새 namespace를 API로 만든다. `accessPolicy: 'PUBLIC'`을 주면 사전 준비 풀을 쓰지 않고 공개 조회가 열린 namespace를 API로 만든다. `server.restart()`는 같은 포트·env·DB로 서버를 다시 띄우며, 재시작 뒤 지속성·멱등성 재생을 검증하는 계약만 쓴다. `blobStorage`는 VersityGW 컨테이너를 멈추거나 되살리고 버킷 객체를 지우며 저장 장애 계약(`contracts/storage/`)만 쓴다. `deleteAllObjects()`는 버킷 전체를 지우므로 계약은 자기 namespace의 파일만 다루고 앞 계약이 만든 파일에 기대지 않는다. 컨테이너는 고정 호스트 포트로 띄운다(`docker stop` 뒤 `start`에서 임의 포트는 바뀐다). 러너는 계약이 끝날 때마다 멈춘 저장소를 되살리므로 실패한 계약이 뒤 계약을 막지 않는다.
 
 ## 작성 규약
 

@@ -23,7 +23,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-001 호출 서버 인증
 
 - [x] **진행 상태:** 검증 완료
-- **판정 근거:** 전역 API 키 가드와 인증 단위 테스트에서 유효·누락·오류 자격을 확인했다. SQLite 계약 검증(`pnpm contract`)에서 `api-key-required`(누락·오류·비Bearer 자격의 401, 존재 여부·본문 미노출, 인증 없는 변경 거부)가 통과했다.
+- **판정 근거:** 전역 API 키 가드와 인증 단위 테스트에서 유효·누락·오류 자격을 확인했다. SQLite 계약 검증(`pnpm contract`)에서 `api-key-required`(누락·오류·비Bearer 자격의 401, 존재 여부·본문 미노출, 인증 없는 변경 거부)가 통과했다. `public-namespace-boundary`(PUBLIC namespace에서도 인증 경로 조회·변경은 자격이 없으면 401 `UNAUTHORIZED`이고 변경이 적용되지 않으며, 공개 경로는 읽기 두 route뿐이고 목록·메타데이터·쓰기 route는 404)가 공개 경로의 인증 예외 범위를 확인했다.
 - Storix는 보호 대상 읽기·쓰기 요청에서 호출 서버의 자격을 검증하고, 자격이 없거나 유효하지 않으면 파일 존재 여부나 본문을 노출하지 않고 거부해야 한다.
 - 최종 사용자 인증 결과를 Storix가 직접 판단할 필요는 없다. 호출자가 보낸 최종 사용자 식별값은 감사 정보일 수 있으나, 그 값만으로 권한을 부여해서는 안 된다.
 - **수용 조건:** 같은 요청에 대해 유효한 서비스 자격은 허용되고, 누락·오류 자격은 거부된다.
@@ -31,14 +31,14 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-002 namespace 격리
 
 - [x] **진행 상태:** 검증 완료
-- **판정 근거:** 파일·스냅샷 조회와 변경이 namespace로 제한되며, 다른 namespace 스냅샷 복원 거부 사례를 확인했다. SQLite 계약 검증에서 `namespace-isolation`(같은 경로의 독립 파일, 다른 namespace의 revision·snapshot ID로 조회·복원 거부, 삭제의 격리)이 통과했다.
+- **판정 근거:** 파일·스냅샷 조회와 변경이 namespace로 제한되며, 다른 namespace 스냅샷 복원 거부 사례를 확인했다. SQLite 계약 검증에서 `namespace-isolation`(같은 경로의 독립 파일, 다른 namespace의 revision·snapshot ID로 조회·복원 거부, 삭제의 격리)이 통과했다. `public-namespace-boundary`는 PRIVATE namespace·없는 namespace·UUID가 아닌 ID의 공개 조회가 같은 404 `NAMESPACE_NOT_FOUND`(상태·본문 모양 동일)라 존재 여부를 알 수 없음을 확인했다.
 - 모든 파일·스냅샷 요청은 namespace를 명시해야 한다. 파일 ID, 경로, 스냅샷 ID가 같거나 비슷해도 다른 namespace의 자원을 조회·변경할 수 없어야 한다.
 - **수용 조건:** namespace A에서 얻은 식별자로 namespace B의 파일·스냅샷을 읽거나 변경할 수 없다.
 
 ### RQ-003 경로 계약
 
 - [x] **진행 상태:** 로컬 코드·통합 검증 완료
-- **판정 근거:** `/api/v2`의 파일·snapshot 경로에 공통 절대경로·NFC·허용 문자·UTF-8 이름 255바이트·정규 절대경로 4096바이트 상한을 적용했다. TREE 내부 상대경로와 이동·복사 결과·하위 경로에도 같은 한도를 적용하며, 경로 오류는 400 `VFS_INVALID_PATH`로 거부한다. API 단위 테스트 76 suites/674 tests, 인증 파일 HTTP L1 1 suite/139 tests, 공개 파일 HTTP L1 1 suite/11 tests, PostgreSQL L2 27 suites/410 tests, SQLite L2 12 suites/213 tests가 현재 HEAD에서 통과했다. `pnpm typecheck`, `pnpm lint`, `pnpm build`도 exit 0이다. 실제 사용처 배포·전용 인스턴스 초기화·데이터 복구 검증은 수행하지 않았다. SQLite 계약 검증에서 `path-normalization`(중복 구분자·`.`·끝 `/` 정규화, 대소문자·NFC 이름 보존)과 `path-rejection`(`..`·상대경로·백슬래시·제어·Bidi 문자·NFD·이름 255바이트 초과·경로 4096바이트 초과의 400 `VFS_INVALID_PATH`와 트리 무변경, 부모 자동 생성 없음)이 통과했다.
+- **판정 근거:** `/api/v2`의 파일·snapshot 경로에 공통 절대경로·NFC·허용 문자·UTF-8 이름 255바이트·정규 절대경로 4096바이트 상한을 적용했다. TREE 내부 상대경로와 이동·복사 결과·하위 경로에도 같은 한도를 적용하며, 경로 오류는 400 `VFS_INVALID_PATH`로 거부한다. API 단위 테스트 76 suites/674 tests, 인증 파일 HTTP L1 1 suite/139 tests, 공개 파일 HTTP L1 1 suite/11 tests, PostgreSQL L2 27 suites/410 tests, SQLite L2 12 suites/213 tests가 현재 HEAD에서 통과했다. `pnpm typecheck`, `pnpm lint`, `pnpm build`도 exit 0이다. 실제 사용처 배포·전용 인스턴스 초기화·데이터 복구 검증은 수행하지 않았다. SQLite 계약 검증에서 `path-normalization`(중복 구분자·`.`·끝 `/` 정규화, 대소문자·NFC 이름 보존)과 `path-rejection`(`..`·상대경로·백슬래시·제어·Bidi 문자·NFD·이름 255바이트 초과·경로 4096바이트 초과의 400 `VFS_INVALID_PATH`와 트리 무변경, 부모 자동 생성 없음)이 통과했다. `public-namespace-read`는 공개 경로에도 같은 경로 계약(상위 이동·상대 경로·경로 누락은 400 `VFS_INVALID_PATH`)이 적용됨을 확인했다.
 - Storix는 경로의 절대·상대 여부, 구분자, 정규화, 허용 문자, 최대 길이, `..` 처리와 디렉터리 부모 생성 여부를 공개 계약으로 정의해야 한다. 같은 의미의 경로가 서로 다른 파일을 뜻하거나, 경로 해석으로 namespace 밖에 접근해서는 안 된다.
 - **수용 조건:** 정상 경로는 일관된 정규 경로로 식별되고, 허용하지 않는 경로는 저장 변경 없이 명시적으로 거부된다.
 
@@ -61,7 +61,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-006 전체 파일 조회
 
 - [x] **진행 상태:** 로컬 코드·통합 검증 완료
-- **판정 근거:** 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256`이 반환한 바이트와 같은 노드/Blob 상태를 식별한다. PostgreSQL `fs.integration-spec.ts` L1 141/141에서 저장·교체·재시작, stat 대조, 교체 경합을 확인했고, `encrypted-content.integration-spec.ts` L1 5/5에서 복호화 바이트의 해시를 확인했다. 최종 PostgreSQL L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다(전체 PostgreSQL L2의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과). Range 206에는 `X-Storix-File-Id`·`X-Storix-Revision`을 제공하며, 전체 파일의 `X-Storix-Sha256`은 제공하지 않는다. SQLite 계약 검증에서 `full-read-identity`(저장·교체 직후 헤더가 파일 ID·revision·SHA-256과 일치, 디렉터리 409와 부재 404 구분)가 통과했다. `restart-persistence`(재시작 전후로 바이트·`X-Storix-*` 헤더·stat이 같음)가 재시작 후 조회를 확인했다.
+- **판정 근거:** 인증된 전체 `GET /fs/content` 200의 `X-Storix-File-Id`·`X-Storix-Revision`·`X-Storix-Sha256`이 반환한 바이트와 같은 노드/Blob 상태를 식별한다. PostgreSQL `fs.integration-spec.ts` L1 141/141에서 저장·교체·재시작, stat 대조, 교체 경합을 확인했고, `encrypted-content.integration-spec.ts` L1 5/5에서 복호화 바이트의 해시를 확인했다. 최종 PostgreSQL L2는 관련 suite 통과, SQLite L2는 12 suites/213 tests 통과했다(전체 PostgreSQL L2의 기존 412 repository 기대값 실패는 수정 후 해당 spec 114/114 통과). Range 206에는 `X-Storix-File-Id`·`X-Storix-Revision`을 제공하며, 전체 파일의 `X-Storix-Sha256`은 제공하지 않는다. SQLite 계약 검증에서 `full-read-identity`(저장·교체 직후 헤더가 파일 ID·revision·SHA-256과 일치, 디렉터리 409와 부재 404 구분)가 통과했다. `restart-persistence`(재시작 전후로 바이트·`X-Storix-*` 헤더·stat이 같음)가 재시작 후 조회를 확인했다. `public-namespace-read`(PUBLIC namespace의 공개 경로 무인증 전체 조회·다운로드가 인증 경로와 같은 바이트, 교체 뒤 새 바이트·revision, 없는 파일 404 `VFS_NODE_NOT_FOUND`·디렉터리 409 `VFS_IS_DIRECTORY`)이 공개 경로 조회를 확인했다.
 - 호출자는 namespace와 경로로 현재 파일 전체를 읽을 수 있어야 한다. 조회 결과에는 반환한 바이트에 대응하는 파일 ID, revision, 콘텐츠 해시를 식별할 수단이 있어야 한다. 디렉터리와 파일 부재는 구분해야 한다.
 - **수용 조건:** 저장 직후와 Storix 재시작 후 조회한 바이트와 해당 revision·해시가 일관된다.
 
@@ -175,7 +175,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-021 Range 부분 콘텐츠 조회
 
 - [x] **진행 상태:** 구현 및 계약 검증 완료
-- **판정 근거:** 단일 Range의 시작-끝·열린 끝·suffix와 clipping 및 긴 suffix 처리, 잘못된 문법·복수·충족 불가 범위의 416은 DELTA-01 단위 2 suites/45 tests, PostgreSQL L1 2 suites/167 tests에서 확인했다. 인증·PUBLIC content/download의 206 bytes·길이·`Content-Range`·파일 ID/revision 및 파일 교체 경합, 암호화 파일과 FILE/TREE snapshot의 206 식별자는 DELTA-02 단위 4 suites/90 tests와 PostgreSQL L1 3 suites/174 tests에서 확인했다. 인증 PRIVATE 파일의 빈 파일 및 `start == size` 416 응답은 PostgreSQL `public-fs.integration-spec.ts`에서 `Content-Range`와 기존 오류 envelope를 확인했다. 다섯 GET operation의 OpenAPI 206/416 헤더, 기존 416 JSON error schema/code, 공통 Range 설명은 `route-coverage.spec.ts` 12/12와 `error-contract.spec.ts` 5/5로 확인했다. 최종 `pnpm test`는 API 88 suites/872 tests, demo1-was 15/73, demo1-web 7/39 통과했고 typecheck·lint·build가 모두 통과했다(lint는 기존 demo1-web 경고 4건, 오류 0건). PostgreSQL L2는 33 suites/495 tests, SQLite L2는 19 suites/287 tests 통과했다. 206은 전체 파일 `X-Storix-Sha256`을 제공하지 않는다. 배포·외부 소비자·운영 proxy/storage 검증은 수행하지 않았다. SQLite 계약 검증에서 `range-content`(시작-끝·열린 끝·suffix·끝을 넘는 범위의 206이 지정 바이트·`Content-Length`·`Content-Range`·파일 ID·revision과 일치하고, 잘못된 문법·복수 범위·충족 불가 범위는 416)가 통과했다. 계약은 snapshot content·공개 경로·`/fs/download`·암호화 파일의 Range를 다루지 않는다.
+- **판정 근거:** 단일 Range의 시작-끝·열린 끝·suffix와 clipping 및 긴 suffix 처리, 잘못된 문법·복수·충족 불가 범위의 416은 DELTA-01 단위 2 suites/45 tests, PostgreSQL L1 2 suites/167 tests에서 확인했다. 인증·PUBLIC content/download의 206 bytes·길이·`Content-Range`·파일 ID/revision 및 파일 교체 경합, 암호화 파일과 FILE/TREE snapshot의 206 식별자는 DELTA-02 단위 4 suites/90 tests와 PostgreSQL L1 3 suites/174 tests에서 확인했다. 인증 PRIVATE 파일의 빈 파일 및 `start == size` 416 응답은 PostgreSQL `public-fs.integration-spec.ts`에서 `Content-Range`와 기존 오류 envelope를 확인했다. 다섯 GET operation의 OpenAPI 206/416 헤더, 기존 416 JSON error schema/code, 공통 Range 설명은 `route-coverage.spec.ts` 12/12와 `error-contract.spec.ts` 5/5로 확인했다. 최종 `pnpm test`는 API 88 suites/872 tests, demo1-was 15/73, demo1-web 7/39 통과했고 typecheck·lint·build가 모두 통과했다(lint는 기존 demo1-web 경고 4건, 오류 0건). PostgreSQL L2는 33 suites/495 tests, SQLite L2는 19 suites/287 tests 통과했다. 206은 전체 파일 `X-Storix-Sha256`을 제공하지 않는다. 배포·외부 소비자·운영 proxy/storage 검증은 수행하지 않았다. SQLite 계약 검증에서 `range-content`(시작-끝·열린 끝·suffix·끝을 넘는 범위의 206이 지정 바이트·`Content-Length`·`Content-Range`·파일 ID·revision과 일치하고, 잘못된 문법·복수 범위·충족 불가 범위는 416)가 통과했다. `public-namespace-read`(PUBLIC namespace의 공개 content·download 두 경로가 무인증으로 시작-끝·열린 끝·suffix에 206 지정 구간·`Content-Range`와 인증 경로가 알리는 파일 ID·revision을, 충족 불가 범위에 416 `VFS_RANGE_NOT_SATISFIABLE`과 `bytes */<길이>`를 돌려줌)도 통과했다. 계약은 snapshot content·인증 `/fs/download`·암호화 파일의 Range를 다루지 않는다.
 - 호출자는 전체 파일을 받지 않고 byte range로 콘텐츠 일부를 조회할 수 있어야 한다. 부분 응답은 해당 바이트가 속한 안정 파일 ID와 revision을 식별할 수 있어야 한다. 전체 파일 SHA-256은 부분 응답의 검증값으로 사용하지 않는다.
 - **수용 조건:** 단일 byte range의 시작-끝, 열린 끝, suffix 요청은 지정 구간의 바이트와 길이, `Content-Range`를 일치시켜 반환한다. 범위를 처리할 수 없는 요청은 `416`으로 거부한다. 파일 `206`에는 파일 ID와 revision이 포함되며, 전체 SHA-256 헤더의 의미를 부분 바이트 해시로 바꾸지 않는다.
 - **관련 계약:** `GET /api/v2/namespaces/{namespaceId}/fs/content`, `/fs/download`, 공개 콘텐츠·다운로드 경로, snapshot 콘텐츠 경로의 `Range` / `206` / `416` 응답.
@@ -254,7 +254,7 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 ### RQ-030 namespace 관리자 삭제
 
 - [x] **진행 상태:** PostgreSQL·SQLite 로컬 구현·통합·공개 계약 검증 완료
-- **판정 근거:** 관리자 삭제 접수·상태 조회·접근 차단·영속 GC 정리를 구현했다. PostgreSQL L2 API는 38 suites/661 tests 중 37 suites/660 tests가 통과했고 contract runner integration은 8/8 통과했다. SQLite L2는 25 suites/435 tests가 통과했다. 두 DB 공개 계약은 각각 57/57 통과했다. PostgreSQL L2에서 `s3-blob-storage.integration-spec.ts`의 arrayBuffers가 103,848,940 bytes로 96 MiB 상한을 넘었으나 실패 spec 단독 재실행은 13/13 통과했다. 운영 배포·소비자 연동·백업 복원은 확인하지 않았다.
+- **판정 근거:** 관리자 삭제 접수·상태 조회·접근 차단·영속 GC 정리를 구현했다. PostgreSQL L2 API는 38 suites/661 tests 중 37 suites/660 tests가 통과했고 contract runner integration은 8/8 통과했다. SQLite L2는 25 suites/435 tests가 통과했다. 두 DB 공개 계약은 각각 57/57 통과했다. `public-namespace-boundary`는 삭제 접수 뒤 PUBLIC namespace의 공개 경로 조회도 404 `NAMESPACE_NOT_FOUND`로 막히고 다른 namespace는 그대로임을 확인했다. PostgreSQL L2에서 `s3-blob-storage.integration-spec.ts`의 arrayBuffers가 103,848,940 bytes로 96 MiB 상한을 넘었으나 실패 spec 단독 재실행은 13/13 통과했다. 운영 배포·소비자 연동·백업 복원은 확인하지 않았다.
 - 관리자 key만 namespace 전체 삭제를 접수할 수 있어야 한다. `POST /api/v2/admin/namespaces/{namespaceId}/delete`는 본문 없는 요청과 `Idempotency-Key`를 받고 202·상태 조회 `Location`을 반환한다. 같은 UUID·key의 재전송은 최초 응답을 재생한다. 상태는 관리자 `GET /api/v2/admin/namespaces/{namespaceId}/deletion`으로 조회한다.
 - DELETING 접수 커밋 뒤 데이터 읽기·쓰기·PUBLIC·snapshot·trash·feed·upload 경로와 기존 변경 receipt 재생을 `404 NAMESPACE_NOT_FOUND`로 차단해야 한다. 이름은 이 커밋부터 새 생성 key·새 UUID로 재사용할 수 있어야 한다. 기존 생성 receipt와 다른 namespace의 데이터는 유지한다.
 - GC는 live·snapshot·trash·upload와 추적 object·staging을 재시작 가능한 단계로 정리해야 한다. DELETED는 추적 데이터 정리가 끝나고 counter·usage가 0임을 뜻한다. 미정착 PUT는 접근 차단 상태에서 완료를 보류한다. 삭제 상태·receipt·namespace tombstone·audit는 유지한다. metadata 없는 object·backup·과거 object 버전·외부 cache는 완료 판정에서 제외한다.
