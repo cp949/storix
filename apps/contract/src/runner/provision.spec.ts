@@ -46,7 +46,8 @@ describe('세션 정책 설정 생성(buildUploadSessionsConfig)', () => {
     assert.deepEqual(config.namespaces, { 'id-1': namespacePolicy, 'id-2': namespacePolicy });
   });
 
-  it('namespace 상한은 서버가 요구하는 대로 전역 상한 이하다', () => {
+  // 서버(`upload-session-config.ts`)는 namespace 상한이 전역 상한을 넘는 설정의 기동을 거부한다.
+  it('namespace 상한은 전역 상한 이하다', () => {
     const config = buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, ['id-1']);
     assert.ok(BigInt(config.namespaces['id-1'].maxStagedBytes) <= BigInt(config.global.maxStagedBytes));
     assert.ok(config.namespaces['id-1'].maxActiveSessions <= config.global.maxActiveSessions);

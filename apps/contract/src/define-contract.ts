@@ -247,12 +247,16 @@ export interface ContractContext {
    * 이 계약만 쓰는 namespace를 받는다. 정리 코드는 필요 없다(서버 종료가 정리한다).
    * capability를 허용하는 프로필에서는 그 capability가 켜진 namespace다.
    * `withoutCapabilities`를 주면 허용 목록에 없는 새 namespace를 API로 만든다(선택 capability가 꺼진 상태).
-   * `accessPolicy: 'PUBLIC'`을 주면 무인증 공개 조회가 열린 새 namespace를 API로 만든다. 사전 준비 namespace는 모두 `PRIVATE`다.
+   * `accessPolicy`를 주면(`'PRIVATE'` 포함) 사전 준비 풀을 쓰지 않고 새 namespace를 API로 만든다. 사전 준비 namespace는 모두 `PRIVATE`이므로
+   * `'PUBLIC'`이면 무인증 공개 조회가 열린다. 이 namespace는 `withoutCapabilities`와 같이 선택 capability가 꺼진 상태다.
    */
-  createNamespace(options?: {
-    readonly withoutCapabilities?: boolean;
-    readonly accessPolicy?: 'PRIVATE' | 'PUBLIC';
-  }): Promise<NamespaceInfo>;
+  createNamespace(options?: CreateNamespaceOptions): Promise<NamespaceInfo>;
+}
+
+/** `ContractContext.createNamespace`의 옵션. */
+export interface CreateNamespaceOptions {
+  readonly withoutCapabilities?: boolean;
+  readonly accessPolicy?: 'PRIVATE' | 'PUBLIC';
 }
 
 /** `defineContract`에 넘기는 입력. */

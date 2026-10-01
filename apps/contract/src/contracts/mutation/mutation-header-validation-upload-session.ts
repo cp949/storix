@@ -9,6 +9,7 @@ const BAD_HEADERS: ReadonlyArray<{ name: string; key: string | null; scope: stri
   { name: 'key 없음', key: null, scope: 'contract' },
   { name: 'scope 없음', key: randomUUID(), scope: null },
   { name: 'key가 UUID가 아님', key: 'not-a-uuid', scope: 'contract' },
+  { name: 'key가 빈 값', key: '', scope: 'contract' },
   { name: 'scope가 빈 값', key: randomUUID(), scope: '' },
   { name: 'scope가 129바이트', key: randomUUID(), scope: 'a'.repeat(129) },
 ];

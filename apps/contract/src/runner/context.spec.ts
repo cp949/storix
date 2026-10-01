@@ -73,6 +73,25 @@ describe('계약 컨텍스트의 namespace 접근 정책', () => {
     assert.deepEqual(await ctx.createNamespace(), { id: 'id-1', name: 'one' });
   });
 
+  it("accessPolicy: 'PRIVATE'를 명시해도 사전 준비 풀을 쓰지 않고 본문에 싣는다", async () => {
+    const bodies: unknown[] = [];
+    const ctx = createContractContext(
+      { ...input, provisioned: [{ id: 'id-1', name: 'one' }] },
+      {
+        async fetch(_url, options) {
+          bodies.push(JSON.parse(String(options?.body)));
+          return new Response(JSON.stringify({ id: 'api-id', name: 'sample-z' }), { status: 201 });
+        },
+      },
+    );
+    assert.deepEqual(await ctx.createNamespace({ accessPolicy: 'PRIVATE' }), {
+      id: 'api-id',
+      name: 'sample-z',
+    });
+    assert.equal((bodies[0] as { accessPolicy: string }).accessPolicy, 'PRIVATE');
+    assert.deepEqual(await ctx.createNamespace(), { id: 'id-1', name: 'one' });
+  });
+
   it('accessPolicy를 주지 않으면 요청 본문에 필드를 넣지 않는다', async () => {
     const bodies: unknown[] = [];
     const ctx = createContractContext(input, {

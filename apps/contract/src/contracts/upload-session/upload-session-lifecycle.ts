@@ -1,4 +1,4 @@
-// 소비자 기대: 열린 업로드 세션은 취소할 수 있고 반복 취소는 같은 상태이며, 취소된 세션과 없는 세션·다른 namespace의 세션은 코드로 구분되고 어떤 경우에도 파일이 공개되지 않는다.
+// 소비자 기대: 열린 업로드 세션은 취소할 수 있고 반복 취소는 같은 상태이며, 취소된 세션은 409로, 없는 세션과 다른 namespace의 세션은 서로 구분되지 않는 404로 거부되며 어떤 경우에도 파일이 공개되지 않는다.
 // 대응 요구사항: RQ-002(namespace 격리), RQ-009(원자적 저장), RQ-018(안정적인 오류 분류), RQ-027(선택 capability).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +13,7 @@ interface SessionCreated {
 export default defineContract({
   id: 'upload-session-lifecycle',
   title:
-    '열린 업로드 세션은 취소할 수 있고 취소·없는 세션·다른 namespace의 세션은 코드로 구분되며 취소된 업로드는 파일을 만들지 않는다',
+    '열린 업로드 세션은 취소할 수 있고, 취소된 세션은 409로, 없는 세션·다른 namespace의 세션은 같은 404로 거부하며, 취소된 업로드는 파일을 만들지 않는다',
   rq: ['RQ-002', 'RQ-009', 'RQ-018', 'RQ-027'],
   profile: 'resumable-upload',
   async run(ctx) {

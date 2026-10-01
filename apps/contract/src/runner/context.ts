@@ -5,6 +5,7 @@ import type {
   ContractBlobStorage,
   ContractContext,
   ContractServer,
+  CreateNamespaceOptions,
   NamespaceInfo,
 } from '../define-contract.ts';
 
@@ -76,10 +77,7 @@ export function createContractContext(
       start: () => control(() => input.blobStorage.start()),
       deleteAllObjects: () => control(() => input.blobStorage.deleteAllObjects()),
     },
-    async createNamespace(options?: {
-      readonly withoutCapabilities?: boolean;
-      readonly accessPolicy?: 'PRIVATE' | 'PUBLIC';
-    }): Promise<NamespaceInfo> {
+    async createNamespace(options?: CreateNamespaceOptions): Promise<NamespaceInfo> {
       signal.throwIfAborted();
       // 사전 준비 namespace는 모두 PRIVATE라 accessPolicy를 지정하면 풀을 쓰지 않고 API로 만든다.
       if (

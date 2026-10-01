@@ -2,24 +2,12 @@
 // 대응 요구사항: RQ-003(경로 계약), RQ-006(전체 파일 조회), RQ-021(Range 부분 콘텐츠 조회).
 import assert from 'node:assert/strict';
 import { defineContract } from '../../define-contract.ts';
-import type { ApiResponse, ContractContext } from '../../define-contract.ts';
+import type { ContractContext } from '../../define-contract.ts';
+import { anonymousRequest } from '../../support/anonymous-request.ts';
 
 /** 자격 없이 공개 경로를 조회한다. */
-async function anonymousGet(
-  ctx: ContractContext,
-  path: string,
-  headers: Record<string, string> = {},
-): Promise<ApiResponse> {
-  const response = await fetch(`${ctx.baseUrl}${path}`, { signal: ctx.signal, headers });
-  const bytes = Buffer.from(await response.arrayBuffer());
-  return {
-    status: response.status,
-    headers: response.headers,
-    bytes,
-    text: () => bytes.toString('utf-8'),
-    json: <T = unknown>() => JSON.parse(bytes.toString('utf-8')) as T,
-  };
-}
+const anonymousGet = (ctx: ContractContext, path: string, headers: Record<string, string> = {}) =>
+  anonymousRequest(ctx, 'GET', path, { headers });
 
 interface ConditionalResult {
   resource: { id: string; revision: string };

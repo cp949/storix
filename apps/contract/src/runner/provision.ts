@@ -5,7 +5,11 @@ import { createApiNamespace } from './context.ts';
 import type { UPLOAD_SESSION_POLICY } from './profiles.ts';
 
 /** 세션 정책 값. */
-export type UploadSessionPolicy = typeof UPLOAD_SESSION_POLICY;
+export interface UploadSessionPolicy {
+  readonly partSizeBytes: number;
+  readonly maxStagedBytes: string;
+  readonly maxActiveSessions: number;
+}
 
 /** 시작 설정 JSON의 내용. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 가리키는 파일 형식이다. */
 export interface CapabilitiesConfig {

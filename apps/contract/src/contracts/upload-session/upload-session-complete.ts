@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';
 import type { ApiResponse } from '../../define-contract.ts';
+import { assertReplayed } from '../../support/assert-replayed.ts';
 
 interface SessionCreated {
   sessionId: string;
@@ -19,12 +20,6 @@ interface Resource {
 }
 
 const sha256 = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
-
-function assertReplayed(replay: ApiResponse, first: ApiResponse, label: string): void {
-  assert.equal(replay.status, first.status, `${label}: ${replay.text()}`);
-  assert.deepEqual(replay.json(), first.json(), label);
-  assert.equal(replay.headers.get('x-request-id'), first.headers.get('x-request-id'), label);
-}
 
 export default defineContract({
   id: 'upload-session-complete',
@@ -128,14 +123,32 @@ export default defineContract({
     assert.equal(state.path, '/big.bin');
     assert.equal(state.sizeBytes, String(data.length));
     assert.deepEqual(state.condition, { ifAbsent: true });
+    // 조각 배열의 정렬 순서는 명세에 없어 index로 정렬해 비교한다.
     assert.deepEqual(
-      state.parts,
+      [...state.parts].sort((a, b) => Number(a.index) - Number(b.index)),
       Array.from({ length: session.partCount }, (_, index) => ({
         index,
         sizeBytes: String(piece(index).length),
       })),
     );
-    assert.ok(!status.text().includes('upload-staging'), '내부 staging key를 노출했다');
+    // OPEN 세션 상태는 명세가 정의한 필드만 가진다(`result`·`failure`는 종결 상태에서만 존재한다).
+    assert.deepEqual(
+      Object.keys(state).sort(),
+      [
+        'condition',
+        'expiresAt',
+        'maxExpiresAt',
+        'mimeType',
+        'partCount',
+        'partSizeBytes',
+        'parts',
+        'path',
+        'sessionId',
+        'sizeBytes',
+        'state',
+      ],
+      '내부 저장 정보를 노출했다',
+    );
 
     // 완료하면 파일이 한 번에 공개되고 바이트·크기·해시·revision이 맞는다. 반복 완료는 최초 응답을 재생한다.
     const completed = await complete();

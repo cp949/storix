@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';
 import type { ApiResponse } from '../../define-contract.ts';
+import { assertReplayed } from '../../support/assert-replayed.ts';
 
 interface ConditionalResult {
   resource: { id: string; revision: string };
@@ -12,13 +13,6 @@ interface ConditionalResult {
 interface SnapshotMetadata {
   snapshotId: string;
   rootNodeId: string;
-}
-
-/** 재전송 응답이 최초 응답과 status·본문·`X-Request-Id`까지 같은지 확인한다. */
-function assertReplayed(replay: ApiResponse, first: ApiResponse, label: string): void {
-  assert.equal(replay.status, first.status, `${label}: ${replay.text()}`);
-  assert.deepEqual(replay.json(), first.json(), label);
-  assert.equal(replay.headers.get('x-request-id'), first.headers.get('x-request-id'), label);
 }
 
 function assertKeyReused(response: ApiResponse, label: string): void {
@@ -78,7 +72,7 @@ export default defineContract({
     const restored = await ctx.client.restoreSnapshot(ns, snapshot.snapshotId, restoreBody, {
       idempotencyKey: restoreKey,
     });
-    assert.ok(restored.status === 200 || restored.status === 201, restored.text());
+    assert.equal(restored.status, 201, restored.text());
     assert.deepEqual((await ctx.client.getContent(ns, '/restored.txt')).bytes, original);
     const restoredRevision = (await ctx.client.getContent(ns, '/restored.txt')).headers.get(
       'x-storix-revision',

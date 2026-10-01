@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';
+import { assertReplayed } from '../../support/assert-replayed.ts';
 
 interface SessionCreated {
   sessionId: string;
@@ -64,8 +65,7 @@ export default defineContract({
     // 반복 완료는 최초 422 본문과 요청 ID를 재생한다.
     const again = await ctx.client.completeUploadSession(ns, session.sessionId);
     assert.equal(again.status, 422);
-    assert.deepEqual(again.json(), mismatch.json());
-    assert.equal(again.headers.get('x-request-id'), mismatch.headers.get('x-request-id'));
+    assertReplayed(again, mismatch, '완료 재전송');
 
     // 상태는 FAILED와 실패 코드만 공개한다.
     const status = await ctx.client.getUploadSession(ns, session.sessionId);
@@ -86,8 +86,7 @@ export default defineContract({
     assert.equal(closedCancel.json<{ code: string }>().code, 'VFS_UPLOAD_SESSION_CLOSED');
     const createReplay = await ctx.client.createUploadSession(ns, createBody, { idempotencyKey: key });
     assert.equal(createReplay.status, 201);
-    assert.deepEqual(createReplay.json(), created.json());
-    assert.equal(createReplay.headers.get('x-request-id'), created.headers.get('x-request-id'));
+    assertReplayed(createReplay, created, '생성 재전송');
 
     // 같은 key에 checksum만 바꾸면 다른 요청이라 409다. 새 key와 새 세션으로 바이트를 맞춰 다시 올려야 한다.
     const reused = await ctx.client.createUploadSession(

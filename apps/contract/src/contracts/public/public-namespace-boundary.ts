@@ -3,25 +3,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';
-import type { ApiResponse, ContractContext } from '../../define-contract.ts';
-
-/** 자격 없이 요청한다. */
-async function anonymous(
-  ctx: ContractContext,
-  method: string,
-  path: string,
-  init: { headers?: Record<string, string>; body?: string } = {},
-): Promise<ApiResponse> {
-  const response = await fetch(`${ctx.baseUrl}${path}`, { signal: ctx.signal, method, ...init });
-  const bytes = Buffer.from(await response.arrayBuffer());
-  return {
-    status: response.status,
-    headers: response.headers,
-    bytes,
-    text: () => bytes.toString('utf-8'),
-    json: <T = unknown>() => JSON.parse(bytes.toString('utf-8')) as T,
-  };
-}
+import type { ApiResponse } from '../../define-contract.ts';
+import { anonymousRequest as anonymous } from '../../support/anonymous-request.ts';
 
 const content = (ns: string, filePath = '/data.txt'): string =>
   `/api/v2/public/${ns}/fs/content?path=${encodeURIComponent(filePath)}`;
