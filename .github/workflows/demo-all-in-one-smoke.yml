@@ -90,6 +90,10 @@ jobs:
           exit 1
 
       - name: 재개 업로드 활성화
+        # 워크플로 전역 ENV_FILE을 비운다. 값이 있으면 app만 예시 파일의 고정 키로 재기동돼
+        # 루트 .env의 무작위 키를 쓰는 demo-was와 키가 어긋난다.
+        env:
+          ENV_FILE: ""
         run: docs/deployment/scenarios/demo-all-in-one/enable-resumable-upload.sh
 
       - name: smoke test 실행
