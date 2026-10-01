@@ -197,6 +197,7 @@ export function registerNamespaceDeletionAccessHttpTests(options: {
     let snapshotId: string;
     let sessionId: string;
     let completedId: string;
+    let trashId: string;
     let cursor: string;
     beforeAll(async () => {
       await quota().expect(200);
@@ -224,6 +225,7 @@ export function registerNamespaceDeletionAccessHttpTests(options: {
         .send('trash')
         .expect(201);
       await api().post(`${base()}/rm`).query({ path: '/trash-file' }).expect(204);
+      trashId = (await api().get(`${base()}/trash`).expect(200)).body.items[0].trashId;
       await mutate().expect(201);
       cursor = (await api().get(`${base()}/changes`).expect(200)).body.nextCursor;
       const uploads = options.app().get(VfsUploadSessionRepository);
@@ -321,6 +323,52 @@ export function registerNamespaceDeletionAccessHttpTests(options: {
       await blocked(api().post(`${base()}/upload-sessions/${sessionId}/complete`));
       await blocked(api().get(`${base()}/upload-sessions/${sessionId}`));
       await blocked(api().delete(`${base()}/upload-sessions/${sessionId}`));
+    });
+    const keyed = (call: request.Test) =>
+      call.set('X-Mutation-Scope', 'deletion').set('Idempotency-Key', randomUUID());
+    // 쓰기 경로 모두가 요청 본문·대상 경로 검사보다 먼저 namespace 상태를 확인하는지 고정한다.
+    const writes: Array<[string, () => request.Test]> = [
+      ['mkdir', () => api().post(`${base()}/mkdir`).send({ path: '/blocked-dir' })],
+      ['touch', () => api().post(`${base()}/touch`).send({ path: '/blocked-touch' })],
+      ['mv', () => api().post(`${base()}/mv`).send({ source: '/file', destination: '/moved' })],
+      ['cp', () => api().post(`${base()}/cp`).send({ source: '/file', destination: '/copied' })],
+      ['rm', () => api().post(`${base()}/rm`).query({ path: '/file' })],
+      ['rmdir', () => api().post(`${base()}/rmdir`).query({ path: '/conditional' })],
+      [
+        'content 업로드',
+        () =>
+          api()
+            .post(`${base()}/content`)
+            .query({ path: '/blocked-content' })
+            .set('Content-Type', 'text/plain')
+            .send('x'),
+      ],
+      [
+        'content/conditional 업로드',
+        () =>
+          keyed(
+            api()
+              .post(`${base()}/content/conditional`)
+              .query({ path: '/blocked-conditional' })
+              .set('X-If-Absent', 'true')
+              .set('Content-Type', 'text/plain'),
+          ).send('x'),
+      ],
+      ['snapshot 생성', () => keyed(api().post(`${base()}/snapshots`)).send({ kind: 'file', path: '/file' })],
+      [
+        'snapshot 복원',
+        () =>
+          keyed(api().post(`${base()}/snapshots/${snapshotId}/restore`)).send({
+            path: '/restored',
+            ifAbsent: true,
+          }),
+      ],
+      ['snapshot 삭제', () => keyed(api().post(`${base()}/snapshots/${snapshotId}/delete`)).send({})],
+      ['trash 복구', () => keyed(api().post(`${base()}/trash/${trashId}/restore`)).send({})],
+      ['trash 영구 삭제', () => keyed(admin(api().post(`${base()}/trash/${trashId}/purge`))).send({})],
+    ];
+    it.each(writes)('DELETING namespace의 쓰기 요청(%s)은 404다', async (_label, call) => {
+      await blocked(call());
     });
     it('DELETING namespace의 완료된 upload session complete 재요청은 404다', async () => {
       await blocked(api().post(`${base()}/upload-sessions/${completedId}/complete`));
