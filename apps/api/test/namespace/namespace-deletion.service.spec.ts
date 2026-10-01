@@ -1,4 +1,7 @@
-/** 삭제 서비스의 UUID 거부와 repository 호출 전 검증을 고정한다. */
+/**
+ * 삭제 서비스의 UUID 거부와 repository 호출 전 검증을 고정한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약". 결정은 api ADR-0032.
+ */
 import { NamespaceDeletionService } from '../../src/namespace/namespace-deletion.service.js';
 import { NamespaceDeletionRepository } from '../../src/persistence/namespace-deletion.repository.js';
 import { NamespaceNotFoundError } from '../../src/namespace/namespace.errors.js';

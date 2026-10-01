@@ -1,4 +1,7 @@
-/** 실제 PostgreSQL·SQLite에서 삭제 접수의 상태·receipt 원자성과 재생을 검증한다. */
+/**
+ * 실제 PostgreSQL·SQLite에서 삭제 접수의 상태·receipt 원자성과 재생을 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';

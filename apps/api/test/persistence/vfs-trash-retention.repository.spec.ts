@@ -1,4 +1,7 @@
-/** 후보 조회 뒤 삭제 접수가 먼저 커밋되는 보존 정리 경합을 목으로 검증한다. */
+/**
+ * 후보 조회 뒤 삭제 접수가 먼저 커밋되는 보존 정리 경합을 목으로 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "GC 단계". 결정은 api ADR-0032.
+ */
 import { DataSource } from 'typeorm';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';

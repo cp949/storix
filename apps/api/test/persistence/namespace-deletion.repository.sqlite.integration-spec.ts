@@ -1,3 +1,7 @@
+/**
+ * 공유 삭제 접수 repository 테스트를 메모리 SQLite에서 실행한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { VfsUploadSessionEntity } from '../../src/persistence/entities/vfs-upload-session.entity.js';
 import { VfsUploadPartEntity } from '../../src/persistence/entities/vfs-upload-part.entity.js';

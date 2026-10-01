@@ -1,4 +1,7 @@
-/** namespace UUID별 삭제 operation과 재시작 위치를 보존한다. */
+/**
+ * namespace UUID별 삭제 operation과 재시작 위치를 보존한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 

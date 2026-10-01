@@ -1,4 +1,7 @@
-/** 실제 PostgreSQL·SQLite와 메모리 object 저장소에서 삭제 후 HTTP 접근을 검증한다. */
+/**
+ * 실제 PostgreSQL·SQLite와 메모리 object 저장소에서 삭제 후 HTTP 접근을 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "접근과 이름 재사용". 결정은 api ADR-0032.
+ */
 import type { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';

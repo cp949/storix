@@ -1,4 +1,7 @@
-/** 실제 HTTP와 DB에서 관리자 인증·삭제 접수·상태 조회·생성 receipt 재생을 검증한다. */
+/**
+ * 실제 HTTP와 DB에서 관리자 인증·삭제 접수·상태 조회·생성 receipt 재생을 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약", "접근과 이름 재사용". 결정은 api ADR-0032.
+ */
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { jest } from '@jest/globals';

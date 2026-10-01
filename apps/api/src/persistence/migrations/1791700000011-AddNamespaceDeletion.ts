@@ -1,4 +1,7 @@
-/** 삭제 operation과 최초 HTTP 응답 receipt를 namespace tombstone에 연결한다. */
+/**
+ * 삭제 operation과 최초 HTTP 응답 receipt를 namespace tombstone에 연결한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddNamespaceDeletion1791700000011 implements MigrationInterface {

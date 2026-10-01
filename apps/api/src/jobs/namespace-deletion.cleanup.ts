@@ -1,4 +1,7 @@
-/** DB에 저장된 phase에서 namespace 삭제를 재개하고 namespace별 실패를 격리한다. */
+/**
+ * DB에 저장된 phase에서 namespace 삭제를 재개하고 namespace별 실패를 격리한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "GC 단계". 결정은 api ADR-0032.
+ */
 import { Injectable, Logger } from '@nestjs/common';
 import {
   NamespaceDeletionCleanupRepository,

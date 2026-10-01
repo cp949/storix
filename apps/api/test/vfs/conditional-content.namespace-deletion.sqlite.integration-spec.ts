@@ -1,4 +1,7 @@
-/** 실제 SQLite와 가짜 storage에서 namespace 삭제 중 conditional content의 claim 소실을 검증한다. */
+/**
+ * 실제 SQLite와 가짜 storage에서 namespace 삭제 중 conditional content의 claim 소실을 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "접근과 이름 재사용", "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { jest } from '@jest/globals';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';

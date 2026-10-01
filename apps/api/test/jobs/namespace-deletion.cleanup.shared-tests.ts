@@ -1,4 +1,7 @@
-/** 실제 PostgreSQL·SQLite와 object storage에서 삭제 재시작·정산·GC 경합을 검증한다. */
+/**
+ * 실제 PostgreSQL·SQLite와 object storage에서 삭제 재시작·정산·GC 경합을 검증한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "GC 단계". 결정은 api ADR-0032.
+ */
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';

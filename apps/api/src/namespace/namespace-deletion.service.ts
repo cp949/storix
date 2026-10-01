@@ -1,10 +1,22 @@
-/** 삭제 입력을 검증하고 repository 결과를 공개 오류 계약으로 바꾼다. */
+/**
+ * 삭제 입력을 검증하고 repository 결과를 공개 오류 계약으로 바꾼다.
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약". 결정은 api ADR-0032.
+ */
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { isUuid } from '../common/uuid.js';
 import { NamespaceDeletionRepository } from '../persistence/namespace-deletion.repository.js';
 import { NamespaceDeletionNotFoundError, NamespaceNotFoundError } from './namespace.errors.js';
 
+/**
+ * 삭제 접수와 상태 조회의 입력을 검증하고 repository 결과를 공개 오류로 바꾼다.
+ *
+ * - UUID가 아니거나 없는 namespace는 `NamespaceNotFoundError`다.
+ * - 키 원문은 repository에 넘기지 않고 SHA-256 hash만 넘긴다.
+ * - 삭제 operation이 없는 namespace의 상태 조회는 `NamespaceDeletionNotFoundError`다.
+ *
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약".
+ */
 @Injectable()
 export class NamespaceDeletionService {
   constructor(private readonly repository: NamespaceDeletionRepository) {}

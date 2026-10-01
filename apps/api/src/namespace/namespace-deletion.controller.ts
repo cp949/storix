@@ -1,4 +1,7 @@
-/** 관리자 전용 삭제 접수와 영속 operation 상태 조회를 제공한다. */
+/**
+ * 관리자 전용 삭제 접수와 영속 operation 상태 조회를 제공한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약". 결정은 api ADR-0032.
+ */
 import {
   Controller,
   Get,
@@ -20,6 +23,14 @@ import { StructuredLoggingInterceptor } from '../common/structured-logging.inter
 import { IdempotencyKeyRequiredError, NamespaceInvalidDeleteRequestError } from './namespace.errors.js';
 import { NamespaceDeletionService } from './namespace-deletion.service.js';
 
+/**
+ * 관리자 키로 namespace 삭제를 접수하고 삭제 operation 상태를 조회한다.
+ *
+ * - 서비스 키는 거부한다. `AdminApiKeyGuard`가 관리자 키만 허용한다.
+ * - 접수는 body 없는 요청과 `Idempotency-Key`를 요구한다.
+ *
+ * 규칙은 docs/design/13-namespace-deletion.md "HTTP 계약".
+ */
 @Public()
 @Audited()
 @Controller('api/v2/admin/namespaces')

@@ -257,7 +257,7 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 
 - `apps/contract/src/contracts/namespace/namespace-deletion.ts`는 관리자 인증·202 재생·접근 차단·상태·이름 재사용·격리를 확인한다.
 - 공개 계약은 GC 완료를 기다리지 않는다.
-- `apps/api/test/namespace/namespace-deletion.http.shared-tests.ts`는 입력·receipt·HTTP와 인증·PUBLIC·upload 접근 차단을 고정한다.
+- `apps/api/test/namespace/namespace-deletion.http.shared-tests.ts`는 입력·receipt·HTTP와 인증·PUBLIC·upload·fs 쓰기·snapshot·trash 접근 차단을 고정한다.
 - `apps/api/test/persistence/namespace-deletion.repository.shared-tests.ts`는 writer·upload admission과 삭제의 경합을 고정한다.
 - `apps/api/test/jobs/namespace-deletion.cleanup.shared-tests.ts`는 정산·재시작·grace·완료 보류·실패 격리를 고정한다.
 - `apps/api/test/vfs/conditional-content.namespace-deletion.sqlite.integration-spec.ts`는 삭제 GC의 receipt 제거 뒤 업로드 재개가 404이며 live 데이터를 반영하지 않음을 고정한다.

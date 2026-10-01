@@ -1,4 +1,7 @@
-/** root 잠금과 단계 재검사로 namespace 정리 배치의 중복 정산을 막는다. */
+/**
+ * root 잠금과 단계 재검사로 namespace 정리 배치의 중복 정산을 막는다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금", "GC 단계". 결정은 api ADR-0032.
+ */
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, IsNull } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';

@@ -1,4 +1,7 @@
-/** 삭제 상태 전환과 최초 응답을 하나의 트랜잭션으로 저장한다. */
+/**
+ * 삭제 상태 전환과 최초 응답을 하나의 트랜잭션으로 저장한다.
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
+ */
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, IsNull } from 'typeorm';
 import { classifyPersistenceOperation } from './persistence-failure.js';
@@ -48,6 +51,15 @@ export interface DeletionStatusView {
   readonly blockedReason: NamespaceDeletionBlockedReason | null;
 }
 
+/**
+ * 삭제 접수의 상태 전환과 최초 응답 receipt를 한 트랜잭션으로 저장하고 상태를 조회한다.
+ *
+ * - root 행(완료 경쟁으로 root가 없으면 operation 행)을 잠가 같은 namespace의 접수를 직렬화한다.
+ * - SQLite는 행 잠금을 쓰지 않는다.
+ * - 같은 key hash의 재요청은 저장된 최초 응답을 재생한다.
+ *
+ * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금".
+ */
 @Injectable()
 export class NamespaceDeletionRepository {
   constructor(
