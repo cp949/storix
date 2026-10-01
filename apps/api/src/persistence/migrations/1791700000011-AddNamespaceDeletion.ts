@@ -18,7 +18,7 @@ export class AddNamespaceDeletion1791700000011 implements MigrationInterface {
       CONSTRAINT "CHK_namespace_deletion_completed" CHECK (("phase" = 'COMPLETED' AND "completed_at" IS NOT NULL) OR ("phase" <> 'COMPLETED' AND "completed_at" IS NULL))
     )`);
     await runner.query(
-      `CREATE INDEX "idx_namespace_deletion_open" ON "namespace_deletion" ("requested_at") WHERE "phase" <> 'COMPLETED'`,
+      `CREATE INDEX "idx_namespace_deletion_open" ON "namespace_deletion" ("namespace_id") WHERE "phase" <> 'COMPLETED'`,
     );
     await runner.query(`CREATE TABLE "namespace_deletion_receipt" (
       "namespace_id" ${uuid} NOT NULL REFERENCES "namespace"("id"),
