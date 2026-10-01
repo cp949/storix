@@ -208,6 +208,9 @@ usage 잠금:
 - grace가 지난 참조 0 Blob이 남으면 STORAGE_DELETE_FAILED다. 다음 검사에서 사라지면 해제한다.
 - grace 대기 Blob은 완료를 보류한다.
 - 미정착 tombstone은 UPLOAD_SETTLEMENT_UNKNOWN이다. session 대기보다 먼저 판정한다.
+- staging part·tombstone의 object 삭제가 계속 실패해도 `blockedReason`은 `null`이다.
+  - 기존 staging GC는 삭제 실패를 로그에 남기고 다음 실행에서 재시도한다. 실패와 대기를 구분하는 기준 시각은 없다.
+  - 이 경우 operation은 OBJECTS에 머문다.
 - API 프로세스 중단으로 PUT 종료를 알 수 없으면 자동 해소하지 않는다.
 - counter·usage 불일치는 DATA_INCONSISTENT다.
 
