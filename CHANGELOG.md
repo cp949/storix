@@ -11,6 +11,7 @@
 ### Fixed
 
 - namespace 삭제 접수의 `Idempotency-Key` 길이 검사를 헤더로 전송된 byte 수 기준으로 바로잡았다. 비ASCII 키가 실제 byte 수의 약 2배로 계산돼 255 byte 이하인데도 `400`으로 거부되던 문제다.
+- `X-Mutation-Scope`의 길이 검사를 헤더로 전송된 byte 수 기준으로 바로잡았다. 비ASCII scope가 실제 byte 수의 약 2배로 계산돼 128 byte 이하인데도 `400 VFS_INVALID_MUTATION_REQUEST`로 거부되던 문제다. `content/conditional`, `mutations`, snapshot, 휴지통 `restore`, `upload-sessions` 생성에 적용된다.
 
 ## [1.0.0] - 2026-10-01
 

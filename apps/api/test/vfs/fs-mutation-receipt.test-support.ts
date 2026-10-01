@@ -520,5 +520,27 @@ export function registerFsMutationReceiptContract(ctx: FsHttpContext) {
       expect(busy.body.code).toBe('MUTATION_IN_PROGRESS');
       expect(Number(busy.headers['retry-after'])).toBeGreaterThan(0);
     });
+
+    // Node는 헤더 값을 latin1로 읽으므로 한글 42자(UTF-8 126 byte)는 서버에서 126자 문자열이 된다.
+    // 본문이 있는 supertest 요청은 문자열·JSON 직렬화 경로에서 헤더를 utf8로 써 비ASCII 헤더가 이중 인코딩된다.
+    // 항등 직렬화기와 Buffer 본문으로 보내야 헤더가 latin1로 전송된다.
+    it('X-Mutation-Scope는 헤더로 전송된 byte 수 기준 128 byte까지 허용한다', async () => {
+      const namespaceId = await ctx.createNamespace('conditional-scope-wire-http-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs/mutations`;
+      const wire = (text: string) => Buffer.from(text, 'utf8').toString('latin1');
+      const mkdir = (scope: string, path: string) =>
+        request(ctx.httpServer)
+          .post(base)
+          .set('Idempotency-Key', randomUUID())
+          .set('X-Mutation-Scope', scope)
+          .set('Content-Type', 'application/json')
+          .serialize((body) => body)
+          .send(Buffer.from(JSON.stringify({ kind: 'mkdir', path, ifAbsent: true })));
+      // 한글 43자는 129 byte다.
+      expect((await mkdir(wire('한'.repeat(43)), '/over').expect(400)).body.code).toBe(
+        'VFS_INVALID_MUTATION_REQUEST',
+      );
+      await mkdir(wire('한'.repeat(42)), '/within').expect(201);
+    });
   });
 }

@@ -43,7 +43,8 @@ export function identityOf(
   scope: string | undefined,
   key: string | undefined,
 ): ReceiptIdentity {
-  if (!key || !UUID_PATTERN.test(key) || !scope || Buffer.byteLength(scope, 'utf8') > 128) {
+  // Node는 헤더 값을 latin1로 읽으므로 문자 수가 곧 전송 byte 수다.
+  if (!key || !UUID_PATTERN.test(key) || !scope || scope.length > 128) {
     throw new VfsInvalidMutationRequestError();
   }
   return { namespaceId, scope, key: key.toLowerCase() };

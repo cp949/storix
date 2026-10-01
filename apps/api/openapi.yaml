@@ -27,7 +27,7 @@ info:
     **파일과 FILE snapshot 흐름.** 예를 들어 `/notebook.ipynb`의 새 바이트를
     `POST /api/v2/namespaces/{namespaceId}/fs/content/conditional?path=/notebook.ipynb`에
     `X-If-Absent: true`와 UUID 형식 `Idempotency-Key`·비어 있지 않은
-    `X-Mutation-Scope`(UTF-8 최대 128바이트)로 보낸다.
+    `X-Mutation-Scope`(헤더로 전송된 최대 128 byte)로 보낸다.
     201의 `resource.id`는 파일 ID이고 `resource.revision`은 이 상태의 불투명 토큰이다.
     `GET /fs/stat?path=/notebook.ipynb`에서 같은 ID·revision·`sha256`을 읽거나,
     인증된 전체 `GET /fs/content?path=/notebook.ipynb` 200의 세 `X-Storix-*` 헤더와
@@ -58,7 +58,7 @@ info:
 
     새 파일은 `X-If-Absent: true`로 생성한다. 각 변경 요청마다 새로운 UUID
     `Idempotency-Key`와 호출자가 정하는 비어 있지 않은 `X-Mutation-Scope`
-    (UTF-8 최대 128바이트)를 보낸다. 동일 namespace/scope/key는 method, route, 조건,
+    (헤더로 전송된 최대 128 byte)를 보낸다. 동일 namespace/scope/key는 method, route, 조건,
     본문 fingerprint로 구분되므로 입력을 바꾸거나 다른 작업을 요청할 때 새 key를 쓴다.
     성공 응답의 `resource.id`는 파일 ID, `resource.revision`은 새 상태의 불투명 토큰이다.
 
@@ -181,7 +181,7 @@ info:
     | `INTERNAL_ERROR` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
 
     **변경 요청 헤더 오류.** `content/conditional`, `mutations`, `snapshots`(생성·복원·삭제), `upload-sessions` 생성,
-    휴지통 `restore`는 `Idempotency-Key`(UUID 형식)와 `X-Mutation-Scope`(비어 있지 않고 UTF-8 128바이트 이하) 중 하나라도
+    휴지통 `restore`는 `Idempotency-Key`(UUID 형식)와 `X-Mutation-Scope`(비어 있지 않고 헤더로 전송된 128 byte 이하) 중 하나라도
     없거나 형식이 틀리면 400 `VFS_INVALID_MUTATION_REQUEST`다. 이 요청은 receipt를 남기지 않으므로 헤더를 고쳐 같은
     key로 다시 보낼 수 있다. `IDEMPOTENCY_KEY_REQUIRED`는 이 endpoint들이 아니라 namespace 생성, 관리자 PATCH,
     namespace 삭제 접수가 key를 보내지 않았을 때의 코드이며, namespace 생성은 key 형식을 검증하지 않는다.
@@ -594,8 +594,8 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
-          schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
+          description: 호출자 scope. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
+          schema: { type: string, minLength: 1, x-maxHeaderBytes: 128 }
       requestBody:
         required: true
         content:
@@ -1014,8 +1014,8 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
-          schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
+          description: 호출자 scope. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
+          schema: { type: string, minLength: 1, x-maxHeaderBytes: 128 }
         - name: X-If-Absent
           in: header
           required: false
@@ -1291,7 +1291,7 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 비어 있지 않은 최대 128 UTF-8 bytes 문자열
+          description: 비어 있지 않은 문자열. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
           schema: { type: string }
       requestBody:
         required: true
@@ -2266,7 +2266,7 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 비어 있지 않은 최대 128 UTF-8 bytes 문자열
+          description: 비어 있지 않은 문자열. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
           schema: { type: string }
       requestBody:
         required: true
@@ -2496,7 +2496,7 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 비어 있지 않은 최대 128 UTF-8 bytes 문자열
+          description: 비어 있지 않은 문자열. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
           schema: { type: string }
       requestBody:
         required: true
@@ -2582,7 +2582,7 @@ paths:
         - name: X-Mutation-Scope
           in: header
           required: true
-          description: 비어 있지 않은 최대 128 UTF-8 bytes 문자열
+          description: 비어 있지 않은 문자열. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
           schema: { type: string }
       requestBody:
         required: true
@@ -2655,8 +2655,8 @@ components:
       name: X-Mutation-Scope
       in: header
       required: true
-      description: 호출자 scope. UTF-8 인코딩 기준 최대 128바이트.
-      schema: { type: string, minLength: 1, x-maxUtf8Bytes: 128 }
+      description: 호출자 scope. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
+      schema: { type: string, minLength: 1, x-maxHeaderBytes: 128 }
     UploadSessionId:
       name: sessionId
       in: path
