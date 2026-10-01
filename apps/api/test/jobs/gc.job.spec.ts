@@ -15,6 +15,7 @@ import type {
 import type { GcCursorRepository } from '../../src/persistence/gc-cursor.repository.js';
 import type { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import type { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
+import type { IdempotencyReceiptRetentionRepository } from '../../src/persistence/idempotency-receipt-retention.repository.js';
 import type { NamespaceDeletionCleanup } from '../../src/jobs/namespace-deletion.cleanup.js';
 
 type PruneNext = (
@@ -508,6 +509,7 @@ describe('GcJob', () => {
       readonly receipts?: Record<string, unknown>;
       readonly trash?: Record<string, unknown>;
       readonly expiry?: Record<string, unknown>;
+      readonly idempotency?: Record<string, unknown>;
       readonly deletion?: Record<string, unknown>;
       readonly budget?: string;
       readonly cursors?: GcCursorRepository;
@@ -546,6 +548,7 @@ describe('GcJob', () => {
         deps.expiry as unknown as VfsFileExpiryRepository,
         deps.deletion as unknown as NamespaceDeletionCleanup,
         deps.cursors,
+        deps.idempotency as unknown as IdempotencyReceiptRetentionRepository,
       );
     }
 
@@ -616,6 +619,21 @@ describe('GcJob', () => {
       expect(result.prunedTrashItems).toBe(1000);
       expect(result.prunedTrashBytes).toBe('10');
       expect(result.budgetExhaustedStages).toEqual(['trash-prune']);
+    });
+
+    it('idempotency receipt prune은 batch를 이어 돌고 예산이 소진되면 단계를 보고한다', async () => {
+      const prune = jest
+        .fn<(days: number, batchSize: number) => Promise<number>>()
+        .mockResolvedValueOnce(500)
+        .mockResolvedValueOnce(5);
+      const done = await buildJob({ idempotency: { pruneExpiredBatch: prune } }).run();
+      expect(done.prunedIdempotencyReceipts).toBe(505);
+      expect(prune).toHaveBeenCalledWith(30, 500);
+
+      const endless = jest.fn<(days: number, batchSize: number) => Promise<number>>().mockResolvedValue(500);
+      const limited = await buildJob({ idempotency: { pruneExpiredBatch: endless }, budget: '1000' }).run();
+      expect(endless).toHaveBeenCalledTimes(2);
+      expect(limited.budgetExhaustedStages).toEqual(['idempotency-receipt-prune']);
     });
 
     it('만료 파일 삭제는 cursor를 이어 합산하고 예산이 소진되면 cursor를 저장한다', async () => {

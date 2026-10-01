@@ -15,6 +15,10 @@ import {
   resolveChangeFeedRetentionDays,
 } from '../persistence/vfs-change-feed-retention.repository.js';
 import { GcCursorRepository } from '../persistence/gc-cursor.repository.js';
+import {
+  IDEMPOTENCY_RECEIPT_RETENTION_DAYS,
+  IdempotencyReceiptRetentionRepository,
+} from '../persistence/idempotency-receipt-retention.repository.js';
 import { DEFAULT_GC_STAGE_BUDGET } from './gc-budget.js';
 import { type GcStageContext, runBudgetedStage, runCursorStage } from './gc-stage.js';
 import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
@@ -42,6 +46,9 @@ export interface GcResult {
   readonly deletedOrphanObjects: number;
   readonly deletedOrphanBlobs: number;
   readonly prunedMutationReceipts: number;
+
+  /** 보존 기간을 넘겨 지운 namespace 생성·관리 receipt(`idempotency_key`) 수다. */
+  readonly prunedIdempotencyReceipts: number;
   readonly expiredUploadSessions: number;
   readonly recoveredUploadSessions: number;
   readonly deletedStagingObjects: number;
@@ -74,6 +81,7 @@ export class GcJob {
     @Optional() private readonly fileExpiry?: VfsFileExpiryRepository,
     @Optional() private readonly namespaceDeletion?: NamespaceDeletionCleanup,
     @Optional() private readonly gcCursors?: GcCursorRepository,
+    @Optional() private readonly idempotencyReceipts?: IdempotencyReceiptRetentionRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
     this.stageBudgetLimit = parsePositiveInt(
@@ -105,6 +113,7 @@ export class GcJob {
       this.namespaceDeletion!.settle(cutoff, now, after, NAMESPACE_DELETION_PAGE_SIZE),
     );
     const prunedMutationReceipts = await this.pruneReceipts(exhausted);
+    const prunedIdempotencyReceipts = await this.pruneIdempotencyReceipts(exhausted);
     const prunedUploadSessions = await this.pruneTerminalSessions(now, exhausted);
     const prunedChangeEvents = await this.pruneChangeFeed(exhausted);
     const trash = await this.pruneTrash(exhausted);
@@ -119,6 +128,7 @@ export class GcJob {
       deletedOrphanObjects,
       deletedOrphanBlobs,
       prunedMutationReceipts,
+      prunedIdempotencyReceipts,
       expiredUploadSessions,
       recoveredUploadSessions,
       deletedStagingObjects,
@@ -322,6 +332,18 @@ export class GcJob {
     let pruned = 0;
     await runBudgetedStage(this.stageContext, 'mutation-receipt-prune', exhausted, async () => {
       const count = await receipts.pruneExpired(new Date());
+      pruned += count;
+      return { done: count < CLEANUP_BATCH_SIZE, examined: count };
+    });
+    return pruned;
+  }
+
+  private async pruneIdempotencyReceipts(exhausted: string[]): Promise<number> {
+    const receipts = this.idempotencyReceipts;
+    if (!receipts) return 0;
+    let pruned = 0;
+    await runBudgetedStage(this.stageContext, 'idempotency-receipt-prune', exhausted, async () => {
+      const count = await receipts.pruneExpiredBatch(IDEMPOTENCY_RECEIPT_RETENTION_DAYS, CLEANUP_BATCH_SIZE);
       pruned += count;
       return { done: count < CLEANUP_BATCH_SIZE, examined: count };
     });

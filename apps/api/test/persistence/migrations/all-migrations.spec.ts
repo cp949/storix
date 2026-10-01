@@ -29,6 +29,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddNamespaceDeletion1791700000011',
       'AddGcCursor1791700000012',
       'AddNamespaceEncryptedIndex1791700000013',
+      'AddIdempotencyKeyCreatedAtIndex1791700000014',
     ]);
   });
 });

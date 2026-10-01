@@ -20,6 +20,7 @@
 
 ### Changed
 
+- namespace 생성(201·이름 충돌 409)과 관리 API(quota, trash 정책)의 `Idempotency-Key` receipt(`idempotency_key`)를 생성 시점부터 30일 보존한 뒤 GC가 지운다(GC 결과 `prunedIdempotencyReceipts`). 이전에는 영구 보존이었다. 30일이 지난 key의 재요청은 최초 응답을 재생하지 않고 새 요청으로 처리된다: 생성은 이름이 비어 있으면 새 namespace(201), 있으면 409이고, 같은 key에 다른 본문도 422가 아니다. 100만 namespace 데이터셋에서 receipt 140만 행을 지우는 데 약 30초가 걸린다. migration `AddIdempotencyKeyCreatedAtIndex1791700000014`(인덱스만 추가)가 필요하다. 삭제한 행은 백업 복원 외에 되돌릴 수 없다. 결정은 api ADR-0034다.
 - 업로드 세션 정책 파일의 `namespaces` 항목은 선택 override가 됐다. `resumable-upload`가 켜진 namespace의 항목이 없으면 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다. 이전에는 시작 오류(`Missing upload session policy for enabled namespace`)였다.
 - API 시작 시 `ENCRYPTED` namespace 존재 확인이 전체 `COUNT` 대신 `EXISTS`로 바뀌었다. 마스터 키가 없는 배포의 시작이 namespace 수에 비례해 읽던 비용을 없앤다. 부분 인덱스 `idx_namespace_encrypted`를 만드는 migration `AddNamespaceEncryptedIndex1791700000013`이 추가된다. down은 인덱스만 지운다.
 - capability 설정의 namespace 존재 확인을 항목마다 조회하지 않고 일괄 조회한다(PostgreSQL 1회, SQLite 1000개씩). 존재하지 않는 namespace를 적으면 시작을 거부하는 동작은 그대로다. 활동 namespace 10만 개를 설정에 나열한 API 시작이 24.9s에서 1.2s가 됐다(100만 namespace 데이터셋 측정).

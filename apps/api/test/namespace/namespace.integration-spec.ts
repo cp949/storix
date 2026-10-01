@@ -15,6 +15,7 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
 import { registerNamespaceListPageTests } from './namespace-list.http.shared-tests.js';
+import { registerNamespaceReceiptRetentionTests } from './namespace-receipt-retention.http.shared-tests.js';
 import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
 
 type RowCount = { count: string };
@@ -80,6 +81,18 @@ describe('Namespace HTTP contract', () => {
     )) as RowCount[];
     return Number(rows[0].count);
   }
+
+  registerNamespaceReceiptRetentionTests({
+    app: () => app,
+    backdate: (key, days) =>
+      migrationDataSource
+        .query(
+          "UPDATE idempotency_key SET created_at = now() - ($1::int * interval '1 day') WHERE key = $2",
+          [days, key],
+        )
+        .then(() => undefined),
+    receiptExists: async (key) => (await receiptCount(key)) > 0,
+  });
 
   registerNamespaceListPageTests({
     app: () => app,

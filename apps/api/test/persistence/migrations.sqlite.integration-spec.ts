@@ -89,6 +89,25 @@ describe('마이그레이션 체인 (SQLite)', () => {
     }
   });
 
+  it('idempotency_key created_at 인덱스를 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      const names = async () =>
+        (await runner.getTable('idempotency_key'))!.indices.map((index) => index.name);
+      expect(await names()).toContain('idx_idempotency_key_created_at');
+      const Migration = ALL_MIGRATIONS.find(
+        (migration) => migration.name === 'AddIdempotencyKeyCreatedAtIndex1791700000014',
+      )!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await names()).not.toContain('idx_idempotency_key_created_at');
+      await migration.up(runner);
+      expect(await names()).toContain('idx_idempotency_key_created_at');
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('GC cursor 테이블을 만들고 down에서 제거한다', async () => {
     const runner = dataSource.createQueryRunner();
     try {
@@ -358,6 +377,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddNamespaceDeletion1791700000011',
       'AddGcCursor1791700000012',
       'AddNamespaceEncryptedIndex1791700000013',
+      'AddIdempotencyKeyCreatedAtIndex1791700000014',
     ]);
   });
 
