@@ -102,7 +102,11 @@ export async function startApi(options: {
 
   const deadline = Date.now() + (options.timeoutMs ?? 300_000);
   for (;;) {
-    if (exited) throw new Error(`API가 기동 중 종료했다(exit ${proc.exitCode}).\n${tail(logFile)}`);
+    if (exited) {
+      // 추적 timer를 멈추지 않으면 측정기 프로세스가 끝나지 않는다.
+      tracker.stop();
+      throw new Error(`API가 기동 중 종료했다(exit ${proc.exitCode}).\n${tail(logFile)}`);
+    }
     try {
       if ((await fetch(`${baseUrl}/health/ready`)).status === 200) break;
     } catch {
