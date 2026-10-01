@@ -87,8 +87,9 @@ export function resolveEffectiveLimit(namespaceValue: number | null, globalValue
 
 ### 계약 검증 코드 (`apps/contract`)
 
-- 파일 머리 주석: 소비자가 기대하는 동작 한 문장과 대응 RQ.
+- 파일 머리 주석: 소비자가 기대하는 동작 한 문장. 다른 계약과의 경계가 필요하면 한 문장을 더한다.
 - 계약 정의의 `rq`가 요구사항 참조의 원천이다. 같은 RQ 목록을 주석에 다시 쓰지 않는다.
+  - 기존 파일의 `대응 요구사항:` 줄은 그 파일을 고칠 때 지운다. 주석만 고치려고 계약 파일을 일괄 수정하지 않는다.
 - 실행 방법은 `apps/contract/package.json`의 스크립트가 원천이다. 주석에 다시 서술하지 않는다.
 
 ## 참조 표기
