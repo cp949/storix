@@ -7,7 +7,7 @@
 아닌 확정 사항은 일반 목록으로 둔다.
 
 범용 Storix 파일 저장 계약은
-[요구사항 문서](./requirements/file-storage.md)의 `RQ-001`~`RQ-029`에서
+[요구사항 문서](./requirements/file-storage.md)의 `RQ-001`~`RQ-030`에서
 관리한다. `RQ-NNN`은 수용 조건의 ID이며, 이 로드맵의 실행 항목 ID와는 구분한다.
 
 ## 목표
