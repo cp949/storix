@@ -1,3 +1,4 @@
+import { NamespaceDeletionCleanup } from './namespace-deletion.cleanup.js';
 import { Module } from '@nestjs/common';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { StorageModule } from '../storage/storage.module.js';
@@ -10,7 +11,7 @@ import { GcLock } from './gc-lock.js';
 // 그쪽 전용 env var(STORIX_BACKUP_DIR, STORIX_RESTORE_SOURCE_DIR) 부재로 부팅이 실패한다.
 @Module({
   imports: [PersistenceModule, StorageModule],
-  providers: [GcJob, GcLock],
+  providers: [GcJob, GcLock, NamespaceDeletionCleanup],
   exports: [GcJob, GcLock],
 })
 export class GcJobModule {}

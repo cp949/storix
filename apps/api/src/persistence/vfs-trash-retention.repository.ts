@@ -1,7 +1,12 @@
+import { NamespaceEntity } from './entities/namespace.entity.js';
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
-import { VfsTrashItemNotFoundError, VfsNamespaceNotFoundError } from '../vfs/vfs.errors.js';
+import {
+  VfsTrashItemNotFoundError,
+  VfsNamespaceNotFoundError,
+  VfsNodeNotFoundError,
+} from '../vfs/vfs.errors.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
 
 export interface PrunedTrashBatch {
@@ -44,6 +49,11 @@ export class VfsTrashRetentionRepository {
         // Another purge or restore may consume a selected item before its lock is acquired.
         if (error instanceof VfsTrashItemNotFoundError || error instanceof VfsNamespaceNotFoundError)
           continue;
+        // 후보 조회 뒤 삭제 완료로 root가 없어질 수 있다. ACTIVE root 손상은 숨기지 않는다.
+        if (error instanceof VfsNodeNotFoundError) {
+          const namespace = await this.dataSource.manager.findOneBy(NamespaceEntity, { id: row.namespaceId });
+          if (namespace && namespace.status !== 'ACTIVE') continue;
+        }
         throw error;
       }
       items++;

@@ -10,6 +10,21 @@ import { resolveChangeFeedRetentionDays } from '../../src/persistence/vfs-change
 import type { VfsChangeFeedRetentionRepository } from '../../src/persistence/vfs-change-feed-retention.repository.js';
 
 describe('GcJob', () => {
+  it('삭제 cleanup을 주입하지 않은 GC는 삭제 집계를 0으로 반환한다', async () => {
+    const storage = { async *list() {}, delete: async () => undefined } as unknown as BlobStorage;
+    const blobs = {
+      findAllStorageKeys: async () => new Set<string>(),
+      findOrphanBlobs: async () => [],
+      deleteBlobRows: async () => undefined,
+    } as unknown as BlobRepository;
+    const result = await new GcJob(storage, blobs, makeConfig(3600)).run();
+    expect(result).toMatchObject({
+      advancedNamespaceDeletions: 0,
+      completedNamespaceDeletions: 0,
+      failedNamespaceDeletions: 0,
+    });
+  });
+
   it('change feed retention은 기본 30일과 엄격한 양의 안전 정수만 허용한다', () => {
     expect(resolveChangeFeedRetentionDays(undefined)).toBe(30);
     expect(resolveChangeFeedRetentionDays('1')).toBe(1);

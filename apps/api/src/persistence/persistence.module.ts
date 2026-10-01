@@ -1,3 +1,4 @@
+import { NamespaceDeletionCleanupRepository } from './namespace-deletion-cleanup.repository.js';
 import { NamespaceDeletionRepository } from './namespace-deletion.repository.js';
 import { NamespaceDeletionEntity } from './entities/namespace-deletion.entity.js';
 import { NamespaceDeletionReceiptEntity } from './entities/namespace-deletion-receipt.entity.js';
@@ -114,6 +115,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
   providers: [
     NamespaceProvisioningRepository,
     NamespaceDeletionRepository,
+    NamespaceDeletionCleanupRepository,
     NamespaceCreationReceiptWriter,
     VfsNodeRepository,
     BlobRepository,
@@ -133,6 +135,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     TypeOrmModule,
     NamespaceProvisioningRepository,
     NamespaceDeletionRepository,
+    NamespaceDeletionCleanupRepository,
     NamespaceCreationReceiptWriter,
     VfsNodeRepository,
     BlobRepository,

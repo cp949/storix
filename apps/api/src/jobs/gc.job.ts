@@ -1,3 +1,4 @@
+import { NamespaceDeletionCleanup } from './namespace-deletion.cleanup.js';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { parsePositiveInt } from '../common/env-parsing.js';
@@ -17,6 +18,14 @@ const DELETE_CONCURRENCY = 20;
 const CLEANUP_BATCH_SIZE = 500;
 
 export interface GcResult {
+  /** 다음 정리 phase로 진행한 namespace 수다. */
+  readonly advancedNamespaceDeletions: number;
+
+  /** 이번 실행에서 DELETED로 전환한 namespace 수다. */
+  readonly completedNamespaceDeletions: number;
+
+  /** 삭제 정리 중 예외가 발생한 namespace 수다. */
+  readonly failedNamespaceDeletions: number;
   readonly deletedOrphanObjects: number;
   readonly deletedOrphanBlobs: number;
   readonly prunedMutationReceipts: number;
@@ -46,6 +55,7 @@ export class GcJob {
     @Optional() private readonly changeFeedRetention?: VfsChangeFeedRetentionRepository,
     @Optional() private readonly trashRetention?: VfsTrashRetentionRepository,
     @Optional() private readonly fileExpiry?: VfsFileExpiryRepository,
+    @Optional() private readonly namespaceDeletion?: NamespaceDeletionCleanup,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
     this.changeRetentionDays = resolveChangeFeedRetentionDays(
@@ -58,6 +68,7 @@ export class GcJob {
     const cutoff = new Date(now.getTime() - this.gracePeriodSeconds * 1000);
 
     const recoveredUploadSessions = (await this.uploadSessions?.recoverStaleFinalizingLeases(now)) ?? 0;
+    const advanced = await this.namespaceDeletion?.advance(now);
     let expiredUploadSessions = 0;
     for (const session of (await this.uploadSessions?.findExpiredOpenSessions(now)) ?? []) {
       if (await this.uploadSessions!.claimTerminalTransition(session.namespaceId, session.id, 'EXPIRED', now))
@@ -126,6 +137,7 @@ export class GcJob {
     const expired = (await this.fileExpiry?.expireDue(CLEANUP_BATCH_SIZE)) ?? { files: 0, bytes: '0' };
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff);
+    const settled = await this.namespaceDeletion?.settle(cutoff, now);
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
     const prunedUploadSessions =
       (await this.uploadSessions?.pruneTerminalSessions(new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
@@ -155,6 +167,9 @@ export class GcJob {
       `GC 완료: orphan object ${deletedOrphanObjects}건, orphan blob ${deletedOrphanBlobs}건 삭제`,
     );
     return {
+      advancedNamespaceDeletions: advanced?.advanced ?? 0,
+      completedNamespaceDeletions: settled?.completed ?? 0,
+      failedNamespaceDeletions: (advanced?.failed ?? 0) + (settled?.failed ?? 0),
       deletedOrphanObjects,
       deletedOrphanBlobs,
       prunedMutationReceipts,

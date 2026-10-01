@@ -950,4 +950,72 @@ export class VfsUploadSessionRepository {
     }
     return deleted;
   }
+  /** 삭제 대상 namespace의 OPEN session ID를 읽는다. */
+  async findOpenSessionIds(namespaceId: string): Promise<string[]> {
+    return (await this.dataSource.manager.findBy(VfsUploadSessionEntity, { namespaceId, state: 'OPEN' })).map(
+      (session) => session.id,
+    );
+  }
+
+  /** 정리 단계 진입을 막는 OPEN·FINALIZING session을 센다. */
+  async countLiveSessions(namespaceId: string): Promise<number> {
+    return this.dataSource.manager.count(VfsUploadSessionEntity, {
+      where: [
+        { namespaceId, state: 'OPEN' },
+        { namespaceId, state: 'FINALIZING' },
+      ],
+    });
+  }
+
+  /** terminal session도 완료 전에 모두 제거되어야 한다. */
+  async countSessions(namespaceId: string): Promise<number> {
+    return this.dataSource.manager.countBy(VfsUploadSessionEntity, { namespaceId });
+  }
+
+  /** PUT 정착 여부를 namespace별로 읽는다. */
+  async countTombstones(namespaceId: string): Promise<{ total: number; unsettled: number }> {
+    return {
+      total: await this.dataSource.manager.countBy(VfsUploadStagingCleanupEntity, { namespaceId }),
+      unsettled: await this.dataSource.manager.countBy(VfsUploadStagingCleanupEntity, {
+        namespaceId,
+        putSettledAt: IsNull(),
+      }),
+    };
+  }
+
+  /** namespace usage만 읽으며 global usage는 다시 차감하지 않는다. */
+  async readNamespaceUsage(
+    namespaceId: string,
+    manager = this.dataSource.manager,
+  ): Promise<{ activeSessions: string; stagedBytes: string }> {
+    const rows = (await manager.query(
+      `SELECT CAST(active_sessions AS TEXT) AS "activeSessions", CAST(staged_bytes AS TEXT) AS "stagedBytes" FROM vfs_upload_usage WHERE namespace_id = ${isSqliteDataSource(this.dataSource.options) ? '?' : '$1'}`,
+      [namespaceId],
+    )) as { activeSessions: string; stagedBytes: string }[];
+    return rows[0] ?? { activeSessions: '0', stagedBytes: '0' };
+  }
+
+  /** usage 잠금 안에서 part와 같은 session의 tombstone 부재를 재검사한다. */
+  async deleteSettledSessions(namespaceId: string): Promise<number> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.lockUsage(manager, namespaceId);
+      const result = await manager
+        .getRepository(VfsUploadSessionEntity)
+        .createQueryBuilder()
+        .delete()
+        .where('namespace_id = :namespaceId AND state IN (:...states)', {
+          namespaceId,
+          states: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'],
+        })
+        .andWhere(
+          'NOT EXISTS (SELECT 1 FROM vfs_upload_part part WHERE part.session_id = vfs_upload_session.id AND part.state != :deleted)',
+          { deleted: 'DELETED' },
+        )
+        .andWhere(
+          'NOT EXISTS (SELECT 1 FROM vfs_upload_staging_cleanup old WHERE old.session_id = vfs_upload_session.id)',
+        )
+        .execute();
+      return result.affected ?? 0;
+    });
+  }
 }
