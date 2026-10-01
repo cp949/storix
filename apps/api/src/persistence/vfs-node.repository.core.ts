@@ -6,6 +6,7 @@ import { isSqliteDataSource } from '../common/db-driver.js';
 import { encodeRevision, MAX_VFS_VERSION } from '../vfs/revision.js';
 import {
   VfsNodeNotFoundError,
+  VfsNamespaceNotFoundError,
   VfsNotDirectoryError,
   VfsRevisionExhaustedError,
   VfsQuotaExceededError,
@@ -21,7 +22,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { withExactNamespaceBigints } from './namespace-bigint-read.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import type { VfsNodeType } from './entities/vfs-node.entity.js';
-import type { MutationTx, AffectedRevision } from './vfs-node.repository.types.js';
+import type { MutationTx, AffectedRevision, WithMutationOptions } from './vfs-node.repository.types.js';
 import { joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
 import {
@@ -70,11 +71,13 @@ export class VfsNodeRepositoryCore {
       tx: MutationTx,
       result: { value: T; affectedRevisions: AffectedRevision[] },
     ) => Promise<void>,
+    options: WithMutationOptions = {},
   ): Promise<{ value: T; affectedRevisions: AffectedRevision[] }> {
     let callbackError: unknown;
     try {
       return await this.dataSource.transaction(async (manager) => {
         const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
+        if (!options.allowInactive) await this.assertNamespaceActive(manager, namespaceId);
         if (namespaceRoot.id !== rootId) {
           const startingNode = await manager
             .getRepository(VfsNodeEntity)
@@ -121,11 +124,12 @@ export class VfsNodeRepositoryCore {
     }
   }
 
-  // DELTA-03의 cursor 없는 요청은 mutation과 같은 namespace 직렬화 지점에서 발급한다.
+  // cursor 없는 요청은 mutation과 같은 namespace 직렬화 지점에서 발급한다.
   async createChangeFeedCheckpoint(namespaceId: string, rootId: string): Promise<string> {
     try {
       return await this.dataSource.transaction(async (manager) => {
         const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
+        await this.assertNamespaceActive(manager, namespaceId);
         if (namespaceRoot.id !== rootId) throw new VfsNodeNotFoundError('/');
         const states = manager.getRepository(VfsChangeFeedStateEntity);
         const state = await readChangeFeedState(manager, namespaceId, this.isSqlite);
@@ -177,6 +181,15 @@ export class VfsNodeRepositoryCore {
     } catch (error) {
       throw classifyPersistenceFailure(error) ?? error;
     }
+  }
+
+  /** root 잠금 뒤 namespace 상태를 다시 읽어 삭제 접수와 반영 순서를 고정한다. */
+  protected async assertNamespaceActive(manager: EntityManager, namespaceId: string): Promise<void> {
+    const namespace = await manager.getRepository(NamespaceEntity).findOne({
+      select: { id: true, status: true },
+      where: { id: namespaceId },
+    });
+    if (namespace?.status !== 'ACTIVE') throw new VfsNamespaceNotFoundError(namespaceId);
   }
 
   private async lockNamespaceRoot(manager: EntityManager, namespaceId: string): Promise<VfsNodeEntity> {

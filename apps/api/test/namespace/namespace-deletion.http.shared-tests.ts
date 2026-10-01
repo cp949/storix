@@ -5,6 +5,10 @@ import { jest } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
+import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
+import { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 
 /** namespace HTTP suite에 삭제 계약을 등록한다. */
@@ -148,6 +152,191 @@ export function registerNamespaceDeletionHttpTests(options: {
       await accept(id, 'delete-recreate').expect(202);
       expect(await options.createNamespace(name, key)).toBe(id);
       expect(await options.createNamespace(name, randomUUID())).not.toBe(id);
+    });
+  });
+}
+
+/** 실제 DB에 모든 데이터 경로를 준비한 뒤 삭제 접수의 접근 차단을 검증한다. */
+export function registerNamespaceDeletionAccessHttpTests(options: {
+  app: () => INestApplication;
+  namespace: () => string;
+  adminKey: string;
+  serviceKey: string;
+}): void {
+  describe('삭제 접수 뒤 데이터 접근 차단', () => {
+    const api = () =>
+      request.agent(options.app().getHttpServer()).set('Authorization', `Bearer ${options.serviceKey}`);
+    const base = () => `/api/v2/namespaces/${options.namespace()}/fs`;
+    const admin = (call: request.Test) => call.set('Authorization', `Bearer ${options.adminKey}`);
+    const conditionalKey = randomUUID();
+    const quotaKey = randomUUID();
+    const trashKey = randomUUID();
+    const command = { kind: 'mkdir', path: '/conditional', ifAbsent: true };
+    const mutate = () =>
+      api()
+        .post(`${base()}/mutations`)
+        .set('X-Mutation-Scope', 'deletion')
+        .set('Idempotency-Key', conditionalKey)
+        .send(command);
+    const quota = () =>
+      admin(api().patch(`/api/v2/admin/namespaces/${options.namespace()}/quota`))
+        .set('Idempotency-Key', quotaKey)
+        .send({ maxTotalLogicalBytes: '100000' });
+    const trashPolicy = () =>
+      admin(api().patch(`/api/v2/admin/namespaces/${options.namespace()}/trash`))
+        .set('Idempotency-Key', trashKey)
+        .send({ enabled: true });
+    let fileId: string;
+    let snapshotId: string;
+    let sessionId: string;
+    let completedId: string;
+    let cursor: string;
+    beforeAll(async () => {
+      await quota().expect(200);
+      await trashPolicy().expect(200);
+      await api()
+        .post(`${base()}/content`)
+        .query({ path: '/file' })
+        .set('Content-Type', 'text/plain')
+        .send('abc')
+        .expect(201);
+      const stat = (await api().get(`${base()}/stat`).query({ path: '/file' }).expect(200)).body;
+      fileId = stat.id;
+      snapshotId = (
+        await api()
+          .post(`${base()}/snapshots`)
+          .set('X-Mutation-Scope', 'deletion')
+          .set('Idempotency-Key', randomUUID())
+          .send({ kind: 'file', path: '/file' })
+          .expect(201)
+      ).body.snapshotId;
+      await api()
+        .post(`${base()}/content`)
+        .query({ path: '/trash-file' })
+        .set('Content-Type', 'text/plain')
+        .send('trash')
+        .expect(201);
+      await api().post(`${base()}/rm`).query({ path: '/trash-file' }).expect(204);
+      await mutate().expect(201);
+      cursor = (await api().get(`${base()}/changes`).expect(200)).body.nextCursor;
+      const uploads = options.app().get(VfsUploadSessionRepository);
+      const caps = {
+        global: { maxStagedBytes: 100000n, maxActiveSessions: 100 },
+        namespace: { maxStagedBytes: 100000n, maxActiveSessions: 100 },
+      };
+      for (const path of ['/upload', '/completed']) {
+        const row = {
+          id: randomUUID(),
+          namespaceId: options.namespace(),
+          scope: 'deletion',
+          creationKey: randomUUID(),
+          fingerprint: 'a'.repeat(64),
+          targetPath: path,
+          sizeBytes: path === '/upload' ? '1' : '0',
+          mimeType: 'text/plain',
+          conditionType: 'ABSENT' as const,
+          conditionRevision: null,
+          fileExpiresInSeconds: null,
+          partSizeBytes: 1,
+          partCount: path === '/upload' ? 1 : 0,
+          now: new Date(),
+          expiresAt: new Date(Date.now() + 60000),
+          maxExpiresAt: new Date(Date.now() + 120000),
+        };
+        await uploads.createSession(row, caps);
+        if (path === '/upload') sessionId = row.id;
+        else {
+          completedId = row.id;
+          await api().post(`${base()}/upload-sessions/${completedId}/complete`).expect(201);
+        }
+      }
+      await api()
+        .get(`/api/v2/public/${options.namespace()}/fs/content`)
+        .query({ path: '/file' })
+        .expect(200);
+      await admin(api().post(`/api/v2/admin/namespaces/${options.namespace()}/delete`))
+        .set('Idempotency-Key', 'access-block')
+        .expect(202);
+    });
+    const blocked = async (call: request.Test) => {
+      expect((await call.expect(404)).body.code).toBe('NAMESPACE_NOT_FOUND');
+    };
+    it('DELETING namespace의 stat·ls·content·download·presigned 발급은 404다', async () => {
+      for (const route of ['stat', 'ls', 'content', 'download', 'presigned-download'])
+        await blocked(
+          api()
+            .get(`${base()}/${route}`)
+            .query({ path: route === 'ls' ? '/' : '/file' }),
+        );
+    });
+    it('DELETING namespace의 PUBLIC content·download는 404다', async () => {
+      for (const route of ['content', 'download'])
+        await blocked(
+          api()
+            .get(`/api/v2/public/${options.namespace()}/fs/${route}`)
+            .unset('Authorization')
+            .query({ path: '/file' }),
+        );
+    });
+    it('DELETING namespace의 snapshot·trash·change-feed·capability 조회는 404다', async () => {
+      for (const route of [
+        `snapshots?rootNodeId=${fileId}`,
+        `snapshots/${snapshotId}`,
+        `snapshots/${snapshotId}/content`,
+        'trash',
+        'changes',
+        `changes?cursor=${encodeURIComponent(cursor)}`,
+      ])
+        await blocked(api().get(`${base()}/${route}`));
+      await blocked(api().get(`/api/v2/namespaces/${options.namespace()}/capabilities`));
+    });
+    it('DELETING namespace의 conditional mutation 완료 receipt 재생은 404다', async () => {
+      await blocked(mutate());
+    });
+    it('DELETING namespace의 quota·trash 관리자 receipt 재생은 404다', async () => {
+      await blocked(quota());
+      await blocked(trashPolicy());
+    });
+    it('DELETING namespace의 upload session 생성·조각 PUT·complete·GET·DELETE는 404다', async () => {
+      await blocked(
+        api()
+          .post(`${base()}/upload-sessions`)
+          .set('X-Mutation-Scope', 'deletion')
+          .set('Idempotency-Key', randomUUID())
+          .send({ path: '/new-upload', sizeBytes: '1', mimeType: 'text/plain', ifAbsent: true }),
+      );
+      await blocked(
+        api()
+          .put(`${base()}/upload-sessions/${sessionId}/parts/0`)
+          .set('Content-Type', 'application/octet-stream')
+          .send(Buffer.from('x')),
+      );
+      await blocked(api().post(`${base()}/upload-sessions/${sessionId}/complete`));
+      await blocked(api().get(`${base()}/upload-sessions/${sessionId}`));
+      await blocked(api().delete(`${base()}/upload-sessions/${sessionId}`));
+    });
+    it('DELETING namespace의 완료된 upload session complete 재요청은 404다', async () => {
+      await blocked(api().post(`${base()}/upload-sessions/${completedId}/complete`));
+    });
+    it('namespace 상세 GET은 DELETING status를 200으로 반환하고 목록에서는 빠진다', async () => {
+      expect((await api().get(`/api/v2/namespaces/${options.namespace()}`).expect(200)).body.status).toBe(
+        'DELETING',
+      );
+      const list = (await api().get('/api/v2/namespaces').expect(200)).body;
+      expect(list.some((row: { id: string }) => row.id === options.namespace())).toBe(false);
+    });
+    it('DELETING namespace의 만료 휴지통은 보존 정리가 건너뛴다', async () => {
+      const db = options.app().get(DataSource);
+      await db.getRepository(VfsTrashEntity).update(
+        { namespaceId: options.namespace() },
+        {
+          deletedAt: new Date('1999-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2000-01-01T00:00:00.000Z'),
+        },
+      );
+      const retention = new VfsTrashRetentionRepository(db, options.app().get(VfsNodeRepository));
+      expect(await retention.pruneExpiredBatch(500)).toEqual({ items: 0, nodes: 0, bytes: '0' });
+      expect(await db.getRepository(VfsTrashEntity).countBy({ namespaceId: options.namespace() })).toBe(1);
     });
   });
 }

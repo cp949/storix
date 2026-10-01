@@ -1,5 +1,11 @@
 /** 실제 PostgreSQL·SQLite에서 삭제 접수의 상태·receipt 원자성과 재생을 검증한다. */
 import { createHash, randomUUID } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { BlobRepository } from '../../src/persistence/blob.repository.js';
+import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
+import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
+import type { CreateUploadSessionInput } from '../../src/persistence/vfs-upload-session.repository.js';
 import { DataSource } from 'typeorm';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { NamespaceDeletionEntity } from '../../src/persistence/entities/namespace-deletion.entity.js';
@@ -154,5 +160,163 @@ export function registerNamespaceDeletionRepositoryTests(getDb: () => DataSource
         blockedReason: null,
       },
     });
+  });
+  // 같은 root·usage 잠금에 삭제와 writer를 진입시켜 실제 DB 순서를 검증한다.
+  const nodes = () =>
+    new VfsNodeRepository(
+      db.getRepository(NamespaceEntity),
+      db.getRepository(VfsNodeEntity),
+      db.getRepository(BlobEntity),
+      db,
+      new BlobRepository(db),
+      new ConfigService(),
+    );
+  const caps = {
+    global: { maxStagedBytes: 100000n, maxActiveSessions: 10000 },
+    namespace: { maxStagedBytes: 100000n, maxActiveSessions: 100 },
+  };
+  const input = (namespaceId: string): CreateUploadSessionInput => ({
+    id: randomUUID(),
+    namespaceId,
+    scope: 'deletion-race',
+    creationKey: randomUUID(),
+    fingerprint: 'a'.repeat(64),
+    targetPath: '/upload',
+    sizeBytes: '1',
+    mimeType: 'text/plain',
+    conditionType: 'ABSENT',
+    conditionRevision: null,
+    fileExpiresInSeconds: null,
+    partSizeBytes: 1,
+    partCount: 1,
+    now: new Date(),
+    expiresAt: new Date(Date.now() + 60000),
+    maxExpiresAt: new Date(Date.now() + 120000),
+  });
+  it('사전 root 조회 뒤 삭제가 먼저 커밋되면 withMutation은 반영하지 않고 404를 던진다', async () => {
+    const ns = await create();
+    const repo = nodes();
+    const root = (await repo.getRoot(ns.id))!;
+    await deletions.accept(ns.id, hash('writer-late'), new Date());
+    await expect(
+      repo.withMutation(ns.id, root.id, async (tx) => {
+        await tx.manager.getRepository(VfsNodeEntity).update(root.id, { version: 2 });
+      }),
+    ).rejects.toThrow(VfsNamespaceNotFoundError);
+    expect((await db.getRepository(VfsNodeEntity).findOneByOrFail({ id: root.id })).version).toBe(1);
+    expect(await repo.getRoot(ns.id)).toBeNull();
+    expect(await repo.getRootWithLimits(ns.id)).toBeNull();
+  });
+  it('writer가 root 잠금을 먼저 잡으면 변경을 커밋한 뒤 삭제가 접수된다', async () => {
+    const ns = await create();
+    const repo = nodes();
+    const root = (await repo.getRoot(ns.id))!;
+    let entered!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let writerPid: number | undefined;
+    const writer = repo.withMutation(ns.id, root.id, async (tx) => {
+      if (db.options.type !== 'better-sqlite3') {
+        const [{ pid }] = (await tx.manager.query('SELECT pg_backend_pid() AS pid')) as { pid: number }[];
+        writerPid = pid;
+      }
+      entered();
+      await gate;
+      await tx.manager.getRepository(VfsNodeEntity).update(root.id, { version: 2 });
+    });
+    await ready;
+    const deletion = deletions.accept(ns.id, hash('writer-first'), new Date());
+    try {
+      if (db.options.type !== 'better-sqlite3') {
+        const deadline = Date.now() + 5000;
+        let blocked = 0;
+        while (Date.now() < deadline) {
+          // bind 값은 pg_stat_activity에 나오지 않는다. writer PID와 root 조회 SQL로 대상을 묶는다.
+          const [{ count }] = (await db.query(
+            `SELECT COUNT(*)::int AS count FROM pg_stat_activity a
+             WHERE a.datname = current_database()
+               AND $1 = ANY(pg_blocking_pids(a.pid))
+               AND a.query LIKE '%vfs_node%'
+               AND a.query LIKE '%namespace_id%'
+               AND a.query LIKE '%parent_id%IS NULL%'
+               AND a.query LIKE '%FOR UPDATE%'`,
+            [writerPid],
+          )) as { count: number }[];
+          blocked = count;
+          if (blocked === 1) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(1);
+      }
+    } finally {
+      // 관찰 실패에서도 writer와 삭제 요청을 정착시켜 다음 테스트에 잠금을 남기지 않는다.
+      release();
+      await Promise.allSettled([writer, deletion]);
+    }
+    await writer;
+    expect((await deletion)?.status).toBe(202);
+    expect((await db.getRepository(VfsNodeEntity).findOneByOrFail({ id: root.id })).version).toBe(2);
+  });
+  it('삭제 접수 뒤 createSession·reservePart·claimFinalize·renewSession은 404를 던진다', async () => {
+    const ns = await create();
+    const uploads = new VfsUploadSessionRepository(db);
+    const row = input(ns.id);
+    await uploads.createSession(row, caps);
+    await deletions.accept(ns.id, hash('upload-block'), new Date());
+    for (const attempt of [
+      () => uploads.createSession(input(ns.id), caps),
+      () => uploads.reservePart(row.id, 0, '1', `upload-staging/${randomUUID()}`, caps),
+      () => uploads.claimFinalize(ns.id, row.id, 60000),
+      () => uploads.renewSession(ns.id, row.id, new Date(), 60),
+    ])
+      await expect(attempt()).rejects.toThrow(VfsNamespaceNotFoundError);
+  });
+  if (process.env.STORIX_DB_DRIVER !== 'sqlite')
+    it('삭제 접수와 createSession을 동시에 실행해도 deadlock 없이 둘 중 하나의 순서로 끝난다', async () => {
+      const uploads = new VfsUploadSessionRepository(db);
+      for (let i = 0; i < 20; i++) {
+        const ns = await create();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const results = await Promise.race([
+            Promise.allSettled([
+              deletions.accept(ns.id, hash(`race-${i}`), new Date()),
+              uploads.createSession(input(ns.id), caps),
+            ]),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error('deadlock timeout')), 5000);
+            }),
+          ]);
+          expect(results[0].status).toBe('fulfilled');
+          if (results[1].status === 'rejected')
+            expect(results[1].reason).toBeInstanceOf(VfsNamespaceNotFoundError);
+          else expect(results[1].value.kind).toBe('created');
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    });
+  it('삭제 접수 뒤 change-feed checkpoint 생성은 404다', async () => {
+    const ns = await create();
+    const repo = nodes();
+    const root = (await repo.getRoot(ns.id))!;
+    await deletions.accept(ns.id, hash('feed-block'), new Date());
+    await expect(repo.createChangeFeedCheckpoint(ns.id, root.id)).rejects.toThrow(VfsNamespaceNotFoundError);
+  });
+  it('withMutation allowInactive 옵션은 DELETING namespace의 root 잠금을 허용한다', async () => {
+    const ns = await create();
+    const repo = nodes();
+    const root = (await repo.getRoot(ns.id))!;
+    await deletions.accept(ns.id, hash('internal'), new Date());
+    expect(
+      (await repo.withMutation(ns.id, root.id, async () => 'internal', undefined, { allowInactive: true }))
+        .value,
+    ).toBe('internal');
+    expect(await repo.expireNode(ns.id, root.id, new Date())).toBeNull();
   });
 }

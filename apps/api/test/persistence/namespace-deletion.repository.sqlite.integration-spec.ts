@@ -1,3 +1,7 @@
+import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { VfsUploadSessionEntity } from '../../src/persistence/entities/vfs-upload-session.entity.js';
+import { VfsUploadPartEntity } from '../../src/persistence/entities/vfs-upload-part.entity.js';
+import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
 /** 실제 SQLite와 연결 게이트에서 삭제 접수의 영속 상태·receipt 트랜잭션을 검증한다. */
 import { DataSource } from 'typeorm';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
@@ -17,6 +21,10 @@ describe('namespace 삭제 repository (SQLite)', () => {
       type: 'better-sqlite3',
       database: ':memory:',
       entities: [
+        BlobEntity,
+        VfsUploadSessionEntity,
+        VfsUploadPartEntity,
+        VfsChangeFeedStateEntity,
         NamespaceEntity,
         VfsNodeEntity,
         NamespaceDeletionEntity,

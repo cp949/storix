@@ -1,3 +1,5 @@
+import { NamespaceEntity } from './entities/namespace.entity.js';
+import { VfsNamespaceNotFoundError } from '../vfs/vfs.errors.js';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull } from 'typeorm';
@@ -92,6 +94,15 @@ export class VfsUploadSessionRepository {
     await this.lockUsage(manager, namespaceId);
   }
 
+  /** usage 잠금 뒤 비활성 namespace의 새 upload admission과 replay를 거부한다. */
+  private async assertNamespaceActive(manager: EntityManager, namespaceId: string): Promise<void> {
+    const namespace = await manager.getRepository(NamespaceEntity).findOne({
+      select: { id: true, status: true },
+      where: { id: namespaceId },
+    });
+    if (namespace?.status !== 'ACTIVE') throw new VfsNamespaceNotFoundError(namespaceId);
+  }
+
   private async changeUsage(
     manager: EntityManager,
     rows: readonly UsageCounters[],
@@ -116,6 +127,7 @@ export class VfsUploadSessionRepository {
   ): Promise<CreateUploadSessionResult> {
     return this.dataSource.transaction(async (manager) => {
       const usage = await this.lockUsage(manager, input.namespaceId);
+      await this.assertNamespaceActive(manager, input.namespaceId);
       const repo = manager.getRepository(VfsUploadSessionEntity);
       const existing = await repo.findOneBy({
         namespaceId: input.namespaceId,
@@ -167,6 +179,7 @@ export class VfsUploadSessionRepository {
       const session = await sessions.findOneBy({ id: sessionId });
       if (!session || session.state !== 'OPEN') return { kind: 'closed' };
       const usage = await this.lockUsage(manager, session.namespaceId);
+      await this.assertNamespaceActive(manager, session.namespaceId);
       // Lock 대기 중 cancel/expire가 커밋됐을 수 있으므로 상태를 다시 읽는다.
       const current = await sessions.findOneBy({ id: sessionId });
       const now = new Date();
@@ -458,6 +471,7 @@ export class VfsUploadSessionRepository {
       // 없는 namespace에 usage 행을 만들면 FK 오류가 404를 500으로 바꾼다.
       if (!(await sessions.findOneBy({ id: sessionId, namespaceId }))) return { kind: 'not-found' };
       await this.lockUsage(manager, namespaceId);
+      await this.assertNamespaceActive(manager, namespaceId);
       const session = await sessions.findOneBy({ id: sessionId, namespaceId });
       if (!session) return { kind: 'not-found' };
       const now = new Date();
@@ -658,6 +672,7 @@ export class VfsUploadSessionRepository {
   ): Promise<boolean> {
     return this.dataSource.transaction(async (manager) => {
       await this.lockUsage(manager, namespaceId);
+      await this.assertNamespaceActive(manager, namespaceId);
       const repo = manager.getRepository(VfsUploadSessionEntity);
       const query = repo
         .createQueryBuilder('session')

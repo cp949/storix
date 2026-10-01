@@ -137,6 +137,9 @@ function fixture(
     },
   } as unknown as VfsUploadSessionRepository;
   const nodes = {
+    async getRoot() {
+      return { id: 'root' };
+    },
     async getRootWithLimits() {
       return { root: {}, limits: { encryptionPolicy: encrypted ? 'ENCRYPTED' : 'NONE' } };
     },

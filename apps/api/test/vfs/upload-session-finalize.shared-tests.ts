@@ -49,7 +49,7 @@ export function registerFinalizeTests(context: FinalizeContext): void {
 
   it('returns 404 for an unknown session without creating usage rows', async () => {
     const missing = randomUUID();
-    expect((await complete(missing, randomUUID()).expect(404)).body.code).toBe(
+    expect((await complete(missing, context.namespace()).expect(404)).body.code).toBe(
       'VFS_UPLOAD_SESSION_NOT_FOUND',
     );
   });

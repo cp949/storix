@@ -28,7 +28,7 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
   @classifyPersistenceOperation
   async getRoot(namespaceId: string): Promise<VfsNodeRecord | null> {
     const namespace = await this.namespaceRepo.findOneBy({ id: namespaceId });
-    if (!namespace) {
+    if (!namespace || namespace.status !== 'ACTIVE') {
       return null;
     }
 
@@ -41,7 +41,7 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
     namespaceId: string,
   ): Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null> {
     const namespace = await this.namespaceRepo.findOneBy({ id: namespaceId });
-    if (!namespace) {
+    if (!namespace || namespace.status !== 'ACTIVE') {
       return null;
     }
 

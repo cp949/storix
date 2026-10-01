@@ -26,7 +26,7 @@ function nodeRepository(transaction: (work: () => Promise<unknown>) => Promise<u
   const manager = {
     createQueryBuilder: () => query,
     query: async () => [],
-    getRepository: () => ({}),
+    getRepository: () => ({ findOne: async () => ({ id: 'ns', status: 'ACTIVE' }) }),
   } as unknown as EntityManager;
   const dataSource = {
     options: { type: 'better-sqlite3' },

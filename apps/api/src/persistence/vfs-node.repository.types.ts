@@ -119,3 +119,9 @@ export interface NamedDescendant {
   readonly parent_id: string | null;
   readonly name: string;
 }
+
+/** namespace 변경 트랜잭션의 내부 정리 접근을 지정한다. */
+export interface WithMutationOptions {
+  /** 삭제 정리·만료 등 내부 작업만 비활성 namespace의 root 잠금을 허용한다. */
+  readonly allowInactive?: boolean;
+}

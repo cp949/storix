@@ -92,6 +92,7 @@ describe('UploadSessionService lifecycle', () => {
     let enabled = true;
     let parentExists = true;
     const nodes = {
+      getRoot: async () => ({ id: 'root' }),
       getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { maxFileSizeBytes: '8' } }),
       resolvePath: async (_ns: string, _root: string, segments: string[]) => {
         if (segments.join('/') === 'parent') return parentExists ? { id: 'parent', type: 'DIRECTORY' } : null;

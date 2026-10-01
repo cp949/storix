@@ -24,7 +24,7 @@ describe('UploadSessionFinalizeService', () => {
     } as unknown as BlobStorage;
     const service = new UploadSessionFinalizeService(
       new PathResolver(),
-      {} as VfsNodeRepository,
+      { getRoot: async () => ({ id: 'root' }) } as unknown as VfsNodeRepository,
       sessions,
       { generate: () => 'blobs/test' } as StorageKeyGenerator,
       storage,
@@ -108,6 +108,7 @@ describe('UploadSessionFinalizeService', () => {
       releaseFinalize: async () => true,
     } as unknown as VfsUploadSessionRepository;
     const nodes = {
+      getRoot: async () => ({ id: 'root' }),
       getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { encryptionPolicy: 'NONE' } }),
       withMutation: async (
         _ns: string,
@@ -188,6 +189,7 @@ describe('UploadSessionFinalizeService', () => {
       delete: async () => undefined,
     } as unknown as BlobStorage;
     const nodes = {
+      getRoot: async () => ({ id: 'root' }),
       getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { encryptionPolicy: 'NONE' } }),
       withMutation: async (
         _ns: string,

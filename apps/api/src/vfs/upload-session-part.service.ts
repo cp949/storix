@@ -12,7 +12,7 @@ import type { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-par
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
-import { requireRootWithLimits } from './require-root.js';
+import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
 import { VfsNamespaceNotFoundError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
@@ -60,6 +60,7 @@ export class UploadSessionPartService {
     _requestId: string,
   ): Promise<UploadedPartResult> {
     if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     if (!/^(0|[1-9][0-9]*)$/.test(rawIndex) || !Number.isSafeInteger(Number(rawIndex)))

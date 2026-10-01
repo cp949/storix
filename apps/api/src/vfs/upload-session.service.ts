@@ -19,7 +19,7 @@ import {
 } from './file-expiry-policy.js';
 import { hashParts, identityOf, type MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
-import { requireRootWithLimits } from './require-root.js';
+import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
 import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
 import {
@@ -198,6 +198,7 @@ export class UploadSessionService {
 
   async status(namespaceId: string, sessionId: string) {
     if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const found = await this.sessions.findForStatus(namespaceId, sessionId);
@@ -227,6 +228,7 @@ export class UploadSessionService {
 
   async cancel(namespaceId: string, sessionId: string) {
     if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const before = await this.sessions.findForStatus(namespaceId, sessionId);

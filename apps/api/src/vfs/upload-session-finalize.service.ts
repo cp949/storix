@@ -13,7 +13,7 @@ import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import type { MutationHttpResult } from './mutation.service.js';
 import { PathResolver } from './path-resolver.js';
-import { requireRootWithLimits } from './require-root.js';
+import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { VfsChecksumMismatchError, VfsNamespaceNotFoundError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
 
@@ -43,6 +43,7 @@ export class UploadSessionFinalizeService {
 
   async complete(namespaceId: string, sessionId: string, requestId: string): Promise<MutationHttpResult> {
     if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadFinalizeError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const claim = await this.sessions.claimFinalize(namespaceId, sessionId, LEASE_MS);
