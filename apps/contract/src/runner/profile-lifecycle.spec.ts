@@ -393,3 +393,69 @@ describe('프로파일 취소 경계', () => {
     ]);
   });
 });
+
+// resumable-upload는 capability 설정과 별개로 유한한 세션 정책 파일이 있어야 서버가 기동·재시작된다.
+describe('resumable-upload 프로파일의 세션 정책 설정', () => {
+  it('처음에는 namespace 없는 정책으로 기동하고, 재시작 전에 준비한 namespace를 담아 다시 쓴다', async () => {
+    const current = fixture('resumable-upload');
+    const written = new Map<string, unknown[]>();
+    current.dependencies.writeCapabilitiesConfig = async (configPath, contents) => {
+      current.events.push(`write:${configPath}`);
+      written.set(configPath, [...(written.get(configPath) ?? []), JSON.parse(contents)]);
+    };
+    current.dependencies.startServer = async (options) => {
+      current.events.push('server-start');
+      assert.equal(
+        options.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH,
+        '/test-work/resumable-upload.capabilities.json',
+      );
+      assert.equal(
+        options.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH,
+        '/test-work/resumable-upload.upload-sessions.json',
+      );
+      return current.server;
+    };
+    current.dependencies.provisionCapabilityNamespaces = async (input) => {
+      current.events.push('provision');
+      assert.deepEqual(input.capabilities, ['resumable-upload']);
+      const namespaces = [{ id: 'prepared', name: 'prepared' }];
+      await input.prepareRestart?.(namespaces);
+      await input.restart();
+      return namespaces;
+    };
+    current.dependencies.runContract = async (contract) => result(contract);
+    await runProfileLifecycle(current.input, current.dependencies);
+
+    const sessions = written.get('/test-work/resumable-upload.upload-sessions.json') as Array<{
+      namespaces: Record<string, unknown>;
+    }>;
+    assert.equal(sessions.length, 2);
+    assert.deepEqual(sessions[0].namespaces, {});
+    assert.deepEqual(Object.keys(sessions[1].namespaces), ['prepared']);
+    // 기동 전에 정책 파일이 있고, 재시작 전에 namespace가 담긴 정책 파일이 다시 쓰여야 한다.
+    const sessionWrites = current.events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => event === 'write:/test-work/resumable-upload.upload-sessions.json')
+      .map(({ index }) => index);
+    assert.ok(sessionWrites[0] < current.events.indexOf('server-start'));
+    assert.ok(sessionWrites[1] > current.events.indexOf('provision'));
+    assert.ok(sessionWrites[1] < current.events.indexOf('restart'));
+  });
+
+  it('다른 capability 프로파일은 세션 정책 설정을 쓰지 않는다', async () => {
+    const current = fixture('change-feed');
+    const paths: string[] = [];
+    const write = current.dependencies.writeCapabilitiesConfig;
+    current.dependencies.writeCapabilitiesConfig = async (configPath, contents) => {
+      paths.push(configPath);
+      await write(configPath, contents);
+    };
+    const start = current.dependencies.startServer;
+    current.dependencies.startServer = async (options) => {
+      assert.equal('STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH' in options.env, false);
+      return start(options);
+    };
+    await runProfileLifecycle(current.input, current.dependencies);
+    assert.deepEqual(paths, ['/test-work/change-feed.capabilities.json']);
+  });
+});

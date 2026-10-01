@@ -2,6 +2,10 @@ import { writeFile } from 'node:fs/promises';
 import type { NamespaceInfo } from '../define-contract.ts';
 import { createApiClient } from '../client/api-client.ts';
 import { createApiNamespace } from './context.ts';
+import type { UPLOAD_SESSION_POLICY } from './profiles.ts';
+
+/** 세션 정책 값. */
+export type UploadSessionPolicy = typeof UPLOAD_SESSION_POLICY;
 
 /** 시작 설정 JSON의 내용. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`가 가리키는 파일 형식이다. */
 export interface CapabilitiesConfig {
@@ -17,6 +21,36 @@ export function buildCapabilitiesConfig(
   return {
     globalAllowedCapabilities: [...capabilities],
     namespaceAllowedCapabilities: Object.fromEntries(namespaceIds.map((id) => [id, [...capabilities]])),
+  };
+}
+
+/** 시작 설정 JSON의 내용. `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`가 가리키는 파일 형식이다. */
+export interface UploadSessionsConfig {
+  readonly global: {
+    readonly maxStagedBytes: string;
+    readonly maxActiveSessions: number;
+    readonly partSizeBytes: number;
+  };
+  readonly namespaces: Readonly<Record<string, { maxStagedBytes: string; maxActiveSessions: number }>>;
+}
+
+/** 전역 정책을 각 namespace에도 같은 한도로 적용하는 세션 정책 설정을 만든다. */
+export function buildUploadSessionsConfig(
+  policy: UploadSessionPolicy,
+  namespaceIds: readonly string[],
+): UploadSessionsConfig {
+  return {
+    global: {
+      maxStagedBytes: policy.maxStagedBytes,
+      maxActiveSessions: policy.maxActiveSessions,
+      partSizeBytes: policy.partSizeBytes,
+    },
+    namespaces: Object.fromEntries(
+      namespaceIds.map((id) => [
+        id,
+        { maxStagedBytes: policy.maxStagedBytes, maxActiveSessions: policy.maxActiveSessions },
+      ]),
+    ),
   };
 }
 
@@ -39,6 +73,9 @@ export interface ProvisionInput {
 
   /** 서버가 읽는 설정 파일 경로. 이 파일을 덮어쓴다. */
   readonly configPath: string;
+
+  /** capability 설정을 쓴 뒤 재시작 전에 호출한다. 다른 시작 설정 파일(세션 정책 등)이 namespace ID를 요구할 때 쓴다. */
+  prepareRestart?(namespaces: readonly NamespaceInfo[]): Promise<void>;
 
   /** 설정을 다시 읽도록 서버를 재시작한다. */
   restart(): Promise<void>;
@@ -73,6 +110,8 @@ export async function provisionCapabilityNamespaces(
   );
   input.signal.throwIfAborted();
   await (dependencies.writeCapabilitiesConfig ?? writeFile)(input.configPath, JSON.stringify(config));
+  input.signal.throwIfAborted();
+  await input.prepareRestart?.(namespaces);
   input.signal.throwIfAborted();
   await input.restart();
   return namespaces;

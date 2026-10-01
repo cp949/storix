@@ -5,7 +5,7 @@
  */
 
 /** 서버 기동 설정 이름. 프로필마다 서버를 한 번 기동한다. */
-export type ProfileName = 'default' | 'small-limits' | 'change-feed';
+export type ProfileName = 'default' | 'small-limits' | 'change-feed' | 'resumable-upload';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -176,6 +176,24 @@ export interface ApiClient {
     adminKey: string,
     options?: MutationOptions,
   ): Promise<ApiResponse>;
+
+  /**
+   * `POST /fs/upload-sessions`로 재개 업로드 세션을 만든다(`resumable-upload` capability 필요).
+   * `body`는 `{ path, sizeBytes, mimeType, ifAbsent | ifRevision, sha256? }`다.
+   */
+  createUploadSession(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
+
+  /** `PUT /fs/upload-sessions/{id}/parts/{index}`로 조각 하나를 저장한다. */
+  putUploadPart(namespaceId: string, sessionId: string, index: number, bytes: Buffer): Promise<ApiResponse>;
+
+  /** `GET /fs/upload-sessions/{id}`로 세션 상태를 읽는다. */
+  getUploadSession(namespaceId: string, sessionId: string): Promise<ApiResponse>;
+
+  /** `DELETE /fs/upload-sessions/{id}`로 열린 세션을 취소한다. */
+  cancelUploadSession(namespaceId: string, sessionId: string): Promise<ApiResponse>;
+
+  /** `POST /fs/upload-sessions/{id}/complete`로 저장된 조각을 파일로 공개한다. 본문은 없다. */
+  completeUploadSession(namespaceId: string, sessionId: string): Promise<ApiResponse>;
 }
 
 /** 계약 전용으로 만든 namespace. */

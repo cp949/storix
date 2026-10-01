@@ -84,6 +84,7 @@ SIGINT 종료 코드가 정리 오류보다 우선한다. 정리 오류는 출�
 - `default`는 서버 기본값을 그대로 쓴다.
 - `small-limits`는 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트와 동기 삭제·복사 노드 수 상한 5, 휴지통 보존 노드 수 상한 3을 준다. 한도 계약(`contracts/limits/`, `delete-limit-rejection`, `copy-limit-rejection`, `trash-retention-limit`)이 쓴다. namespace별 상한 재정의(`namespace-quota-override`)는 전역 상한이 2000이라는 전제를 쓴다. 값은 `src/runner/profiles.ts`가 정한다.
 - `change-feed`는 전역과 사전 준비 namespace에 `change-feed` capability를 허용한다. capability 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)이 namespace ID를 시작 시 검증하므로 러너가 빈 설정으로 기동 → namespace를 프로필 계약 수의 두 배만큼 생성 → 그 ID를 넣은 설정을 쓰고 서버를 재시작한다. 계약의 `createNamespace()`는 이 namespace를 앞에서부터 하나씩 받고, 다 쓰면 오류를 던진다(꺼진 namespace를 몰래 만들지 않는다).
+- `resumable-upload`는 같은 방식으로 `resumable-upload` capability를 허용한다. 이 capability는 유한한 세션 정책(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)을 요구하므로 러너가 namespace 없는 정책 파일로 처음 기동하고, 사전 준비 namespace를 만든 뒤 각 namespace의 정책을 담아 파일을 다시 쓰고 재시작한다. 조각 크기는 4바이트로 줄여 짧은 본문으로 여러 조각을 만든다. 값은 `src/runner/profiles.ts`의 `UPLOAD_SESSION_POLICY`가 정한다.
 
 ## 실행 옵션
 

@@ -11,8 +11,12 @@ import { createContractContext } from './context.ts';
 import { CLEANUP_TIMEOUT_MS, cleanupError, withCleanupTimeout } from './cleanup.ts';
 import { prepareSqliteDatabase, type DatabaseHandle } from './database.ts';
 import { preparePostgresDatabase, type PostgresHandle } from './postgres.ts';
-import { PROFILE_CAPABILITIES, PROFILE_ENV } from './profiles.ts';
-import { EMPTY_CAPABILITIES_CONFIG, provisionCapabilityNamespaces } from './provision.ts';
+import { PROFILE_CAPABILITIES, PROFILE_ENV, UPLOAD_SESSION_POLICY } from './profiles.ts';
+import {
+  EMPTY_CAPABILITIES_CONFIG,
+  buildUploadSessionsConfig,
+  provisionCapabilityNamespaces,
+} from './provision.ts';
 import { runContract, type ContractResult } from './run.ts';
 import { buildServerEnv } from './server-env.ts';
 import { findFreePort, startServer } from './server.ts';
@@ -52,7 +56,7 @@ export interface ProfileLifecycleDependencies {
   /** API 서버가 사용할 루프백 포트를 준비한다. */
   findFreePort: typeof findFreePort;
 
-  /** 서버의 첫 기동에 사용할 빈 capability 설정을 쓴다. */
+  /** 서버의 첫 기동에 사용할 빈 capability 설정과 세션 정책 같은 시작 설정 파일을 쓴다. */
   writeCapabilitiesConfig(configPath: string, contents: string): Promise<void>;
 
   /** 프로파일 전용 API 서버를 기동한다. */
@@ -120,6 +124,16 @@ export async function runProfileLifecycle(
     input.signal.throwIfAborted();
     await deps.writeCapabilitiesConfig(capabilitiesConfigPath, JSON.stringify(EMPTY_CAPABILITIES_CONFIG));
   }
+  // resumable-upload는 유한한 세션 정책 파일을 요구한다. 처음에는 namespace 없이 유효한 파일로 기동한다.
+  const needsUploadSessions = capabilities.includes('resumable-upload');
+  const uploadSessionsConfigPath = path.join(input.workDir, `${input.profile}.upload-sessions.json`);
+  if (needsUploadSessions) {
+    input.signal.throwIfAborted();
+    await deps.writeCapabilitiesConfig(
+      uploadSessionsConfigPath,
+      JSON.stringify(buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, [])),
+    );
+  }
   input.signal.throwIfAborted();
   const server = await deps.startServer({
     port,
@@ -132,6 +146,7 @@ export async function runProfileLifecycle(
       profileEnv: {
         ...PROFILE_ENV[input.profile],
         ...(capabilities.length > 0 ? { STORIX_VFS_CAPABILITIES_CONFIG_PATH: capabilitiesConfigPath } : {}),
+        ...(needsUploadSessions ? { STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH: uploadSessionsConfigPath } : {}),
       },
       databaseEnv: database.env,
       storageEnv: input.blob.env,
@@ -153,6 +168,20 @@ export async function runProfileLifecycle(
             capabilities,
             count: input.contracts.length * 2,
             configPath: capabilitiesConfigPath,
+            // 활성 namespace마다 세션 정책이 있어야 서버가 다시 시작된다.
+            prepareRestart: async (namespaces) => {
+              if (!needsUploadSessions) return;
+              input.signal.throwIfAborted();
+              await deps.writeCapabilitiesConfig(
+                uploadSessionsConfigPath,
+                JSON.stringify(
+                  buildUploadSessionsConfig(
+                    UPLOAD_SESSION_POLICY,
+                    namespaces.map((namespace) => namespace.id),
+                  ),
+                ),
+              );
+            },
             restart: async () => {
               input.signal.throwIfAborted();
               await server.restart();

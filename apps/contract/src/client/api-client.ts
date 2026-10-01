@@ -44,6 +44,9 @@ export function createApiClient(
   const snapshotUrl = (namespaceId: string, suffix = ''): string =>
     `/api/v2/namespaces/${namespaceId}/fs/snapshots${suffix}`;
 
+  const uploadSessionUrl = (namespaceId: string, suffix = ''): string =>
+    `/api/v2/namespaces/${namespaceId}/fs/upload-sessions${suffix}`;
+
   return {
     request,
 
@@ -245,6 +248,32 @@ export function createApiClient(
         headers: jsonHeaders(options),
         body: JSON.stringify({}),
       });
+    },
+
+    createUploadSession(namespaceId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', uploadSessionUrl(namespaceId), {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
+    putUploadPart(namespaceId: string, sessionId: string, index: number, bytes: Buffer) {
+      return request('PUT', uploadSessionUrl(namespaceId, `/${sessionId}/parts/${index}`), {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: bytes,
+      });
+    },
+
+    getUploadSession(namespaceId: string, sessionId: string) {
+      return request('GET', uploadSessionUrl(namespaceId, `/${sessionId}`));
+    },
+
+    cancelUploadSession(namespaceId: string, sessionId: string) {
+      return request('DELETE', uploadSessionUrl(namespaceId, `/${sessionId}`));
+    },
+
+    completeUploadSession(namespaceId: string, sessionId: string) {
+      return request('POST', uploadSessionUrl(namespaceId, `/${sessionId}/complete`));
     },
   };
 }

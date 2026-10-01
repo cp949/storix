@@ -4,6 +4,7 @@ import type { ProfileName } from '../define-contract.ts';
 export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, string>>>> = {
   default: {},
   'change-feed': {},
+  'resumable-upload': {},
 
   // 한도 초과 계약용. 전역 한도는 프로세스 시작 때 한 번 읽으므로 기동 설정으로 준다(docs/design/04).
   // 700바이트 파일은 모든 한도 안이고, snapshot을 만들면 사용량 1400, 새 경로로 복원하면 2100이라 논리 상한을 넘는다.
@@ -25,4 +26,15 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
  */
 export const PROFILE_CAPABILITIES: Readonly<Partial<Record<ProfileName, readonly string[]>>> = {
   'change-feed': ['change-feed'],
+  'resumable-upload': ['resumable-upload'],
 };
+
+/**
+ * `resumable-upload`를 허용하는 프로필의 세션 정책. 시작 설정(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)이 유한한 전역·namespace 정책을 요구한다.
+ * 조각 크기를 4바이트로 줄여 짧은 본문으로도 여러 조각을 만든다. 활성 세션·임시 바이트 상한은 계약이 닿지 않을 만큼 넉넉하다.
+ */
+export const UPLOAD_SESSION_POLICY = {
+  partSizeBytes: 4,
+  maxStagedBytes: '1048576',
+  maxActiveSessions: 100,
+} as const;

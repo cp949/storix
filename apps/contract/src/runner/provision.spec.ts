@@ -3,7 +3,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { buildCapabilitiesConfig, provisionCapabilityNamespaces } from './provision.ts';
+import { UPLOAD_SESSION_POLICY } from './profiles.ts';
+import {
+  buildCapabilitiesConfig,
+  buildUploadSessionsConfig,
+  provisionCapabilityNamespaces,
+} from './provision.ts';
 
 describe('capability 설정 생성(buildCapabilitiesConfig)', () => {
   it('전역과 각 namespace에 같은 capability를 허용한다', () => {
@@ -23,6 +28,66 @@ describe('capability 설정 생성(buildCapabilitiesConfig)', () => {
     const config = buildCapabilitiesConfig(capabilities, ['id-1']);
     capabilities.push('resumable-upload');
     assert.deepEqual(config.globalAllowedCapabilities, ['change-feed']);
+  });
+});
+
+describe('세션 정책 설정 생성(buildUploadSessionsConfig)', () => {
+  it('전역 정책을 그대로 담고 각 namespace에 같은 상한을 준다', () => {
+    const config = buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, ['id-1', 'id-2']);
+    assert.deepEqual(config.global, {
+      maxStagedBytes: UPLOAD_SESSION_POLICY.maxStagedBytes,
+      maxActiveSessions: UPLOAD_SESSION_POLICY.maxActiveSessions,
+      partSizeBytes: UPLOAD_SESSION_POLICY.partSizeBytes,
+    });
+    const namespacePolicy = {
+      maxStagedBytes: UPLOAD_SESSION_POLICY.maxStagedBytes,
+      maxActiveSessions: UPLOAD_SESSION_POLICY.maxActiveSessions,
+    };
+    assert.deepEqual(config.namespaces, { 'id-1': namespacePolicy, 'id-2': namespacePolicy });
+  });
+
+  it('namespace 상한은 서버가 요구하는 대로 전역 상한 이하다', () => {
+    const config = buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, ['id-1']);
+    assert.ok(BigInt(config.namespaces['id-1'].maxStagedBytes) <= BigInt(config.global.maxStagedBytes));
+    assert.ok(config.namespaces['id-1'].maxActiveSessions <= config.global.maxActiveSessions);
+  });
+
+  it('namespace가 없으면 namespace 항목이 비어 있다', () => {
+    assert.deepEqual(buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, []).namespaces, {});
+  });
+});
+
+describe('capability provisioning의 재시작 준비 훅', () => {
+  it('설정을 쓴 뒤 재시작 전에 만든 namespace를 넘겨 호출한다', async (test) => {
+    const effects: string[] = [];
+    const fetchRequest: typeof fetch = async () => {
+      effects.push('namespace');
+      return new Response(JSON.stringify({ id: `id-${effects.length}`, name: 'name' }), { status: 201 });
+    };
+    const created = await provisionCapabilityNamespaces(
+      {
+        baseUrl: 'http://example.test',
+        apiKey: 'key',
+        signal: new AbortController().signal,
+        capabilities: ['resumable-upload'],
+        count: 2,
+        configPath: '/unused/config.json',
+        async prepareRestart(namespaces) {
+          effects.push(`prepare:${namespaces.map((namespace) => namespace.id).join(',')}`);
+        },
+        async restart() {
+          effects.push('restart');
+        },
+      },
+      {
+        fetch: fetchRequest,
+        async writeCapabilitiesConfig() {
+          effects.push('write');
+        },
+      },
+    );
+    test.diagnostic(`namespace ${created.length}개`);
+    assert.deepEqual(effects, ['namespace', 'namespace', 'write', 'prepare:id-1,id-2', 'restart']);
   });
 });
 
