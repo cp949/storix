@@ -76,6 +76,13 @@ jobs:
             echo '```'
             echo "docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}"
             echo '```'
+            echo ""
+            echo "## 업그레이드와 롤백"
+            echo ""
+            echo "- 스키마 마이그레이션은 자동으로 되돌리지 않는다(\`migration:revert\` 없음)."
+            echo "- 마이그레이션이 스키마를 바꾼 뒤 이전 버전으로 돌아가려면 업그레이드 전에 만든 백업을 복원한다."
+            echo "- 업그레이드 전에 백업하지 않았다면 스키마 변경 이후에는 롤백할 수 없다."
+            echo "- 절차: [docs/deployment/upgrade.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/docs/deployment/upgrade.md)"
           } >> release-notes.md
 
       - name: GHCR 로그인

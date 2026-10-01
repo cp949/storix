@@ -32,20 +32,38 @@
 
 2. **`main`에 병합한다**(기존 정책대로 직접 수행).
 
-3. **태그를 만들어 push한다.**
+3. **릴리즈 대상 커밋의 계약 검증을 확인한다.** 릴리즈 워크플로는 통합 테스트와
+   계약 검증을 실행하지 않으므로 태그 전에 `계약 검증` 워크플로(`contract.yml`)의
+   SQLite·Postgres 결과를 직접 확인한다.
+
+   - SQLite job은 `dev` push·PR에서만 돈다. 수동 실행에서는 돌지 않는다.
+     릴리즈 대상 커밋(또는 같은 트리의 `dev` 커밋)의 push 결과가 성공인지 본다.
+   - Postgres job은 수동·주 1회만 돈다. 아래 명령으로 `main`에서 실행하고 성공을 기다린다.
+
+     ```bash
+     gh workflow run contract.yml --ref main
+     gh run list --workflow contract.yml --limit 3
+     ```
+
+   - 두 job이 모두 성공이면 진행한다. 실패하면 구현을 고친 뒤 처음부터 다시 한다.
+   - 결과(run URL, 대상 커밋 해시)는 릴리즈 노트에 자동으로 남지 않는다. 필요하면
+     GitHub Release 생성 뒤 노트에 직접 덧붙인다.
+
+4. **태그를 만들어 push한다.**
 
    ```bash
    git tag v1.2.3   # CHANGELOG 섹션과 반드시 같은 버전 문자열
    git push origin v1.2.3
    ```
 
-4. **GitHub Actions(`release.yml`)가 자동으로 실행한다**:
+5. **GitHub Actions(`release.yml`)가 자동으로 실행한다**:
    - 태그 커밋이 `origin/main`의 조상인지 확인(아니면 중단)
    - `apps/api` typecheck·lint·단위 테스트(실패하면 중단, 통합 테스트는 제외)
    - `CHANGELOG.md`에서 `## [1.2.3]` 섹션 추출(없으면 중단)
    - `ghcr.io/cp949/storix:v1.2.3` + `:latest` 이미지 build & push
    - GitHub Release 생성(제목 `v1.2.3`, 본문은 추출한 CHANGELOG 섹션 + 이미지
-     pull 안내)
+     pull 안내 + 업그레이드·롤백 경계 안내). 롤백 경계 안내는 고정 문구이며
+     내용은 `upgrade.md`와 ADR-0017을 따른다.
 
    진행 상황은 저장소 Actions 탭에서 확인한다.
 
