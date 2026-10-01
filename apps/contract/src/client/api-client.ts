@@ -176,6 +176,26 @@ export function createApiClient(
       });
     },
 
+    deleteNamespace(
+      namespaceId: string,
+      adminKey: string,
+      options: { readonly idempotencyKey?: string | null } = {},
+    ) {
+      const idempotencyKey = options.idempotencyKey === undefined ? randomUUID() : options.idempotencyKey;
+      return request('POST', `/api/v2/admin/namespaces/${namespaceId}/delete`, {
+        headers: {
+          Authorization: `Bearer ${adminKey}`,
+          ...(idempotencyKey === null ? {} : { 'Idempotency-Key': idempotencyKey }),
+        },
+      });
+    },
+
+    getNamespaceDeletion(namespaceId: string, adminKey: string) {
+      return request('GET', `/api/v2/admin/namespaces/${namespaceId}/deletion`, {
+        headers: { Authorization: `Bearer ${adminKey}` },
+      });
+    },
+
     listTrash(namespaceId: string, options = {}) {
       const query = new URLSearchParams();
       if (options.cursor !== undefined) query.set('cursor', options.cursor);

@@ -145,6 +145,16 @@ export interface ApiClient {
     options?: { readonly idempotencyKey?: string | null },
   ): Promise<ApiResponse>;
 
+  /** 관리자 삭제 접수를 보낸다. key 생략은 새 키, null은 헤더 누락이다. 본문은 보내지 않는다. */
+  deleteNamespace(
+    namespaceId: string,
+    adminKey: string,
+    options?: { readonly idempotencyKey?: string | null },
+  ): Promise<ApiResponse>;
+
+  /** 관리자 key로 삭제 operation의 현재 상태를 조회한다. */
+  getNamespaceDeletion(namespaceId: string, adminKey: string): Promise<ApiResponse>;
+
   /** `GET /fs/trash`로 미만료 휴지통 항목을 페이지 단위로 읽는다. */
   listTrash(
     namespaceId: string,
