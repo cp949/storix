@@ -207,6 +207,18 @@ export function registerNamespaceDeletionRepositoryTests(getDb: () => DataSource
     expect(await repo.getRoot(ns.id)).toBeNull();
     expect(await repo.getRootWithLimits(ns.id)).toBeNull();
   });
+  it('사전 root 조회 뒤 삭제가 DELETED까지 끝나 root가 사라져도 NAMESPACE_NOT_FOUND 계열로 던진다', async () => {
+    const ns = await create();
+    const repo = nodes();
+    const root = (await repo.getRoot(ns.id))!;
+    await deletions.accept(ns.id, hash('writer-deleted'), new Date());
+    await db.getRepository(NamespaceEntity).update(ns.id, { status: 'DELETED' });
+    await db.getRepository(VfsNodeEntity).delete({ namespaceId: ns.id });
+    await expect(repo.withMutation(ns.id, root.id, async () => undefined)).rejects.toThrow(
+      VfsNamespaceNotFoundError,
+    );
+    await expect(repo.createChangeFeedCheckpoint(ns.id, root.id)).rejects.toThrow(VfsNamespaceNotFoundError);
+  });
   it('writer가 root 잠금을 먼저 잡으면 변경을 커밋한 뒤 삭제가 접수된다', async () => {
     const ns = await create();
     const repo = nodes();

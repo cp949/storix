@@ -107,13 +107,17 @@ export class NamespaceDeletionCleanup {
         await this.repository.setBlocked(op.namespaceId, 'STORAGE_DELETE_FAILED');
         return unchanged;
       }
-      await this.repository.setBlocked(op.namespaceId, null);
-      if (objects.pending) return unchanged;
+      if (objects.pending) {
+        await this.repository.setBlocked(op.namespaceId, null);
+        return unchanged;
+      }
       const tombstones = await this.uploads.countTombstones(op.namespaceId);
+      // 사유를 먼저 null로 지우지 않는다. 지속되는 보류가 매 GC마다 상태 조회에서 잠시 사라지기 때문이다.
       if (tombstones.unsettled) {
         await this.repository.setBlocked(op.namespaceId, 'UPLOAD_SETTLEMENT_UNKNOWN');
         return unchanged;
       }
+      await this.repository.setBlocked(op.namespaceId, null);
       if (tombstones.total || (await this.uploads.countSessions(op.namespaceId))) return unchanged;
       const counters = await this.repository.readCounters(op.namespaceId);
       const usage = await this.uploads.readNamespaceUsage(op.namespaceId);

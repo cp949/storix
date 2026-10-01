@@ -379,6 +379,28 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     expect(await f.repository.countRemainingMetadata(f.ns.id)).toEqual({ nodes: 0, snapshots: 0, trash: 0 });
   });
 
+  it('미정착 tombstone으로 멈춘 operation은 재실행 중 blockedReason을 null로 되돌리지 않는다', async () => {
+    const f = await fixture();
+    await content(f, true);
+    await unsettled(f);
+    await f.accept();
+    await f.cleanup.advance(new Date());
+    for (const blob of await f.dataSource.manager.findBy(BlobEntity, { namespaceId: f.ns.id }))
+      await f.setZeroSinceSecondsAgo(blob.id, 10);
+    await f.job.run();
+    expect((await f.op()).blockedReason).toBe('UPLOAD_SETTLEMENT_UNKNOWN');
+    const record = jest.spyOn(f.repository, 'setBlocked');
+    let reasons: unknown[];
+    try {
+      await f.job.run();
+      reasons = record.mock.calls.filter(([id]) => id === f.ns.id).map(([, reason]) => reason);
+    } finally {
+      record.mockRestore();
+    }
+    expect(reasons).toEqual(['UPLOAD_SETTLEMENT_UNKNOWN']);
+    expect((await f.op()).blockedReason).toBe('UPLOAD_SETTLEMENT_UNKNOWN');
+  });
+
   it('counter가 데이터와 맞지 않으면 DATA_INCONSISTENT로 멈추고 0으로 덮어쓰지 않는다', async () => {
     const f = await fixture();
     await content(f);

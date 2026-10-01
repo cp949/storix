@@ -76,7 +76,7 @@ export class VfsNodeRepositoryCore {
     let callbackError: unknown;
     try {
       return await this.dataSource.transaction(async (manager) => {
-        const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId);
+        const namespaceRoot = await this.lockNamespaceRoot(manager, namespaceId, options.allowInactive);
         if (!options.allowInactive) await this.assertNamespaceActive(manager, namespaceId);
         if (namespaceRoot.id !== rootId) {
           const startingNode = await manager
@@ -192,13 +192,21 @@ export class VfsNodeRepositoryCore {
     if (namespace?.status !== 'ACTIVE') throw new VfsNamespaceNotFoundError(namespaceId);
   }
 
-  private async lockNamespaceRoot(manager: EntityManager, namespaceId: string): Promise<VfsNodeEntity> {
+  /** root를 잠근다. DELETED로 root가 사라진 경우는 root 부재가 아니라 비활성 namespace로 구분해 던진다. */
+  private async lockNamespaceRoot(
+    manager: EntityManager,
+    namespaceId: string,
+    allowInactive = false,
+  ): Promise<VfsNodeEntity> {
     const root = await this.applyRowLockIfSupported(
       manager
         .createQueryBuilder(VfsNodeEntity, 'n')
         .where('n.namespace_id = :namespaceId AND n.parent_id IS NULL', { namespaceId }),
     ).getOne();
-    if (!root || root.type !== 'DIRECTORY') throw new VfsNodeNotFoundError('/');
+    if (!root || root.type !== 'DIRECTORY') {
+      if (!allowInactive) await this.assertNamespaceActive(manager, namespaceId);
+      throw new VfsNodeNotFoundError('/');
+    }
     return root;
   }
 
