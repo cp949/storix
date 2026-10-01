@@ -31,6 +31,7 @@ import { buildApiEnv, findFreePort, startApi } from './server.ts';
 import {
   type ListMeasurement,
   measureNamespaceList,
+  measureNamespacePageWalk,
   runWorkload,
   type WorkloadOptions,
   type WorkloadResult,
@@ -213,6 +214,7 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
       want('startup') ||
       want('requests') ||
       want('list') ||
+      want('list-pages') ||
       want('startup-capability') ||
       want('startup-capability-default')
     ) {
@@ -315,18 +317,33 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
       if (want('list')) {
         phases.list = await phase('list', async () => {
           const before = await readDbCounters(apiDb);
-          const api = await startApi({
-            env: apiEnv(apiDb),
-            port,
-            label: `${runId}-list`,
-          });
+          const api = await startApi({ env: apiEnv(apiDb), port, label: `${runId}-list` });
           try {
             const first: ListMeasurement = await measureNamespaceList(target, options.listTimeoutMs);
             const peakRssBytes = api.peakRssBytes();
             return {
-              request: 'GET /api/v2/namespaces (쿼리 없음)',
+              request: 'GET /api/v2/namespaces (쿼리 없음, 이전 계약의 전체 배열)',
               first,
               peakRssBytes,
+              db: diffCounters(before, await readDbCounters(apiDb)),
+            };
+          } finally {
+            await api.stop();
+          }
+        });
+      }
+      if (want('list-pages')) {
+        // page 모드는 별도 프로세스에서 재서 전체 배열 응답의 메모리가 섞이지 않게 한다.
+        phases['list-pages'] = await phase('list-pages', async () => {
+          const before = await readDbCounters(apiDb);
+          const api = await startApi({ env: apiEnv(apiDb), port, label: `${runId}-list-pages` });
+          try {
+            const page100 = await measureNamespacePageWalk(target, 100, options.listTimeoutMs);
+            const page1000 = await measureNamespacePageWalk(target, 1000, options.listTimeoutMs);
+            return {
+              page100,
+              page1000,
+              peakRssBytes: api.peakRssBytes(),
               db: diffCounters(before, await readDbCounters(apiDb)),
             };
           } finally {

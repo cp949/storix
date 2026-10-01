@@ -51,8 +51,21 @@ storix_get() {
 }
 
 log "1) namespace '${DEMO_NAMESPACE}' UUID 조회"
-namespaces=$(storix_get /api/v2/namespaces) || fail "namespace 목록을 조회하지 못했다. 스택이 기동돼 있는지 확인한다"
-namespace_id=$(echo "$namespaces" | jq -r --arg n "$DEMO_NAMESPACE" '[.[] | select(.name == $n and .accessPolicy == "PRIVATE")][0].id // empty')
+# 목록은 page(cursor) 모드로 끝까지 순회한다. 전체 배열 응답은 namespace가 많으면 비용이 개수에 비례한다.
+find_namespace_id() {
+  local cursor="" page id
+  while :; do
+    page=$(storix_get "/api/v2/namespaces?limit=100${cursor:+&cursor=${cursor}}") || return 1
+    id=$(echo "$page" | jq -r --arg n "$DEMO_NAMESPACE" '[.items[] | select(.name == $n and .accessPolicy == "PRIVATE")][0].id // empty')
+    if [ -n "$id" ]; then
+      echo "$id"
+      return 0
+    fi
+    cursor=$(echo "$page" | jq -r '.nextCursor // empty')
+    [ -n "$cursor" ] || return 0
+  done
+}
+namespace_id=$(find_namespace_id) || fail "namespace 목록을 조회하지 못했다. 스택이 기동돼 있는지 확인한다"
 [ -n "$namespace_id" ] || fail "PRIVATE namespace '${DEMO_NAMESPACE}'가 없다. demo-was가 기동됐는지 확인한다"
 log "   ${namespace_id}"
 

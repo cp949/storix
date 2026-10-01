@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   Post,
+  Query,
   Res,
   UseFilters,
   UseInterceptors,
@@ -63,8 +64,10 @@ export class NamespaceController {
     return { capabilities: this.capabilityService.listEnabled(id) };
   }
 
+  // `limit`·`cursor`를 주면 page 객체(`{ items, nextCursor }`), 둘 다 없으면 이전 계약의 전체 배열이다.
   @Get()
-  findAll() {
-    return this.namespaceService.findAll();
+  findAll(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
+    if (limit === undefined && cursor === undefined) return this.namespaceService.findAll();
+    return this.namespaceService.findPage(limit, cursor);
   }
 }

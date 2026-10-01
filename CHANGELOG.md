@@ -10,8 +10,13 @@
 
 ### Added
 
+- `GET /api/v2/namespaces`의 page 모드: `limit`(기본 100·최대 1000)·`cursor`를 주면 `{ items, nextCursor }`를 `(name, id)` 순서의 keyset으로 반환한다. 잘못된 cursor는 400 `VFS_INVALID_CURSOR`다. 100만 namespace에서 첫 page가 9ms, 전체 순회(page 1000개)가 11.5s·API RSS 416MiB다. 이전 계약의 전체 배열은 100만 개에서 응답 364MiB·9.8s·RSS 2.6GiB였다.
 - capability 설정 파일의 선택 키 `defaultEnabledCapabilities`: `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정 이후 만든 namespace 포함)에 켤 capability 목록이다. 전역 허용이 최종 상한이고 namespace 항목이 있으면 그 값이 기본 목록을 대신한다(빈 목록은 비활성). 키가 없으면 이전 동작과 같다. 회원마다 namespace를 만드는 배포가 namespace를 설정에 나열하거나 재시작하지 않아도 된다.
 - `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 `200000`): GC가 한 실행에서 단계마다 처리하는 행 수 예산이다. 소진된 단계는 재개 위치를 `gc_cursor` 테이블에 저장하고 다음 실행이 이어간다. 대상 단계는 change feed 보존 정리, orphan object·blob 회수, 만료 session·staging 정리, 파일 만료 삭제, namespace 삭제 순회, receipt·휴지통 prune이다. GC 결과 JSON에 예산이 소진된 단계를 알리는 `budgetExhaustedStages`가 추가됐다.
+
+### Deprecated
+
+- `limit`·`cursor` 없이 호출하는 `GET /api/v2/namespaces`(ACTIVE 전체 배열). 동작은 그대로이고 개수에 상한이 없다. 새 호출자는 page 모드를 쓴다.
 
 ### Changed
 

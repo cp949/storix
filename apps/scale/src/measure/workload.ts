@@ -271,3 +271,72 @@ export async function measureNamespaceList(
     };
   }
 }
+
+/** page 모드(`limit`·`cursor`) 목록 측정. 첫 page 비용과 전체 순회 비용을 따로 기록한다. */
+export interface PageWalkMeasurement {
+  readonly limit: number;
+  readonly firstPageMs: number | null;
+  readonly firstPageBytes: number;
+  readonly pages: number;
+  readonly items: number;
+  readonly totalMs: number;
+  readonly totalBytes: number;
+  readonly failures: number;
+  readonly error: string | null;
+}
+
+/** 목록을 page 모드로 끝까지 순회한다. 응답을 파싱하되 항목은 세기만 하고 모으지 않는다. */
+export async function measureNamespacePageWalk(
+  target: ApiTarget,
+  limit: number,
+  timeoutMs: number,
+): Promise<PageWalkMeasurement> {
+  const started = performance.now();
+  let cursor: string | null = null;
+  let firstPageMs: number | null = null;
+  let firstPageBytes = 0;
+  let pages = 0;
+  let items = 0;
+  let totalBytes = 0;
+  let failures = 0;
+  let error: string | null = null;
+  try {
+    do {
+      const pageStarted = performance.now();
+      const query: string = `?limit=${limit}${cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`}`;
+      const response = await fetch(`${target.baseUrl}/api/v2/namespaces${query}`, {
+        headers: { Authorization: `Bearer ${target.apiKey}` },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (response.status !== 200) {
+        failures++;
+        error = `status ${response.status}`;
+        break;
+      }
+      const body = JSON.parse(bytes.toString('utf-8')) as { items: unknown[]; nextCursor: string | null };
+      if (pages === 0) {
+        firstPageMs = performance.now() - pageStarted;
+        firstPageBytes = bytes.byteLength;
+      }
+      pages++;
+      items += body.items.length;
+      totalBytes += bytes.byteLength;
+      cursor = body.nextCursor;
+    } while (cursor !== null);
+  } catch (caught) {
+    failures++;
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+  return {
+    limit,
+    firstPageMs,
+    firstPageBytes,
+    pages,
+    items,
+    totalMs: performance.now() - started,
+    totalBytes,
+    failures,
+    error,
+  };
+}

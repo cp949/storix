@@ -19,6 +19,8 @@ import {
   NamespaceQuotaLimitExceedsGlobalError,
 } from './namespace.errors.js';
 import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
+import { resolveLimit } from '../vfs/pagination.js';
+import { decodeNamespaceListCursor, encodeNamespaceListCursor } from './namespace-list-cursor.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,6 +35,13 @@ function isUniqueViolation(error: unknown): boolean {
     (typeof candidate.message === 'string' && /UNIQUE constraint failed/i.test(candidate.message))
   );
 }
+export interface NamespacePage {
+  readonly items: NamespaceResponseDto[];
+
+  /** 이어 읽을 cursor. 마지막 page면 null이다. */
+  readonly nextCursor: string | null;
+}
+
 export interface CreateNamespaceResult {
   readonly status: number;
   readonly body: NamespaceResponseDto | { code: string; message: string };
@@ -166,6 +175,10 @@ export class NamespaceService {
     );
   }
 
+  /**
+   * `limit`·`cursor` 없이 호출하는 이전 계약의 전체 목록이다. 개수에 상한이 없어 namespace가 많으면 비용이
+   * 개수에 비례한다. 새 호출자는 `findPage`를 쓴다.
+   */
   async findAll(): Promise<NamespaceResponseDto[]> {
     const namespaces = await this.namespaceRepo.find({
       where: { status: 'ACTIVE' },
@@ -175,6 +188,33 @@ export class NamespaceService {
     return (await withExactNamespaceBigints(this.namespaceRepo.manager, namespaces)).map((namespace) =>
       toNamespaceResponse(namespace, this.globalLimits),
     );
+  }
+
+  /**
+   * ACTIVE namespace를 `(name, id)` 오름차순 keyset으로 한 page 돌려준다. COUNT·OFFSET을 쓰지 않는다.
+   * `limit + 1`개를 읽어 다음 page 존재를 판정한다. 순회 중 생성·삭제는 snapshot을 보장하지 않으며
+   * cursor가 가리킨 행이 없어도 그 위치 뒤부터 이어 읽는다.
+   */
+  async findPage(rawLimit: string | undefined, rawCursor: string | undefined): Promise<NamespacePage> {
+    const limit = resolveLimit(rawLimit);
+    const after = rawCursor === undefined ? null : decodeNamespaceListCursor(rawCursor);
+    const query = this.namespaceRepo
+      .createQueryBuilder('n')
+      .where("n.status = 'ACTIVE'")
+      .orderBy('n.name', 'ASC')
+      .addOrderBy('n.id', 'ASC')
+      .limit(limit + 1);
+    if (after)
+      query.andWhere('(n.name, n.id) > (:afterName, :afterId)', { afterName: after.name, afterId: after.id });
+    const rows = await query.getMany();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const exact = await withExactNamespaceBigints(this.namespaceRepo.manager, page);
+    const last = page[page.length - 1];
+    return {
+      items: exact.map((namespace) => toNamespaceResponse(namespace, this.globalLimits)),
+      nextCursor: hasMore ? encodeNamespaceListCursor({ name: last.name, id: last.id }) : null,
+    };
   }
 
   private async recordIdempotency(

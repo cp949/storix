@@ -14,6 +14,7 @@ import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
+import { registerNamespaceListPageTests } from './namespace-list.http.shared-tests.js';
 import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
 
 type RowCount = { count: string };
@@ -79,6 +80,19 @@ describe('Namespace HTTP contract', () => {
     )) as RowCount[];
     return Number(rows[0].count);
   }
+
+  registerNamespaceListPageTests({
+    app: () => app,
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
+        .expect(201);
+      return response.body.id as string;
+    },
+    query: (sql, params) => migrationDataSource.query(sql, params),
+  });
 
   registerNamespaceTrashPolicyHttpTests({
     app: () => app,
