@@ -27,6 +27,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddNamespaceTrashEnabled1791700000009',
       'AddFileExpiry1791700000010',
       'AddNamespaceDeletion1791700000011',
+      'AddGcCursor1791700000012',
     ]);
   });
 });

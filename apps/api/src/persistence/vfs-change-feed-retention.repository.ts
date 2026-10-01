@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
 import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
+import { DialectPlaceholders } from './dialect-placeholders.js';
 import { readChangeFeedState } from './vfs-change-feed-journal.js';
 
 export function resolveChangeFeedRetentionDays(value: string | undefined): number {
@@ -15,72 +16,155 @@ export function resolveChangeFeedRetentionDays(value: string | undefined): numbe
   return days;
 }
 
+/**
+ * 보존 정리의 재개 위치. 만료 이벤트를 `idx_vfs_change_event_occurred_at`
+ * `(occurred_at, namespace_id, sequence)` 순서로 훑을 때 마지막으로 처리한 이벤트다.
+ * `occurredAt`은 DB가 돌려준 문자열을 그대로 쓴다(마이크로초·오프셋 보존).
+ */
+export interface ChangeFeedPruneCursor {
+  readonly occurredAt: string;
+  readonly namespaceId: string;
+  readonly sequence: string;
+}
+
+export interface ChangeFeedPruneResult {
+  /** 삭제한 이벤트 수 */
+  readonly deleted: number;
+
+  /** 이번 호출이 읽은 만료 이벤트 수. GC 단계 예산을 소모하는 단위다. */
+  readonly examined: number;
+
+  /** 이어 호출할 위치. null이면 cursor 뒤에 만료 이벤트가 더 없다. */
+  readonly next: ChangeFeedPruneCursor | null;
+}
+
+const PAGE_LIMIT = 500;
+
+interface ExpiredRow {
+  readonly namespace_id: string;
+  readonly sequence: string;
+  readonly occurred_at: string;
+  readonly is_head: boolean | number;
+}
+
 @Injectable()
 export class VfsChangeFeedRetentionRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  // 한 namespace의 가장 오래된 연속 이벤트만 삭제한다. 뒤쪽 이벤트가 먼저
-  // 만료되어도 그 앞의 유효 이벤트를 cursor 경계로 넘어가지 않는다.
-  async pruneExpiredBatch(days: number, batchSize: number): Promise<number> {
+  /**
+   * cursor 뒤의 만료 이벤트 한 page(`scanLimit`행)를 읽고, 선두 이벤트인 namespace마다 만료된 연속
+   * prefix를 최대 `batchSize`개씩 삭제한다(namespace마다 별도 트랜잭션). 뒤쪽 이벤트가 먼저 만료돼도
+   * 그 앞의 유효 이벤트를 cursor 경계로 넘어가지 않는다. 선두가 유효한 namespace의 만료 이벤트는
+   * 건너뛰며, cursor가 전진하므로 같은 실행 안에서 다시 읽지 않는다. prefix가 `batchSize`보다 길어
+   * 남은 이벤트가 있으면 그 namespace에서 멈추고 cursor를 그 위치에 둔다.
+   * 후보 선택은 만료 이벤트 인덱스 범위 스캔이라 비용이 전체 namespace 수가 아니라 읽은 만료
+   * 이벤트 수에 비례한다.
+   */
+  async pruneNext(
+    days: number,
+    batchSize: number,
+    after: ChangeFeedPruneCursor | null,
+    scanLimit = PAGE_LIMIT,
+  ): Promise<ChangeFeedPruneResult> {
     if (
       !Number.isSafeInteger(days) ||
       days < 1 ||
       !Number.isSafeInteger(batchSize) ||
       batchSize < 1 ||
-      batchSize > 500
+      batchSize > 500 ||
+      !Number.isSafeInteger(scanLimit) ||
+      scanLimit < 1 ||
+      scanLimit > PAGE_LIMIT
     )
       throw new Error('Invalid change feed prune arguments');
     const sqlite = isSqliteDataSource(this.dataSource.options);
-    return this.dataSource.transaction(async (manager) => {
-      const cutoffRows = (await manager.query(
-        sqlite
-          ? `SELECT datetime('now', '-' || ? || ' days') AS cutoff`
-          : `SELECT (CURRENT_TIMESTAMP - ($1::double precision * INTERVAL '1 day'))::text AS cutoff`,
-        [days],
-      )) as Array<{ cutoff: string }>;
-      const cutoff = cutoffRows[0].cutoff;
-      const candidateRows = (await manager.query(
-        sqlite
-          ? `SELECT s.namespace_id FROM vfs_change_feed_state s
-         JOIN vfs_change_event e ON e.namespace_id = s.namespace_id
-           AND e.sequence = (SELECT MIN(first_event.sequence) FROM vfs_change_event first_event
-             WHERE first_event.namespace_id = s.namespace_id)
-         WHERE e.occurred_at < ? ORDER BY e.occurred_at, s.namespace_id LIMIT 1`
-          : `SELECT s.namespace_id FROM vfs_change_feed_state s
-         JOIN vfs_change_event e ON e.namespace_id = s.namespace_id
-           AND e.sequence = (SELECT MIN(first_event.sequence) FROM vfs_change_event first_event
-             WHERE first_event.namespace_id = s.namespace_id)
-         WHERE e.occurred_at < $1 ORDER BY e.occurred_at, s.namespace_id LIMIT 1
-         FOR UPDATE OF s SKIP LOCKED`,
-        [cutoff],
-      )) as Array<{ namespace_id: string }>;
-      const namespaceId = candidateRows[0]?.namespace_id;
-      if (!namespaceId) return 0;
-      const state = await readChangeFeedState(manager, namespaceId, sqlite);
-      if (!state) throw new Error('Change feed state disappeared during prune');
-      const rows = (await manager.query(
-        sqlite
-          ? `SELECT CAST(e.sequence AS TEXT) AS sequence, e.occurred_at < ? AS expired
-         FROM vfs_change_event e WHERE e.namespace_id = ? ORDER BY e.sequence ASC LIMIT ?`
-          : `SELECT CAST(e.sequence AS TEXT) AS sequence, e.occurred_at < $1 AS expired
-         FROM vfs_change_event e WHERE e.namespace_id = $2 ORDER BY e.sequence ASC LIMIT $3`,
-        [cutoff, namespaceId, batchSize],
-      )) as Array<{ sequence: string; expired: boolean | number }>;
-      const expired: string[] = [];
-      for (const row of rows) {
-        if (!row.expired) break;
-        expired.push(row.sequence);
-      }
-      if (expired.length === 0) return 0;
-      const last = expired[expired.length - 1];
-      if (BigInt(last) > BigInt(state.lastSequence) || BigInt(last) < BigInt(state.prunedThrough))
-        throw new Error('Invalid change feed prune boundary');
-      const deleted = await manager
-        .getRepository(VfsChangeEventEntity)
-        .delete({ namespaceId, sequence: In(expired) });
-      if (deleted.affected !== expired.length) throw new Error('Change feed prune count mismatch');
-      await manager.getRepository(VfsChangeFeedStateEntity).update({ namespaceId }, { prunedThrough: last });
-      return expired.length;
+    const cutoffRows = (await this.dataSource.query(
+      sqlite
+        ? `SELECT datetime('now', '-' || ? || ' days') AS cutoff`
+        : `SELECT (CURRENT_TIMESTAMP - ($1::double precision * INTERVAL '1 day'))::text AS cutoff`,
+      [days],
+    )) as Array<{ cutoff: string }>;
+    const cutoff = cutoffRows[0].cutoff;
+    const ph = new DialectPlaceholders(sqlite);
+    const cutoffBind = ph.bind(cutoff);
+    const afterClause = after
+      ? `AND (e.occurred_at, e.namespace_id, e.sequence) > (${ph.bind(after.occurredAt)}${sqlite ? '' : '::timestamptz'}, ${ph.bind(after.namespaceId)}, ${ph.bind(after.sequence)}${sqlite ? '' : '::bigint'})`
+      : '';
+    const limitBind = ph.bind(scanLimit);
+    const page = (await this.dataSource.query(
+      `SELECT e.namespace_id AS namespace_id, CAST(e.sequence AS TEXT) AS sequence,
+           ${sqlite ? 'e.occurred_at' : 'e.occurred_at::text'} AS occurred_at,
+           NOT EXISTS (SELECT 1 FROM vfs_change_event f
+             WHERE f.namespace_id = e.namespace_id AND f.sequence < e.sequence) AS is_head
+         FROM vfs_change_event e
+         WHERE e.occurred_at < ${sqlite ? cutoffBind : `${cutoffBind}::timestamptz`} ${afterClause}
+         ORDER BY e.occurred_at, e.namespace_id, e.sequence LIMIT ${limitBind}`,
+      ph.params,
+    )) as ExpiredRow[];
+    if (page.length === 0) return { deleted: 0, examined: 0, next: null };
+
+    const cursorOf = (row: ExpiredRow): ChangeFeedPruneCursor => ({
+      occurredAt: row.occurred_at,
+      namespaceId: row.namespace_id,
+      sequence: row.sequence,
     });
+    let total = 0;
+    for (const [index, row] of page.entries()) {
+      if (!row.is_head) continue;
+      const deleted = await this.dataSource.transaction((manager) =>
+        this.pruneNamespacePrefix(manager, sqlite, row.namespace_id, cutoff, batchSize),
+      );
+      if (deleted === null) continue;
+      total += deleted;
+      if (deleted >= batchSize) return { deleted: total, examined: index + 1, next: cursorOf(row) };
+    }
+    return {
+      deleted: total,
+      examined: page.length,
+      next: page.length < scanLimit ? null : cursorOf(page[page.length - 1]),
+    };
+  }
+
+  // 후보 namespace의 만료된 연속 prefix를 삭제한다. 다른 인스턴스가 잠갔거나 그 사이
+  // 사라진 namespace는 null을 돌려 호출자가 다음 후보로 넘어가게 한다.
+  private async pruneNamespacePrefix(
+    manager: EntityManager,
+    sqlite: boolean,
+    namespaceId: string,
+    cutoff: string,
+    batchSize: number,
+  ): Promise<number | null> {
+    if (!sqlite) {
+      const locked = (await manager.query(
+        'SELECT 1 FROM vfs_change_feed_state WHERE namespace_id = $1 FOR UPDATE SKIP LOCKED',
+        [namespaceId],
+      )) as unknown[];
+      if (locked.length === 0) return null;
+    }
+    const state = await readChangeFeedState(manager, namespaceId, sqlite);
+    if (!state) return null;
+    const rows = (await manager.query(
+      sqlite
+        ? `SELECT CAST(e.sequence AS TEXT) AS sequence, e.occurred_at < ? AS expired
+         FROM vfs_change_event e WHERE e.namespace_id = ? ORDER BY e.sequence ASC LIMIT ?`
+        : `SELECT CAST(e.sequence AS TEXT) AS sequence, e.occurred_at < $1::timestamptz AS expired
+         FROM vfs_change_event e WHERE e.namespace_id = $2 ORDER BY e.sequence ASC LIMIT $3`,
+      [cutoff, namespaceId, batchSize],
+    )) as Array<{ sequence: string; expired: boolean | number }>;
+    const expired: string[] = [];
+    for (const row of rows) {
+      if (!row.expired) break;
+      expired.push(row.sequence);
+    }
+    if (expired.length === 0) return 0;
+    const last = expired[expired.length - 1];
+    if (BigInt(last) > BigInt(state.lastSequence) || BigInt(last) < BigInt(state.prunedThrough))
+      throw new Error('Invalid change feed prune boundary');
+    const deleted = await manager
+      .getRepository(VfsChangeEventEntity)
+      .delete({ namespaceId, sequence: In(expired) });
+    if (deleted.affected !== expired.length) throw new Error('Change feed prune count mismatch');
+    await manager.getRepository(VfsChangeFeedStateEntity).update({ namespaceId }, { prunedThrough: last });
+    return expired.length;
   }
 }

@@ -69,6 +69,24 @@ describe('Migration: InitSchema', () => {
     }
   });
 
+  it('GC cursor 테이블을 만들고 down에서 제거한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    try {
+      expect(await runner.hasTable('gc_cursor')).toBe(true);
+      expect((await runner.getTable('gc_cursor'))!.columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(['name', 'position', 'updated_at']),
+      );
+      const Migration = ALL_MIGRATIONS.find((migration) => migration.name === 'AddGcCursor1791700000012')!;
+      const migration = new Migration();
+      await migration.down(runner);
+      expect(await runner.hasTable('gc_cursor')).toBe(false);
+      await migration.up(runner);
+      expect(await runner.hasTable('gc_cursor')).toBe(true);
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
     const namespace = await dataSource
       .getRepository(NamespaceEntity)

@@ -8,6 +8,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 `200000`): GC가 한 실행에서 단계마다 처리하는 행 수 예산이다. 소진된 단계는 재개 위치를 `gc_cursor` 테이블에 저장하고 다음 실행이 이어간다. 이 버전에서는 change feed 보존 정리가 사용한다. GC 결과 JSON에 `budgetExhaustedStages`가 추가됐다.
+
+### Changed
+
+- change feed 보존 정리의 후보 선택을 만료 이벤트 인덱스 순서 cursor로 바꿨다. 선두 이벤트가 유효한 namespace의 만료 이벤트가 많을 때 GC가 호출마다 그 이벤트를 다시 건너뛰던 비용을 없앴다(100만 namespace·막힌 이벤트 27,000개 구성에서 GC 84.4s → 4.8s). 삭제 규칙(만료된 연속 prefix만 삭제)은 그대로다. migration `AddGcCursor1791700000012`(새 테이블 `gc_cursor`)이 추가된다. down은 테이블을 지우며 저장된 재개 위치만 잃는다.
+
 ## [1.0.1] - 2026-10-01
 
 ### Fixed

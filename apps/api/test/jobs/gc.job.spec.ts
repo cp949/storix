@@ -7,7 +7,18 @@ import type { BlobObjectInfo, BlobStorage } from '../../src/storage/blob-storage
 import type { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
 import type { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
 import { resolveChangeFeedRetentionDays } from '../../src/persistence/vfs-change-feed-retention.repository.js';
-import type { VfsChangeFeedRetentionRepository } from '../../src/persistence/vfs-change-feed-retention.repository.js';
+import type {
+  ChangeFeedPruneCursor,
+  ChangeFeedPruneResult,
+  VfsChangeFeedRetentionRepository,
+} from '../../src/persistence/vfs-change-feed-retention.repository.js';
+import type { GcCursorRepository } from '../../src/persistence/gc-cursor.repository.js';
+
+type PruneNext = (
+  days: number,
+  batchSize: number,
+  after: ChangeFeedPruneCursor | null,
+) => Promise<ChangeFeedPruneResult>;
 
 describe('GcJob', () => {
   it('삭제 cleanup을 주입하지 않은 GC는 삭제 집계를 0으로 반환한다', async () => {
@@ -33,27 +44,115 @@ describe('GcJob', () => {
     }
   });
 
-  it('선택적 retention repository를 배치가 빌 때까지 호출하고 삭제 수를 집계한다', async () => {
-    const pruneExpiredBatch = jest
-      .fn<(days: number, batchSize: number) => Promise<number>>()
-      .mockResolvedValueOnce(500)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(0);
-    const storage = { async *list() {}, delete: async () => undefined } as unknown as BlobStorage;
-    const blobs = {
-      findAllStorageKeys: async () => new Set<string>(),
-      findOrphanBlobs: async () => [],
-      deleteBlobRows: async () => undefined,
-    } as unknown as BlobRepository;
-    const config = {
-      get: (key: string) => (key === 'STORIX_VFS_CHANGE_RETENTION_DAYS' ? '7' : '3600'),
-    } as unknown as ConfigService;
-    const job = new GcJob(storage, blobs, config, undefined, undefined, {
-      pruneExpiredBatch,
-    } as unknown as VfsChangeFeedRetentionRepository);
-    expect((await job.run()).prunedChangeEvents).toBe(502);
-    expect(pruneExpiredBatch).toHaveBeenCalledTimes(3);
-    expect(pruneExpiredBatch).toHaveBeenCalledWith(7, 500);
+  describe('change feed 보존 정리', () => {
+    const cursorA: ChangeFeedPruneCursor = {
+      occurredAt: '2026-01-01 00:00:00+00',
+      namespaceId: 'ns-a',
+      sequence: '3',
+    };
+    const cursorB: ChangeFeedPruneCursor = {
+      occurredAt: '2026-01-02 00:00:00+00',
+      namespaceId: 'ns-b',
+      sequence: '9',
+    };
+
+    function makeJob(options: {
+      readonly pruneNext: jest.Mock<PruneNext>;
+      readonly budget?: string;
+      readonly cursors?: GcCursorRepository;
+    }): GcJob {
+      const storage = { async *list() {}, delete: async () => undefined } as unknown as BlobStorage;
+      const blobs = {
+        findAllStorageKeys: async () => new Set<string>(),
+        findOrphanBlobs: async () => [],
+        deleteBlobRows: async () => undefined,
+      } as unknown as BlobRepository;
+      const config = {
+        get: (key: string) =>
+          key === 'STORIX_VFS_CHANGE_RETENTION_DAYS'
+            ? '7'
+            : key === 'STORIX_GC_MAX_ROWS_PER_STAGE'
+              ? options.budget
+              : '3600',
+      } as unknown as ConfigService;
+      return new GcJob(
+        storage,
+        blobs,
+        config,
+        undefined,
+        undefined,
+        { pruneNext: options.pruneNext } as unknown as VfsChangeFeedRetentionRepository,
+        undefined,
+        undefined,
+        undefined,
+        options.cursors,
+      );
+    }
+
+    function makeCursors(stored: string | null) {
+      const read = jest.fn<(name: string) => Promise<string | null>>().mockResolvedValue(stored);
+      const write = jest.fn<(name: string, position: string) => Promise<void>>().mockResolvedValue(undefined);
+      const clear = jest.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+      return { repository: { read, write, clear } as unknown as GcCursorRepository, read, write, clear };
+    }
+
+    it('next가 null이 될 때까지 이어 호출하고 삭제 수를 집계한 뒤 저장된 cursor를 지운다', async () => {
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValueOnce({ deleted: 500, examined: 500, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 2, examined: 2, next: cursorB })
+        .mockResolvedValueOnce({ deleted: 0, examined: 0, next: null });
+      const cursors = makeCursors(null);
+      const result = await makeJob({ pruneNext, cursors: cursors.repository }).run();
+      expect(result.prunedChangeEvents).toBe(502);
+      expect(result.budgetExhaustedStages).toEqual([]);
+      expect(pruneNext.mock.calls.map((call) => call[2])).toEqual([null, cursorA, cursorB]);
+      expect(pruneNext).toHaveBeenCalledWith(7, 500, null);
+      expect(cursors.clear).toHaveBeenCalledWith('change-feed-prune');
+      expect(cursors.write).not.toHaveBeenCalled();
+    });
+
+    it('읽은 이벤트 수가 예산에 도달하면 멈추고 cursor를 저장하고 단계를 보고한다', async () => {
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValueOnce({ deleted: 0, examined: 500, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 3, examined: 500, next: cursorB });
+      const cursors = makeCursors(null);
+      const result = await makeJob({ pruneNext, budget: '1000', cursors: cursors.repository }).run();
+      expect(pruneNext).toHaveBeenCalledTimes(2);
+      expect(result.prunedChangeEvents).toBe(3);
+      expect(result.budgetExhaustedStages).toEqual(['change-feed-prune']);
+      expect(cursors.write).toHaveBeenCalledWith('change-feed-prune', JSON.stringify(cursorB));
+      expect(cursors.clear).not.toHaveBeenCalled();
+    });
+
+    it('저장된 cursor에서 이어 시작한다', async () => {
+      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: null });
+      const cursors = makeCursors(JSON.stringify(cursorA));
+      await makeJob({ pruneNext, cursors: cursors.repository }).run();
+      expect(pruneNext.mock.calls[0][2]).toEqual(cursorA);
+    });
+
+    it('읽을 수 없는 저장 cursor는 처음부터 다시 시작한다', async () => {
+      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: null });
+      await makeJob({ pruneNext, cursors: makeCursors('not-json').repository }).run();
+      expect(pruneNext.mock.calls[0][2]).toBeNull();
+    });
+
+    it('cursor 저장소가 없어도 정리한다', async () => {
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValueOnce({ deleted: 1, examined: 1, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 0, examined: 0, next: null });
+      expect((await makeJob({ pruneNext }).run()).prunedChangeEvents).toBe(1);
+    });
+
+    it('아무것도 읽지 못하는 호출이 이어져도 예산을 소모해 무한 반복하지 않는다', async () => {
+      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: cursorA });
+      const result = await makeJob({ pruneNext, budget: '5' }).run();
+      expect(pruneNext).toHaveBeenCalledTimes(5);
+      expect(result.budgetExhaustedStages).toEqual(['change-feed-prune']);
+    });
   });
 
   function makeConfig(gracePeriodSeconds: number): ConfigService {

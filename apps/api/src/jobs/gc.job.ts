@@ -6,9 +6,12 @@ import { BlobRepository } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import {
+  type ChangeFeedPruneCursor,
   VfsChangeFeedRetentionRepository,
   resolveChangeFeedRetentionDays,
 } from '../persistence/vfs-change-feed-retention.repository.js';
+import { GcCursorRepository } from '../persistence/gc-cursor.repository.js';
+import { DEFAULT_GC_STAGE_BUDGET, GcStageBudget } from './gc-budget.js';
 import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
 import { VfsFileExpiryRepository } from '../persistence/vfs-file-expiry.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
@@ -16,6 +19,7 @@ import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
 const DELETE_CONCURRENCY = 20;
 const CLEANUP_BATCH_SIZE = 500;
+const CHANGE_FEED_PRUNE_CURSOR = 'change-feed-prune';
 
 export interface GcResult {
   /** 다음 정리 phase로 진행한 namespace 수다. */
@@ -38,6 +42,9 @@ export interface GcResult {
   readonly prunedTrashBytes: string;
   readonly expiredFiles: number;
   readonly expiredBytes: string;
+
+  /** 단계 예산이 소진돼 남은 작업을 다음 실행으로 넘긴 단계 이름이다. */
+  readonly budgetExhaustedStages: readonly string[];
 }
 
 @Injectable()
@@ -45,6 +52,7 @@ export class GcJob {
   private readonly logger = new Logger(GcJob.name);
   private readonly gracePeriodSeconds: number;
   private readonly changeRetentionDays: number;
+  private readonly stageBudgetLimit: number;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
@@ -56,8 +64,13 @@ export class GcJob {
     @Optional() private readonly trashRetention?: VfsTrashRetentionRepository,
     @Optional() private readonly fileExpiry?: VfsFileExpiryRepository,
     @Optional() private readonly namespaceDeletion?: NamespaceDeletionCleanup,
+    @Optional() private readonly gcCursors?: GcCursorRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
+    this.stageBudgetLimit = parsePositiveInt(
+      config.get<string>('STORIX_GC_MAX_ROWS_PER_STAGE'),
+      DEFAULT_GC_STAGE_BUDGET,
+    );
     this.changeRetentionDays = resolveChangeFeedRetentionDays(
       config.get<string>('STORIX_VFS_CHANGE_RETENTION_DAYS'),
     );
@@ -141,17 +154,8 @@ export class GcJob {
     const prunedMutationReceipts = (await this.receiptRepository?.pruneExpired(new Date())) ?? 0;
     const prunedUploadSessions =
       (await this.uploadSessions?.pruneTerminalSessions(new Date(now.getTime() - 30 * 24 * 3600_000))) ?? 0;
-    let prunedChangeEvents = 0;
-    if (this.changeFeedRetention) {
-      while (true) {
-        const count = await this.changeFeedRetention.pruneExpiredBatch(
-          this.changeRetentionDays,
-          CLEANUP_BATCH_SIZE,
-        );
-        if (count === 0) break;
-        prunedChangeEvents += count;
-      }
-    }
+    const budgetExhaustedStages: string[] = [];
+    const prunedChangeEvents = await this.pruneChangeFeed(budgetExhaustedStages);
     let prunedTrashItems = 0;
     let prunedTrashBytes = 0n;
     if (this.trashRetention) {
@@ -182,7 +186,55 @@ export class GcJob {
       prunedTrashBytes: prunedTrashBytes.toString(),
       expiredFiles: expired.files,
       expiredBytes: expired.bytes,
+      budgetExhaustedStages,
     };
+  }
+
+  // 만료 이벤트를 인덱스 순서 cursor로 훑는다. 예산이 소진되면 cursor를 저장해 다음 실행이 이어가고,
+  // 끝까지 훑었으면 cursor를 지워 다음 실행이 처음부터 다시 훑는다(cursor 앞에서 뒤늦게 만료된 이벤트 처리).
+  private async pruneChangeFeed(exhaustedStages: string[]): Promise<number> {
+    if (!this.changeFeedRetention) return 0;
+    const budget = new GcStageBudget(this.stageBudgetLimit);
+    let cursor = await this.readChangeFeedCursor();
+    let pruned = 0;
+    while (true) {
+      const result = await this.changeFeedRetention.pruneNext(
+        this.changeRetentionDays,
+        CLEANUP_BATCH_SIZE,
+        cursor,
+      );
+      pruned += result.deleted;
+      budget.consume(result.examined);
+      cursor = result.next;
+      if (cursor === null) {
+        await this.gcCursors?.clear(CHANGE_FEED_PRUNE_CURSOR);
+        return pruned;
+      }
+      if (budget.exhausted) {
+        await this.gcCursors?.write(CHANGE_FEED_PRUNE_CURSOR, JSON.stringify(cursor));
+        exhaustedStages.push(CHANGE_FEED_PRUNE_CURSOR);
+        this.logger.warn(`change feed 정리 예산(${budget.limit}행) 소진 — 다음 실행에서 이어간다`);
+        return pruned;
+      }
+    }
+  }
+
+  private async readChangeFeedCursor(): Promise<ChangeFeedPruneCursor | null> {
+    const stored = await this.gcCursors?.read(CHANGE_FEED_PRUNE_CURSOR);
+    if (!stored) return null;
+    try {
+      const parsed = JSON.parse(stored) as Partial<ChangeFeedPruneCursor>;
+      if (
+        typeof parsed.occurredAt === 'string' &&
+        typeof parsed.namespaceId === 'string' &&
+        typeof parsed.sequence === 'string'
+      )
+        return { occurredAt: parsed.occurredAt, namespaceId: parsed.namespaceId, sequence: parsed.sequence };
+    } catch {
+      // 아래에서 처음부터 다시 시작한다.
+    }
+    this.logger.warn('change feed 정리 cursor를 읽을 수 없어 처음부터 다시 시작한다');
+    return null;
   }
 
   // metadata 없는 스토리지 object: 버킷 전체 목록과 DB의 전체 storage_key 집합을

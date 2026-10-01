@@ -71,6 +71,22 @@ cursor 서명에 쓰이지 않으므로 API key 교체는 기존 cursor를 무�
 `STORIX_VFS_CHANGE_RETENTION_DAYS` 기본값은 30일이다. GC는 DB 시각으로
 cutoff를 계산해 오래된 연속 이벤트를 배치 삭제하고 같은 transaction에서
 `prunedThrough`를 전진시킨다. GC가 늦게 실행되면 30일보다 오래 보존될 수 있다.
+
+정리 후보는 만료 이벤트를 `idx_vfs_change_event_occurred_at`
+`(occurred_at, namespace_id, sequence)` 순서로 훑어 고른다
+(`VfsChangeFeedRetentionRepository.pruneNext`). 한 호출은 cursor 뒤의 만료 이벤트
+최대 500행을 읽고, 그 중 namespace의 가장 작은 sequence인 이벤트(선두)마다 만료된
+연속 prefix를 namespace 단위 transaction으로 최대 500개 삭제한다. 선두가 유효한
+namespace의 만료 이벤트는 삭제하지 않고 건너뛴다. namespace 단위 잠금은
+PostgreSQL `FOR UPDATE SKIP LOCKED`이며 잠긴 후보는 건너뛴다. prefix가 500개보다
+길면 그 namespace의 위치에서 멈추고 다음 호출이 이어간다. 비용은 전체 namespace
+수가 아니라 읽은 만료 이벤트 수에 비례한다.
+
+GC 실행은 단계 예산(`STORIX_GC_MAX_ROWS_PER_STAGE`, 기본 200000, 읽은 만료 이벤트
+수)을 쓴다. 예산이 소진되면 위치를 `gc_cursor`(`change-feed-prune`)에 저장하고
+다음 실행이 거기서 이어간다. 끝까지 훑으면 위치를 지워 다음 실행이 처음부터
+훑는다. 위치보다 앞에서 뒤늦게 만료된 이벤트는 그 다음 실행에서 처리한다. 결과의
+`budgetExhaustedStages`가 예산이 소진된 단계를 알린다.
 cursor sequence가 `prunedThrough`보다 작으면 410
 `VFS_CHANGE_CURSOR_EXPIRED`다. 경계와 같은 sequence는 유효하다. 만료된 소비자는
 cursor를 버리고 새 checkpoint와 전체 열거로 재동기화한다.
