@@ -251,6 +251,16 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 - **수용 조건:** PostgreSQL·SQLite에서 초기 checkpoint와 mutation 경합에도 열거와 재생 사이 변경이 누락되지 않는다. 성공·롤백·다중 연산의 net 이벤트, subtree tombstone, operation metadata, 페이지 재조회·polling, capability off/on, cursor 오류·만료, GC/page 경합과 namespace 삭제 정리를 검증한다.
 - **관련 계약:** [변경 feed 설계](../design/08-namespace-change-feed.md), `GET /api/v2/namespaces/{namespaceId}/fs/changes`, `GET /api/v2/namespaces/{namespaceId}/fs/ls`, `STORIX_VFS_CHANGE_RETENTION_DAYS`.
 
+### RQ-030 namespace 관리자 삭제
+
+- [x] **진행 상태:** PostgreSQL·SQLite 로컬 구현·통합·공개 계약 검증 완료
+- **판정 근거:** 관리자 삭제 접수·상태 조회·접근 차단·영속 GC 정리를 구현했다. PostgreSQL L2 API는 38 suites/661 tests 중 37 suites/660 tests가 통과했고 contract runner integration은 8/8 통과했다. SQLite L2는 25 suites/435 tests가 통과했다. 두 DB 공개 계약은 각각 57/57 통과했다. PostgreSQL L2에서 `s3-blob-storage.integration-spec.ts`의 arrayBuffers가 103,848,940 bytes로 96 MiB 상한을 넘었으나 실패 spec 단독 재실행은 13/13 통과했다. 운영 배포·소비자 연동·백업 복원은 확인하지 않았다.
+- 관리자 key만 namespace 전체 삭제를 접수할 수 있어야 한다. `POST /api/v2/admin/namespaces/{namespaceId}/delete`는 본문 없는 요청과 `Idempotency-Key`를 받고 202·상태 조회 `Location`을 반환한다. 같은 UUID·key의 재전송은 최초 응답을 재생한다. 상태는 관리자 `GET /api/v2/admin/namespaces/{namespaceId}/deletion`으로 조회한다.
+- DELETING 접수 커밋 뒤 데이터 읽기·쓰기·PUBLIC·snapshot·trash·feed·upload 경로와 기존 변경 receipt 재생을 `404 NAMESPACE_NOT_FOUND`로 차단해야 한다. 이름은 이 커밋부터 새 생성 key·새 UUID로 재사용할 수 있어야 한다. 기존 생성 receipt와 다른 namespace의 데이터는 유지한다.
+- GC는 live·snapshot·trash·upload와 추적 object·staging을 재시작 가능한 단계로 정리해야 한다. DELETED는 추적 데이터 정리가 끝나고 counter·usage가 0임을 뜻한다. 미정착 PUT는 접근 차단 상태에서 완료를 보류한다. 삭제 상태·receipt·namespace tombstone·audit는 유지한다. metadata 없는 object·backup·과거 object 버전·외부 cache는 완료 판정에서 제외한다.
+- **수용 조건:** PostgreSQL·SQLite에서 관리자 인증·입력 오류·202/200 receipt·상태 조회·잠금 안 writer와 upload admission 차단·접근 404·이름 재사용·격리를 검증한다. 배치·manifest·Blob 참조·counter·global/namespace usage·늦은 PUT·GC 재시작·grace·삭제 실패 재시도·완료 보류·DELETED 전환을 검증한다. 공개 계약은 관리자 전용 접수·재생·stat/content 차단·DELETING 조회·새 UUID 생성·다른 namespace 보존을 확인한다. 전달 중 스트림의 즉시 중단과 기존 presigned URL 취소는 보장하지 않는다.
+- **관련 계약:** [namespace 관리자 삭제 설계](../design/13-namespace-deletion.md), api ADR-0032, `namespace-deletion` 공개 계약.
+
 ## 소비자 어댑터 책임과 범위 제외
 
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.

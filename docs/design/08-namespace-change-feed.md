@@ -7,6 +7,8 @@
 namespace 확인을 적용한다. feed는 상태 변경 신호이며 파일 바이트 이력이나 과거
 revision의 본문을 제공하지 않는다. 소비자는 살아 있는 파일의 현재 상태를 다시 읽는다.
 
+비활성 namespace의 checkpoint 차단과 feed 정리는 [namespace 삭제 설계](./13-namespace-deletion.md)의 "접근과 이름 재사용"·"METADATA"를 따른다.
+
 ## Namespace 순서와 net 이벤트
 
 namespace별 journal state는 마지막 `sequence`, 보존 경계 `prunedThrough`, 최초

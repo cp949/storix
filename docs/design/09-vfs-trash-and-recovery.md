@@ -2,6 +2,8 @@
 
 ## Namespace 정책
 
+아래 파일 삭제·복구·receipt 계약은 ACTIVE namespace에 적용한다. namespace 전체 삭제는 [namespace 삭제 설계](./13-namespace-deletion.md)의 "접근과 이름 재사용"·"METADATA"를 따른다.
+
 휴지통은 namespace별 `trashEnabled` 정책이며 기본값은 OFF다. 관리자 PATCH로 변경하고 namespace 조회 응답의 `quota.trash.enabled`에서 현재 값을 확인한다. 정책 변경은 삭제와 같은 namespace root mutation lock 및 DB transaction을 사용하므로 동시 변경·삭제는 lock 획득 순서에 따라 한 정책으로 처리된다.
 
 정책 ON에서는 기존처럼 삭제를 manifest로 보존한다. OFF에서는 `/fs/rm`, `/fs/rmdir`, 조건부 `kind: delete`가 manifest 없이 원자적으로 영구 삭제한다. 이때 live byte와 live Blob 참조를 감소시키고 `deleted` change-feed net event를 기록한다. 다른 live·snapshot 참조는 그대로 유지한다. OFF 삭제의 조건부 receipt는 정책이 나중에 바뀌어도 최초 응답을 재생하며, 즉시 삭제에는 `trashId`, `X-Trash-Id`, 감사 `trash_id`가 없다.

@@ -2,6 +2,8 @@
 
 ## 공개 계약
 
+아래 세션·receipt·보존 계약은 ACTIVE namespace에 적용한다. namespace 관리자 삭제의 접근 차단과 세션 정리는 [namespace 삭제 설계](./13-namespace-deletion.md)의 "접근과 이름 재사용"·"UPLOADS"·"METADATA"를 따른다.
+
 `resumable-upload`는 namespace 선택 capability이며 기본 비활성이다. 전역과 해당 namespace에서 허용하고 유한한 세션 정책을 제공해야 새 세션과 조각을 받을 수 있다. 서비스 Bearer key가 모든 요청을 인증하며 최종 사용자 권한은 호출 서버가 판단한다. 기능을 끈 뒤에도 같은 생성 key의 응답 재생, 기존 세션의 조회·취소·정리, 모든 조각이 저장된 세션의 완료는 가능하다.
 
 `POST /api/v2/namespaces/{namespaceId}/fs/upload-sessions`는 UUID `Idempotency-Key`, 최대 128 UTF-8 bytes의 비어 있지 않은 `X-Mutation-Scope`와 JSON `{path,sizeBytes,mimeType,ifAbsent:true,sha256?}` 또는 `{path,sizeBytes,mimeType,ifRevision:"r1.…",sha256?}`를 받는다. `sizeBytes`는 0도 허용하는 10진 문자열이다. 선택적 `sha256`은 저장 전 전체 평문 파일 바이트의 SHA-256을 정확히 64자리 소문자 hex로 쓴다. `ENCRYPTED` namespace도 평문 기준이다. 잘못된 값은 세션 생성 전에 `400 VFS_INVALID_CHECKSUM`으로 거부한다. 부모 디렉터리는 미리 존재해야 한다. 요청 조건은 생성 때와 완료 때 검사한다. 같은 namespace/scope/key와 같은 정규 경로·크기·소문자 MIME·조건·checksum을 재시도하면 최초 `201` 본문과 `X-Request-Id`를 재생한다. FAILED 후 같은 생성 key의 재시도도 최초 `201` 본문(`state: OPEN`)을 재생하고 현재 상태는 `GET`으로 조회한다. checksum 또는 바이트를 고친 업로드에는 새 key와 세션이 필요하다. 입력이나 checksum을 바꿔 기존 key로 보내면 `409 MUTATION_KEY_REUSED`다. 응답은 `sessionId`, `state: OPEN`, `partSizeBytes`, `partCount`, `expiresAt`, `maxExpiresAt`이다. 0 byte는 조각 없이 완료한다.

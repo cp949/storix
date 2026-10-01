@@ -1,7 +1,7 @@
 # 설계 문서
 
 장기적으로 유지할 가치가 있는 설계만 둔다. ADR보다 상세한 현재 시점의 설계 기술이다. 일회성 작업의 설계는 여기에 두지
-않는다(`_works/`).
+않는다.
 
 - 소스 코드 줄 번호를 적지 않는다.
 - 이력을 남기지 않는다. 기능이 바뀌면 문서를 현재 내용으로 고쳐 쓴다. 이력은 git 이력을 본다.
@@ -23,3 +23,4 @@
 | [10-file-expiry.md](./10-file-expiry.md)                         | 생성 시 파일 만료 지정, `persist` 확정, GC 만료 삭제, 공개 읽기 제외와 연산별 만료 전파                                                   |
 | [11-file-mimetype-update.md](./11-file-mimetype-update.md)       | FILE mimeType만 바꾸는 조건부 mutation `setMimeType`: 엄격 검증, no-op 규칙, revision·만료 상호작용, fingerprint 계산                     |
 | [12-contract-checks.md](./12-contract-checks.md)                 | 공개 HTTP 계약을 실제 서버에 실행하는 `apps/contract`: 계약 정의·작성 규약, 프로필 단위 서버 기동, RQ 연결, 실행 옵션과 검증 범위         |
+| [13-namespace-deletion.md](./13-namespace-deletion.md)           | 관리자 비동기 namespace 삭제, 접근 차단·이름 재사용·receipt, GC 단계와 DELETED의 완료 경계                                                |
