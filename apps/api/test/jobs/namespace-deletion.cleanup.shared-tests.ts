@@ -64,6 +64,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
   async function fixture(trashEnabled = false) {
     const c = services();
     const ns = await new NamespaceProvisioningRepository(c.dataSource).createWithRoot(
+      randomUUID(),
       `delete-${randomUUID()}`,
     );
     await c.dataSource.manager.update(NamespaceEntity, ns.id, { trashEnabled });
@@ -421,7 +422,10 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     const f = await fixture();
     await content(f);
     await f.accept();
-    const newer = await new NamespaceProvisioningRepository(f.dataSource).createWithRoot(f.ns.name);
+    const newer = await new NamespaceProvisioningRepository(f.dataSource).createWithRoot(
+      randomUUID(),
+      f.ns.name,
+    );
     const root = await f.dataSource.manager.findOneByOrFail(VfsNodeEntity, {
       namespaceId: newer.id,
       parentId: IsNull(),

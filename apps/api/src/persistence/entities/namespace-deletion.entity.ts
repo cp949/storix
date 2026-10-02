@@ -3,7 +3,7 @@
  * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
  */
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 /** 삭제 정리의 현재 단계다. */
 export type NamespaceDeletionPhase = 'UPLOADS' | 'METADATA' | 'OBJECTS' | 'COMPLETED';
@@ -14,7 +14,8 @@ export type NamespaceDeletionBlockedReason =
 
 @Entity('namespace_deletion')
 export class NamespaceDeletionEntity {
-  @PrimaryColumn({ name: 'namespace_id', type: 'uuid' }) namespaceId: string;
+  @PrimaryColumn({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
+  namespaceId: string;
   @Column({ type: 'varchar', length: 16 }) phase: NamespaceDeletionPhase;
   @Column({ name: 'requested_at', type: TIMESTAMP_COLUMN_TYPE }) requestedAt: Date;
   @Column({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE }) updatedAt: Date;

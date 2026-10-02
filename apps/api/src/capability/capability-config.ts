@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
-import { validate as isUuid } from 'uuid';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { CAPABILITY_ID_PATTERN } from './capability-registry.js';
 
 export interface CapabilityConfig {
@@ -55,14 +55,13 @@ function parseCapabilityConfig(value: unknown): CapabilityConfig {
   }
   const namespaceAllowedCapabilities: Record<string, readonly string[]> = {};
   for (const [namespaceId, capabilities] of Object.entries(value.namespaceAllowedCapabilities)) {
-    if (!isUuid(namespaceId)) {
-      throw new Error(`Invalid capability configuration: namespace ID ${namespaceId} is not a UUID`);
+    if (!isNamespaceId(namespaceId)) {
+      throw new Error(`Invalid capability configuration: namespace ID ${namespaceId} is invalid`);
     }
-    const normalizedId = namespaceId.toLowerCase();
-    if (Object.hasOwn(namespaceAllowedCapabilities, normalizedId)) {
-      throw new Error(`Invalid capability configuration: duplicate namespace ID ${normalizedId}`);
+    if (Object.hasOwn(namespaceAllowedCapabilities, namespaceId)) {
+      throw new Error(`Invalid capability configuration: duplicate namespace ID ${namespaceId}`);
     }
-    namespaceAllowedCapabilities[normalizedId] = parseCapabilityList(
+    namespaceAllowedCapabilities[namespaceId] = parseCapabilityList(
       capabilities,
       `namespaceAllowedCapabilities.${namespaceId}`,
     );

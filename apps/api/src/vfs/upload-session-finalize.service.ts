@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { getEncrypted } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
@@ -42,7 +43,7 @@ export class UploadSessionFinalizeService {
   ) {}
 
   async complete(namespaceId: string, sessionId: string, requestId: string): Promise<MutationHttpResult> {
-    if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadFinalizeError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');

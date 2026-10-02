@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
 import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import { AUDITED_KEY } from './audited.decorator.js';
 
@@ -89,7 +90,7 @@ export class AuditLogInterceptor implements NestInterceptor {
   // 성립한다. 앞으로 :id를 다른 의미로 쓰는 컨트롤러가 생기면 이 가정을 재검토해야 한다.
   private resolveNamespaceId(request: Request): string | null {
     const value = request.params.namespaceId ?? request.params.id;
-    return typeof value === 'string' && isUuid(value) ? value : null;
+    return typeof value === 'string' && isNamespaceId(value) ? value : null;
   }
 
   private resolvePath(request: Request): string | null {

@@ -19,7 +19,7 @@ import { renderReport, type ReportInput } from './report.ts';
 const USAGE = `사용법: pnpm scale <명령> [옵션]
   env up                          전용 PostgreSQL·VersityGW 컨테이너 기동
   env down [--volumes]            컨테이너 제거(--volumes면 seed 데이터까지 삭제)
-  seed --scale N [--seed S] [--set 키=값 ...]  규모 N 템플릿 database 적재(변형은 seed 이름을 달리한다)
+  seed --scale N [--seed S] [--id-style uuid|prefixed] [--set 키=값 ...]  규모 N 템플릿 database 적재
   seed-objects --scale N [--seed S]  blob 행에 대응하는 실제 storage object를 만든다(GC 측정 전에 필요)
   verify-fidelity                 API 생성 표본과 SQL 적재 표본의 행 모양을 대조
   measure --scale N --label L     측정 실행. 옵션:
@@ -55,6 +55,7 @@ async function main(): Promise<number> {
     options: {
       scale: { type: 'string' },
       seed: { type: 'string', default: 'storix-scale-v1' },
+      'id-style': { type: 'string', default: 'uuid' },
       set: { type: 'string', multiple: true },
       label: { type: 'string', default: 'baseline' },
       volumes: { type: 'boolean', default: false },
@@ -83,8 +84,13 @@ async function main(): Promise<number> {
   }
   if (command === 'seed') {
     ensurePostgres();
+    if (values['id-style'] !== 'uuid' && values['id-style'] !== 'prefixed')
+      throw new Error('--id-style은 uuid 또는 prefixed여야 한다');
     const spec = applyOverrides(
-      defaultSpec(Number(values.scale), new Date().toISOString(), values.seed),
+      {
+        ...defaultSpec(Number(values.scale), new Date().toISOString(), values.seed),
+        namespaceIdStyle: values['id-style'],
+      },
       values.set ?? [],
     );
     const errors = validateSpec(spec);

@@ -30,6 +30,7 @@ export class NamespaceProvisioningRepository {
   ) {}
 
   async createWithRoot(
+    id: string,
     name: string,
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
@@ -41,7 +42,7 @@ export class NamespaceProvisioningRepository {
     try {
       return await this.dataSource.transaction(async (manager) => {
         const namespace = await manager.save(
-          manager.create(NamespaceEntity, { name, encryptionPolicy, accessPolicy, maxTotalLogicalBytes }),
+          manager.create(NamespaceEntity, { id, name, encryptionPolicy, accessPolicy, maxTotalLogicalBytes }),
         );
         await manager.save(
           manager.create(VfsNodeEntity, {

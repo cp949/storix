@@ -21,8 +21,7 @@ import {
 import { assertNamespaceQuotaWithinGlobalLimit } from '../vfs/namespace-quota.js';
 import { resolveLimit } from '../vfs/pagination.js';
 import { decodeNamespaceListCursor, encodeNamespaceListCursor } from './namespace-list-cursor.js';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { generateNamespaceId, isNamespaceId } from '../common/namespace-id.js';
 
 function isUniqueViolation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
@@ -68,6 +67,7 @@ export class NamespaceService {
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
     maxTotalLogicalBytes: string | null = null,
+    idPrefix?: string,
   ): Promise<CreateNamespaceResult> {
     if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
       throw new NamespaceEncryptionNotConfiguredError();
@@ -83,6 +83,7 @@ export class NamespaceService {
 
     const requestHash = canonicalJsonHash({
       name,
+      ...(idPrefix === undefined ? {} : { idPrefix }),
       encryptionPolicy,
       accessPolicy,
       ...(maxTotalLogicalBytes === null ? {} : { maxTotalLogicalBytes }),
@@ -106,6 +107,7 @@ export class NamespaceService {
 
     try {
       const namespace = await this.provisioningRepo.createWithRoot(
+        generateNamespaceId(idPrefix),
         name,
         encryptionPolicy,
         accessPolicy,
@@ -155,7 +157,7 @@ export class NamespaceService {
   }
 
   async findById(id: string): Promise<NamespaceResponseDto> {
-    if (!UUID_PATTERN.test(id)) {
+    if (!isNamespaceId(id)) {
       throw new NamespaceNotFoundError(id);
     }
 

@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type VfsTrashRootType = 'FILE' | 'DIRECTORY';
 
@@ -8,7 +8,7 @@ export class VfsTrashEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid' })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @Column({ name: 'root_type', type: 'varchar', length: 16 })

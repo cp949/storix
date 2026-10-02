@@ -22,7 +22,7 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
   }
 
   async function createNamespace(name: string) {
-    return new NamespaceProvisioningRepository(getDs()).createWithRoot(name);
+    return new NamespaceProvisioningRepository(getDs()).createWithRoot(randomUUID(), name);
   }
 
   async function createFile(namespaceId: string, parentId: string, name: string) {

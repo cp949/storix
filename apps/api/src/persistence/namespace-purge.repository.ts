@@ -70,7 +70,7 @@ export class NamespacePurgeRepository {
       ? `datetime('now', '-' || ${ph.bind(days)} || ' days')`
       : `now() - (${ph.bind(days)}::int * interval '1 day')`;
     const afterClause = after
-      ? `AND (d.completed_at, d.namespace_id) > (${ph.bind(after.completedAt)}${sqlite ? '' : '::timestamptz'}, ${ph.bind(after.namespaceId)}${sqlite ? '' : '::uuid'})`
+      ? `AND (d.completed_at, d.namespace_id) > (${ph.bind(after.completedAt)}${sqlite ? '' : '::timestamptz'}, ${ph.bind(after.namespaceId)}${sqlite ? '' : '::varchar'})`
       : '';
     const rows = (await this.dataSource.query(
       `SELECT d.namespace_id AS namespace_id, ${sqlite ? 'd.completed_at' : 'd.completed_at::text'} AS completed_at
@@ -116,7 +116,7 @@ export class NamespacePurgeRepository {
     const run = async (sql: string): Promise<unknown[]> => {
       const ph = new DialectPlaceholders(sqlite);
       // PostgreSQL은 배열 파라미터 하나, SQLite는 id마다 변수 하나로 바인딩한다(page 최대 500개).
-      const list = sqlite ? ids.map((id) => ph.bind(id)).join(', ') : `${ph.bind([...ids])}::uuid[]`;
+      const list = sqlite ? ids.map((id) => ph.bind(id)).join(', ') : `${ph.bind([...ids])}::varchar[]`;
       return (await manager.query(
         sql.replace('{IDS}', sqlite ? `IN (${list})` : `= ANY(${list})`),
         ph.params,

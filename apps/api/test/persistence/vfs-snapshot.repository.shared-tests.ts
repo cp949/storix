@@ -19,7 +19,10 @@ export function runSnapshotRepositoryTests(
 ): void {
   const ds = () => context().dataSource;
   async function fixture() {
-    const namespace = await new NamespaceProvisioningRepository(ds()).createWithRoot(randomUUID());
+    const namespace = await new NamespaceProvisioningRepository(ds()).createWithRoot(
+      randomUUID(),
+      randomUUID(),
+    );
     const root = (await context().nodes.getRoot(namespace.id))!;
     return { namespace, root };
   }

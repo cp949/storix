@@ -94,7 +94,10 @@ describe('conditional content 삭제 중 claim 소실 (SQLite)', () => {
   it.each(['DELETING', 'DELETED'] as const)(
     '%s tombstone에서 raw claim 소실과 오류 receipt fencing을 모두 404로 변환한다',
     async (status) => {
-      const ns = await new NamespaceProvisioningRepository(db).createWithRoot(`receipt-${randomUUID()}`);
+      const ns = await new NamespaceProvisioningRepository(db).createWithRoot(
+        randomUUID(),
+        `receipt-${randomUUID()}`,
+      );
       const identity = { namespaceId: ns.id, scope: 'scope', key: randomUUID() };
       expect(await receipts.claim(identity, new Date())).toEqual({ kind: 'owner', generation: 1 });
       await db.getRepository(NamespaceEntity).update(ns.id, { status });
@@ -115,7 +118,10 @@ describe('conditional content 삭제 중 claim 소실 (SQLite)', () => {
   );
 
   it('업로드가 정지한 동안 삭제 GC가 receipt를 제거하면 재개 뒤 404이고 live 반영은 없다', async () => {
-    const ns = await new NamespaceProvisioningRepository(db).createWithRoot(`ingress-${randomUUID()}`);
+    const ns = await new NamespaceProvisioningRepository(db).createWithRoot(
+      randomUUID(),
+      `ingress-${randomUUID()}`,
+    );
     const key = randomUUID();
     const entered = deferred();
     const resume = deferred();

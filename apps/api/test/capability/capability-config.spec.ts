@@ -70,28 +70,25 @@ describe('capability 시작 설정', () => {
     ).rejects.toThrow(/defaultEnabledCapabilities/);
   });
 
-  it('대문자 namespace UUID 키를 DB 조회용 소문자 정규형으로 반환한다', async () => {
+  it('대문자 namespace ID 키를 별칭으로 허용하지 않는다', async () => {
     await expect(
       loadFile({
         globalAllowedCapabilities: [],
         namespaceAllowedCapabilities: { [NAMESPACE_ID.toUpperCase()]: [] },
       }),
-    ).resolves.toEqual({
-      globalAllowedCapabilities: [],
-      namespaceAllowedCapabilities: { [NAMESPACE_ID]: [] },
-    });
+    ).rejects.toThrow(/namespace ID/);
   });
 
-  it('같은 namespace UUID의 대소문자 표기가 중복되면 목록 덮어쓰기를 거부한다', async () => {
+  it('prefix namespace ID 키를 원래 표기대로 보존한다', async () => {
     await expect(
       loadFile({
         globalAllowedCapabilities: [],
-        namespaceAllowedCapabilities: {
-          [NAMESPACE_ID]: ['first-capability'],
-          [NAMESPACE_ID.toUpperCase()]: ['second-capability'],
-        },
+        namespaceAllowedCapabilities: { tenant_a_1234567890abcdef1234567890abcdef: [] },
       }),
-    ).rejects.toThrow(/duplicate|중복/i);
+    ).resolves.toEqual({
+      globalAllowedCapabilities: [],
+      namespaceAllowedCapabilities: { tenant_a_1234567890abcdef1234567890abcdef: [] },
+    });
   });
 
   it('지정 파일을 읽을 수 없으면 실패한다', async () => {

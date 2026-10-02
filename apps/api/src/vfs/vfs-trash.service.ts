@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../common/domain-error.js';
 import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsTrashRepository, type TrashListBoundary } from '../persistence/vfs-trash.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
@@ -34,7 +35,7 @@ function valid(cursor: TrashCursor): boolean {
   const timestamp = cursor.deletedAtKey;
   const millis = timestamp.slice(0, 23);
   return (
-    isUuid(cursor.namespaceId) &&
+    isNamespaceId(cursor.namespaceId) &&
     isUuid(cursor.trashId) &&
     cursor.order === 'deletedAtDescTrashIdAsc' &&
     TIMESTAMP.test(timestamp) &&
@@ -59,8 +60,7 @@ function decode(raw: string, namespaceId: string): TrashCursor {
     if (Object.keys(record).length !== keys.length || keys.some((key) => typeof record[key] !== 'string'))
       throw new Error('fields');
     const cursor = record as unknown as TrashCursor;
-    if (!valid(cursor) || cursor.namespaceId.toLowerCase() !== namespaceId.toLowerCase())
-      throw new Error('owner');
+    if (!valid(cursor) || cursor.namespaceId !== namespaceId) throw new Error('owner');
     if (encode(cursor) !== raw) throw new Error('canonical');
     return cursor;
   } catch {

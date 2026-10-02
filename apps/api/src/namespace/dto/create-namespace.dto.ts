@@ -1,11 +1,13 @@
 import { AccessPolicy, EncryptionPolicy } from '../../persistence/entities/namespace.entity.js';
 import {
+  NamespaceInvalidIdPrefixError,
   NamespaceInvalidAccessPolicyError,
   NamespaceInvalidEncryptionPolicyError,
   NamespaceInvalidNameError,
   NamespacePublicEncryptionConflictError,
   NamespaceInvalidTotalLogicalBytesError,
 } from '../namespace.errors.js';
+import { NAMESPACE_ID_PREFIX_PATTERN } from '../../common/namespace-id.js';
 
 const NAMESPACE_NAME_PATTERN = /^[a-z0-9_-]{1,128}$/;
 const VALID_ENCRYPTION_POLICIES: readonly EncryptionPolicy[] = ['NONE', 'ENCRYPTED'];
@@ -13,6 +15,7 @@ const VALID_ACCESS_POLICIES: readonly AccessPolicy[] = ['PRIVATE', 'PUBLIC'];
 
 export interface CreateNamespaceRequest {
   readonly name: string;
+  readonly idPrefix?: string;
   readonly encryptionPolicy: EncryptionPolicy;
   readonly accessPolicy: AccessPolicy;
   readonly maxTotalLogicalBytes?: string;
@@ -24,6 +27,13 @@ export function parseCreateNamespaceRequest(body: unknown): CreateNamespaceReque
 
   if (typeof name !== 'string' || !NAMESPACE_NAME_PATTERN.test(name)) {
     throw new NamespaceInvalidNameError(name);
+  }
+
+  const rawIdPrefix = record.idPrefix;
+  if (rawIdPrefix !== undefined && rawIdPrefix !== null && rawIdPrefix !== '') {
+    if (typeof rawIdPrefix !== 'string' || !NAMESPACE_ID_PREFIX_PATTERN.test(rawIdPrefix)) {
+      throw new NamespaceInvalidIdPrefixError(rawIdPrefix);
+    }
   }
 
   const rawPolicy = record.encryptionPolicy;
@@ -51,6 +61,9 @@ export function parseCreateNamespaceRequest(body: unknown): CreateNamespaceReque
 
   return {
     name,
+    ...(rawIdPrefix === undefined || rawIdPrefix === null || rawIdPrefix === ''
+      ? {}
+      : { idPrefix: rawIdPrefix }),
     encryptionPolicy,
     accessPolicy,
     ...(maxTotalLogicalBytes === undefined ? {} : { maxTotalLogicalBytes }),

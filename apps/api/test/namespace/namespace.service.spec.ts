@@ -87,6 +87,7 @@ describe('NamespaceService', () => {
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({ id: 'ns-1', name: 'acme' });
       expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        expect.any(String),
         'acme',
         'NONE',
         'PRIVATE',
@@ -109,6 +110,32 @@ describe('NamespaceService', () => {
 
       expect(result).toEqual({ status: 201, body: storedBody });
       expect(provisioningRepo.createWithRoot).not.toHaveBeenCalled();
+    });
+
+    it('idPrefix를 요청 hash에 넣고 application ID를 provisioning에 전달한다', async () => {
+      idempotencyRepo.findOneBy.mockResolvedValue(null);
+      provisioningRepo.createWithRoot.mockResolvedValue(
+        makeNamespaceEntity({ id: `tenant_${'a'.repeat(32)}` }),
+      );
+
+      await service.create('key-prefix', 'acme', 'NONE', 'PRIVATE', null, 'tenant');
+
+      expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        expect.stringMatching(/^tenant_[0-9a-f]{32}$/),
+        'acme',
+        'NONE',
+        'PRIVATE',
+        null,
+        expect.objectContaining({
+          key: 'key-prefix',
+          requestHash: canonicalJsonHash({
+            name: 'acme',
+            idPrefix: 'tenant',
+            encryptionPolicy: 'NONE',
+            accessPolicy: 'PRIVATE',
+          }),
+        }),
+      );
     });
 
     it('같은 key에 다른 body가 재사용되면 IdempotencyKeyReusedError를 던진다', async () => {
@@ -170,6 +197,7 @@ describe('NamespaceService', () => {
 
       expect(result.status).toBe(201);
       expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        expect.any(String),
         'acme',
         'ENCRYPTED',
         'PRIVATE',
@@ -184,6 +212,7 @@ describe('NamespaceService', () => {
       await service.create('key-public', 'public-ns', 'NONE', 'PUBLIC');
 
       expect(provisioningRepo.createWithRoot).toHaveBeenCalledWith(
+        expect.any(String),
         'public-ns',
         'NONE',
         'PUBLIC',
@@ -249,6 +278,14 @@ describe('NamespaceService', () => {
       await expect(service.findById('11111111-1111-1111-1111-111111111111')).rejects.toThrow(
         NamespaceNotFoundError,
       );
+    });
+
+    it('유효한 prefix ID는 조회하고 대문자 변형은 거부한다', async () => {
+      const id = `tenant_${'a'.repeat(32)}`;
+      namespaceRepo.findOneBy.mockResolvedValue(makeNamespaceEntity({ id }));
+
+      expect((await service.findById(id)).id).toBe(id);
+      await expect(service.findById(`Tenant_${'a'.repeat(32)}`)).rejects.toThrow(NamespaceNotFoundError);
     });
 
     it('존재하는 namespace를 응답 DTO로 반환한다', async () => {

@@ -1,3 +1,4 @@
+import { NAMESPACE_ID_COLUMN_LENGTH } from './dialect-column-types.js';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export type VfsTrashEntryType = 'FILE' | 'DIRECTORY';
@@ -7,7 +8,7 @@ export class VfsTrashEntryEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid' })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @Column({ name: 'trash_id', type: 'uuid' })

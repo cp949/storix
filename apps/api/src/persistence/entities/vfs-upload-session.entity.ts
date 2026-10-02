@@ -1,12 +1,12 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type VfsUploadSessionState = 'OPEN' | 'FINALIZING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
 
 @Entity('vfs_upload_session')
 export class VfsUploadSessionEntity {
   @PrimaryColumn({ type: 'uuid' }) id: string;
-  @Column({ name: 'namespace_id', type: 'uuid' }) namespaceId: string;
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH }) namespaceId: string;
   @Column({ type: 'varchar', length: 128 }) scope: string;
   @Column({ name: 'creation_key', type: 'uuid' }) creationKey: string;
   @Column({ type: 'varchar', length: 64 }) fingerprint: string;

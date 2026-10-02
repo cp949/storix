@@ -24,6 +24,7 @@ export function runNamespacePurgeSharedTests(get: () => Context): void {
   ): Promise<string> {
     const { dataSource, sqlite } = get();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       `purge-${randomUUID()}`,
     );
     await run(`DELETE FROM vfs_node WHERE namespace_id = ${ph(1)}`, [namespace.id]);
@@ -144,7 +145,7 @@ export function runNamespacePurgeSharedTests(get: () => Context): void {
     const { dataSource } = get();
     const name = `purge-reuse-${randomUUID()}`;
     const repo = new NamespaceProvisioningRepository(dataSource);
-    const first = await repo.createWithRoot(name, 'NONE', 'PRIVATE', null, {
+    const first = await repo.createWithRoot(randomUUID(), name, 'NONE', 'PRIVATE', null, {
       key: `receipt-${name}`,
       requestHash: 'd'.repeat(64),
       responseStatus: 201,
@@ -163,7 +164,7 @@ export function runNamespacePurgeSharedTests(get: () => Context): void {
 
     await drain(30, 100);
 
-    expect((await repo.createWithRoot(name)).id).not.toBe(first.id);
+    expect((await repo.createWithRoot(randomUUID(), name)).id).not.toBe(first.id);
     expect(
       (
         (await run(`SELECT 1 AS v FROM idempotency_key WHERE key = ${ph(1)}`, [

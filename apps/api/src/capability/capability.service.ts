@@ -61,7 +61,7 @@ export class CapabilityService {
   isEnabled(namespaceId: string, capabilityId: CapabilityId): boolean {
     const definition = this.definitions.get(capabilityId);
     if (!definition || !this.globalAllowed.has(capabilityId)) return false;
-    const allowed = this.namespaceAllowed.get(namespaceId.toLowerCase()) ?? this.defaultEnabled;
+    const allowed = this.namespaceAllowed.get(namespaceId) ?? this.defaultEnabled;
     if (!allowed.has(capabilityId)) return false;
     return definition.dependencies.every((dependency) => this.isEnabled(namespaceId, dependency));
   }

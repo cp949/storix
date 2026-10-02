@@ -3,6 +3,7 @@ import { AddGcCursor1791700000012 } from './1791700000012-AddGcCursor.js';
 import { AddNamespaceEncryptedIndex1791700000013 } from './1791700000013-AddNamespaceEncryptedIndex.js';
 import { AddIdempotencyKeyCreatedAtIndex1791700000014 } from './1791700000014-AddIdempotencyKeyCreatedAtIndex.js';
 import { AddNamespaceDeletionCompletedIndex1791700000015 } from './1791700000015-AddNamespaceDeletionCompletedIndex.js';
+import { ConvertNamespaceIdToString1791700000016 } from './1791700000016-ConvertNamespaceIdToString.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -61,4 +62,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddNamespaceEncryptedIndex1791700000013,
   AddIdempotencyKeyCreatedAtIndex1791700000014,
   AddNamespaceDeletionCompletedIndex1791700000015,
+  ConvertNamespaceIdToString1791700000016,
 ];

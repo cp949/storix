@@ -12,6 +12,7 @@ import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrat
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
+import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -147,9 +148,10 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `trash-migration-${randomUUID()}` }),
+    );
     const migration = new AddVfsTrash1791700000007();
     const runner = dataSource.createQueryRunner();
     try {
@@ -214,9 +216,10 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('namespace trash policy migration defaults existing and new namespaces to OFF and reverses its column', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-policy-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `trash-policy-migration-${randomUUID()}` }),
+    );
     const migration = new AddNamespaceTrashEnabled1791700000009();
     const runner = dataSource.createQueryRunner();
     try {
@@ -228,7 +231,10 @@ describe('마이그레이션 체인 (SQLite)', () => {
       expect(await runner.query('SELECT trash_enabled FROM namespace WHERE id = ?', [namespace.id])).toEqual([
         { trash_enabled: 0 },
       ]);
-      await runner.query('INSERT INTO namespace (name) VALUES (?)', [`trash-policy-new-${randomUUID()}`]);
+      await runner.query('INSERT INTO namespace (id, name) VALUES (?, ?)', [
+        randomUUID(),
+        `trash-policy-new-${randomUUID()}`,
+      ]);
       expect(
         await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE ?', ['trash-policy-new-%']),
       ).toEqual([{ trash_enabled: 0 }]);
@@ -238,9 +244,10 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('파일 만료 migration은 기존 node를 NULL로 두고 부분 인덱스와 세션 컬럼을 가역적으로 만든다', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `file-expiry-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `file-expiry-migration-${randomUUID()}` }),
+    );
     const nodeId = randomUUID();
     const migration = new AddFileExpiry1791700000010();
     const runner = dataSource.createQueryRunner();
@@ -272,12 +279,9 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('trash entries belong to their namespace and cascade when the trash item is removed', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-owner-${randomUUID()}` });
-    const other = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-other-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: `trash-owner-${randomUUID()}` }));
+    const other = await namespaceRepo.save(namespaceRepo.create({ name: `trash-other-${randomUUID()}` }));
     const trashId = randomUUID();
     const entryId = randomUUID();
     await dataSource.query(
@@ -300,7 +304,8 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('change feed migration down/up은 기존 VFS 노드를 보존한다', async () => {
-    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'feed-migration-sqlite' });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'feed-migration-sqlite' }));
     const node = await dataSource.getRepository(VfsNodeEntity).save({
       namespaceId: namespace.id,
       parentId: null,
@@ -346,9 +351,8 @@ describe('마이그레이션 체인 (SQLite)', () => {
   });
 
   it('change feed FK는 namespace 삭제 시 event와 signing secret 상태를 함께 제거한다', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `feed-fk-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: `feed-fk-${randomUUID()}` }));
     await dataSource.query(
       `INSERT INTO vfs_change_feed_state
       (namespace_id, last_sequence, has_checkpoint, signing_secret) VALUES (?, 1, 1, ?)`,
@@ -399,7 +403,34 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddNamespaceEncryptedIndex1791700000013',
       'AddIdempotencyKeyCreatedAtIndex1791700000014',
       'AddNamespaceDeletionCompletedIndex1791700000015',
+      'ConvertNamespaceIdToString1791700000016',
     ]);
+  });
+
+  it('최대 길이 namespace ID와 48자 usage 키를 SQLite에서 저장한다', async () => {
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = namespaceRepo.create({ name: 'namespace-id-max-sqlite' });
+    namespace.id = `abcdefghijkl_${'a'.repeat(32)}`;
+    await namespaceRepo.save(namespace);
+    await dataSource.query('INSERT INTO vfs_upload_usage (id, namespace_id) VALUES (?, ?)', [
+      `ns:${namespace.id}`,
+      namespace.id,
+    ]);
+
+    expect((await dataSource.query('PRAGMA foreign_key_check')).length).toBe(0);
+    expect(
+      await dataSource.query('SELECT id, namespace_id FROM vfs_upload_usage WHERE namespace_id = ?', [
+        namespace.id,
+      ]),
+    ).toEqual([{ id: `ns:${namespace.id}`, namespace_id: namespace.id }]);
+
+    const migration = new ConvertNamespaceIdToString1791700000016();
+    const runner = dataSource.createQueryRunner();
+    await migration.down(runner);
+    expect(await runner.query('SELECT id FROM namespace WHERE id = ?', [namespace.id])).toEqual([
+      { id: namespace.id },
+    ]);
+    await runner.release();
   });
 
   it('감사 snapshot_id 컬럼은 nullable이며 up/down이 가역이다', async () => {
@@ -502,9 +533,8 @@ describe('마이그레이션 체인 (SQLite)', () => {
     });
 
     it('defaults retained usage to zero and rejects nonpositive overrides and negative usage', async () => {
-      const namespace = await dataSource
-        .getRepository(NamespaceEntity)
-        .save({ name: 'snapshot-limits-sqlite' });
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'snapshot-limits-sqlite' }));
       const usage = await dataSource.query(
         `SELECT retained_snapshot_node_count, retained_snapshot_byte_count
         FROM namespace WHERE id = ?`,
@@ -529,9 +559,8 @@ describe('마이그레이션 체인 (SQLite)', () => {
     });
 
     it('rejects invalid manifest entry types and negative sizes', async () => {
-      const namespace = await dataSource
-        .getRepository(NamespaceEntity)
-        .save({ name: 'snapshot-entry-sqlite' });
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'snapshot-entry-sqlite' }));
       const snapshotId = randomUUID();
       await dataSource.query(
         `INSERT INTO vfs_snapshot

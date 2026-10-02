@@ -24,7 +24,7 @@ export async function findMissingNamespaceIds(
       for (const row of rows) found.add(row.id);
     }
   } else {
-    const rows = (await dataSource.query('SELECT id FROM namespace WHERE id = ANY($1::uuid[])', [
+    const rows = (await dataSource.query('SELECT id FROM namespace WHERE id = ANY($1::varchar[])', [
       [...ids],
     ])) as Array<{ id: string }>;
     for (const row of rows) found.add(row.id);

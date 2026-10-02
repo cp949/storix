@@ -13,7 +13,7 @@
 }
 ```
 
-앞의 두 최상위 필드는 필수이고 선택 필드 `defaultEnabledCapabilities`(capability ID 문자열 배열)만 더 허용한다. 그 밖의 추가 필드는 허용하지 않는다. 전역 필드는 capability ID 문자열 배열, namespace 필드는 namespace UUID를 키로 하고 capability ID 문자열 배열을 값으로 하는 객체다. namespace UUID는 소문자로 정규화하며 정규화 후 중복된 키는 거부한다. 설정에 적힌 namespace ID가 실제 DB에 없으면 시작을 거부한다. 존재 확인은 항목 수와 무관한 질의 횟수로 한다(PostgreSQL 한 번, SQLite는 1000개씩). capability ID는 소문자 `kebab-case` 단일 식별자다. 별칭이나 대소문자 정규화는 없다.
+앞의 두 최상위 필드는 필수이고 선택 필드 `defaultEnabledCapabilities`(capability ID 문자열 배열)만 더 허용한다. 그 밖의 추가 필드는 허용하지 않는다. 전역 필드는 capability ID 문자열 배열, namespace 필드는 namespace ID를 키로 하고 capability ID 문자열 배열을 값으로 하는 객체다. namespace ID 표기는 그대로 사용하며 대소문자·하이픈 변형은 거부한다. 설정에 적힌 namespace ID가 실제 DB에 없으면 시작을 거부한다. 존재 확인은 항목 수와 무관한 질의 횟수로 한다(PostgreSQL 한 번, SQLite는 1000개씩). capability ID는 소문자 `kebab-case` 단일 식별자다. 별칭이나 대소문자 정규화는 없다.
 
 `defaultEnabledCapabilities`는 `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정을 읽은 뒤 만든 namespace 포함)에 적용하는 기본 활성 목록이다. 키가 없으면 기본 활성이 없고 namespace 항목이 없는 namespace의 선택 기능은 비활성이다. 기본 목록을 쓰면 namespace를 설정에 나열하지 않아도 되고 새 namespace를 재시작 없이 쓸 수 있다.
 
@@ -31,7 +31,7 @@ capability가 활성인 조건은 registry 등록, 전역 허용 목록 포함, 
 
 ## 활성 capability 조회
 
-조회 API는 전역 서비스 Bearer key로 인증한다. 서비스 key는 namespace별 ACL을 제공하지 않으므로 key 보유자는 모든 ACTIVE namespace를 조회할 수 있다. 잘못된 UUID, 없는 namespace, `DELETING`·`DELETED` namespace는 모두 404 `NAMESPACE_NOT_FOUND`다. 기존 namespace 단건 조회의 상태 정책은 이 endpoint 때문에 바뀌지 않는다.
+조회 API는 전역 서비스 Bearer key로 인증한다. 서비스 key는 namespace별 ACL을 제공하지 않으므로 key 보유자는 모든 ACTIVE namespace를 조회할 수 있다. 잘못된 Namespace ID, 없는 namespace, `DELETING`·`DELETED` namespace는 모두 404 `NAMESPACE_NOT_FOUND`다. 기존 namespace 단건 조회의 상태 정책은 이 endpoint 때문에 바뀌지 않는다.
 
 응답은 `{ "capabilities": string[] }`이며 등록 ID 중 기존 `isEnabled()` 판정이 참인 선택 capability만 사전순으로 포함한다. 전역·namespace 허용과 의존성 판정을 그대로 적용하고, 실제 활성 의존 ID도 목록에 들어간다. 기본 파일 API는 포함하지 않는다. 설정 원문(전역만 허용하거나 namespace에만 적은 ID)은 노출하지 않으며, registry의 `discoveryVisibility: effective-state`가 이 판정 결과만 노출하는 정책을 뜻한다. 기본 설정 또는 해당 namespace에 활성 ID가 없으면 `200 { "capabilities": [] }`이고 `Cache-Control: no-store`를 반환한다.
 

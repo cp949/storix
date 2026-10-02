@@ -1,5 +1,8 @@
 import { parseOptionalString, parsePositiveInt, requireEnv } from '../common/env-parsing.js';
 
+const NAMESPACE_ID =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:[a-z][a-z0-9_-]{0,11}_)?[0-9a-f]{32})$/;
+
 export interface DemoWasConfig {
   readonly port: number;
   readonly storixBaseUrl: string;
@@ -14,10 +17,10 @@ export const DEMO_WAS_CONFIG = Symbol('DEMO_WAS_CONFIG');
 
 function parseNamespaceId(value: string | undefined): string | undefined {
   if (value === undefined || value === '') return undefined;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new Error('잘못된 UUID 환경변수 값: DEMO_WAS_NAMESPACE_ID');
+  if (!NAMESPACE_ID.test(value)) {
+    throw new Error('잘못된 Namespace ID 환경변수 값: DEMO_WAS_NAMESPACE_ID');
   }
-  return value.toLowerCase();
+  return value;
 }
 
 export function loadDemoWasConfig(): DemoWasConfig {

@@ -26,6 +26,7 @@ export function runVfsChangeFeedGcSharedTests(get: () => Context): void {
   async function fixture() {
     const c = get();
     const namespace = await new NamespaceProvisioningRepository(c.dataSource).createWithRoot(
+      randomUUID(),
       `feed-gc-${randomUUID()}`,
     );
     const root = await c.nodes.getRoot(namespace.id);

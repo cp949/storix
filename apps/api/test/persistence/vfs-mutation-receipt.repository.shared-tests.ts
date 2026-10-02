@@ -31,6 +31,7 @@ export function runVfsMutationReceiptSharedTests(
   it('allows exactly one concurrent claim owner', async () => {
     const { dataSource, receiptRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-concurrent-ns',
     );
     const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
@@ -45,6 +46,7 @@ export function runVfsMutationReceiptSharedTests(
   it('grants one owner, reports busy, and fences an expired owner', async () => {
     const { dataSource, receiptRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-lease-ns',
     );
     const key = randomUUID();
@@ -70,6 +72,7 @@ export function runVfsMutationReceiptSharedTests(
   it('renews a lease using database time when the application clock jumps ahead', async () => {
     const { dataSource, receiptRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-clock-jump-ns',
     );
     const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
@@ -84,6 +87,7 @@ export function runVfsMutationReceiptSharedTests(
   it('commits a receipt and metadata together and keeps it at least 30 days', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-commit-ns',
     );
     const root = (await nodeRepository.getRoot(namespace.id))!;
@@ -114,6 +118,7 @@ export function runVfsMutationReceiptSharedTests(
   it('rolls back receipt completion when the VFS transaction aborts', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-rollback-ns',
     );
     const root = (await nodeRepository.getRoot(namespace.id))!;
@@ -141,6 +146,7 @@ export function runVfsMutationReceiptSharedTests(
   it('prevents a stale generation from completing after takeover', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-fence-ns',
     );
     const root = (await nodeRepository.getRoot(namespace.id))!;
@@ -178,6 +184,7 @@ export function runVfsMutationReceiptSharedTests(
     it('오류 응답을 그대로 저장하고 보존 기한을 claim이 아닌 완료 시점부터 30일로 잡는다', async () => {
       const { dataSource, receiptRepository } = getContext();
       const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        randomUUID(),
         'receipt-error-complete-ns',
       );
       const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
@@ -218,6 +225,7 @@ export function runVfsMutationReceiptSharedTests(
     it('takeover 뒤의 stale generation은 완료하지 못하고 새 owner의 claim을 유지한다', async () => {
       const { dataSource, receiptRepository } = getContext();
       const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        randomUUID(),
         'receipt-error-fence-ns',
       );
       const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
@@ -240,6 +248,7 @@ export function runVfsMutationReceiptSharedTests(
     it('lease가 만료된 owner는 takeover가 없어도 완료하지 못한다', async () => {
       const { dataSource, receiptRepository } = getContext();
       const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        randomUUID(),
         'receipt-error-expired-ns',
       );
       const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
@@ -259,6 +268,7 @@ export function runVfsMutationReceiptSharedTests(
   it('prunes expired completed receipts and permits key reuse', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-prune-ns',
     );
     const root = (await nodeRepository.getRoot(namespace.id))!;
@@ -283,6 +293,7 @@ export function runVfsMutationReceiptSharedTests(
   it('does not delete a new owner while two workers reclaim an expired completed key', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       'receipt-reclaim-ns',
     );
     const root = (await nodeRepository.getRoot(namespace.id))!;

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { withExactNamespaceBigints } from '../persistence/namespace-bigint-read.js';
@@ -26,6 +27,7 @@ export class NamespaceTrashPolicyService {
     idempotencyKey: string,
     enabled: boolean,
   ): Promise<{ status: 200; body: NamespaceResponseDto }> {
+    if (!isNamespaceId(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
     const root = await this.nodes.getRoot(namespaceId);
     if (!root) throw new NamespaceNotFoundError(namespaceId);
     const storageKey = createHash('sha256')

@@ -36,6 +36,15 @@ export class NamespaceInvalidNameError extends DomainError {
   }
 }
 
+export class NamespaceInvalidIdPrefixError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_ID_PREFIX';
+  readonly status = 400;
+
+  constructor(readonly idPrefix: unknown) {
+    super(`유효하지 않은 namespace ID prefix: ${JSON.stringify(idPrefix)}`);
+  }
+}
+
 export class NamespaceNotFoundError extends DomainError {
   readonly code = 'NAMESPACE_NOT_FOUND';
   readonly status = 404;

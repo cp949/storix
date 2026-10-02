@@ -2,7 +2,7 @@
  * `GET /api/v2/namespaces`의 page cursor. `(name, id)` keyset 위치를 `nl1.` 접두어의 base64url JSON으로 만든다.
  * 서명하지 않는다. 위치만 담으므로 변조해도 다른 namespace의 정보를 읽을 수 없고 목록 범위만 바뀐다.
  */
-import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsInvalidCursorError } from '../vfs/vfs.errors.js';
 
 /** cursor가 가리키는 마지막 항목의 위치. */
@@ -19,7 +19,7 @@ function valid(value: NamespaceListCursor): boolean {
     typeof value.name === 'string' &&
     value.name.length >= 1 &&
     value.name.length <= MAX_NAME_LENGTH &&
-    isUuid(value.id)
+    isNamespaceId(value.id)
   );
 }
 

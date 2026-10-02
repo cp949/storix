@@ -40,6 +40,11 @@ function uuidOf(spec: DatasetSpec, kind: string, ...parts: string[]): string {
   return `overlay(overlay(md5('${spec.seed}:${kind}'${tail}) placing '4' from 13) placing '8' from 17)::uuid`;
 }
 
+function namespaceIdOf(spec: DatasetSpec, kind: string, ...parts: string[]): string {
+  const uuid = uuidOf(spec, kind, ...parts);
+  return spec.namespaceIdStyle === 'prefixed' ? `'scale_' || ${uuid}::text` : uuid;
+}
+
 function blobStorageKey(idExpr: string): string {
   return `'blobs/' || substr(${idExpr}::text, 1, 2) || '/' || ${idExpr}::text`;
 }
@@ -77,7 +82,7 @@ function namespaceBody(
 export function activeChunkSql(spec: DatasetSpec, range: Range): string {
   assertValid(spec);
   const { from, to } = range;
-  const nsId = uuidOf(spec, 'ns', 'i');
+  const nsId = namespaceIdOf(spec, 'ns', 'i');
   const created = `(${ref(spec)} - interval '40 days' - (i % 1000) * interval '1 minute')`;
   const activeFilter = `i % ${spec.activeEvery} = 0`;
   const series = `generate_series(${from}, ${to}) AS i`;
@@ -146,7 +151,7 @@ COMMIT;
 export function deletedChunkSql(spec: DatasetSpec, range: Range): string {
   assertValid(spec);
   const { from, to } = range;
-  const nsId = uuidOf(spec, 'dns', 'i');
+  const nsId = namespaceIdOf(spec, 'dns', 'i');
   const created = `(${ref(spec)} - interval '80 days' - (i % 1000) * interval '1 minute')`;
   const completed = `(${ref(spec)} - interval '30 days')`;
   const series = `generate_series(${from}, ${to}) AS i`;

@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 @Entity('audit_log')
 export class AuditLogEntity {
@@ -9,7 +9,7 @@ export class AuditLogEntity {
   @Column({ name: 'request_id', type: 'varchar', length: 200 })
   requestId: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid', nullable: true })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH, nullable: true })
   namespaceId: string | null;
 
   @Column({ name: 'snapshot_id', type: 'uuid', nullable: true })

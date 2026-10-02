@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { CapabilityService } from '../capability/capability.service.js';
 import { DomainError } from '../common/domain-error.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -201,7 +202,7 @@ export class UploadSessionService {
   }
 
   async status(namespaceId: string, sessionId: string) {
-    if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
@@ -231,7 +232,7 @@ export class UploadSessionService {
   }
 
   async cancel(namespaceId: string, sessionId: string) {
-    if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');

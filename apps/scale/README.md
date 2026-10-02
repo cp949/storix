@@ -31,6 +31,7 @@ node apps/scale/src/cli.ts env down --volumes            # 컨테이너와 seed 
 - `STORIX_SCALE_API_DIR`로 측정 대상 API 디렉터리를 바꾼다. 이전 커밋을 `git archive`로 풀어 `./node_modules/.bin/nest build`로 빌드한 디렉터리를 줘 개선 전 기준선을 같은 하네스로 잰다(복사본에서 `pnpm`을 실행하면 실제 `node_modules`가 망가진다).
 - 복제한 database에는 template 적재 이후의 migration을 적용하고 `restore.migrateMs`에 기록한다.
 - 변형 데이터셋은 seed 이름으로 구분한다: `seed --scale N --seed s1-blocked --set blockedEvery=100`, 측정은 `measure --seed s1-blocked`.
+- 기본 ID 스타일은 기존 UUID다. Namespace ID 형식 검증에는 `seed --scale N --id-style prefixed`를 사용한다. 이 옵션은 namespace ID만 `scale_` 접두어 형식으로 만들며 파일·blob ID는 UUID로 유지한다.
 - `--phases startup,startup-capability,startup-capability-default,requests,list,list-pages,gc`로 단계를 고른다(`startup-capability`는 활동 namespace를 설정에 나열, `-default`는 `defaultEnabledCapabilities`만 둔 기본 활성 모드). 적재 시각이 20일을 넘은 template은 보존 기간 기준이 어긋나 측정을 거부한다.
 
 ## 데이터셋

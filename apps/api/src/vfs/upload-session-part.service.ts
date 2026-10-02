@@ -5,6 +5,7 @@ import type { Readable } from 'node:stream';
 import { CapabilityService } from '../capability/capability.service.js';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
@@ -63,7 +64,7 @@ export class UploadSessionPartService {
     contentLength: string | undefined,
     _requestId: string,
   ): Promise<UploadedPartResult> {
-    if (!isUuid(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
+    if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
     if (!isUuid(sessionId))
       throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');

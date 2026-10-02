@@ -66,7 +66,7 @@ export class VfsUploadSessionRepository {
     manager: EntityManager,
     namespaceId: string,
   ): Promise<[UsageCounters, UsageCounters]> {
-    const namespaceKey = `ns:${namespaceId.toLowerCase()}`;
+    const namespaceKey = `ns:${namespaceId}`;
     const sqlite = isSqliteDataSource(this.dataSource.options);
     const placeholder = sqlite ? '?' : '$1';
     const readLocked = async (id: string): Promise<UsageCounters> => {

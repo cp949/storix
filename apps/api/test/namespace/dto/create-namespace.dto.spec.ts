@@ -3,6 +3,7 @@ import {
   NamespaceInvalidEncryptionPolicyError,
   NamespaceInvalidNameError,
   NamespaceInvalidTotalLogicalBytesError,
+  NamespaceInvalidIdPrefixError,
   NamespacePublicEncryptionConflictError,
 } from '../../../src/namespace/namespace.errors.js';
 import { parseCreateNamespaceRequest } from '../../../src/namespace/dto/create-namespace.dto.js';
@@ -80,6 +81,29 @@ describe('parseCreateNamespaceRequest', () => {
       NamespaceInvalidAccessPolicyError,
     );
   });
+
+  it.each([undefined, null, ''])('idPrefix가 %s이면 미지정으로 정규화한다', (idPrefix) => {
+    expect(parseCreateNamespaceRequest({ name: 'acme', idPrefix })).toEqual({
+      name: 'acme',
+      encryptionPolicy: 'NONE',
+      accessPolicy: 'PRIVATE',
+    });
+  });
+
+  it('유효한 idPrefix를 반환한다', () => {
+    expect(parseCreateNamespaceRequest({ name: 'acme', idPrefix: 'tenant-2' })).toMatchObject({
+      idPrefix: 'tenant-2',
+    });
+  });
+
+  it.each([12, 'Tenant', '2tenant', 'tenant.', 'a'.repeat(13)])(
+    '잘못된 idPrefix를 거부한다: %s',
+    (idPrefix) => {
+      expect(() => parseCreateNamespaceRequest({ name: 'acme', idPrefix })).toThrow(
+        NamespaceInvalidIdPrefixError,
+      );
+    },
+  );
 
   it('ENCRYPTED와 PUBLIC을 함께 지정하면 거부한다', () => {
     expect(() =>

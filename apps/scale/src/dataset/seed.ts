@@ -42,6 +42,7 @@ export function readDatasetSpec(database: string): DatasetSpec | null {
     staleObjects: Math.floor(raw.namespaces / 100),
     staleStagingObjects: Math.floor(raw.namespaces / 1000),
     ...raw,
+    namespaceIdStyle: raw.namespaceIdStyle ?? 'uuid',
   } as DatasetSpec;
 }
 

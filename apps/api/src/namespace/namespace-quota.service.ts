@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { withExactNamespaceBigints } from '../persistence/namespace-bigint-read.js';
@@ -31,6 +32,7 @@ export class NamespaceQuotaService {
     idempotencyKey: string,
     maxTotalLogicalBytes: string | null,
   ): Promise<{ status: number; body: unknown }> {
+    if (!isNamespaceId(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
     try {
       assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
     } catch {

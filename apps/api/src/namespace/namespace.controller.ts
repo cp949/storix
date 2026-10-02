@@ -37,13 +37,15 @@ export class NamespaceController {
       throw new IdempotencyKeyRequiredError();
     }
 
-    const { name, encryptionPolicy, accessPolicy, maxTotalLogicalBytes } = parseCreateNamespaceRequest(body);
+    const { name, idPrefix, encryptionPolicy, accessPolicy, maxTotalLogicalBytes } =
+      parseCreateNamespaceRequest(body);
     const result = await this.namespaceService.create(
       idempotencyKey,
       name,
       encryptionPolicy,
       accessPolicy,
       maxTotalLogicalBytes ?? null,
+      idPrefix,
     );
 
     res.status(result.status);

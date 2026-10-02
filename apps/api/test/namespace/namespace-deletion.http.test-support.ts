@@ -69,6 +69,7 @@ export function namespaceDeletionAccessSuite(sqlite: boolean): void {
         await db.runMigrations();
         namespaceId = (
           await new NamespaceProvisioningRepository(db).createWithRoot(
+            randomUUID(),
             `access-${randomUUID()}`,
             'NONE',
             'PUBLIC',

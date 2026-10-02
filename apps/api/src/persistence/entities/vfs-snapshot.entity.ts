@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type VfsSnapshotKind = 'FILE' | 'TREE';
 export type VfsSnapshotRootType = 'FILE' | 'DIRECTORY';
@@ -9,7 +9,7 @@ export class VfsSnapshotEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid' })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @Column({ type: 'varchar', length: 16 })

@@ -14,6 +14,7 @@ import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
+import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -26,7 +27,7 @@ describe('Migration: InitSchema', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: ALL_MIGRATIONS,
+      migrations: ALL_MIGRATIONS.slice(0, -1),
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -145,9 +146,10 @@ describe('Migration: InitSchema', () => {
   });
 
   it('trash migration initializes counters, preserves existing namespaces, and reverses its own schema', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `trash-migration-${randomUUID()}` }),
+    );
     const migration = new AddVfsTrash1791700000007();
     const runner = dataSource.createQueryRunner();
     try {
@@ -233,9 +235,10 @@ describe('Migration: InitSchema', () => {
   });
 
   it('namespace trash policy migration defaults existing and new namespaces to OFF and reverses its column', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-policy-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `trash-policy-migration-${randomUUID()}` }),
+    );
     const migration = new AddNamespaceTrashEnabled1791700000009();
     const runner = dataSource.createQueryRunner();
     try {
@@ -249,7 +252,10 @@ describe('Migration: InitSchema', () => {
       expect(await runner.query('SELECT trash_enabled FROM namespace WHERE id = $1', [namespace.id])).toEqual(
         [{ trash_enabled: false }],
       );
-      await runner.query('INSERT INTO namespace (name) VALUES ($1)', [`trash-policy-new-${randomUUID()}`]);
+      await runner.query('INSERT INTO namespace (id, name) VALUES ($1, $2)', [
+        randomUUID(),
+        `trash-policy-new-${randomUUID()}`,
+      ]);
       expect(
         await runner.query('SELECT trash_enabled FROM namespace WHERE name LIKE $1', ['trash-policy-new-%']),
       ).toEqual([{ trash_enabled: false }]);
@@ -259,9 +265,10 @@ describe('Migration: InitSchema', () => {
   });
 
   it('파일 만료 migration은 기존 node를 NULL로 두고 부분 인덱스와 세션 컬럼을 가역적으로 만든다', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `file-expiry-migration-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(
+      namespaceRepo.create({ name: `file-expiry-migration-${randomUUID()}` }),
+    );
     const nodeId = randomUUID();
     const migration = new AddFileExpiry1791700000010();
     const runner = dataSource.createQueryRunner();
@@ -295,12 +302,9 @@ describe('Migration: InitSchema', () => {
   });
 
   it('trash entries belong to their namespace and cascade when the trash item is removed', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-owner-${randomUUID()}` });
-    const other = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `trash-other-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: `trash-owner-${randomUUID()}` }));
+    const other = await namespaceRepo.save(namespaceRepo.create({ name: `trash-other-${randomUUID()}` }));
     const trashId = randomUUID();
     const entryId = randomUUID();
     await dataSource.query(
@@ -323,7 +327,8 @@ describe('Migration: InitSchema', () => {
   });
 
   it('change feed migration down/up은 기존 VFS 노드를 보존한다', async () => {
-    const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'feed-migration-pg' });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'feed-migration-pg' }));
     const node = await dataSource.getRepository(VfsNodeEntity).save({
       namespaceId: namespace.id,
       parentId: null,
@@ -384,9 +389,8 @@ describe('Migration: InitSchema', () => {
   });
 
   it('change feed FK는 namespace 삭제 시 event와 signing secret 상태를 함께 제거한다', async () => {
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `feed-fk-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: `feed-fk-${randomUUID()}` }));
     await dataSource.query(
       `INSERT INTO vfs_change_feed_state
       (namespace_id, last_sequence, has_checkpoint, signing_secret) VALUES ($1, 1, true, $2)`,
@@ -569,7 +573,8 @@ describe('Migration: InitSchema', () => {
           'max_retained_snapshot_bytes', 'retained_snapshot_node_count', 'retained_snapshot_byte_count')
       `);
       expect(columns).toHaveLength(6);
-      const namespace = await dataSource.getRepository(NamespaceEntity).save({ name: 'snapshot-limits-pg' });
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'snapshot-limits-pg' }));
       const usage = await dataSource.query(
         `SELECT retained_snapshot_node_count, retained_snapshot_byte_count
         FROM namespace WHERE id = $1`,
@@ -1096,6 +1101,69 @@ describe('Migration: InitSchema', () => {
       expect(result).toHaveLength(1);
       expect(result[0].last_completed_at).not.toBeNull();
     });
+  });
+
+  it('기존 namespace ID와 참조를 보존하고 비 UUID ID가 있으면 down을 거부한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new ConvertNamespaceIdToString1791700000016();
+    try {
+      const before = await runner.query('SELECT count(*)::text AS count FROM namespace');
+      await migration.up(runner);
+
+      const types = await runner.query(`
+        SELECT table_name, data_type, collation_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND ((table_name = 'namespace' AND column_name = 'id')
+            OR (table_name = 'vfs_node' AND column_name = 'namespace_id')
+            OR (table_name = 'audit_log' AND column_name = 'namespace_id'))
+        ORDER BY table_name
+      `);
+      expect(types).toEqual([
+        { table_name: 'audit_log', data_type: 'character varying', collation_name: 'C' },
+        { table_name: 'namespace', data_type: 'character varying', collation_name: 'C' },
+        { table_name: 'vfs_node', data_type: 'character varying', collation_name: 'C' },
+      ]);
+      expect(await runner.query('SELECT count(*)::text AS count FROM namespace')).toEqual(before);
+      expect(
+        await runner.query(`SELECT count(*)::text AS count FROM pg_constraint
+          WHERE contype = 'f' AND conrelid = 'vfs_node'::regclass`),
+      ).toEqual([{ count: '3' }]);
+      expect(
+        await runner.query(`SELECT indexname FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname IN ('UQ_vfs_node_child_name', 'IDX_blob_namespace_id') ORDER BY indexname`),
+      ).toEqual([{ indexname: 'IDX_blob_namespace_id' }, { indexname: 'UQ_vfs_node_child_name' }]);
+      expect(
+        await runner.query(`SELECT character_maximum_length FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'vfs_upload_usage' AND column_name = 'id'`),
+      ).toEqual([{ character_maximum_length: 64 }]);
+
+      const prefixedId = `tenant_${'a'.repeat(32)}`;
+      await runner.query('INSERT INTO namespace (id, name) VALUES ($1, $2)', [
+        prefixedId,
+        'migration-prefix-test',
+      ]);
+      await expect(migration.down(runner)).rejects.toThrow(
+        'namespace ID를 UUID로 변환할 수 없어 migration down을 거부합니다',
+      );
+      await runner.query('DELETE FROM namespace WHERE id = $1', [prefixedId]);
+      await runner.query(
+        `INSERT INTO audit_log (request_id, namespace_id, operation, status)
+         VALUES ('migration-non-uuid-reference', $1, 'migration.test', 200)`,
+        [prefixedId],
+      );
+      await expect(migration.down(runner)).rejects.toThrow(
+        'namespace 참조 값을 UUID로 변환할 수 없어 migration down을 거부합니다',
+      );
+      await runner.query('DELETE FROM audit_log WHERE request_id = $1', ['migration-non-uuid-reference']);
+
+      await migration.down(runner);
+      await migration.up(runner);
+      expect(await runner.query('SELECT count(*)::text AS count FROM namespace')).toEqual(before);
+    } finally {
+      await runner.release();
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsInvalidCursorError } from './vfs.errors.js';
 
 export interface SnapshotListCursor {
@@ -10,7 +11,7 @@ export interface SnapshotListCursor {
 
 function valid(value: SnapshotListCursor): boolean {
   return (
-    isUuid(value.namespaceId) &&
+    isNamespaceId(value.namespaceId) &&
     isUuid(value.rootNodeId) &&
     isUuid(value.snapshotId) &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/.test(value.createdAtKey) &&
@@ -42,7 +43,7 @@ export function decodeSnapshotListCursor(
     const cursor = record as unknown as SnapshotListCursor;
     if (
       !valid(cursor) ||
-      cursor.namespaceId.toLowerCase() !== namespaceId.toLowerCase() ||
+      cursor.namespaceId !== namespaceId ||
       cursor.rootNodeId.toLowerCase() !== rootNodeId.toLowerCase()
     )
       throw new Error('owner');

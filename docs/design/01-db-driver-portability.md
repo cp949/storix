@@ -42,6 +42,7 @@ compose 배치는 [ADR-0022](../adr/0022-sqlite-compose-override.md), 운영 절
 | 항목              | PostgreSQL                       | SQLite                                                        |
 | ----------------- | -------------------------------- | ------------------------------------------------------------- |
 | UUID 컬럼(PK·FK)  | `uuid`                           | `varchar(36)`                                                 |
+| Namespace ID 컬럼 | `varchar(45) COLLATE "C"`        | `varchar(36)`(선언 길이 미적용)                               |
 | 타임스탬프        | `timestamptz`, `now()`           | `datetime`, `datetime('now')`                                 |
 | 바이너리          | `bytea`                          | `blob`                                                        |
 | 고정 길이 문자열  | `char(n)`                        | `char(n)` 그대로(SQLite는 타입 이름을 자유롭게 받는다)        |
@@ -57,10 +58,10 @@ compose 배치는 [ADR-0022](../adr/0022-sqlite-compose-override.md), 운영 절
 
 ### 3.2 ID는 앱 레이어에서 생성한다
 
-UUID PK는 DB default에 의존하지 않고 항상 애플리케이션에서 `randomUUID()`로 생성한다. SQLite 스키마에는 default가 없다.
-PostgreSQL 스키마의 `DEFAULT gen_random_uuid()`는 안전망일 뿐이며 코드 경로는 이 default를 쓰지 않는다. 새 테이블을
-추가할 때 raw `INSERT`로 uuid PK를 default에 맡기지 않는다. TypeORM의 `save()` 경로는 `@PrimaryGeneratedColumn('uuid')`도
-클라이언트에서 생성한다.
+UUID PK는 DB default에 의존하지 않고 애플리케이션에서 생성한다. SQLite 스키마에는 default가 없다.
+PostgreSQL의 UUID PK default는 안전망일 뿐이며 코드 경로는 이 default를 쓰지 않는다. Namespace ID는 별도 규칙으로,
+기존 UUID 또는 선택 prefix와 UUID v4의 하이픈 제거 표기를 애플리케이션에서 생성한다. 새 테이블을 추가할 때 raw `INSERT`로
+PK를 DB default에 맡기지 않는다. TypeORM의 `save()` 경로는 `@PrimaryGeneratedColumn('uuid')`도 클라이언트에서 생성한다.
 
 ### 3.3 엔티티 컬럼 타입
 

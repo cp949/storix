@@ -1,12 +1,17 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { BINARY_COLUMN_TYPE, FIXED_CHAR_COLUMN_TYPE, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import {
+  BINARY_COLUMN_TYPE,
+  FIXED_CHAR_COLUMN_TYPE,
+  NAMESPACE_ID_COLUMN_LENGTH,
+  TIMESTAMP_COLUMN_TYPE,
+} from './dialect-column-types.js';
 
 @Entity('blob')
 export class BlobEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid' })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @Column({ name: 'storage_key', type: 'varchar', length: 512 })

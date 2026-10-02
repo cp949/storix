@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CapabilityService } from '../capability/capability.service.js';
-import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { NamespaceNotFoundError } from '../namespace/namespace.errors.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -24,8 +24,8 @@ export class ChangeFeedService {
     rawCursor: string | undefined,
     rawLimit: string | undefined,
   ): Promise<ChangeFeedPageDto> {
-    if (!isUuid(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
-    const id = namespaceId.toLowerCase();
+    if (!isNamespaceId(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
+    const id = namespaceId;
     const namespace = await this.namespaces.findOneBy({ id });
     if (!namespace || namespace.status !== 'ACTIVE') throw new NamespaceNotFoundError(namespaceId);
     this.capabilities.requireEnabled(id, 'change-feed');

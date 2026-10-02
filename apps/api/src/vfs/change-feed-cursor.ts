@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { isUuid } from '../common/uuid.js';
+import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsInvalidChangeCursorError } from './vfs.errors.js';
 
 const PREFIX = 'cf1.';
@@ -36,7 +36,7 @@ export function decodeChangeFeedCursor(raw: string, namespaceId: string, signing
     const record = value as Record<string, unknown>;
     if (
       typeof record.namespaceId !== 'string' ||
-      !isUuid(record.namespaceId) ||
+      !isNamespaceId(record.namespaceId) ||
       record.namespaceId !== namespaceId ||
       typeof record.sequence !== 'string' ||
       !DECIMAL.test(record.sequence) ||

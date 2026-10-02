@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type VfsNodeType = 'FILE' | 'DIRECTORY';
 
@@ -15,7 +15,7 @@ export class VfsNodeEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'namespace_id', type: 'uuid' })
+  @Column({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @Column({ name: 'parent_id', type: 'uuid', nullable: true })

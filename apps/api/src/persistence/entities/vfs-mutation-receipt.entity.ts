@@ -1,11 +1,15 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import { FIXED_CHAR_COLUMN_TYPE, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import {
+  FIXED_CHAR_COLUMN_TYPE,
+  NAMESPACE_ID_COLUMN_LENGTH,
+  TIMESTAMP_COLUMN_TYPE,
+} from './dialect-column-types.js';
 
 export type VfsMutationReceiptState = 'RESERVED' | 'COMPLETE';
 
 @Entity('vfs_mutation_receipt')
 export class VfsMutationReceiptEntity {
-  @PrimaryColumn({ name: 'namespace_id', type: 'uuid' })
+  @PrimaryColumn({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @PrimaryColumn({ type: 'varchar', length: 128 })

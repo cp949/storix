@@ -65,9 +65,8 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
 
   async function createTrashFixture(expiredCount: number, futureCount: number) {
     const { dataSource, storage } = getContext();
-    const namespace = await dataSource
-      .getRepository(NamespaceEntity)
-      .save({ name: `gc-trash-${randomUUID()}` });
+    const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+    const namespace = await namespaceRepo.save(namespaceRepo.create({ name: `gc-trash-${randomUUID()}` }));
     const root = await dataSource.getRepository(VfsNodeEntity).save({
       namespaceId: namespace.id,
       parentId: null,
@@ -147,6 +146,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
   async function createExpiringFixture(trashEnabled: boolean, names: string[]) {
     const { dataSource, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       `gc-expiry-${randomUUID()}`,
     );
     await dataSource.getRepository(NamespaceEntity).update({ id: namespace.id }, { trashEnabled });

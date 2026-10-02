@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { DataSource, IsNull } from 'typeorm';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
@@ -33,7 +34,7 @@ describe('NamespaceProvisioningRepository', () => {
   });
 
   it('namespace와 root directory를 하나의 transaction으로 함께 생성한다', async () => {
-    const namespace = await repository.createWithRoot('acme');
+    const namespace = await repository.createWithRoot(randomUUID(), 'acme');
 
     const nodeRepo = dataSource.getRepository(VfsNodeEntity);
     const root = await nodeRepo.findOneByOrFail({ namespaceId: namespace.id, parentId: IsNull() });
@@ -43,14 +44,18 @@ describe('NamespaceProvisioningRepository', () => {
   });
 
   it('이미 활성화된 name으로 다시 생성하면 NamespaceAlreadyExistsError를 던진다', async () => {
-    await repository.createWithRoot('dup-active-ns');
+    await repository.createWithRoot(randomUUID(), 'dup-active-ns');
 
-    await expect(repository.createWithRoot('dup-active-ns')).rejects.toThrow(NamespaceAlreadyExistsError);
+    await expect(repository.createWithRoot(randomUUID(), 'dup-active-ns')).rejects.toThrow(
+      NamespaceAlreadyExistsError,
+    );
   });
 
   it('name 충돌로 실패한 시도는 namespace도 root도 남기지 않는다', async () => {
-    await repository.createWithRoot('conflict-once');
-    await expect(repository.createWithRoot('conflict-once')).rejects.toThrow(NamespaceAlreadyExistsError);
+    await repository.createWithRoot(randomUUID(), 'conflict-once');
+    await expect(repository.createWithRoot(randomUUID(), 'conflict-once')).rejects.toThrow(
+      NamespaceAlreadyExistsError,
+    );
 
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     const matches = await namespaceRepo.findBy({ name: 'conflict-once' });

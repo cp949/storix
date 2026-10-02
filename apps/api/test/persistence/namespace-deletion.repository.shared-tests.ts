@@ -30,7 +30,7 @@ export function registerNamespaceDeletionRepositoryTests(getDb: () => DataSource
     provisioning = new NamespaceProvisioningRepository(db);
   });
   const hash = (key: string) => createHash('sha256').update(key).digest('hex');
-  const create = () => provisioning.createWithRoot(`delete-${randomUUID()}`);
+  const create = () => provisioning.createWithRoot(randomUUID(), `delete-${randomUUID()}`);
 
   it('ACTIVE namespace를 DELETING으로 바꾸고 operation과 202 receipt를 같은 트랜잭션에 저장한다', async () => {
     const ns = await create();
@@ -107,7 +107,7 @@ export function registerNamespaceDeletionRepositoryTests(getDb: () => DataSource
   it('DELETING 전환 뒤 같은 이름의 ACTIVE namespace를 새로 만들 수 있다', async () => {
     const ns = await create();
     await deletions.accept(ns.id, hash('reuse'), new Date('2026-10-01T00:00:00.000Z'));
-    const next = await provisioning.createWithRoot(ns.name);
+    const next = await provisioning.createWithRoot(randomUUID(), ns.name);
     expect(next.id).not.toBe(ns.id);
     expect(next.status).toBe('ACTIVE');
   });

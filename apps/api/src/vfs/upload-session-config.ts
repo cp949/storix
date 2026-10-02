@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
-import { validate as isUuid } from 'uuid';
+import { isNamespaceId } from '../common/namespace-id.js';
 import type { CapabilityConfig } from '../capability/capability-config.js';
 
 export const UPLOAD_SESSION_POLICY = Symbol('UPLOAD_SESSION_POLICY');
@@ -76,7 +76,7 @@ export function resolveNamespaceUploadLimits(
   namespaceId: string,
 ): UploadSessionLimits {
   return (
-    policy.namespaces[namespaceId.toLowerCase()] ?? {
+    policy.namespaces[namespaceId] ?? {
       maxStagedBytes: policy.global.maxStagedBytes,
       maxActiveSessions: policy.global.maxActiveSessions,
     }
@@ -125,10 +125,8 @@ export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
   const rows = root.namespaces as Record<string, unknown>;
   const namespaces: Record<string, UploadSessionLimits> = {};
   for (const [id, row] of Object.entries(rows)) {
-    if (!isUuid(id)) throw new Error(`Invalid upload session namespace ID: ${id}`);
-    const normalized = id.toLowerCase();
-    if (Object.hasOwn(namespaces, normalized))
-      throw new Error(`Duplicate upload session namespace ID: ${normalized}`);
+    if (!isNamespaceId(id)) throw new Error(`Invalid upload session namespace ID: ${id}`);
+    if (Object.hasOwn(namespaces, id)) throw new Error(`Duplicate upload session namespace ID: ${id}`);
     const parsed = limits(row, `namespaces.${id}`);
     if (
       parsed.maxStagedBytes > global.maxStagedBytes ||
@@ -136,7 +134,7 @@ export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
     ) {
       throw new Error(`Upload session namespace limit exceeds global: ${id}`);
     }
-    namespaces[normalized] = parsed;
+    namespaces[id] = parsed;
   }
   return { global, namespaces };
 }

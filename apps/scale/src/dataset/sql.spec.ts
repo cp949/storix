@@ -81,6 +81,13 @@ describe('적재 SQL', () => {
     assert.throws(() => activeChunkSql({ ...spec, seed: "a'b" }, { from: 1, to: 1 }), /데이터셋 명세 오류/);
   });
 
+  it('prefix ID 스타일은 namespace ID에만 scale_ 접두어를 붙인다', () => {
+    const sql = activeChunkSql({ ...spec, namespaceIdStyle: 'prefixed' }, { from: 1, to: 1 });
+    assert.match(sql, /'scale_' \|\| overlay\(overlay\(md5\('storix-scale-v1:ns'/);
+    assert.match(sql, /INSERT INTO vfs_node/);
+    assert.match(sql, /'scale_' \|\| overlay\(overlay\(md5\('storix-scale-v1:ns'/);
+  });
+
   it('삭제 namespace SQL은 deleted- 이름과 COMPLETED 상태를 쓴다', () => {
     const sql = deletedChunkSql(spec, { from: 1, to: 10 });
     assert.match(sql, /'deleted-' \|\| i/);

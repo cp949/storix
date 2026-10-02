@@ -1,5 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { randomUUID } from 'node:crypto';
+import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 
 export type NamespaceStatus = 'ACTIVE' | 'DELETING' | 'DELETED';
 export type EncryptionPolicy = 'NONE' | 'ENCRYPTED';
@@ -7,8 +8,8 @@ export type AccessPolicy = 'PRIVATE' | 'PUBLIC';
 
 @Entity('namespace')
 export class NamespaceEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryColumn({ type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
+  id: string = randomUUID();
 
   @Column({ type: 'varchar', length: 128 })
   name: string;

@@ -1,12 +1,12 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
-import { TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 import type { VfsNodeType } from './vfs-node.entity.js';
 
 export type VfsChangeKind = 'created' | 'updated' | 'moved' | 'deleted';
 
 @Entity('vfs_change_event')
 export class VfsChangeEventEntity {
-  @PrimaryColumn({ name: 'namespace_id', type: 'uuid' })
+  @PrimaryColumn({ name: 'namespace_id', type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   namespaceId: string;
 
   @PrimaryColumn({ type: 'bigint' })

@@ -9,6 +9,8 @@ export const STANDARD_SCALES = [10_000, 100_000, 1_000_000] as const;
 
 /** 데이터셋 명세. */
 export interface DatasetSpec {
+  /** namespace ID 저장 형식. uuid는 기존 표기, prefixed는 새 접두어 형식 검증용이다. */
+  readonly namespaceIdStyle: 'uuid' | 'prefixed';
   /** 결정적 ID·이름을 만드는 seed 문자열 */
   readonly seed: string;
 
@@ -69,6 +71,7 @@ export interface DatasetSpec {
 /** 규모 하나에 대한 기본 명세를 만든다. 비율은 규모와 무관하게 같다. */
 export function defaultSpec(namespaces: number, refTime: string, seed = 'storix-scale-v1'): DatasetSpec {
   return {
+    namespaceIdStyle: 'uuid',
     seed,
     refTime,
     namespaces,
@@ -170,6 +173,8 @@ function lcm(a: number, b: number): number {
 /** 명세가 서로 모순되지 않는지 확인한다. 문제가 있으면 메시지 목록을 돌려준다. */
 export function validateSpec(spec: DatasetSpec): string[] {
   const errors: string[] = [];
+  if (spec.namespaceIdStyle !== 'uuid' && spec.namespaceIdStyle !== 'prefixed')
+    errors.push('namespaceIdStyle은 uuid 또는 prefixed여야 한다');
   const positive: Array<[string, number]> = [
     ['namespaces', spec.namespaces],
     ['activeEvery', spec.activeEvery],

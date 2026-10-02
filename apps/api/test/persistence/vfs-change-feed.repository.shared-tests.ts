@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
@@ -22,6 +23,7 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
   async function setup() {
     const { dataSource, repository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
       `feed-${++counter}`,
     );
     const root = await repository.getRoot(namespace.id);

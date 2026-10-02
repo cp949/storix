@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
@@ -75,7 +76,10 @@ describe('VfsNodeRepository (SQLite)', () => {
   // 원래부터 대소문자를 구분해 대응하는 테스트가 없다.
   describe('findRecursive — SQLite PRAGMA case_sensitive_like', () => {
     it('기본값(대소문자 무시)이 아니라 실제로 대소문자를 구분한다', async () => {
-      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot('find-case-ns');
+      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        randomUUID(),
+        'find-case-ns',
+      );
       const root = await repository.getRoot(namespace.id);
       await repository.ensureDirectory(namespace.id, root!.id, ['100xxdone'], false);
 
