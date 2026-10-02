@@ -10,7 +10,7 @@ Trivy가 OS 패키지에서 HIGH·CRITICAL을 보고했고, 대부분은 Debian�
 
 1. `apps/api/Dockerfile`의 모든 stage 베이스를 `node:24.20.0-alpine`으로 바꾼다. 빌드 stage도 같은 musl 환경에서 native 모듈을 설치한다.
 2. runtime stage는 빌드 시점에 `apk upgrade`로 수정판이 나온 OS 패키지를 반영한다.
-3. `pg_dump`·`pg_restore`는 Alpine 저장소의 `postgresql16-client`로 설치한다. 대상 Postgres major(16)와 같은 client다.
+3. `pg_dump`·`pg_restore`는 Alpine 저장소의 `postgresql<major>-client`로 설치한다. 대상 Postgres major와 같은 client다. major는 ADR-0039에서 빌드 인자로 바꿨다.
 4. runtime stage에서 베이스 이미지에 번들된 npm·npx·yarn을 지운다.
    - runtime의 명령은 `node`와 corepack의 pnpm만 쓴다. compose의 `migrate`·`gc`·`backup`·`restore`가 pnpm 스크립트를 실행한다.
    - 번들 npm은 자체 `node_modules`에 취약한 모듈을 포함한다.

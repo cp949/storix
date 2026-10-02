@@ -60,7 +60,8 @@
    - 태그 커밋이 `origin/main`의 조상인지 확인(아니면 중단)
    - `apps/api` typecheck·lint·단위 테스트(실패하면 중단, 통합 테스트는 제외)
    - `CHANGELOG.md`에서 `## [1.2.3]` 섹션 추출(없으면 중단)
-   - `ghcr.io/cp949/storix:v1.2.3` + `:latest` 이미지 build & push
+   - `ghcr.io/cp949/storix:v1.2.3` + `:latest` 이미지 build & push (`pg_dump` client 17)
+   - `ghcr.io/cp949/storix:v1.2.3-pg16` 이미지 build & push (`pg_dump` client 16, Postgres 16 서버용)
    - GitHub Release 생성(제목 `v1.2.3`, 본문은 추출한 CHANGELOG 섹션 + 이미지
      pull 안내 + 업그레이드·롤백 경계 안내). 롤백 경계 안내는 고정 문구이며
      내용은 `upgrade.md`와 ADR-0017을 따른다.

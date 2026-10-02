@@ -120,8 +120,10 @@ cursor는 400 `VFS_INVALID_CURSOR`다. GC가 DB 시각으로 오래된 이벤트
     healthcheck 조건을 무시해 기동 순서가 보장되지 않는다.
 - git
 - Postgres와 S3 호환 스토리지(VersityGW/AWS S3 등). 이미 운영 중인 것에
-  붙거나, 아래 override 파일로 컨테이너를 함께 띄운다. Postgres 검증은 16 기준이며
-  다른 major의 검증 결과는 `docs/deployment/postgres-versions.md`에 있다.
+  붙거나, 아래 override 파일로 컨테이너를 함께 띄운다. 이미지의 `backup`·`restore`는
+  `pg_dump` client major가 서버 major와 같아야 한다. 기본은 17이고 16 서버는
+  `PG_CLIENT_MAJOR=16`으로 빌드한다. 버전별 검증 결과는
+  `docs/deployment/postgres-versions.md`에 있다.
 
 compose 파일은 compose-spec 표준 문법(`profiles`, `depends_on.condition`, YAML
 앵커)만 사용해 Docker/Podman에서 같은 파일·같은 옵션으로 동작한다.

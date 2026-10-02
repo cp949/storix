@@ -89,8 +89,19 @@ docker compose run --rm migrate
 이 기능의 통합 테스트는 호스트에 Postgres major 16 이상의
 `pg_dump`/`pg_restore` 클라이언트를 요구한다. Debian/Ubuntu 기본 apt 저장소는
 그보다 낮은 버전을 주는 경우가 많다. 낮은 client는 16 서버에 대해 버전 불일치로
-하드 실패한다. 운영 이미지는 같은 이유로 `postgresql16-client`를 설치한다
-(`apps/api/Dockerfile`의 runtime stage).
+하드 실패한다.
+
+운영 이미지의 client major는 빌드 인자 `PG_CLIENT_MAJOR`(기본 17)로 정한다
+(`apps/api/Dockerfile`의 runtime stage). 서버 major와 같아야 한다.
+client가 낮으면 `backup`이, 높으면 `restore`가 실패한다.
+Postgres 16 서버에는 `-pg16` 이미지를 쓰거나 직접 빌드한다.
+
+```bash
+docker build --build-arg PG_CLIENT_MAJOR=16 -f apps/api/Dockerfile -t storix-api:pg16 .
+```
+
+compose 소스 빌드는 `docker-compose.override.yml`의 `build.args`로 같은 값을 지정한다.
+검증 결과는 `postgres-versions.md`에 있다.
 
 ## 범위 밖
 
