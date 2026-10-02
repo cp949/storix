@@ -40,6 +40,8 @@
 - GC가 처리 후보가 없을 때까지 batch를 끝없이 반복하던 단계(만료 session·staging 정리, 파일 만료 삭제, mutation receipt·terminal session·휴지통 prune, stale finalizing lease 복구, namespace 삭제 순회)가 단계 예산 안에서 batch를 이어 돌고 예산이 소진되면 다음 실행으로 넘긴다. 이전에는 receipt·terminal session prune과 만료 session 처리가 실행당 500건에서 멈췄다.
 - change feed 보존 정리의 후보 선택을 만료 이벤트 인덱스 순서 cursor로 바꿨다. 선두 이벤트가 유효한 namespace의 만료 이벤트가 많을 때 GC가 호출마다 그 이벤트를 다시 건너뛰던 비용을 없앴다(100만 namespace·막힌 이벤트 27,000개 구성에서 GC 84.4s → 4.8s). 삭제 규칙(만료된 연속 prefix만 삭제)은 그대로다. migration `AddGcCursor1791700000012`(새 테이블 `gc_cursor`)이 추가된다. down은 테이블을 지우며 저장된 재개 위치만 잃는다.
 
+- PostgreSQL 16이 아닌 서버의 호환성을 검증했다. 계약 70개가 17.11에서 통과한다. 이미지의 `pg_dump`(`postgresql16-client`)는 17 서버를 `server version mismatch`로 거부하므로 17 서버에서 `backup`·`restore`가 실패한다. 17 client는 16·17 서버에서 backup·restore spec 17개가 통과했다. 지원 범위는 선언하지 않는다. 결과는 `docs/deployment/postgres-versions.md`에 기록한다.
+
 ## [1.0.1] - 2026-10-01
 
 ### Fixed

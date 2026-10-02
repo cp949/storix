@@ -119,8 +119,9 @@ cursor는 400 `VFS_INVALID_CURSOR`다. GC가 DB 시각으로 오래된 이벤트
   - Podman 4 이상 + podman-compose 1.x. Podman 3.x는 `depends_on`의
     healthcheck 조건을 무시해 기동 순서가 보장되지 않는다.
 - git
-- Postgres 16과 S3 호환 스토리지(VersityGW/AWS S3 등). 이미 운영 중인 것에
-  붙거나, 아래 override 파일로 컨테이너를 함께 띄운다.
+- Postgres와 S3 호환 스토리지(VersityGW/AWS S3 등). 이미 운영 중인 것에
+  붙거나, 아래 override 파일로 컨테이너를 함께 띄운다. Postgres 검증은 16 기준이며
+  다른 major의 검증 결과는 `docs/deployment/postgres-versions.md`에 있다.
 
 compose 파일은 compose-spec 표준 문법(`profiles`, `depends_on.condition`, YAML
 앵커)만 사용해 Docker/Podman에서 같은 파일·같은 옵션으로 동작한다.
