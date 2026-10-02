@@ -167,6 +167,7 @@ export async function runProfileLifecycle(
             apiKey,
             capabilities,
             count: input.contracts.length * 2,
+            ...(input.profile.endsWith('-prefix') ? { idPrefix: 'abcdefghijkl' } : {}),
             configPath: capabilitiesConfigPath,
             // 활성 namespace마다 세션 정책이 있어야 서버가 다시 시작된다.
             prepareRestart: async (namespaces) => {

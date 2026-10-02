@@ -41,16 +41,21 @@ export async function createApiNamespace(
   client: ApiClient,
   contractId: string,
   accessPolicy?: 'PRIVATE' | 'PUBLIC',
+  idPrefix?: string,
 ): Promise<NamespaceInfo> {
   const name = `${contractId}-${randomBytes(3).toString('hex')}`;
   const response = await client.request('POST', '/api/v2/namespaces', {
     headers: { 'Idempotency-Key': randomUUID(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(accessPolicy === undefined ? { name } : { name, accessPolicy }),
+    body: JSON.stringify({
+      name,
+      ...(accessPolicy === undefined ? {} : { accessPolicy }),
+      ...(idPrefix ? { idPrefix } : {}),
+    }),
   });
   if (response.status !== 201) {
     throw new Error(`namespace 생성 실패(${response.status}): ${response.text()}`);
   }
-  const created = response.json<{ id: string; name: string }>();
+  const created = response.json<{ id: string; name: string | null }>();
   return { id: created.id, name: created.name };
 }
 

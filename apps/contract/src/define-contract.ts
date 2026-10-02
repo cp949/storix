@@ -5,7 +5,13 @@
  */
 
 /** 서버 기동 설정 이름. 프로필마다 서버를 한 번 기동한다. */
-export type ProfileName = 'default' | 'small-limits' | 'change-feed' | 'resumable-upload';
+export type ProfileName =
+  | 'default'
+  | 'small-limits'
+  | 'change-feed'
+  | 'resumable-upload'
+  | 'change-feed-prefix'
+  | 'resumable-upload-prefix';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -199,7 +205,7 @@ export interface ApiClient {
 /** 계약 전용으로 만든 namespace. */
 export interface NamespaceInfo {
   readonly id: string;
-  readonly name: string;
+  readonly name: string | null;
 }
 
 /** 계약이 제어할 수 있는 서버. */

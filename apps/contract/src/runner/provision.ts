@@ -75,6 +75,9 @@ export interface ProvisionInput {
   /** 미리 만들 namespace 수. 프로필의 계약이 `createNamespace()`를 부르는 횟수 이상이어야 한다. */
   readonly count: number;
 
+  /** 각 사전 준비 namespace에 붙일 ID prefix */
+  readonly idPrefix?: string;
+
   /** 서버가 읽는 설정 파일 경로. 이 파일을 덮어쓴다. */
   readonly configPath: string;
 
@@ -106,7 +109,7 @@ export async function provisionCapabilityNamespaces(
   const namespaces: NamespaceInfo[] = [];
   for (let index = 0; index < input.count; index += 1) {
     input.signal.throwIfAborted();
-    namespaces.push(await createApiNamespace(client, 'provisioned'));
+    namespaces.push(await createApiNamespace(client, 'provisioned', undefined, input.idPrefix));
   }
   const config = buildCapabilitiesConfig(
     input.capabilities,

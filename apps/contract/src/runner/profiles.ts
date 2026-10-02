@@ -5,6 +5,8 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
   default: {},
   'change-feed': {},
   'resumable-upload': {},
+  'change-feed-prefix': {},
+  'resumable-upload-prefix': {},
 
   // 한도 초과 계약용. 전역 한도는 프로세스 시작 때 한 번 읽으므로 기동 설정으로 준다(docs/design/04).
   // 700바이트 파일은 모든 한도 안이고, snapshot을 만들면 사용량 1400, 새 경로로 복원하면 2100이라 논리 상한을 넘는다.
@@ -26,7 +28,9 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
  */
 export const PROFILE_CAPABILITIES: Readonly<Partial<Record<ProfileName, readonly string[]>>> = {
   'change-feed': ['change-feed'],
+  'change-feed-prefix': ['change-feed'],
   'resumable-upload': ['resumable-upload'],
+  'resumable-upload-prefix': ['resumable-upload'],
 };
 
 /**
