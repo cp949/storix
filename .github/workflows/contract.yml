@@ -51,10 +51,16 @@ jobs:
         run: pnpm contract
 
   postgres:
-    name: 계약 검증(Postgres)
+    name: 계약 검증(Postgres ${{ matrix.pg }})
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["16", "17"]
+    env:
+      STORIX_CONTRACT_PG_IMAGE: postgres:${{ matrix.pg }}-alpine
     steps:
       - name: 소스 체크아웃
         uses: actions/checkout@v7

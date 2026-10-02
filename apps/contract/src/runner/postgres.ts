@@ -4,7 +4,8 @@ import { cleanupError, ExecutionCleanupError, runCleanupCommand } from './cleanu
 import { runMigrations, type DatabaseHandle } from './database.ts';
 import { waitUntil } from './wait.ts';
 
-const IMAGE = 'postgres:16-alpine';
+// 다른 major 검증용으로 `STORIX_CONTRACT_PG_IMAGE`로 덮어쓸 수 있다.
+const IMAGE = process.env.STORIX_CONTRACT_PG_IMAGE ?? 'postgres:16-alpine';
 const USER = 'storix';
 const PASSWORD = 'storix';
 
