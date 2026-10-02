@@ -33,3 +33,6 @@ docs/deployment/scenarios/**/pki/generated/
 
 # 재개 업로드 시나리오 설정(enable-resumable-upload.sh가 생성)
 docs/deployment/scenarios/**/resumable/generated/
+
+# 규모 측정 하네스 작업 디렉터리(결과·서버 로그)
+apps/scale/.work/

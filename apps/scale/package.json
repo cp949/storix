@@ -1,0 +1,19 @@
+{
+  "name": "@cp949/storix-scale",
+  "version": "0.1.0",
+  "description": "namespace 규모(1만~100만)에서 Storix 요청 경로·GC·시작 시간을 재는 수동 측정 하네스",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.18"
+  },
+  "scripts": {
+    "scale": "node src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"src/**/*.spec.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "typescript": "6.0.3"
+  }
+}
