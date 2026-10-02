@@ -2,29 +2,76 @@
 
 ## 적용 범위
 
-인증 파일 API, 공개 namespace 파일 읽기, 조건부 변경, FILE/TREE snapshot의 경로 입력은 같은 절대경로 계약을 사용한다. TREE snapshot 내부의 content 조회 `path`만 상대경로다. `find.name`은 이름 검색 문자열이므로 경로가 아니다. 모든 파일·snapshot API는 `/api/v2`로 제공한다.
+- 인증 파일 API, 공개 namespace 파일 읽기, 조건부 변경, FILE/TREE snapshot의 경로 입력은 같은 절대경로 계약을 사용한다.
+- TREE snapshot 내부의 content 조회 `path`만 상대경로다.
+- `find.name`은 이름 검색 문자열이므로 경로가 아니다.
+- 모든 파일·snapshot API는 `/api/v2`로 제공한다.
 
 ## 경로와 오류
 
-| 항목          | 계약                                                                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 절대경로      | `/`로 시작한다. 대소문자를 구별한다. `/`는 namespace 루트다.                                                                                                                                                  |
-| TREE 상대경로 | 선행 `/`가 없고, `.`은 TREE 루트다. 정규화 및 이름 검사는 절대경로와 같다.                                                                                                                                    |
-| 정규화        | 중복 `/`, `.` 구간, 끝 `/`를 제거한다. `/a//./b/`와 `/a/b`는 같은 노드다. `..`는 해석하지 않고 거부한다.                                                                                                      |
-| 이름          | 유효한 Unicode scalar와 NFC 형식이어야 한다. `/`, 백슬래시, C0·C1·DEL, Unicode Bidi_Control, 고립 surrogate를 거부한다. 허용한 문자와 대소문자는 보존한다.                                                    |
-| 길이          | 이름 하나는 UTF-8 최대 255바이트, 정규 절대경로는 앞 `/`를 포함해 최대 4096바이트다. TREE 상대경로도 앞에 `/`를 붙인 대응 절대경로 기준으로 검사한다.                                                         |
-| 오류          | 경로 문법·문자·길이 오류는 400 `VFS_INVALID_PATH`다. 파일 트리·본문·snapshot은 변경되지 않는다. 조건부 변경의 결정적 오류 receipt는 저장·재생하며, 같은 key로 경로를 고친 요청은 409 `MUTATION_KEY_REUSED`다. |
+| 항목           | 계약                                                                       |
+| -------------- | -------------------------------------------------------------------------- |
+| 절대경로       | `/`로 시작하며 대소문자를 구별한다                                         |
+| 루트           | `/`는 namespace 루트다                                                     |
+| TREE 상대경로  | 선행 `/`가 없으며 `.`은 TREE 루트다                                        |
+| 정규화         | 중복 `/`, `.` 구간과 끝 `/`를 제거한다                                     |
+| 정규화 예      | `/a//./b/`와 `/a/b`는 같은 노드다                                          |
+| 상위 경로      | `..`는 해석하지 않고 거부한다                                              |
+| 이름 형식      | 유효한 Unicode scalar와 NFC 형식이어야 한다                                |
+| 이름 금지 문자 | `/`, 백슬래시, C0·C1·DEL, Unicode Bidi_Control과 고립 surrogate를 거부한다 |
+| 이름 보존      | 허용한 문자와 대소문자는 보존한다                                          |
+| 이름 길이      | UTF-8 최대 255바이트다                                                     |
+| 경로 길이      | 정규 절대경로는 앞 `/`를 포함해 UTF-8 최대 4096바이트다                    |
 
-`/`는 조회·목록·TREE snapshot 원본과 이동·복사의 디렉터리 목적지로 사용할 수 있다. 파일 본문 저장·FILE snapshot 복원·루트 자체 이동·삭제의 대상은 될 수 없다. 그 경우 각 endpoint의 기존 루트 오류를 따른다.
+TREE 상대경로의 정규화·이름 검사는 절대경로와 같다.
+길이는 앞에 `/`를 붙인 대응 절대경로 기준으로 검사한다.
 
-조건부 move/copy는 `destinationAbsent: true`가 필수다. `destinationResolution`을 생략하면 기존 placement 규칙을 따른다. 목적지가 `/` 또는 기존 DIRECTORY면 원본 basename을 그 아래 붙이고, 기존 FILE이면 412를 반환한다. `destinationResolution: "exact"`는 정규화한 `destination` 경로 자체를 대상으로 한다. `/` 또는 기존 FILE·DIRECTORY는 412 `VFS_PRECONDITION_FAILED`이며 `path`는 지정 경로, `current`는 충돌 노드의 metadata다. 단 DIRECTORY source를 자기 자신이나 자기 subtree로 지정하면 대상 존재 여부와 무관하게 기존 placement와 같이 409 `VFS_INVALID_OPERATION`이 우선한다. 없는 leaf는 지정 경로에 생성·이동한다. 조건부 작업은 부모를 자동 생성하지 않으므로 부모가 없으면 404다.
+경로 오류:
 
-부모 디렉터리는 기본적으로 만들지 않는다. 부모가 없으면 404 `VFS_NODE_NOT_FOUND`다. `parents` 또는 `destinationParents` 옵션이 있는 작업에서 `true`로 지정할 때만 만든다. 해당 옵션이 없는 조건부 작업의 부모는 호출자가 먼저 만든다.
+- 문법·문자·길이 오류는 400 `VFS_INVALID_PATH`다.
+- 파일 트리·본문·snapshot은 변경하지 않는다.
+- 조건부 변경의 결정적 오류 receipt는 저장·재생한다.
+- 같은 key로 경로를 고친 요청은 409 `MUTATION_KEY_REUSED`다.
+
+루트 입력:
+
+- `/`는 조회·목록·TREE snapshot 원본과 이동·복사의 디렉터리 목적지로 쓸 수 있다.
+- 파일 본문 저장·FILE snapshot 복원·루트 자체 이동·삭제의 대상은 될 수 없다.
+- 금지된 입력은 각 endpoint의 루트 오류를 따른다.
+
+조건부 move/copy는 `destinationAbsent: true`가 필수다.
+목적지 해석은 다음 규칙을 따른다.
+
+- `destinationResolution` 생략: placement 규칙을 적용한다.
+  - 목적지가 `/` 또는 기존 DIRECTORY면 원본 basename을 그 아래 붙인다.
+  - 기존 FILE이면 412를 반환한다.
+- `destinationResolution: "exact"`: 정규화한 `destination` 경로 자체를 대상으로 한다.
+  - `/` 또는 기존 FILE·DIRECTORY는 412 `VFS_PRECONDITION_FAILED`다.
+  - `path`는 지정 경로다.
+  - `current`는 충돌 노드의 metadata다.
+  - 없는 leaf는 지정 경로에 생성·이동한다.
+- DIRECTORY source를 자기 자신이나 자기 subtree로 지정하면 409 `VFS_INVALID_OPERATION`이 우선한다.
+  - 대상 존재 여부나 placement 방식과 무관하다.
+
+부모 생성:
+
+- 부모 디렉터리는 기본적으로 만들지 않는다.
+- 부모가 없으면 404 `VFS_NODE_NOT_FOUND`다.
+- `parents` 또는 `destinationParents` 옵션을 제공하는 작업은 `true`일 때만 부모를 만든다.
+- 해당 옵션이 없는 조건부 작업은 호출자가 부모를 먼저 만든다.
 
 ## 검증 경계와 불변식
 
-`PathResolver.resolve()`가 절대경로의 공통 진입점이다. `resolveConditional()`도 같은 규칙을 사용한다. `resolveSnapshotRelativePath()`는 상대 표기를 해석한 후 같은 세그먼트·길이 검사를 적용한다. 입력을 조용히 NFC로 변환하지 않는다.
+- `PathResolver.resolve()`가 절대경로의 공통 진입점이다.
+- `resolveConditional()`도 같은 규칙을 사용한다.
+- `resolveSnapshotRelativePath()`는 상대 표기를 해석한 후 같은 세그먼트·길이 검사를 적용한다.
+- 입력을 자동으로 NFC로 변환하지 않는다.
 
-이동·복사의 `source`와 `destination`이 각각 유효해도 결과 경로가 한도를 넘을 수 있다. `vfs-node.repository.ts`는 목적지가 `/` 또는 기존 디렉터리일 때 붙이는 basename까지 포함한 최종 경로와 모든 하위 노드의 새 절대경로를 트랜잭션에서 검사한다. 실패하면 먼저 생성된 부모를 포함해 노드·Blob 참조·revision·quota 상태를 되돌린다. FILE snapshot 복원 대상은 직접 경로 검사로 검증한다.
+- 이동·복사의 `source`와 `destination`이 각각 유효해도 결과 경로가 한도를 넘을 수 있다.
+- `vfs-node.repository.ts`는 목적지가 `/` 또는 기존 디렉터리일 때 붙이는 basename까지 포함한 최종 경로와 모든 하위 노드의 새 절대경로를 트랜잭션에서 검사한다.
+- 실패하면 먼저 생성된 부모를 포함해 노드·Blob 참조·revision·quota 상태를 되돌린다.
+- FILE snapshot 복원 대상은 직접 경로 검사로 검증한다.
 
-`vfs_node.name`의 `varchar(255)`는 UTF-8 바이트 상한을 대체하지 않는다. 애플리케이션 경계와 repository의 결과 경로 경계에서 검사한다. 기존 데이터에 대한 변환이나 호환 경로는 제공하지 않는다.
+- `vfs_node.name`의 `varchar(255)`는 UTF-8 바이트 상한을 대체하지 않는다.
+- 애플리케이션 경계와 repository의 결과 경로 경계에서 검사한다.
+- 기존 데이터에 대한 변환이나 호환 경로는 제공하지 않는다.

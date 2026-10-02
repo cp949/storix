@@ -1,43 +1,71 @@
 # GC는 zero_since 기반 grace period와 object-먼저-metadata-나중 순서로 orphan Blob을 회수한다
 
-Blob의 reference_count가 0이 된 시점을 추적하지 않으면 grace period를 계산할
-기준점이 없다. `blob` 테이블에 `zero_since`(nullable timestamptz) 컬럼을 추가해,
-reference_count를 감소시키는 UPDATE가 0을 만드는 순간 같은 문장에서
-`zero_since = now()`를 채운다. reference_count는 한 번 0이 되면 다시 증가하지
-않으므로(독립 업로드는 dedup하지 않고, `cp`의 source는 항상 참조 중인 Node를 거쳐야
-하므로) 이 값은 리셋 로직 없이 단조적으로 한 번만 채워진다.
+## grace period 기준
 
-GC job은 `reference_count=0`이고 `zero_since`가 grace period(`ORPHAN_GRACE_PERIOD`
-초)보다 오래된 Blob을 찾아 (1) 스토리지 object 삭제 (2) 성공한 것만 모아 metadata row
-삭제 순서로 처리한다. 스토리지 object 삭제는 대상이 이미 없어도 에러 없이 성공하므로
-(S3 DELETE 표준), 이 순서는 crash 후 재시작해도 안전하게 재시도된다: object만
-지워지고 metadata 삭제 전에 죽어도 다음 실행이 같은 row를 다시 골라 멱등하게
-끝낸다. metadata 없는 스토리지 object(실패·충돌한 업로드의 잔여물)도 같은 grace
-period를 적용해 회수한다 — storage가 돌려준 object의 lastModified와 DB에 존재하는
-storage_key를 대조해 찾아낸다. 대조는 storage page 단위로 한다(ADR-0033).
+- `blob.zero_since`는 nullable timestamptz 컬럼이다.
+- `reference_count`를 0으로 만드는 UPDATE에서 `zero_since = now()`를 함께 기록한다.
+- `reference_count`는 0이 된 뒤 다시 증가하지 않는다.
+  - 독립 업로드는 dedup하지 않는다.
+  - `cp`의 source는 Blob을 참조 중인 Node를 통해서만 선택한다.
+- `zero_since`는 한 번만 기록한다.
+- `zero_since`를 리셋하는 로직은 두지 않는다.
 
-Postgres row lock을 스토리지 I/O(네트워크 호출) 동안 붙들지 않기 위해, 후보 조회는 lock
-없이 수행하고 DB 삭제는 스토리지 삭제가 끝난 뒤 짧은 트랜잭션으로 일괄 수행한다.
+`zero_since`는 참조가 0이 된 시점부터 grace period를 계산하기 위한 기준이다.
+이 ADR의 `ORPHAN_GRACE_PERIOD`에 해당하는 현재 설정명은 `STORIX_ORPHAN_GRACE_PERIOD`다.
 
-GC는 HTTP 서버와 같은 프로세스에서 돌리지 않는다. `gc-main.ts`의 얇은
-`GcAppModule`을 `NestFactory.createApplicationContext`로 부트스트랩하는 별도
-단발성 프로세스로 두고, `docker-compose.yml`에 `profiles: ['gc']`로 묶어
-`docker compose up` 기본 실행에는 포함되지 않게 했다. 파괴적 삭제 작업을 상시
-기동되는 요청 처리 경로와 분리해, 배포 주기나 스케줄러(cron 등)에서 독립적으로
-실행·재시도할 수 있게 하기 위함이다.
+## 회수 순서
 
-`ORPHAN_GRACE_PERIOD`를 지나치게 짧게 잡으면 이 lock-free candidate 스냅샷
-방식의 안전 여유가 줄어든다는 점에 유의한다: object-먼저 스캔은 아직 metadata
-row가 커밋되지 않은 업로드 중인 object를 grace period보다 어리다는 이유로
-살려두는 것에 의존하므로, grace period가 업로드 소요 시간보다 짧아지면 진행
-중인 업로드가 orphan으로 오인되어 삭제될 위험이 생긴다.
+GC job은 다음 조건을 모두 만족하는 Blob을 고른다.
+
+- `reference_count = 0`
+- `zero_since` 이후 `ORPHAN_GRACE_PERIOD`초 경과
+
+회수 절차:
+
+1. 스토리지 object를 삭제한다.
+2. object 삭제에 성공한 Blob의 metadata row만 삭제한다.
+
+이 순서를 택한 근거:
+
+- 스토리지 object 삭제는 대상이 없어도 성공한다(S3 DELETE 표준).
+- object 삭제 후 metadata 삭제 전에 프로세스가 종료되면 다음 실행이 같은 row를 다시 선택한다.
+- 같은 object를 다시 삭제해도 성공하므로 회수를 재시도할 수 있다.
+
+metadata 없는 object도 같은 grace period로 회수한다.
+
+- 대상은 실패하거나 충돌한 업로드의 잔여 object다.
+- storage가 반환한 `lastModified`로 object의 경과 시간을 판단한다.
+- DB에 존재하는 `storage_key`와 대조해 orphan을 찾는다.
+- 대조는 storage page 단위로 한다(api ADR-0033).
+
+## DB lock과 실행 방식
+
+- 후보는 lock 없이 조회한다.
+- DB 삭제는 스토리지 삭제 후 짧은 트랜잭션으로 일괄 처리한다.
+- 스토리지 I/O 동안 Postgres row lock을 유지하지 않는다.
+
+GC는 HTTP 서버와 분리한 단발성 프로세스로 실행한다.
+
+- `gc-main.ts`에서 `GcAppModule`을 `NestFactory.createApplicationContext`로 부트스트랩한다.
+- `docker-compose.yml`의 `profiles: ['gc']`로 묶는다.
+- 기본 `docker compose up` 실행에는 포함하지 않는다.
+- 배포 주기나 스케줄러(cron 등)에서 독립적으로 실행·재시도한다.
+
+파괴적 삭제 작업을 상시 요청 처리 경로와 분리하기 위한 결정이다.
+
+## grace period의 한계
+
+- lock 없는 후보 스냅샷 조회의 안전 여유는 `ORPHAN_GRACE_PERIOD`에 의존한다.
+- metadata가 아직 커밋되지 않은 업로드 object는 grace period가 지나지 않았다는 조건으로 보호한다.
+- grace period가 업로드 소요 시간보다 짧으면 진행 중인 object를 orphan으로 오인해 삭제할 수 있다.
 
 ## Considered Options
 
-- **`updated_at` 컬럼 재사용**: `BlobEntity`에 범용 `@UpdateDateColumn`을 추가하고 이를
-  grace period 기준점으로 쓰는 방법도 있었으나, 향후 Blob에 reference_count 외의
-  필드를 갱신하는 기능이 추가되면 의미가 오염된다. `zero_since` 전용 컬럼이 의도를
-  명확히 하고 결합도를 낮춘다.
-- **스토리지 삭제와 metadata 삭제를 하나의 분산 트랜잭션으로 묶기**: Postgres와 스토리지는
-  같은 트랜잭션 매니저를 공유하지 않아 2PC 없이는 불가능하다. 대신 "object 먼저,
-  metadata 나중" 순서와 멱등한 재시도로 최종 일관성을 확보하는 쪽을 택했다.
+- **`updated_at` 컬럼 재사용**
+  - `BlobEntity`에 범용 `@UpdateDateColumn`을 추가해 grace period 기준으로 쓰는 안이다.
+  - 다른 Blob 필드 갱신까지 기준 시점을 바꿀 수 있다.
+  - 전용 `zero_since` 컬럼으로 참조가 0이 된 시점만 기록한다.
+- **스토리지 삭제와 metadata 삭제를 하나의 분산 트랜잭션으로 처리**
+  - Postgres와 스토리지는 같은 트랜잭션 매니저를 공유하지 않는다.
+  - 하나의 트랜잭션으로 처리하려면 2PC가 필요하다.
+  - object를 먼저 삭제하고 멱등하게 재시도해 최종 일관성을 확보한다.

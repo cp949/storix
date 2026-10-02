@@ -8,7 +8,7 @@ Storix는 호출 서버가 사용하는 독립 VFS(Virtual File System) 저장 �
 
 **Namespace**:
 Storix가 관리하는 최상위 VFS 격리 단위로, 하나의 VFS root·파일명 범위·생성 시
-고정되는 암호화 정책을 소유한다. 불변 `id`(기존 UUID 또는 소문자 prefix와 32자리 hex)로 식별하며, 사람이 정하는 `name`은
+고정되는 암호화 정책을 소유한다. 불변 `id`(기존 UUID 또는 선택 소문자 prefix와 32자리 hex)로 식별하며, 사람이 정하는 `name`은
 식별자가 아닌 재사용 가능한 자동화용 slug다. name은 생략할 수 있으며 응답에서는 `null`이다.
 _Avoid_: 테넌트, 버킷, 워크스페이스
 

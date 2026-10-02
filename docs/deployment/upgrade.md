@@ -1,85 +1,95 @@
 # 업그레이드 절차
 
-DEPLOY-03. self-host 배포에서 Storix를 새 버전으로 올리는 절차다. 롤백 정책의
-설계 배경은 `../../apps/api/docs/adr/0017-migration-rollback-via-backup-restore.md`
-참고.
+DEPLOY-03. self-host 배포를 새 버전으로 갱신하는 절차다.
+롤백 결정은 [api ADR-0017](../../apps/api/docs/adr/0017-migration-rollback-via-backup-restore.md)을 따른다.
 
-범위: single-instance 배포만 다룬다. 여러 WAS가 Postgres를 공유하는 멀티인스턴스
-배치(`multi-instance-versitygw.md`)는 아직 미구현이라 이 절차에 없다 — 도입되면
-이 문서도 갱신한다.
+이 문서는 single-instance 배포를 다룬다.
+멀티인스턴스의 배치·운영 규칙은 [VersityGW 멀티 인스턴스 배포](./multi-instance-versitygw.md)를 따른다.
+멀티인스턴스 업그레이드 조율은 이 절차의 범위 밖이다.
 
-아래 `docker compose ...` 명령은 실제 배포에 쓰는 `-f` 조합(예:
-`-f docker-compose.yml -f docker-compose.versitygw.yml`)을 그대로 앞에 붙여
-실행한다(`README.md` "실행" 절 참고).
+Compose 명령에는 실제 배포의 `-f` 조합을 붙인다.
+예를 들어 `-f docker-compose.yml -f docker-compose.versitygw.yml`을 사용한다.
+조합 설정은 [README](../../README.md)의 "실행"을 따른다.
 
 ## 버전 식별
 
-태그 릴리즈(`API-02`)가 도입돼 "버전"은 `vX.Y.Z` 태그 기준이다. `CHANGELOG.md`의
-`## [X.Y.Z]` 절에서 해당 버전에 포함된 변경사항을 확인한다. 릴리즈를 어떻게
-만드는지는 `release.md` 참고 — 이 문서는 이미 나온 버전으로 배포 인스턴스를
-올리는 절차만 다룬다.
+- 배포 버전은 `vX.Y.Z` 태그로 식별한다(API-02).
+- 변경사항은 `CHANGELOG.md`의 `## [X.Y.Z]`에서 확인한다.
+- 태그 생성·게시는 [릴리즈 절차](./release.md)를 따른다.
 
-아래 절차는 소스 빌드 기준이다(원하는 태그를 `git checkout`한 뒤 로컬에서
-이미지를 재빌드) — README가 명시한 배포 단위 그대로다. `ghcr.io/cp949/storix:vX.Y.Z`
-사전 빌드 이미지도 나오지만, 이 compose 구성은 아직 `image:` 필드가 없어
-`docker compose pull`로 바로 받아 쓸 수는 없다(`build:`만 정의됨). compose에서
-사전 빌드 이미지를 직접 당겨 쓰는 흐름은 후속 과제로 남겨둔다.
+아래 절차는 소스 빌드 기준이다.
+원하는 태그를 checkout한 뒤 이미지를 재빌드한다.
+
+- 사전 빌드 이미지는 `ghcr.io/cp949/storix:vX.Y.Z`로 게시한다.
+- 기본 Compose에는 `image:`가 없고 `build:`만 있다.
+- 이 구성에서 `docker compose pull`로 사전 빌드 이미지를 사용하는 흐름은 제공하지 않는다.
 
 ## 절차
 
-1. **백업(필수)**. 마이그레이션이 스키마를 바꾸면 되돌릴 방법은 이 백업뿐이다
-   (ADR-0017).
+1. 모든 API 쓰기와 GC를 중단하고 백업한다.
+   - 백업 완료를 확인한 뒤 코드 갱신을 시작한다.
+   - 스키마 롤백에는 업그레이드 전 백업이 필요하다(api ADR-0017).
+   - 중단·백업 방법은 [백업/복구 운영 절차](./backup-restore.md)의 "백업"을 따른다.
 
    ```bash
    docker compose --profile backup run --rm backup
    ```
 
-2. **코드 갱신**.
+2. 코드를 갱신한다.
 
    ```bash
    git fetch && git checkout <커밋 또는 브랜치>
    ```
 
-3. **재빌드·재기동**. `migrate`는 base compose에서 `app`의 의존성이라 `up`마다
-   자동 실행된다(`README.md` "기동 순서" 참고) — 별도 마이그레이션 명령이
-   필요 없다.
+3. 이미지를 재빌드하고 재기동한다.
+   - base Compose에서 `app`은 `migrate` 성공에 의존한다.
+   - `up`은 migration을 실행한다. 별도 migration 명령은 필요 없다.
+   - 기동 순서는 [README](../../README.md)의 "기동 순서"를 따른다.
+   - namespace 제한·ID 변경 버전은 아래 "Namespace 제한·ID migration 주의"도 따른다.
 
    ```bash
    docker compose up -d --build
    ```
 
-   Podman은 명령 이름만 다르다.
+   Podman 명령:
 
    ```bash
    podman-compose up -d --build
    ```
 
-4. **`migrate` 성공 확인**. podman-compose 1.6.0 이하는 `migrate` 실패에도
-   `app`을 올릴 수 있다(`README.md` "Podman 주의" 참고) — `ps`에서 `migrate`가
-   `Exited (0)`인지 반드시 확인한다.
+4. `migrate` 성공을 확인한다.
+   - `migrate`가 `Exited (0)`인지 확인한다.
+   - podman-compose 1.6.0 이하는 migration 실패 후에도 `app`을 올릴 수 있다.
+   - 제약은 [README](../../README.md)의 "Podman 주의"를 따른다.
 
    ```bash
    docker compose ps migrate
    ```
 
-5. **동작 확인**.
+5. readiness를 확인한다.
 
    ```bash
    until curl -sf http://localhost:3000/health/ready > /dev/null; do sleep 2; done && echo ready
    ```
 
+6. migration과 readiness가 성공하면 쓰기와 GC를 재개한다.
+
 ## 실패 시 대응
 
-자동 revert는 지원하지 않는다(ADR-0017). 이번 마이그레이션이 스키마를 바꿨는지로
-갈린다.
+자동 스키마 revert는 지원하지 않는다(api ADR-0017).
+롤백 전에 migration 로그와 적용 이력을 확인한다.
+실패했다는 이유만으로 스키마가 변경되지 않았다고 판단하지 않는다.
 
-- **스키마 변경 없이 애플리케이션 버그만 있는 경우**(`migrate`가 아무 것도 하지
-  않았거나 애초에 실패): 이전 커밋으로 되돌려 3번부터 다시 실행한다. `migrate`는
-  이미 적용된 마이그레이션을 건너뛰므로 안전하다.
-- **스키마 변경 마이그레이션까지 성공한 뒤 문제가 발견된 경우**: 애플리케이션
-  코드만 문제라면 위와 동일하게 재배포한다. 스키마까지 되돌려야 하면 1번에서
-  뜬 백업으로 복구한다(`backup-restore.md`의 복구 절차 — 인스턴스 전체 재해복구
-  절차와 동일하며 부분 복구는 지원하지 않는다).
+| 상태                             | 대응                                      |
+| -------------------------------- | ----------------------------------------- |
+| 스키마가 변경되지 않음           | 이전 커밋으로 되돌리고 3단계부터 실행한다 |
+| 스키마 변경 후 애플리케이션 문제 | 현재 스키마와 호환되는 코드로 재배포한다  |
+| 스키마까지 되돌려야 함           | 1단계 백업으로 인스턴스 전체를 복구한다   |
+
+`migrate`는 이미 적용된 migration을 건너뛴다.
+이 동작만으로 이전 코드와 새 스키마의 호환성을 보장하지 않는다.
+복구는 [백업/복구 운영 절차](./backup-restore.md)의 "복구"를 따른다.
+부분 복구는 지원하지 않는다.
 
 ```txt
 위험도: 높음(스키마 변경 후 백업 복구가 필요한 경우)
@@ -88,24 +98,45 @@ DEPLOY-03. self-host 배포에서 Storix를 새 버전으로 올리는 절차다
 
 ## 범위 밖
 
-- 멀티인스턴스(여러 WAS가 DB 공유) 업그레이드 조율 — 토폴로지 자체가 아직
-  미구현이다(`../adr/0003-versitygw-primary-backend-and-topology.md`).
-- 무중단(zero-downtime) 마이그레이션 정책 — 현재 마이그레이션 6개는 전부
-  추가적(additive)이라 문제되지 않았지만, 컬럼 삭제·타입 변경처럼 구버전
-  앱과 호환되지 않는 마이그레이션을 다루는 정책은 아직 없다.
-- 자동 스키마 되돌리기(`migration:revert`) — ADR-0017.
+- 여러 WAS가 공유 DB를 사용하는 업그레이드 조율.
+- 무중단(zero-downtime) migration 정책.
+- 구버전 앱과 호환되지 않는 컬럼 삭제·타입 변경의 무중단 처리.
+- 자동 스키마 되돌리기(`migration:revert`).
 
 ## Namespace 제한·ID migration 주의
 
-Namespace ID와 counter 컬럼을 변경하는 버전은 기존 API와 혼합 실행하지 않는다. 이 migration은 쓰기를 중단한 상태에서 실행한다. 배포 전 namespace-scale에서 실제 데이터 규모에 맞는 migration 시간·잠금·WAL을 확인한다.
+실행 조건:
 
-백업은 필수다. migration 후 새 prefix ID가 생성되면 이전 UUID-only 코드로 재배포하지 않는다. 되돌리려면 새 형식 ID와 모든 참조를 역변환할 수 있는지 확인하고, 불가능하면 migration 전 백업을 복원한다. migration down은 UUID 이외 ID가 존재하면 거부된다.
+- Namespace ID·counter 변경 버전은 기존 API와 혼합 실행하지 않는다.
+- 쓰기를 중단한 상태에서 migration을 실행한다.
+- 실행 전에 백업한다.
+- 배포 전 namespace-scale에서 실제 규모의 migration 시간·잠금·WAL을 확인한다.
 
-신규 폴더 FILE 상한 기본값은 10000이고 live node 상한 기본값은 1000000이다. 기존 데이터가 상한보다 많아도 migration은 삭제하지 않는다. 상한을 초과한 폴더·namespace는 감소 작업은 계속할 수 있지만 해당 제한을 늘리는 새 저장은 제한 아래로 내려올 때까지 거부된다.
+롤백 조건:
+
+- 새 prefix ID가 생성되면 이전 UUID-only 코드로 재배포하지 않는다.
+- 새 ID와 모든 참조를 역변환할 수 있는지 확인한다.
+- 역변환할 수 없으면 migration 전 백업을 복원한다.
+- UUID 이외의 ID가 있으면 migration down은 거부된다.
+
+새 상한:
+
+- 폴더 FILE 상한 기본값은 10000이다.
+- live node 상한 기본값은 1000000이다.
+- migration은 상한을 초과한 기존 데이터를 삭제하지 않는다.
+- 초과 상태에서도 감소 작업은 허용한다.
+- 해당 제한을 늘리는 저장은 사용량이 제한 아래로 내려올 때까지 거부한다.
 
 ```text
 위험도: 높음
 롤백: migration 전 데이터 백업 복원. 새 prefix ID가 생성된 뒤에는 ID·참조 역변환 없이 이전 스키마로 되돌릴 수 없다.
 ```
 
-현재 PostgreSQL 16 전용 하네스에서 `storix-scale-v1` seed로 migration 전체 시간을 재면 1만 namespace 5.53초, 10만 10.78초, 100만 105.77초였다. 100만 값은 migration transaction 전체 경과 시간이며 개별 테이블 lock·WAL bytes의 직접 계측은 아니다. 배포 DB의 데이터 분포·하드웨어·WAL 설정에 따라 실제 값은 다르므로 운영 전 같은 배포 조건에서 재측정한다.
+측정 근거:
+
+- PostgreSQL 16 전용 하네스의 `storix-scale-v1` seed에서 migration 전체 시간을 측정했다.
+- 1만 namespace는 5.53초, 10만은 10.78초, 100만은 105.77초였다.
+- 100만 값은 migration transaction 전체 경과 시간이다.
+- 개별 테이블 lock·WAL bytes는 직접 계측하지 않았다.
+- 데이터 분포·하드웨어·WAL 설정이 다르면 결과도 달라진다.
+- 운영 전 실제 배포 조건에서 재측정한다.

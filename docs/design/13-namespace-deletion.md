@@ -6,11 +6,10 @@
 - live·snapshot·휴지통·재개 업로드 데이터를 GC에서 비동기로 영구 제거한다.
 - 삭제 접수 재전송과 GC 재시작은 같은 데이터를 중복 정산하지 않는다.
 - 최종 사용자 권한과 프로젝트 종료 판단은 호출 서버가 담당한다.
-- 삭제 취소·복원, namespace tombstone의 물리 삭제와 자동 만료는 제공하지 않는다.
+- 삭제 취소·복원은 제공하지 않는다. 완료된 namespace tombstone의 물리 삭제는 "보존과 물리 삭제"를 따른다.
 - secure erase, backup·replica·object versioning의 과거 버전·외부 cache 회수는 범위 밖이다.
 
-요구사항은 [RQ-030](../requirements/file-storage.md#rq-030-namespace-관리자-삭제)이다.
-결정은 api ADR-0032다.
+요구사항은 [RQ-030](../requirements/file-storage.md#rq-030-namespace-관리자-삭제)이다. 결정은 api ADR-0032다.
 
 ## HTTP 계약
 
@@ -23,7 +22,7 @@
 
 - `@Public()`과 `AdminApiKeyGuard`를 함께 적용한다.
 - 서비스 key만 있거나 admin key가 설정되지 않은 배포에서는 `401 UNAUTHORIZED`다.
-- 두 라우트는 DB 조회 전에 `isUuid`로 검사한다. 형식 오류는 `404 NAMESPACE_NOT_FOUND`다.
+- 두 라우트는 DB 조회 전에 `isNamespaceId`로 ID 형식을 검사한다. 형식 오류는 `404 NAMESPACE_NOT_FOUND`다.
 - `@Audited()`, `DomainErrorFilter`, `StructuredLoggingInterceptor`를 적용한다.
 - 인증 실패는 filter의 감사 기록을 남긴다. 구조화 요청 로그는 인증 통과 뒤에 남긴다.
 - 정상 응답은 `Cache-Control: no-store`다.
@@ -55,14 +54,14 @@
 - 생성·quota·trash receipt와 별도 테이블을 쓴다.
 - 요청 본문이 없어 fingerprint를 두지 않는다.
 - 같은 namespace ID·key는 최초 HTTP status·body를 재생한다. 완료 뒤에도 최초 202는 202다.
-- `Location`은 UUID로 재구성한다. receipt에 header를 저장하지 않는다.
-- 같은 key를 다른 UUID에 쓸 수 있다. `422 IDEMPOTENCY_KEY_REUSED`는 이 라우트에서 발생하지 않는다.
+- `Location`은 namespace ID로 재구성한다. receipt에 header를 저장하지 않는다.
+- 같은 key를 다른 namespace ID에 쓸 수 있다. `422 IDEMPOTENCY_KEY_REUSED`는 이 라우트에서 발생하지 않는다.
 - 다른 key로 DELETING을 삭제하면 같은 operation을 가리키는 202를 새 receipt로 저장한다.
 - 다른 key로 DELETED를 삭제하면 `200 {namespaceId, status: "DELETED"}`를 저장한다.
 - COMPLETED에서는 root 대신 operation 행을 잠가 새 receipt를 직렬화한다.
 - 인증·입력 오류와 없는 namespace ID는 삭제 receipt를 저장하지 않는다.
 - 커밋 뒤 transport 장애는 접수를 취소하지 않는다.
-- 삭제 receipt와 namespace tombstone은 자동 만료하지 않는다.
+- 삭제 receipt와 namespace tombstone은 완료 후 보존 기간이 지나면 GC가 물리 삭제한다. 보존 규칙은 "보존과 물리 삭제"를 따른다.
 
 ### 삭제 상태 조회
 
@@ -167,7 +166,9 @@ usage 잠금:
 - 휴지통 보존 GC와 파일 만료 GC는 ACTIVE 후보만 선택한다.
 - 정리 진행에는 배포의 GC 예약이 필요하다. 완료 시간의 상한을 보장하지 않는다.
 - METADATA 단계는 namespace 하나의 live·snapshot·trash를 한 GC 실행 안에서 끝까지 제거한다. namespace 하나 안에서는 배치 수 상한이 없다.
-- 큰 namespace는 같은 실행에서 뒤 namespace의 정리를 그만큼 늦춘다. 배치마다 커밋하므로 중단 뒤 재시작은 안전하다. 지연 시간은 측정하지 않았다.
+- 큰 namespace는 같은 실행에서 뒤 namespace의 정리를 그만큼 늦춘다.
+  - 배치마다 커밋하므로 중단 뒤 재시작은 안전하다.
+  - 지연 시간은 측정하지 않았다.
 - 상한을 두지 않은 이유: 실행 사이에 `STORIX_GC_MIN_INTERVAL`(기본 3600초) 간격이 있어, 상한은 큰 namespace의 완료를 실행 횟수만큼의 간격으로 늦춘다. 측정 없이 값을 정하지 않는다.
 
 ### UPLOADS
@@ -225,9 +226,9 @@ usage 잠금:
 - live·retained snapshot·retained trash counter가 모두 0이다.
 - namespace upload usage의 staged bytes·active sessions가 모두 0이다.
 
-조건을 만족하면 root 제거·namespace DELETED·operation COMPLETED·completedAt 기록을 함께 커밋한다.
-최종 참조 해제 뒤 `STORIX_ORPHAN_GRACE_PERIOD`와 다음 GC 실행을 기다린다.
-PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
+- 조건을 만족하면 root 제거·namespace DELETED·operation COMPLETED·completedAt 기록을 함께 커밋한다.
+- 최종 참조 해제 뒤 `STORIX_ORPHAN_GRACE_PERIOD`와 다음 GC 실행을 기다린다.
+- PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 
 ## DELETED의 의미
 
@@ -241,10 +242,21 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
 
 ## 보존과 물리 삭제
 
-- `DELETED`로 끝난 namespace의 행은 영구히 두지 않는다. `namespace_deletion.completed_at`부터 `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 30일)가 지나면 GC 단계 `deleted-namespace-purge`가 물리 삭제한다. 결정은 api ADR-0035다.
-- 후보는 `phase = 'COMPLETED'`이고 namespace `status = 'DELETED'`인 행이다. DELETING·보류(`blockedReason`)·정산 미확정 operation은 후보가 아니다. 후보 조회는 `idx_namespace_deletion_completed`로 한다.
-- namespace마다 한 트랜잭션으로 `namespace_deletion_receipt` → `vfs_upload_usage`(0 값) → `namespace_deletion` → `namespace` 행을 지운다. 남은 참조 행이 있으면 FK 위반으로 롤백하고 그 namespace를 건너뛴다. 건너뛴 후보는 같은 실행에서 다시 읽지 않는다.
-- 생성 receipt(`idempotency_key`)는 이 단계의 대상이 아니다. 자체 보존 기간(ADR-0034)을 따른다. `audit_log`는 건드리지 않는다.
+- `DELETED`로 끝난 namespace의 행은 영구히 두지 않는다.
+  - `namespace_deletion.completed_at`부터 `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 30일)가 지나면 GC 단계 `deleted-namespace-purge`가 물리 삭제한다.
+  - 결정은 api ADR-0035다.
+- 후보는 `phase = 'COMPLETED'`이고 namespace `status = 'DELETED'`인 행이다.
+  - DELETING·보류(`blockedReason`)·정산 미확정 operation은 후보가 아니다.
+  - 후보 조회는 `idx_namespace_deletion_completed`로 한다.
+- 후보 페이지를 한 트랜잭션으로 삭제한다.
+  - 삭제 순서는 `namespace_deletion_receipt` → `vfs_upload_usage`(정산 완료 값) → `namespace_deletion` → `namespace`다.
+  - 페이지 삭제가 실패하면 롤백하고 namespace별 트랜잭션으로 재시도한다.
+  - 남은 참조 행 등으로 실패한 namespace는 건너뛴다.
+  - 건너뛴 후보는 같은 실행에서 다시 읽지 않는다.
+  - 구현은 `NamespacePurgeRepository.purgeNext`·`purgeMany`다.
+- 생성 receipt(`idempotency_key`)는 이 단계의 대상이 아니다.
+  - 자체 보존 기간(ADR-0034)을 따른다.
+  - `audit_log`는 건드리지 않는다.
 - 물리 삭제 뒤:
   - `GET /api/v2/namespaces/{id}`는 404다. 보존 기간 안에서는 `status: DELETED`를 반환한다.
   - 삭제 상태 조회와 같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다. 보존 기간 안에서는 최초 202 재생이다.

@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Namespace ID·제한 상속·휴지통 기본 정책·quota 제외와 Postgres 서버/client 버전과 백업 일관성의 문서 설명을 현재 구현에 맞췄다. 데모 검증 문서의 깨진 링크를 수정했다.
+
 ## [1.1.0] - 2026-10-02
 
 ### Added

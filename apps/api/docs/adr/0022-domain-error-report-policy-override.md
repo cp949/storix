@@ -1,19 +1,23 @@
 # 도메인 에러 shouldReport로 리포팅 정책을 클래스별로 override 가능하게 함
 
-ADR-0014는 에러 리포팅을 `domain-error.filter.ts`의 500 분기 하나로 고정된
-전역 규칙으로 기록했다. 6개 파일에 흩어진 25개 도메인 에러 클래스를 공유
-`DomainError` 베이스로 재배치하면서 `shouldReport` 필드를 추가한다 — 기본값은
-ADR-0014의 규칙(`status >= 500` → true)을 그대로 재현하되, 개별 클래스가
-override할 수 있는 자리를 만든다. ADR-0014를 대체하지 않으며, 그 안의 500-분기
-규칙을 클래스 단위로 세분화할 수 있게 확장하는 결정이다.
+api ADR-0014는 `domain-error.filter.ts`의 500 분기에 에러 리포팅 정책을 두었다.
+이 결정은 도메인 에러 클래스를 공유 `DomainError` 베이스로 옮기고 `shouldReport`를 추가한다.
+
+- 기본값은 `status >= 500`일 때 `true`다.
+- 개별 클래스는 `shouldReport`를 override할 수 있다.
+- api ADR-0014를 대체하지 않는다.
+- 기존 리포팅 규칙을 클래스 단위로 세분화하도록 확장한다.
 
 ## Considered Options
 
-- **`shouldReport`를 모든 서브클래스가 명시적으로 선언하도록 강제(default
-  없음)**: 지금 25개 클래스 중 ADR-0014의 기본 규칙에서 벗어나야 하는 케이스가
-  없어 25곳을 기계적으로 건드리는 diff만 커지므로 보류했다.
-- **`shouldReport`를 HTTP 요청 경로(`DomainErrorFilter`)에서만 의미 있게
-  두고, job 엔트리포인트(`restore-main.ts` 등)의 catch 블록도 이 필드를
-  존중하도록 같이 고침**: job 실패는 무조건 report하는 게 운영상 맞는 정책이라
-  일부러 그대로 두었다 — `DomainError`를 상속하는 job 에러(`RestoreTargetNotEmptyError`)에서
-  `shouldReport`는 지금 소비자가 없는 필드로 남는다.
+- **모든 서브클래스에 `shouldReport` 선언을 강제**:
+  - 기본값을 두지 않는 안이다.
+  - 도입 당시 도메인 에러는 6개 파일의 25개 클래스에 흩어져 있었다.
+  - 기본 규칙에서 벗어나야 하는 클래스는 없었다.
+  - 25곳의 선언만 늘어나므로 보류했다.
+- **job의 catch 블록도 `shouldReport`를 적용**:
+  - HTTP 요청 경로인 `DomainErrorFilter`와 같은 정책을 적용하는 안이다.
+  - job 실패는 항상 report하는 운영 정책을 유지한다.
+  - `restore-main.ts` 등의 catch 블록은 변경하지 않았다.
+  - job 에러인 `RestoreTargetNotEmptyError`도 `DomainError`를 상속한다.
+  - 이 job 경로에서는 `shouldReport`를 사용하지 않는다.

@@ -1,74 +1,108 @@
 # 백업/복구는 GC와 동일한 외부 트리거 프로세스로 만들고, Postgres 스냅샷 → Blob 순서를 불변식으로 둔다
 
-OPS-02(백업/복구)는 Postgres(metadata)와 Blob 스토리지(object) 양쪽에 상태가 나뉘어 있어 참고할
-기존 사례가 없다(로드맵에 명시). `backup:run`/`restore:run`을 `gc-main.ts`와 동일하게
-`NestFactory.createApplicationContext`로 띄우는 단발성 프로세스로 추가하고,
-`docker-compose.yml`에 `profiles: ['backup']`로 묶어 상시 기동되는 `app`과 분리한다.
-운영자(외부 cron 등)가 트리거하는 구조로, GC job이 이미 확립한 운영 모델을 그대로
-따른다.
+`OPS-02`는 Postgres metadata와 Blob 스토리지 object를 함께 백업·복구한다.
+로드맵은 이 조합에 참고할 기존 사례가 없다고 명시했다.
+
+- `backup:run`/`restore:run`은 단발성 프로세스로 실행한다.
+- `gc-main.ts`와 같이 `NestFactory.createApplicationContext`로 부트스트랩한다.
+- Compose profile은 각각 `backup`과 `restore`로 분리한다.
+- 상시 실행하는 `app`과 분리한다.
+- 운영자가 외부 cron 등으로 실행한다.
+
+GC와 같은 외부 트리거 운영 모델을 사용한다.
 
 ## 정합성 순서: Postgres 먼저, Blob 나중
 
-`content.service.ts`의 업로드 경로는 스토리지 object를 먼저 쓰고, 성공해야 Postgres에
-blob row를 커밋한다(object-먼저-metadata-나중). 따라서 Postgres 스냅샷 시점에
-참조되는 모든 blob은 그 스냅샷 시점 이전에 이미 스토리지에 존재함이 보장된다. `backup:run`은
-이 순서(Postgres 스냅샷 → Blob 미러)를 불변식으로 강제한다. 반대 순서(Blob 먼저)를
-쓰면 두 스냅샷 사이에 새로 업로드·참조된 blob이 Postgres 스냅샷엔 잡히고 Blob
-스냅샷엔 없어, 복구 시 참조가 깨진(dangling) 상태가 된다. 이 불변식은 GC가 삭제에
-쓰는 "object 먼저, metadata 나중" 순서(ADR-0006)와 대칭이다.
+업로드는 object를 먼저 저장하고 성공 후 Postgres의 blob row를 커밋한다.
+Postgres 스냅샷이 참조하는 Blob은 스냅샷 시점에 이미 스토리지에 존재한다.
+
+백업 순서:
+
+1. Postgres 스냅샷을 만든다.
+2. Blob을 미러링한다.
+
+반대 순서를 쓰면 두 스냅샷 사이에 생성된 참조의 object가 Blob 백업에서 빠질 수 있다.
+복구 시 dangling reference가 생기는 원인이다.
+GC도 object를 먼저 삭제하고 metadata를 나중에 삭제한다(api ADR-0006).
+
+Blob의 불변성만으로 동시 GC 삭제를 막을 수는 없다.
+백업 중 쓰기·GC 중단 절차는 `docs/deployment/backup-restore.md` “백업”을 따른다.
+`backup:run`은 쓰기나 GC를 자동으로 중단하지 않는다.
 
 ## 백업 방식
 
-- **Postgres**: `pg_dump` 논리 백업만 쓴다. PITR(`pg_basebackup`+WAL 아카이빙)은 단일
-  고객 인스턴스 규모에서 과설계이고, WAL 목적지 관리라는 별도 운영 부담을 지운다.
-- **Blob 스토리지**: 별도 미러링 도구를 이미지에 추가하지 않고, 이미 앱 전역에서
-  쓰는 `BlobStorage`(S3 SDK 래퍼) 인터페이스로 버킷 전체를 순회하며 로컬 경로의
-  `blobs/` 디렉터리에 복사한다. 새 바이너리 의존성이 늘지 않고 기존 통합 테스트
-  하네스로 그대로 검증된다. Blob이 불변이라는 성질은 동일하게 적용된다 — 실행 중인
-  스토리지에 대해서도 무중단·안전하게 복사할 수 있다.
-- **목적지**: 로컬 파일시스템만 지원한다. 오프호스트 반출과 보존(retention) 정책은
-  운영자 책임으로 남기고, Storix는 백업마다 `{BACKUP_DIR}/{ISO8601}/` 형태의 타임스탬프
-  디렉터리만 만들어 운영자가 자신의 툴(rsync, restic, logrotate류 등)로 다루기 쉽게
-  한다.
-- **복구 범위**: 인스턴스 전체 재해복구만 지원한다. namespace 단위 부분 복구는 범위
-  밖이다 — 수요가 생기면 별도 ADR로 재검토한다.
+- **Postgres**
+  - `pg_dump` 논리 백업을 사용한다.
+  - PITR(`pg_basebackup` + WAL 아카이빙)은 도입하지 않는다.
+  - 단일 고객 인스턴스에서는 WAL 목적지 관리 비용이 요구에 비해 크다고 판단했다.
+- **Blob 스토리지**
+  - 기존 `BlobStorage`(S3 SDK 래퍼)로 버킷 전체를 순회한다.
+  - object를 로컬 백업의 `blobs/`에 복사한다.
+  - 별도 미러링 바이너리는 추가하지 않는다.
+  - 기존 스토리지 통합 테스트 하네스를 사용한다.
+- **목적지**
+  - 로컬 파일시스템만 지원한다.
+  - 완료된 백업은 `{STORIX_BACKUP_DIR}/{ISO8601 타임스탬프}/`에 둔다.
+  - 기존 설정 표기는 `BACKUP_DIR`다.
+  - 타임스탬프의 콜론과 점은 디렉터리 이름에서 대시로 치환한다.
+  - 오프호스트 반출과 retention은 운영자 책임이다.
+  - 운영자는 rsync, restic, logrotate류 도구로 백업을 관리한다.
+- **복구 범위**
+  - 인스턴스 전체 재해복구만 지원한다.
+  - namespace 단위 부분 복구는 지원하지 않는다.
+  - 수요가 생기면 별도 ADR로 재검토한다.
 
 ## 마스터 키는 백업 대상이 아니다
 
-`ENCRYPTION_MASTER_KEY`는 Postgres에도 스토리지에도 없고 배포 환경변수로만 존재한다
-(ADR-0009). 이 키를 분실하면 `ENCRYPTED` namespace 데이터는 이 백업/복구 절차로
-복구되지 않는다. `backup:run`은 실행마다 `ENCRYPTED` namespace 존재 여부를 조회해,
-있으면 "마스터 키를 별도 채널에 백업했는지 확인하라"는 경고를 stdout에 남긴다 — 코드
-검증은 불가능하지만(운영자가 실제로 키를 백업했는지는 알 수 없음), 자동화된 cron
-실행 로그에도 남는 마지막 리마인더 역할을 한다.
+- `STORIX_ENCRYPTION_MASTER_KEY`(기존 표기 `ENCRYPTION_MASTER_KEY`)는 배포 환경변수다(api ADR-0009).
+- 키는 Postgres와 스토리지에 저장하지 않는다.
+- 키를 분실하면 백업으로도 `ENCRYPTED` namespace 데이터를 복호화할 수 없다.
+- `backup:run`은 실행마다 `ENCRYPTED` namespace 존재 여부를 확인한다.
+- 존재하면 마스터 키의 별도 채널 백업을 확인하라는 콘솔 경고를 남긴다.
+- 운영자의 실제 키 백업 여부는 코드로 검증할 수 없다.
+
+경고는 자동화된 cron 실행 로그에도 남긴다.
 
 ## restore는 기본적으로 파괴적 작업을 거부한다
 
-`restore:run`은 대상이 비어있지 않으면 기본적으로 에러로 중단하고,
-`RESTORE_FORCE=true`를 명시해야 덮어쓰기를 진행한다. 오작동으로 라이브 인스턴스에
-restore를 돌려 데이터를 덮어쓰는 사고가, 복구 편의성보다 훨씬 비싸다.
+- namespace 데이터가 있으면 `restore:run`은 기본적으로 중단한다.
+- 덮어쓰려면 `STORIX_RESTORE_FORCE=true`를 명시한다.
+- 기존 설정 표기는 `RESTORE_FORCE=true`다.
 
-"비어있지 않다"의 판정 기준은 Postgres의 namespace row 개수 하나뿐이다
-(`BackupRepository.hasExistingNamespaces()`). 스토리지 버킷 내용은 이 게이트에서
-보지 않는다 — namespace가 0건이면 버킷에 떠도는 object가 남아 있어도 force 없이
-복구가 진행된다. namespace가 Storix 데이터의 최상위 소유자이므로, namespace가
-0건인 대상은 "지울 사용자 데이터가 없는" 인스턴스로 본다.
+대상 판정:
+
+- `BackupRepository.hasExistingNamespaces()`로 Postgres namespace row 존재 여부를 확인한다.
+- 스토리지 버킷 내용은 판정에 사용하지 않는다.
+- namespace가 없으면 잔여 object가 있어도 force 없이 복구한다.
+
+namespace는 사용자 데이터의 최상위 소유자다.
+이 판정은 라이브 인스턴스를 실수로 덮어쓰는 사고를 줄이기 위한 결정이다.
+
+```txt
+위험도: 높음
+롤백: 복구 전 대상의 별도 백업이 있어야 가능. 덮어쓴 데이터는 복구에 사용한 백업만으로 되돌릴 수 없다.
+```
 
 ## 검증
 
-round-trip(백업 → 새 인스턴스에 restore → 데이터 일치 확인) 통합 테스트를 이번
-티켓 범위에 포함한다. 기존 Postgres·S3 호환 스토리지 testcontainers 통합 테스트 관례를 그대로
-쓴다. 평소엔 실행되지 않다가 재해 시에만 쓰이는 코드는 자동 검증이 없으면 정작
-필요한 순간 깨져 있을 위험이 가장 크다.
+- round-trip 통합 테스트를 작업 범위에 포함한다.
+- 절차는 백업 → 새 인스턴스 복구 → 데이터 일치 확인이다.
+- 기존 Postgres·S3 호환 스토리지 testcontainers 관례를 사용한다.
+
+재해 시에 사용하는 코드의 결함을 평소 자동 검증으로 발견하기 위한 결정이다.
 
 ## Considered Options
 
-- **버킷 버저닝 활성화**: 별도 인프라 변경 없이 자체 히스토리를 보존할 수
-  있지만, GC의 grace-period 기반 삭제 의미론(ADR-0006)과 새로 상호작용을 설계해야
-  해서 보류했다.
-- **`pg_basebackup`+WAL PITR**: 임의 시점 복구가 가능하지만 WAL 아카이브 목적지
-  관리라는 운영 복잡도가 이 단계의 요구보다 크다.
-- **Storix가 원격 백업 목적지(S3 등)를 직접 설정**: 별도 자격증명 관리·설정 표면이
-  늘어난다. self-host 배포 관례대로 오프호스트 반출은 운영자 몫으로 남겼다.
-- **Blob 먼저, Postgres 나중 순서**: 두 스냅샷 사이에 생긴 새 참조가 Blob 백업에
-  없을 수 있어 dangling reference 위험이 생긴다. 채택하지 않았다.
+- **버킷 버저닝**
+  - object 이력을 보존할 수 있다.
+  - GC의 grace-period 삭제 의미론과 상호작용을 설계해야 한다(api ADR-0006).
+  - 이 추가 설계가 필요해 보류했다.
+- **`pg_basebackup` + WAL PITR**
+  - 임의 시점 복구가 가능하다.
+  - WAL 아카이브 목적지 관리 비용이 현재 요구보다 커 보류했다.
+- **Storix가 원격 백업 목적지(S3 등)를 직접 관리**
+  - 자격증명과 설정 항목이 늘어난다.
+  - self-host 배포의 오프호스트 반출은 운영자에게 맡긴다.
+- **Blob 먼저, Postgres 나중**
+  - 두 스냅샷 사이에 생성된 참조의 object가 백업에서 빠질 수 있다.
+  - dangling reference 위험이 있어 채택하지 않았다.

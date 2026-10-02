@@ -71,8 +71,8 @@ docker compose \
 
 ## 재개 업로드 활성화
 
-재개 업로드는 Storix에서 기본 비활성이다. 활성화 설정은 namespace UUID를 담아야 하고
-API는 시작할 때 그 UUID가 DB에 있는지 확인한다. UUID는 `demo-was`가 namespace를 만들 때
+재개 업로드는 Storix에서 기본 비활성이다. 활성화 설정은 namespace ID를 담아야 하고
+API는 시작할 때 그 ID가 DB에 있는지 확인한다. ID는 `demo-was`가 namespace를 만들 때
 정해지므로 스택을 먼저 기동한 뒤 스크립트를 실행한다.
 
 ```bash
@@ -81,7 +81,7 @@ ENV_FILE=docs/deployment/scenarios/demo-all-in-one/env/development.env.example \
 ```
 
 - `ENV_FILE`은 기동에 `--env-file`을 썼을 때만 지정한다. 루트 `.env`를 쓰면 생략한다.
-- 스크립트는 UUID를 조회해 `resumable/generated/`(git 미추적)에 설정을 만들고, `compose.resumable.yml`을
+- 스크립트는 namespace ID를 조회해 `resumable/generated/`(git 미추적)에 설정을 만들고, `compose.resumable.yml`을
   겹쳐 `app`만 다시 기동한다. 같은 스택에서 다시 실행해도 결과가 같다.
 - 이후 이 스택에 `docker compose`를 실행할 때는 `-f docs/deployment/scenarios/demo-all-in-one/compose.resumable.yml`을
   `-f` 목록 끝에 추가한다. 빼면 다음 `up`이 `app`을 설정 없이 다시 만들어 기능이 꺼진다.
@@ -99,9 +99,8 @@ docs/deployment/scenarios/demo-all-in-one/smoke-test.sh
 목록·검색·복사·이동·다른 사용자 경로 이탈(403)·인가된 presigned 다운로드·
 query 변조 실패·영구 공개 발행·무인증 공개 다운로드·미발행 경로 404·발행
 취소·재귀 삭제·업로드 상한 초과(413)와 그 뒤 WAS 생존·재개 업로드(조각 순서 뒤집기·누락 완료 409·
-재개·SHA-256 확인, 활성화한 스택에서만). 자세한 단계별 대응은
-[`_works/demo-proposals.md`](../../../../_works/demo-proposals.md) 섹션
-13.3을 참고한다(로컬 참고자료, git 미추적).
+재개·SHA-256 확인, 활성화한 스택에서만). 단계별 요청과 판정은
+[`smoke-test.sh`](./smoke-test.sh)에서 확인한다.
 
 ## Browser 수동 검증
 

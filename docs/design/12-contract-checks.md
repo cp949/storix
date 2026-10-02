@@ -12,7 +12,7 @@
 - `src/runner/profile-lifecycle.ts`: 프로필 DB·API 서버·capability 준비·계약 실행을 관리한다.
 - `src/runner/`: 계약 발견·검증, DB·서버·저장소 기동과 정리 도구.
 - `src/client/api-client.ts`: 계약이 쓰는 HTTP 클라이언트.
-- `src/support/`: 여러 계약이 쓰는 헬퍼(자격 없는 요청, 멱등성 재생 단언). 계약 발견 대상이 아니라 `src/contracts/` 밖에 둔다.
+- `src/support/`: 여러 계약이 쓰는 헬퍼(자격 없는 요청, 멱등성 재생 단언). 계약 발견에서 제외하려고 `src/contracts/` 밖에 둔다.
 - `src/cli.ts`: 인자·계약 검증과 선택을 수행한다. SIGINT 신호를 lifecycle에 전달하고 결과를 출력한다.
 
 ## 계약 정의
@@ -24,7 +24,14 @@
 - 계약 파일은 `default export`로 계약을 내보낸다. 파일을 추가하면 실행 대상이 된다.
 - `run(ctx)`는 `node:assert/strict`로 검증하고 위반 시 throw한다.
 - `ctx.signal`은 CLI의 실행 취소 신호다. `ctx.client`는 HTTP 요청과 응답 본문 대기에 같은 신호를 전달한다.
-- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다. 프로필이 capability를 허용하면 `createNamespace()`는 그 capability가 켜진 namespace를 주고, `withoutCapabilities: true`를 주면 허용되지 않은 새 namespace를 API로 만든다. `accessPolicy`를 주면(`'PRIVATE'` 포함) 사전 준비 풀을 쓰지 않고 namespace를 API로 만든다. `'PUBLIC'`이면 공개 조회가 열리고, 어느 쪽이든 선택 capability는 꺼진 상태다. `server.restart()`는 같은 포트·env·DB로 서버를 다시 띄우며, 재시작 뒤 지속성·멱등성 재생을 검증하는 계약만 쓴다. `blobStorage`는 VersityGW 컨테이너를 멈추거나 되살리고 버킷 객체를 지우며 저장 장애 계약(`contracts/storage/`)만 쓴다. `deleteAllObjects()`는 버킷 전체를 지우므로 계약은 자기 namespace의 파일만 다루고 앞 계약이 만든 파일에 기대지 않는다. 컨테이너는 고정 호스트 포트로 띄운다(`docker stop` 뒤 `start`에서 임의 포트는 바뀐다). 러너는 계약이 끝날 때마다 멈춘 저장소를 되살리므로 실패한 계약이 뒤 계약을 막지 않는다.
+- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다.
+  - 프로필이 capability를 허용하면 `createNamespace()`는 그 capability가 켜진 namespace를 주고, `withoutCapabilities: true`를 주면 허용되지 않은 새 namespace를 API로 만든다.
+  - `accessPolicy`를 주면(`'PRIVATE'` 포함) 사전 준비 풀을 쓰지 않고 namespace를 API로 만든다.
+  - `'PUBLIC'`이면 공개 조회가 열리고, 어느 쪽이든 선택 capability는 꺼진 상태다.
+  - `server.restart()`는 같은 포트·env·DB로 서버를 다시 띄우며, 재시작 뒤 지속성·멱등성 재생을 검증하는 계약만 쓴다.
+  - `blobStorage`는 VersityGW 컨테이너를 멈추거나 되살리고 버킷 객체를 지우며 저장 장애 계약(`contracts/storage/`)만 쓴다.
+  - `deleteAllObjects()`는 버킷 전체를 지우므로 계약은 자기 namespace의 파일만 다루고 앞 계약이 만든 파일에 기대지 않는다.
+  - 컨테이너는 고정 호스트 포트로 띄운다(`docker stop` 뒤 `start`에서 임의 포트는 바뀐다). 러너는 계약이 끝날 때마다 멈춘 저장소를 되살리므로 실패한 계약이 뒤 계약을 막지 않는다.
 
 ## 작성 규약
 
@@ -56,7 +63,9 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
 
 - CLI는 SIGINT를 받으면 실행 신호를 한 번 취소한다. 반복 SIGINT도 정리를 생략하지 않는다.
 - 계약과 모든 자원 정리가 성공하면 작업 디렉터리 삭제 직전에 완료를 확정한다. `ContractLifecycleInput.onFinalizing`은 이 경계를 CLI에 알린다.
-- 완료 확정 뒤 CLI는 SIGINT를 무시한다. 디렉터리 삭제가 성공하면 종료 코드 `0`이며 보존 경로를 출력하지 않는다. 삭제 실패는 정리 오류로 종료 코드 `1`이다.
+- 완료 확정 뒤 CLI는 SIGINT를 무시한다.
+  - 디렉터리 삭제가 성공하면 종료 코드 `0`이며 보존 경로를 출력하지 않는다.
+  - 삭제 실패는 정리 오류로 종료 코드 `1`이다.
 - 취소 이후 새 프로필·계약·capability provisioning·서버 재시작·저장소 `ensureRunning()`을 시작하지 않는다.
 - provisioning은 namespace 생성마다, 설정 파일 쓰기 전, 서버 재시작 전에 취소를 확인한다.
 - 컨텍스트의 namespace 생성·서버 재시작·저장소 제어는 호출 직전에 취소를 확인한다.
@@ -75,17 +84,37 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
 | 계약 실패·실행 오류·정리 오류 또는 실행 계약 없음 | `1`       | 보존하고 경로 출력 |
 | 완료 확정 전 SIGINT                               | `130`     | 보존하고 경로 출력 |
 
-SIGINT 종료 코드가 정리 오류보다 우선한다. 정리 오류는 출력에서 확인한다.
-계약 실패나 서버 기동 뒤 실행 오류가 있는 프로필은 서버 로그 경로도 출력한다.
+- SIGINT 종료 코드가 정리 오류보다 우선한다.
+- 정리 오류는 출력에서 확인한다.
+- 계약 실패나 서버 기동 뒤 실행 오류가 있는 프로필은 서버 로그 경로도 출력한다.
 
 ## 프로필
 
 - 서버를 다시 띄워야 하는 이유는 기동 설정 차이뿐이다. 전역 한도 같은 값은 프로세스 시작 시 한 번만 읽힌다(`docs/design/04-namespace-logical-quota.md` "계약").
 - 상태 격리는 namespace가 맡으므로 상태 오염은 재시작 이유가 아니다.
 - `default`는 서버 기본값을 그대로 쓴다.
-- `small-limits`는 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트와 동기 삭제·복사 노드 수 상한 5, 휴지통 보존 노드 수 상한 3을 준다. 한도 계약(`contracts/limits/`, `delete-limit-rejection`, `copy-limit-rejection`, `trash-retention-limit`)이 쓴다. namespace별 상한 재정의(`namespace-quota-override`)는 전역 상한이 2000이라는 전제를 쓴다. 값은 `src/runner/profiles.ts`가 정한다.
-- `change-feed`는 전역과 사전 준비 namespace에 `change-feed` capability를 허용한다. capability 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)이 namespace ID를 시작 시 검증하므로 러너가 빈 설정으로 기동 → namespace를 프로필 계약 수의 두 배만큼 생성 → 그 ID를 넣은 설정을 쓰고 서버를 재시작한다. 계약의 `createNamespace()`는 이 namespace를 앞에서부터 하나씩 받고, 다 쓰면 오류를 던진다(꺼진 namespace를 몰래 만들지 않는다).
-- `resumable-upload`는 같은 방식으로 `resumable-upload` capability를 허용한다. 이 capability는 유한한 세션 정책(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)을 요구하므로 러너가 namespace 없는 정책 파일로 처음 기동하고, 사전 준비 namespace를 만든 뒤 각 namespace의 정책을 담아 파일을 다시 쓰고 재시작한다. 조각 크기는 4바이트로 줄여 짧은 본문으로 여러 조각을 만든다. 값은 `src/runner/profiles.ts`의 `UPLOAD_SESSION_POLICY`가 정한다.
+- `small-limits`는 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트와 동기 삭제·복사 노드 수 상한 5, 휴지통 보존 노드 수 상한 3을 준다.
+  - 한도 계약(`contracts/limits/`, `delete-limit-rejection`, `copy-limit-rejection`, `trash-retention-limit`)이 쓴다.
+  - namespace별 상한 재정의(`namespace-quota-override`)는 전역 상한이 2000이라는 전제를 쓴다.
+  - 값은 `src/runner/profiles.ts`가 정한다.
+- `change-feed`는 전역과 사전 준비 namespace에 `change-feed` capability를 허용한다.
+  - 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)은 namespace ID의 존재를 검증한다.
+  - 러너는 다음 순서로 준비한다.
+    1. 빈 capability 설정으로 기동한다.
+    2. namespace를 프로필 계약 수의 두 배만큼 생성한다.
+    3. 생성한 ID를 설정 파일에 넣는다.
+    4. 서버를 재시작한다.
+  - `createNamespace()`는 준비한 namespace를 순서대로 반환한다.
+  - 준비한 namespace가 소진되면 오류를 던진다.
+- `resumable-upload`는 같은 방식으로 `resumable-upload` capability를 허용한다.
+  - 유한한 세션 정책(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)이 필요하다.
+  - 러너는 다음 순서로 준비한다.
+    1. namespace 항목이 없는 세션 정책으로 기동한다.
+    2. 사전 준비 namespace를 생성한다.
+    3. 각 namespace의 정책을 파일에 넣는다.
+    4. 서버를 재시작한다.
+  - 조각 크기는 4바이트로 줄여 짧은 본문으로 여러 조각을 만든다.
+  - 값은 `src/runner/profiles.ts`의 `UPLOAD_SESSION_POLICY`가 정한다.
 
 ## 실행 옵션
 
@@ -93,7 +122,10 @@ SIGINT 종료 코드가 정리 오류보다 우선한다. 정리 오류는 출�
 - `--shuffle`: 실행 순서를 섞어 계약 간 숨은 의존을 드러낸다.
 - `--coverage`: 계약이 없는 RQ를 출력한다. 서버를 기동하지 않고 종료 코드 0이다.
 - `--contracts-dir <경로>`: 계약 디렉터리를 바꾼다.
-- `--db sqlite|postgres`: 기본은 `sqlite`다. `postgres`는 러너가 docker CLI로 `postgres:16-alpine` 컨테이너를 실행당 1회 기동하고, 프로필마다 새 database(`storix_<실행 ID>_<프로필>`)를 만들어 같은 migration 진입점을 적용한다. 계약 코드는 드라이버를 모르며 차이는 `runner/database.ts`·`runner/postgres.ts`에만 있다. 드라이버 간 결과가 다르면 계약 위반 또는 문서화된 차이로 다룬다.
+- `--db sqlite|postgres`: 기본은 `sqlite`다.
+  - `postgres`는 러너가 docker CLI로 `postgres:16-alpine` 컨테이너를 실행당 1회 기동하고, 프로필마다 새 database(`storix_<실행 ID>_<프로필>`)를 만들어 같은 migration 진입점을 적용한다.
+  - 계약 코드는 드라이버를 모르며 차이는 `runner/database.ts`·`runner/postgres.ts`에만 있다.
+  - 드라이버 간 결과 차이는 계약 위반인지 문서화된 차이인지 확인한다.
 
 ## 검증 범위
 

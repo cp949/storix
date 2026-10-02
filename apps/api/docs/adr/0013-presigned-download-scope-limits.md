@@ -1,40 +1,61 @@
 # Presigned download URL은 ENCRYPTED namespace를 지원하지 않고, 실접근은 감사 로그 밖에 있다
 
-STORAGE-02는 `BlobStorage`에 `getPresignedUrl()`을 추가해 클라이언트가 Storix를 거치지
-않고 스토리지에서 직접 객체를 받게 한다. 이 우회는 기존 결정 두 가지와 충돌한다.
+`STORAGE-02`는 `BlobStorage.getPresignedUrl()`로 스토리지 직접 다운로드를 제공한다.
+클라이언트는 콘텐츠를 받을 때 Storix를 거치지 않는다.
 
-ADR-0009(SEC-03)가 구현한 `ENCRYPTED` policy는 저장 객체 자체를 AES-256-CTR 암호문으로
-두고, 복호화는 Storix의 `getEncrypted()` 헬퍼에서만 일어난다. presigned URL은 Storix를
-우회하므로 클라이언트가 복호화 불가능한 암호문을 그대로 받게 된다 — 발급 API는
-`ENCRYPTED` namespace 대상 요청을 409로 거부한다.
+## ENCRYPTED namespace 제한
 
-ADR-0010(SEC-04)의 `AuditLogInterceptor`는 요청이 Storix에 도달해야만 기록한다.
-presigned URL **발급** 요청은 기록되지만, 발급된 URL로 클라이언트가 스토리지에서 직접 받는
-**실제 콘텐츠 조회**는 Storix를 거치지 않아 `audit_log`에 남지 않는다 — ADR-0010이 이미
-인증 실패 요청에 대해 남긴 "완전한 기록으로 오해하면 안 됨" 경고와 같은 종류의 공백이다.
+- api ADR-0009의 `ENCRYPTED` policy는 객체를 AES-256-CTR 암호문으로 저장한다.
+- 복호화는 Storix의 `getEncrypted()`에서 수행한다.
+- presigned URL로 받는 객체는 복호화되지 않은 암호문이다.
+- 발급 API는 `ENCRYPTED` namespace 요청을 409로 거부한다.
 
-발급용 S3 Client(`STORAGE_PUBLIC_CLIENT`)는 내부 통신용(`STORAGE_ENDPOINT`/`STORAGE_PORT`/`STORAGE_USE_SSL`)과
-별개로 `STORAGE_PUBLIC_ENDPOINT`/`STORAGE_PUBLIC_PORT`/`STORAGE_PUBLIC_USE_SSL`을 전부
-분리해 구성한다(자격증명·`STORAGE_PATH_STYLE`·`STORAGE_REGION`은 내부 설정 재사용).
-presigned 서명은 서명 시점 Client의 host/port/scheme으로 만들어지므로, STORAGE-03이
-예고한 "공개 도메인(443/TLS) → nginx → 내부 스토리지(HTTP)" 배포에서 host만
-분리하면 서명된 URL의 scheme/port가 내부값으로 남아 외부에서 접근 불가능해진다.
+## 감사 로그 범위
+
+api ADR-0010의 `AuditLogInterceptor`는 Storix에 도달한 요청을 기록한다.
+
+- presigned URL 발급 요청은 기록한다.
+- 발급된 URL의 실제 콘텐츠 조회는 `audit_log`에 남지 않는다.
+
+실제 조회는 스토리지에 직접 도달하기 때문이다.
+`audit_log`는 모든 콘텐츠 접근의 완전한 기록이 아니다.
+
+## 공개 endpoint 분리
+
+발급용 S3 Client(`STORAGE_PUBLIC_CLIENT`)는 내부 통신용 Client와 분리한다.
+아래 환경변수 이름은 기존 ADR 표기다.
+현재 설정에는 `STORIX_` 접두어를 붙인다.
+
+| 항목   | 내부 통신          | 공개 URL                  |
+| ------ | ------------------ | ------------------------- |
+| host   | `STORAGE_ENDPOINT` | `STORAGE_PUBLIC_ENDPOINT` |
+| port   | `STORAGE_PORT`     | `STORAGE_PUBLIC_PORT`     |
+| scheme | `STORAGE_USE_SSL`  | `STORAGE_PUBLIC_USE_SSL`  |
+
+자격증명·`STORAGE_PATH_STYLE`·`STORAGE_REGION`은 내부 설정을 재사용한다.
+
+분리 근거:
+
+- presigned 서명은 서명 시점 Client의 host/port/scheme을 사용한다.
+- `STORAGE-03`은 공개 도메인(443/TLS) → nginx → 내부 스토리지(HTTP) 배포를 지원한다.
+- host만 분리하면 서명 URL의 scheme/port가 내부값으로 남는다.
+- 이 URL은 외부에서 접근할 수 없다.
 
 ## Considered Options
 
-- **임시 복호화 사본을 만들어 `ENCRYPTED` namespace도 presigned 지원**: TTL 관리·정리
-  로직·추가 저장 공간이 필요하고, 복호화된 사본이 잠시라도 별도 위치에 존재하게 돼
-  공격 표면이 늘어난다. STORAGE-02 스코프를 넘는다고 보고 보류했다.
-- **`STORAGE_PUBLIC_ENDPOINT`만 분리하고 port/TLS는 내부 설정 재사용**: env var 수가
-  적어 단순하지만, TLS를 종료하는 리버스 프록시(STORAGE-03) 뒤에서는 서명이 깨지는
-  실제 배포 형태를 지원하지 못해 보류했다.
+- **임시 복호화 사본으로 ENCRYPTED presigned 지원**
+  - TTL 관리·정리 로직·추가 저장 공간이 필요하다.
+  - 복호화 사본이 별도 위치에 존재해 공격 표면이 늘어난다.
+  - `STORAGE-02` 범위를 넘어 보류했다.
+- **`STORAGE_PUBLIC_ENDPOINT`만 분리**
+  - port/TLS를 내부 설정과 공유하면 환경변수 수를 줄일 수 있다.
+  - TLS 종료 리버스 프록시 뒤의 공개 URL을 올바르게 서명할 수 없다.
+  - `STORAGE-03` 배포를 지원하지 못해 보류했다.
 
 ## Consequences
 
-- `ENCRYPTED` namespace를 쓰는 배포는 presigned 다운로드를 발급받을 수 없다 — 그런
-  배포는 기존 `/download`(Storix 프록시 스트리밍)를 계속 쓴다.
-- `audit_log`는 여전히 "모든 콘텐츠 접근의 완전한 기록"이 아니다(ADR-0010에 이미
-  기록된 한계의 연장).
-- 발급된 presigned URL 자체가 TTL 동안 유효한 bearer 자격증명이다 — SEC-01 API
-  key 없이도 그 URL을 아는 누구나(브라우저 히스토리, HTTP referrer, 프록시 로그로
-  유출된 경우 포함) 콘텐츠를 받을 수 있다.
+- `ENCRYPTED` namespace는 기존 `/download`의 Storix 프록시 스트리밍을 사용한다.
+- presigned URL의 실제 조회는 감사 로그 범위 밖이다.
+- 발급된 URL은 TTL 동안 유효한 bearer 자격증명이다.
+- URL을 아는 누구나 `SEC-01` API key 없이 콘텐츠를 받을 수 있다.
+- 브라우저 히스토리·HTTP referrer·프록시 로그로 URL이 유출돼도 같은 권한을 갖는다.

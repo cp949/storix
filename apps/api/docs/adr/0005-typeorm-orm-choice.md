@@ -1,13 +1,20 @@
 # PostgreSQL ORM으로 TypeORM을 사용한다
 
-Storix는 여러 WAS 인스턴스의 동시 쓰기를 `SELECT ... FOR UPDATE`와 UUID 오름차순
-다중 lock으로 제어해야 한다. TypeORM이 row-level pessimistic locking과 수동
-transaction 제어를 가장 직접적으로 지원해 이 요구에 맞았다. `synchronize`는 금지하고
-별도 `migration:run` job으로만 스키마를 반영한다.
+- PostgreSQL ORM은 TypeORM을 사용한다.
+- `synchronize`는 금지한다.
+- 스키마는 별도 `migration:run` job으로만 반영한다.
+
+## 결정 근거
+
+- 여러 WAS 인스턴스의 동시 쓰기는 `SELECT ... FOR UPDATE`로 제어한다.
+- 여러 행의 lock은 UUID 오름차순으로 획득한다.
+- TypeORM은 row-level pessimistic locking과 수동 transaction 제어를 직접 지원한다.
 
 ## Considered Options
 
-- **Prisma**: DX는 좋지만 이 프로젝트가 요구하는 세밀한 row lock·수동 transaction
-  제어가 TypeORM만큼 직접적이지 않았다.
-- **Drizzle**: 가볍고 타입 안전하지만 이 시점 기준으로 TypeORM만큼 생태계·문서가
-  성숙하지 않다고 판단했다.
+- **Prisma**
+  - DX는 좋다고 평가했다.
+  - 필요한 row lock과 수동 transaction 제어가 TypeORM만큼 직접적이지 않았다.
+- **Drizzle**
+  - 가볍고 타입 안전하다고 평가했다.
+  - 검토 시점의 생태계와 문서는 TypeORM보다 덜 성숙하다고 판단했다.
