@@ -73,3 +73,29 @@ export async function readRelationSizes(database: string): Promise<RelationSize[
     indexBytes: Number(row.index_bytes),
   }));
 }
+
+/** GC가 처리할 일회성 작업의 잔여량. 0이면 해당 작업은 끝났다. */
+export interface GcBacklog {
+  /** 보존 기간(30일)을 넘긴 `idempotency_key` 행 */
+  readonly staleReceipts: number;
+  /** 참조가 0인 blob 행 */
+  readonly orphanBlobs: number;
+  /** 물리 삭제 대기 중인 DELETED namespace 행 */
+  readonly deletedNamespaces: number;
+}
+
+/** GC 잔여 작업량을 읽는다. 측정 전용 database에서만 쓴다. */
+export async function readGcBacklog(database: string): Promise<GcBacklog> {
+  const row = await queryOne<Record<string, string | number>>(
+    database,
+    `SELECT
+       (SELECT count(*) FROM idempotency_key WHERE created_at < now() - interval '30 days') AS stale_receipts,
+       (SELECT count(*) FROM blob WHERE reference_count = 0) AS orphan_blobs,
+       (SELECT count(*) FROM namespace WHERE status = 'DELETED') AS deleted_namespaces`,
+  );
+  return {
+    staleReceipts: Number(row.stale_receipts),
+    orphanBlobs: Number(row.orphan_blobs),
+    deletedNamespaces: Number(row.deleted_namespaces),
+  };
+}

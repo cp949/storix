@@ -26,7 +26,8 @@ const USAGE = `사용법: pnpm scale <명령> [옵션]
       [--gc-env KEY=VALUE ...]  GC 프로세스에만 전달할 env(예: STORIX_GC_MAX_ROWS_PER_STAGE=10000000, NODE_OPTIONS=--max-old-space-size=128)
       [--objects]  GC 단계에서 storage object를 복원하고 함께 측정한다
       [--phases startup,requests,list,gc] [--capability-namespaces K]
-      [--requests R] [--concurrency C] [--lifecycle K] [--gc-timeout-min M] [--list-timeout-sec S]
+      [--requests R] [--concurrency C] [--lifecycle K] [--gc-timeout-min M] [--gc-repeat R] [--list-timeout-sec S]
+      (--gc-repeat R: 예산 소진 단계가 남으면 같은 DB에서 GC를 최대 R회(첫 실행 포함)까지 이어 실행해 재개 완료 여부를 잰다)
   report [--label L]              저장된 결과 JSON을 표로 출력`;
 
 /** `--gc-env KEY=VALUE` 목록을 GC 프로세스 env로 바꾼다. `STORIX_`·`NODE_OPTIONS`만 허용한다. */
@@ -65,6 +66,7 @@ async function main(): Promise<number> {
       concurrency: { type: 'string' },
       lifecycle: { type: 'string' },
       'gc-timeout-min': { type: 'string' },
+      'gc-repeat': { type: 'string' },
       'list-timeout-sec': { type: 'string' },
       objects: { type: 'boolean', default: false },
       'gc-env': { type: 'string', multiple: true },
@@ -137,6 +139,7 @@ async function main(): Promise<number> {
         timeoutMs: 60_000,
       },
       gcTimeoutMs: intOption(values['gc-timeout-min'], 120) * 60_000,
+      gcRepeat: intOption(values['gc-repeat'], 1),
       listTimeoutMs: intOption(values['list-timeout-sec'], 600) * 1000,
       objects: values.objects,
       gcEnv: parseEnvPairs(values['gc-env'] ?? []),

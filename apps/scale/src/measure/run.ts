@@ -22,11 +22,13 @@ import { API_DIR, OBJECTS_MARKER, REPO_ROOT, RESULTS_DIR, WORK_DIR } from '../pa
 import {
   type DbCounters,
   diffCounters,
+  type GcBacklog,
   readDbCounters,
+  readGcBacklog,
   readRelationSizes,
   type RelationSize,
 } from './db-stats.ts';
-import { runGc, type GcRun } from './gc.ts';
+import { exhaustedStages, runGc, type GcRun } from './gc.ts';
 import { buildApiEnv, findFreePort, startApi } from './server.ts';
 import {
   type ListMeasurement,
@@ -38,6 +40,19 @@ import {
 } from './workload.ts';
 
 /** 측정 단계 하나의 결과. 실패해도 다음 단계는 계속한다. */
+/** 재개 실행 1회의 결과와 그 직후 GC 잔여 작업량 */
+interface ResumeRun {
+  readonly wallMs: number;
+  readonly peakRssBytes: number;
+  readonly result: Record<string, unknown> | null;
+  readonly backlogAfter: GcBacklog;
+}
+
+/** 일회성 GC 작업이 남아 있는가 */
+function isBacklogLeft(backlog: GcBacklog): boolean {
+  return backlog.staleReceipts > 0 || backlog.orphanBlobs > 0 || backlog.deletedNamespaces > 0;
+}
+
 export interface PhaseResult<T> {
   readonly ok: boolean;
   readonly error: string | null;
@@ -59,6 +74,8 @@ export interface MeasureOptions {
   /** GC 프로세스에만 덧씌우는 env. 결과 JSON에 기록한다. */
   readonly gcEnv: Readonly<Record<string, string>>;
   readonly gcTimeoutMs: number;
+  /** 예산 소진 단계가 남을 때 GC를 이어 실행하는 최대 횟수(첫 실행 포함). 1이면 재개하지 않는다. */
+  readonly gcRepeat: number;
   readonly listTimeoutMs: number;
   /** 단계 이름 목록. 비면 전부 실행한다. */
   readonly phases: readonly string[];
@@ -406,16 +423,68 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
       await execSql(gcDb, ANALYZE_SQL);
       phases.gc = await phase('gc', async () => {
         const before = await readDbCounters(gcDb);
-        const run: GcRun = await runGc({
+        const gcOptions = {
           env: { ...apiEnv(gcDb), STORIX_GC_MIN_INTERVAL: '1', ...options.gcEnv },
           label: `${runId}`,
           timeoutMs: options.gcTimeoutMs,
-        });
+        };
+        const run: GcRun = await runGc(gcOptions);
         const db: DbCounters = diffCounters(before, await readDbCounters(gcDb));
-        const data = { ...run, gcEnv: options.gcEnv, db };
-        if (run.timedOut || run.exitCode !== 0)
+
+        // 예산 소진으로 일이 남으면 같은 DB에서 GC를 다시 실행해 재개로 정리가 끝나는지 잰다.
+        // 완료 기준은 DB 잔여 작업량 0과 orphan object 단계의 한 바퀴 완료다. orphan 단계는 순환하므로
+        // "예산 소진 단계 없음"은 기준으로 쓰지 않는다.
+        const resumes: ResumeRun[] = [];
+        let last: GcRun = run;
+        let orphanPassDone = !exhaustedStages(run).includes('orphan-objects-blobs');
+        let backlog: GcBacklog | undefined;
+        let skippedRuns = 0;
+        if (options.gcRepeat > 1) {
+          backlog = await readGcBacklog(gcDb);
+          // 간격 게이트로 건너뛴 시도는 실행 횟수에 세지 않고 잠시 뒤 다시 시도한다.
+          while (resumes.length + 1 < options.gcRepeat && skippedRuns < options.gcRepeat * 5) {
+            if (!isBacklogLeft(backlog) && orphanPassDone) break;
+            if (last.exitCode !== 0 || last.timedOut) break;
+            const next = await runGc(gcOptions);
+            if (next.skipped) {
+              skippedRuns += 1;
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              continue;
+            }
+            last = next;
+            backlog = await readGcBacklog(gcDb);
+            if (!exhaustedStages(next).includes('orphan-objects-blobs')) orphanPassDone = true;
+            resumes.push({
+              wallMs: next.wallMs,
+              peakRssBytes: next.peakRssBytes,
+              result: next.result,
+              backlogAfter: backlog,
+            });
+          }
+        }
+        const resume =
+          options.gcRepeat > 1
+            ? {
+                maxRuns: options.gcRepeat,
+                runs: resumes.length + 1,
+                skippedRuns,
+                orphanPassDone,
+                backlogAfter: backlog,
+                completed:
+                  backlog !== undefined &&
+                  !isBacklogLeft(backlog) &&
+                  orphanPassDone &&
+                  !last.timedOut &&
+                  last.exitCode === 0,
+                totalWallMs: run.wallMs + resumes.reduce((sum, r) => sum + r.wallMs, 0),
+                resumes,
+                dbTotal: diffCounters(before, await readDbCounters(gcDb)),
+              }
+            : undefined;
+        const data = { ...run, gcEnv: options.gcEnv, db, resume };
+        if (run.timedOut || run.exitCode !== 0 || last.timedOut || last.exitCode !== 0)
           throw new PhaseFailure(
-            `GC 실패: exit ${run.exitCode}, timedOut ${run.timedOut}, wall ${Math.round(run.wallMs)}ms`,
+            `GC 실패: exit ${last.exitCode}, timedOut ${last.timedOut}, wall ${Math.round(last.wallMs)}ms`,
             data,
           );
         return data;

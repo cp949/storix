@@ -27,6 +27,7 @@ node apps/scale/src/cli.ts env down --volumes            # 컨테이너와 seed 
 - `seed`는 `storix_scale_t_<규모>_<seed>` template database를 만든다. 명세는 database comment에 저장한다.
 - `measure`는 template을 복제(`CREATE DATABASE ... TEMPLATE`)한 database에서 실행하고 끝나면 지운다. 두 번 복제한다: API 단계(시작·capability 시작·요청·목록)와 GC 단계. GC가 데이터를 소모하므로 단계마다 복원한다.
 - `--objects`는 GC 단계 전에 storage object를 복원한다(`seed-objects`가 해당 template용으로 만든 것이어야 한다). VersityGW posix 백엔드의 bucket 디렉터리(`apps/scale/.work/vgw-data/storix`)에 파일을 직접 만들고 수정 시각을 과거로 둔다.
+- `--gc-repeat R`는 예산 소진으로 일이 남으면 같은 DB에서 GC를 최대 R회(첫 실행 포함) 이어 실행한다. 최소 실행 간격 게이트로 건너뛴 시도는 횟수에 세지 않고 재시도한다. 완료 기준은 DB 잔여량(30일 지난 receipt·참조 0 blob·DELETED namespace)이 0이고 orphan object 단계가 한 바퀴 끝난 것이다. 결과는 `phases.gc.data.resume`에 기록한다.
 - `--gc-env KEY=VALUE`는 GC 프로세스에만 env를 준다(`STORIX_GC_MAX_ROWS_PER_STAGE`, `NODE_OPTIONS=--max-old-space-size=48` 등). heap 상한을 낮춰 실패 지점을 찾으면 보유 메모리를 잴 수 있다.
 - `STORIX_SCALE_API_DIR`로 측정 대상 API 디렉터리를 바꾼다. 이전 커밋을 `git archive`로 풀어 `./node_modules/.bin/nest build`로 빌드한 디렉터리를 줘 개선 전 기준선을 같은 하네스로 잰다(복사본에서 `pnpm`을 실행하면 실제 `node_modules`가 망가진다).
 - 복제한 database에는 template 적재 이후의 migration을 적용하고 `restore.migrateMs`에 기록한다.
