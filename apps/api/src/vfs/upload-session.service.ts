@@ -5,7 +5,7 @@ import { CapabilityService } from '../capability/capability.service.js';
 import { DomainError } from '../common/domain-error.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
-import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
+import { resolveFileSizeLimits, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { VfsUploadSessionEntity } from '../persistence/entities/vfs-upload-session.entity.js';
@@ -71,6 +71,7 @@ function creationRequestId(session: VfsUploadSessionEntity, currentRequestId: st
 @Injectable()
 export class UploadSessionService {
   private readonly globalMaxFileSizeBytes: number;
+  private readonly defaultMaxFileSizeBytes: number;
   private readonly expiryBounds: FileExpiryBounds;
 
   constructor(
@@ -81,9 +82,12 @@ export class UploadSessionService {
     @Inject(UPLOAD_SESSION_POLICY) private readonly policy: UploadSessionPolicy | null,
     config: ConfigService,
   ) {
-    this.globalMaxFileSizeBytes = resolveGlobalMaxFileSizeBytes(
+    const fileSizeLimits = resolveFileSizeLimits(
+      config.get<string>('STORIX_DEFAULT_FILE_SIZE_BYTES'),
       config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'),
     );
+    this.globalMaxFileSizeBytes = fileSizeLimits.ceilingBytes;
+    this.defaultMaxFileSizeBytes = fileSizeLimits.defaultBytes;
     this.expiryBounds = resolveFileExpiryBounds(
       config.get<string>('STORIX_VFS_EXPIRY_MIN_SECONDS'),
       config.get<string>('STORIX_VFS_EXPIRY_MAX_SECONDS'),
@@ -135,7 +139,11 @@ export class UploadSessionService {
     if (!this.policy)
       throw new UploadSessionError('VFS_FEATURE_DISABLED', 409, 'Upload session policy missing');
     const namespacePolicy = resolveNamespaceUploadLimits(this.policy, namespaceId);
-    const maxBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.globalMaxFileSizeBytes);
+    const maxBytes = resolveMaxFileSizeBytes(
+      limits.maxFileSizeBytes,
+      this.globalMaxFileSizeBytes,
+      this.defaultMaxFileSizeBytes,
+    );
     const size = BigInt(parsed.sizeBytes);
     if (size > BigInt(maxBytes)) throw new VfsFileTooLargeError(maxBytes);
     const parentPath = resolved.segments.slice(0, -1);

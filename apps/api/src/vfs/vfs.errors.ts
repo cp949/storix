@@ -291,3 +291,27 @@ export class VfsQuotaExceededError extends DomainError {
     super(`namespace logical byte quota exceeded (${usedTotalLogicalBytes}/${maxTotalLogicalBytes})`);
   }
 }
+
+export class VfsFolderFileLimitExceededError extends DomainError {
+  readonly code = 'VFS_FOLDER_FILE_LIMIT_EXCEEDED';
+  readonly status = 413;
+
+  constructor(
+    readonly maxFiles: string,
+    readonly usedFiles: string,
+  ) {
+    super(`folder direct FILE limit exceeded (${usedFiles}/${maxFiles})`);
+  }
+}
+
+export class VfsNamespaceNodeLimitExceededError extends DomainError {
+  readonly code = 'VFS_NAMESPACE_NODE_LIMIT_EXCEEDED';
+  readonly status = 413;
+
+  constructor(
+    readonly maxNodes: string,
+    readonly usedNodes: string,
+  ) {
+    super(`namespace live node limit exceeded (${usedNodes}/${maxNodes})`);
+  }
+}

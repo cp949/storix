@@ -192,6 +192,7 @@ export class NamespaceDeletionCleanupRepository {
       );
       await this.releaseReferences(manager, namespaceId, rows);
       await this.debit(manager, namespaceId, {
+        live_node_count: BigInt(rows.length),
         live_file_byte_count: rows.reduce(
           (sum, row) => sum + (row.type === 'FILE' ? BigInt(row.size!) : 0n),
           0n,
@@ -307,10 +308,10 @@ export class NamespaceDeletionCleanupRepository {
   async readCounters(
     namespaceId: string,
     manager = this.dataSource.manager,
-  ): Promise<Record<'live' | 'snapNodes' | 'snapBytes' | 'trashNodes' | 'trashBytes', string>> {
+  ): Promise<Record<'live' | 'liveNodes' | 'snapNodes' | 'snapBytes' | 'trashNodes' | 'trashBytes', string>> {
     const ph = this.placeholders();
     const rows = await manager.query(
-      `SELECT CAST(live_file_byte_count AS TEXT) AS live, CAST(retained_snapshot_node_count AS TEXT) AS "snapNodes", CAST(retained_snapshot_byte_count AS TEXT) AS "snapBytes", CAST(retained_trash_node_count AS TEXT) AS "trashNodes", CAST(retained_trash_byte_count AS TEXT) AS "trashBytes" FROM namespace WHERE id = ${ph.bind(namespaceId)}`,
+      `SELECT CAST(live_file_byte_count AS TEXT) AS live, CAST(live_node_count AS TEXT) AS "liveNodes", CAST(retained_snapshot_node_count AS TEXT) AS "snapNodes", CAST(retained_snapshot_byte_count AS TEXT) AS "snapBytes", CAST(retained_trash_node_count AS TEXT) AS "trashNodes", CAST(retained_trash_byte_count AS TEXT) AS "trashBytes" FROM namespace WHERE id = ${ph.bind(namespaceId)}`,
       ph.params,
     );
     if (!rows[0]) throw new DataInconsistencyError('namespace 누락');

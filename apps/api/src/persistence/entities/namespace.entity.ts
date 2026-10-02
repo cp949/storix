@@ -77,6 +77,15 @@ export class NamespaceEntity {
   @Column({ name: 'live_file_byte_count', type: 'bigint', default: 0 })
   liveFileByteCount: string;
 
+  @Column({ name: 'max_files_per_folder', type: 'bigint', nullable: true })
+  maxFilesPerFolder: string | null;
+
+  @Column({ name: 'live_node_count', type: 'bigint', default: 0 })
+  liveNodeCount: string;
+
+  @Column({ name: 'max_live_nodes', type: 'bigint', nullable: true })
+  maxLiveNodes: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

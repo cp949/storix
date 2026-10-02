@@ -134,6 +134,8 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
         mimeType: entry.mimeType,
         version: source.version + 1,
       });
+      if (entry.type === 'FILE') this.recordFolderFileDelta(tx, nodeParentId, 1n);
+      this.recordLiveNodeDelta(tx, 1n);
       restored.set(entry.relativePath, entry.sourceNodeId);
       this.markChanged(tx, entry.sourceNodeId, false);
     }
@@ -250,9 +252,12 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
       if (row.type === 'FILE') {
         removedBytes += BigInt(row.size!);
         blobCounts.set(row.blobId!, (blobCounts.get(row.blobId!) ?? 0) + 1);
+        if (!row.parentId) throw new Error('FILE parent missing in trash manifest');
+        this.recordFolderFileDelta(tx, row.parentId, -1n);
       }
     }
     const sorted = [...blobCounts].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    this.recordLiveNodeDelta(tx, -BigInt(rows.length));
     if (!namespace.trashEnabled) {
       await tx.manager.getRepository(VfsNodeEntity).delete(rows.map((row) => row.id));
       this.recordLiveByteDelta(tx, -removedBytes);

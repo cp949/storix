@@ -98,6 +98,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     });
     await f.dataSource.manager.update(NamespaceEntity, f.ns.id, {
       liveFileByteCount: '7',
+      liveNodeCount: '1',
       ...(retained
         ? {
             retainedSnapshotNodeCount: 1,
@@ -229,7 +230,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     await f.accept();
     await f.cleanup.advance(new Date());
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(0);
-    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0']);
+    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0', '0']);
     expect(await f.repository.countRemainingMetadata(f.ns.id)).toEqual({ nodes: 0, snapshots: 0, trash: 0 });
     await f.setZeroSinceSecondsAgo(blob.id, 10);
     await f.job.run();
@@ -266,6 +267,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
         type: 'DIRECTORY' as const,
       })),
     );
+    await f.dataSource.manager.update(NamespaceEntity, f.ns.id, { liveNodeCount: '504' });
     await f.accept();
     await f.repository.setPhase(f.ns.id, 'UPLOADS', 'METADATA');
     expect(await f.repository.removeLeafNodes(f.ns.id, 500)).toBe(500);
@@ -290,7 +292,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(2);
     await services().cleanup.advance(new Date());
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(0);
-    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0']);
+    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0', '0']);
   });
 
   it('두 GC 실행이 겹쳐도 참조 수와 counter를 한 번만 차감한다', async () => {
@@ -299,7 +301,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     await f.accept();
     await Promise.all([f.job.run(), services().job.run()]);
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(0);
-    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0']);
+    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0', '0']);
     await f.setZeroSinceSecondsAgo(blob.id, 10);
     await Promise.all([f.job.run(), services().job.run()]);
     expect((await f.op()).phase).toBe('COMPLETED');
@@ -539,7 +541,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     );
     await f.accept();
     await f.cleanup.advance(new Date());
-    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0']);
+    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0', '0']);
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(0);
   });
 
@@ -587,7 +589,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     await f.accept();
     await f.cleanup.advance(new Date());
     expect((await f.dataSource.manager.findOneByOrFail(BlobEntity, { id: blob.id })).referenceCount).toBe(0);
-    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0']);
+    expect(Object.values(await f.repository.readCounters(f.ns.id))).toEqual(['0', '0', '0', '0', '0', '0']);
   });
 
   it('manifest 불일치는 entry·Blob 참조·counter를 모두 롤백한다', async () => {

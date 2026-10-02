@@ -12,12 +12,13 @@ import { Readable } from 'node:stream';
 import type { BlobObjectInfo, BlobPage, BlobPageOptions, BlobRange, BlobStorage } from './blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 import { StorageFailureError } from '../common/storage-failure.errors.js';
+import { S3_MULTIPART_PART_SIZE_BYTES } from '../common/resource-limit.js';
 import { classifyBlobFailure } from './storage-failure.js';
 
 // 크기를 모르는 stream 업로드의 멀티파트 크기. lib-storage는 전송 중인 파트와 누적 중인 잔여분을
 // 함께 들고 있고, 파트를 자를 때 chunk를 Buffer.concat으로 합친다. 버퍼 메모리는 파일 크기와 무관하며
 // QUEUE_SIZE=1에서 arrayBuffers 증가 피크가 64MiB(PART_SIZE의 4배, 회수 전 버퍼 포함)로 실측됐다.
-const PART_SIZE = 16 * 1024 * 1024;
+const PART_SIZE = S3_MULTIPART_PART_SIZE_BYTES;
 const QUEUE_SIZE = 1;
 
 function sdkFailure(error: unknown): unknown {

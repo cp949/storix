@@ -300,6 +300,8 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     );
     this.markChanged(tx, created.id, false);
     this.recordLiveByteDelta(tx, BigInt(blob.size));
+    this.recordFolderFileDelta(tx, parentId, 1n);
+    this.recordLiveNodeDelta(tx, 1n);
     return { kind: 'created', node: toRecord(created) };
   }
 }

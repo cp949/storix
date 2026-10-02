@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
-import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
+import { resolveFileSizeLimits, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { FileExpiryBounds, parseExpiresInHeader, resolveFileExpiryBounds } from './file-expiry-policy.js';
 import {
   mutationLeaseSeconds,
@@ -80,6 +80,7 @@ function fingerprint(
 @Injectable()
 export class ConditionalContentService {
   private readonly maxFileSizeBytes: number;
+  private readonly defaultMaxFileSizeBytes: number;
   private readonly maxUploadDurationMs: number;
   private readonly expiryBounds: FileExpiryBounds;
 
@@ -92,7 +93,12 @@ export class ConditionalContentService {
     private readonly contentIngress: ContentIngressService,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+    const fileSizeLimits = resolveFileSizeLimits(
+      config.get<string>('STORIX_DEFAULT_FILE_SIZE_BYTES'),
+      config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'),
+    );
+    this.maxFileSizeBytes = fileSizeLimits.ceilingBytes;
+    this.defaultMaxFileSizeBytes = fileSizeLimits.defaultBytes;
     this.maxUploadDurationMs =
       parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
     this.expiryBounds = resolveFileExpiryBounds(
@@ -127,7 +133,11 @@ export class ConditionalContentService {
     }
     const identity = identityOf(namespaceId, scope, key);
     const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
-    const maxBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.maxFileSizeBytes);
+    const maxBytes = resolveMaxFileSizeBytes(
+      limits.maxFileSizeBytes,
+      this.maxFileSizeBytes,
+      this.defaultMaxFileSizeBytes,
+    );
     const mimeType = normalizeMimeType(contentType);
     let path = rawPath;
     let segments: string[] = [];

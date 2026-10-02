@@ -76,6 +76,8 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
       this.markChanged(tx, created.id, false);
       if (sourceNode.size === null) throw new Error('FILE node에 size가 없음 — 데이터 일관성 위반');
       this.recordLiveByteDelta(tx, BigInt(sourceNode.size));
+      this.recordFolderFileDelta(tx, finalParentId, 1n);
+      this.recordLiveNodeDelta(tx, 1n);
 
       return { node: toRecord(created), finalPath: joinSegments(finalSegments) };
     }
@@ -175,6 +177,18 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     if (childRows.length > 0) {
       await nodeRepo.insert(nodeRepo.create(childRows));
       for (const child of childRows) this.markChanged(tx, child.id, false);
+    }
+    this.recordLiveNodeDelta(tx, BigInt(childRows.length + 1));
+
+    const copiedFileCounts = new Map<string, bigint>();
+    if (sourceNode.type === 'DIRECTORY') {
+      // 복사본의 각 FILE이 들어갈 실제 부모별로 직접 자식 수를 누적한다.
+      for (const row of childRows) {
+        if (row.type !== 'FILE') continue;
+        copiedFileCounts.set(row.parentId, (copiedFileCounts.get(row.parentId) ?? 0n) + 1n);
+      }
+      // 루트에 직접 놓인 FILE은 newRoot의 childRows로 집계되고 별도로 루트 폴더에는 FILE이 없다.
+      for (const [parentId, count] of copiedFileCounts) this.recordFolderFileDelta(tx, parentId, count);
     }
 
     // moveNode/removeNode와 동일한 이유로, 여러 독립적인 Blob에 대한 증가를

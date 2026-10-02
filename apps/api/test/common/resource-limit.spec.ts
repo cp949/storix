@@ -3,6 +3,7 @@ import {
   resolveEffectiveLimit,
   resolveGlobalMaxFileSizeBytes,
   resolveMaxFileSizeBytes,
+  resolveCountLimits,
 } from '../../src/common/resource-limit.js';
 
 describe('resolveEffectiveLimit', () => {
@@ -50,4 +51,26 @@ describe('resolveMaxFileSizeBytes', () => {
       expect(resolveMaxFileSizeBytes(namespaceValue, 100)).toBe(expected);
     },
   );
+});
+
+describe('resolveMaxFileSizeBytes with default and ceiling', () => {
+  it('uses default when no namespace override exists and caps override at ceiling', () => {
+    expect(resolveMaxFileSizeBytes(null, 100, 50)).toBe(50);
+    expect(resolveMaxFileSizeBytes('80', 100, 50)).toBe(80);
+    expect(resolveMaxFileSizeBytes('120', 100, 50)).toBe(100);
+  });
+});
+
+describe('resolveCountLimits', () => {
+  it('기본값과 ceiling 조합을 적용하고 기본값이 ceiling을 넘으면 거부한다', () => {
+    expect(resolveCountLimits(undefined, undefined)).toEqual({ defaultValue: 10000, ceilingValue: 10000 });
+    expect(resolveCountLimits('500', undefined)).toEqual({ defaultValue: 500, ceilingValue: 500 });
+    expect(resolveCountLimits(undefined, '20000')).toEqual({ defaultValue: 20000, ceilingValue: 20000 });
+    expect(resolveCountLimits('500', '1000')).toEqual({ defaultValue: 500, ceilingValue: 1000 });
+    expect(() => resolveCountLimits('1001', '1000')).toThrow('count default exceeds ceiling');
+    expect(resolveCountLimits(undefined, undefined, 1_000_000)).toEqual({
+      defaultValue: 1_000_000,
+      ceilingValue: 1_000_000,
+    });
+  });
 });

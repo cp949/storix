@@ -21,7 +21,7 @@ import { toNodeResponse, VfsNodeResponseDto } from './dto/node-response.dto.js';
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { parseRange } from './range.js';
-import { resolveGlobalMaxFileSizeBytes, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
+import { resolveFileSizeLimits, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import { requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
 import {
@@ -77,6 +77,7 @@ function parseIfMatch(raw: string | undefined): number | null {
 @Injectable()
 export class ContentService {
   private readonly maxFileSizeBytes: number;
+  private readonly defaultMaxFileSizeBytes: number;
   private readonly presignedUrlExpirySeconds: number;
 
   constructor(
@@ -88,7 +89,12 @@ export class ContentService {
     private readonly contentIngress: ContentIngressService,
     config: ConfigService,
   ) {
-    this.maxFileSizeBytes = resolveGlobalMaxFileSizeBytes(config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'));
+    const fileSizeLimits = resolveFileSizeLimits(
+      config.get<string>('STORIX_DEFAULT_FILE_SIZE_BYTES'),
+      config.get<string>('STORIX_MAX_FILE_SIZE_BYTES'),
+    );
+    this.maxFileSizeBytes = fileSizeLimits.ceilingBytes;
+    this.defaultMaxFileSizeBytes = fileSizeLimits.defaultBytes;
     this.presignedUrlExpirySeconds = parsePositiveInt(
       config.get<string>('STORIX_PRESIGNED_URL_EXPIRY_SECONDS'),
       300,
@@ -152,7 +158,11 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
-    const maxFileSizeBytes = resolveMaxFileSizeBytes(limits.maxFileSizeBytes, this.maxFileSizeBytes);
+    const maxFileSizeBytes = resolveMaxFileSizeBytes(
+      limits.maxFileSizeBytes,
+      this.maxFileSizeBytes,
+      this.defaultMaxFileSizeBytes,
+    );
 
     const contentLength = options.contentLength !== undefined ? Number(options.contentLength) : undefined;
     if (contentLength !== undefined && contentLength > maxFileSizeBytes) {

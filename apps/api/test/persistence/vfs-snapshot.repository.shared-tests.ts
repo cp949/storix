@@ -49,6 +49,18 @@ export function runSnapshotRepositoryTests(
       mimeType: 'text/plain',
     });
     await ds().getRepository(NamespaceEntity).increment({ id: namespaceId }, 'liveFileByteCount', 7);
+    await ds().getRepository(NamespaceEntity).increment({ id: namespaceId }, 'liveNodeCount', 1);
+    await ds()
+      .getRepository(VfsNodeEntity)
+      .createQueryBuilder()
+      .update(VfsNodeEntity)
+      .set({
+        childFileCount: () => 'child_file_count + 1',
+        version: () => 'version',
+        updatedAt: () => 'updated_at',
+      })
+      .where('id = :parentId', { parentId })
+      .execute();
     return { node, blob };
   }
   async function capture(

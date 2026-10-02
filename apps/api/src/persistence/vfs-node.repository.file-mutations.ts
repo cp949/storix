@@ -76,6 +76,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
           throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
         }
         child = await nodeRepo.save(nodeRepo.create({ namespaceId, parentId, type: 'DIRECTORY', name }));
+        this.recordLiveNodeDelta(tx, 1n);
         await this.markAncestorChain(tx, parentId);
         this.markChanged(tx, child.id, false);
         if (isLast) {
@@ -145,6 +146,8 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     );
     this.markChanged(tx, created.id, false);
     this.recordLiveByteDelta(tx, BigInt(emptyBlob.size));
+    this.recordFolderFileDelta(tx, parentId, 1n);
+    this.recordLiveNodeDelta(tx, 1n);
 
     return { kind: 'created', node: toRecord(created) };
   }
@@ -234,6 +237,8 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     );
     this.markChanged(tx, created.id, false);
     this.recordLiveByteDelta(tx, BigInt(newBlob.size));
+    this.recordFolderFileDelta(tx, parentId, 1n);
+    this.recordLiveNodeDelta(tx, 1n);
 
     return { kind: 'created', node: toRecord(created) };
   }
@@ -408,9 +413,15 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     );
     assertSubtreeDestinationPaths(sourceNode.id, finalSegments, descendants);
 
+    const previousParentId = sourceNode.parentId;
     sourceNode.parentId = finalParentId;
     sourceNode.name = finalName;
     const saved = await manager.getRepository(VfsNodeEntity).save(sourceNode);
+    if (sourceNode.type === 'FILE' && previousParentId !== finalParentId) {
+      if (previousParentId === null) throw new Error('FILE parent is missing');
+      this.recordFolderFileDelta(tx, previousParentId, -1n);
+      this.recordFolderFileDelta(tx, finalParentId, 1n);
+    }
     this.markChanged(tx, saved.id, false);
     for (const descendant of descendants) this.markChanged(tx, descendant.id, true);
 

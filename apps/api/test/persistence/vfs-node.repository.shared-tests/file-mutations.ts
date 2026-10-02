@@ -1,5 +1,7 @@
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 import { BlobEntity } from '../../../src/persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
+import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
 import {
   VfsAlreadyExistsError,
   VfsDirectoryNotEmptyError,
@@ -13,6 +15,33 @@ import {
 export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): void {
   const { getDs, getRepo, createNamespace, createFile, makeBlobData } = helpers;
   describe('touchFile', () => {
+    it('namespace live node 상한을 초과하는 생성을 거부하고 counter를 유지한다', async () => {
+      const namespace = await createNamespace('touch-live-node-limit-ns');
+      await getDs().getRepository(NamespaceEntity).update({ id: namespace.id }, { maxLiveNodes: '1' });
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().ensureDirectory(namespace.id, root!.id, ['directory'], false);
+
+      await expect(
+        getRepo().touchFile(namespace.id, root!.id, ['file.txt'], false, makeBlobData()),
+      ).rejects.toMatchObject({ code: 'VFS_NAMESPACE_NODE_LIMIT_EXCEEDED', status: 413 });
+      const stored = await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id });
+      expect(String(stored.liveNodeCount)).toBe('1');
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['file.txt'])).toBeNull();
+    });
+
+    it('폴더 직접 자식 FILE 상한 초과를 거부하고 counter를 유지한다', async () => {
+      const namespace = await createNamespace('touch-folder-limit-ns');
+      await getDs().getRepository(NamespaceEntity).update({ id: namespace.id }, { maxFilesPerFolder: '1' });
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().touchFile(namespace.id, root!.id, ['first.txt'], false, makeBlobData());
+
+      await expect(
+        getRepo().touchFile(namespace.id, root!.id, ['second.txt'], false, makeBlobData()),
+      ).rejects.toMatchObject({ code: 'VFS_FOLDER_FILE_LIMIT_EXCEEDED', status: 413 });
+      const storedRoot = await getDs().getRepository(VfsNodeEntity).findOneByOrFail({ id: root!.id });
+      expect(String(storedRoot.childFileCount)).toBe('1');
+    });
+
     it('대상이 없으면 0-byte file을 생성하고 created를 반환한다', async () => {
       const namespace = await createNamespace('touch-create-ns');
       const root = await getRepo().getRoot(namespace.id);

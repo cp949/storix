@@ -68,6 +68,8 @@ export interface MutationTx {
   readonly feedBefore: Map<string, ChangeFeedNodeState> | null;
   liveFileByteDelta: bigint;
   logicalByteDelta: bigint;
+  liveNodeDelta: bigint;
+  readonly folderFileDeltas: Map<string, bigint>;
 }
 
 export interface SnapshotSourceRow {

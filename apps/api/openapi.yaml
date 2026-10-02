@@ -172,7 +172,7 @@ info:
     | `MUTATION_KEY_REUSED` | 409 | 기존 mutation receipt와 fingerprint가 다름; 기존 receipt를 변경하지 않음 | 새 key | 없음 |
     | `IDEMPOTENCY_KEY_REUSED` | 422 | namespace idempotency key에 다른 본문이 저장되어 있음 | 새 key | 없음 |
     | `VFS_PRECONDITION_FAILED` | 412 | 저장된 최초 충돌 응답 재생 | 최신 revision/조건으로 새 key | 없음 |
-    | `VFS_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key | 없음 |
+    | `VFS_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key | 없음 |
     | `VFS_PRECONDITION_REQUIRED` | 428 | 저장된 조건부 오류는 재생 | 조건을 추가한 뒤 새 key | 없음 |
     | `VFS_INVALID_RANGE`, `VFS_RANGE_NOT_SATISFIABLE` | 416 | 조회를 다시 평가 | range 입력을 고친 뒤 조회 재시도 | 없음 |
     | `DB_BUSY` | 503 | 같은 key로 재시도; receipt 없음 | 해당 없음 | 통상 `1` |
@@ -208,7 +208,7 @@ paths:
         다른 본문을 보내면 422를 반환한다. 재생 보장 기간은 receipt 생성 시점부터 30일이다.
         30일이 지난 receipt는 GC가 지우므로 같은 키의 재요청은 새 요청으로 처리된다
         (이름이 이미 있으면 409, 다른 본문이어도 422가 아니다). 이름 충돌 409도 같은 기간 재생한다. `maxTotalLogicalBytes`는 선택적 namespace 상한이며
-        생략하면 전역 상한을 사용한다. 바이트 값은 10진수 문자열이다.
+        생략하면 `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES` 기본값을 사용한다. 바이트 값은 10진수 문자열이다.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
@@ -367,7 +367,7 @@ paths:
     patch:
       operationId: updateNamespaceQuota
       summary: Namespace 논리 사용량 상한 변경
-      description: '별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. 같은 키의 응답 재생은 receipt 생성 시점부터 30일간 보장한다. `maxTotalLogicalBytes: null`은 전역 상한 상속을 뜻한다. 현재 사용량보다 낮은 상한도 받아들이며 저장된 파일은 지우지 않고, 사용량이 상한 아래로 내려올 때까지 사용량을 늘리는 새 저장만 413 `VFS_QUOTA_EXCEEDED`로 거부한다.'
+      description: '별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. 같은 키의 응답 재생은 receipt 생성 시점부터 30일간 보장한다. `maxTotalLogicalBytes: null`은 기본값 상속을 뜻한다. ceiling 이하의 override는 기본값보다 커도 허용한다. 현재 사용량보다 낮은 상한도 받아들이며 저장된 파일은 지우지 않고, 사용량이 상한 아래로 내려올 때까지 사용량을 늘리는 새 저장만 413 `VFS_QUOTA_EXCEEDED`로 거부한다.'
       parameters:
         - name: namespaceId
           in: path
@@ -3167,7 +3167,7 @@ components:
             maxFileSizeBytes:
               type: string
               pattern: '^[0-9]+$'
-              description: namespace 재정의와 전역 파일 크기 상한 중 적용되는 작은 값(바이트). 전역 기본값은 5368709120이다.
+              description: namespace override가 있으면 전역 ceiling 이하 값, 없으면 전역 기본값을 적용한다. 바이트 단위 10진 문자열이다.
         quota:
           type: object
           required: [limitBytes, usedBytes, trash]
@@ -3175,7 +3175,7 @@ components:
             limitBytes:
               type: string
               pattern: '^[0-9]+$'
-              description: 적용된 전역 또는 namespace 상한(바이트).
+              description: namespace override가 있으면 그 값(전역 ceiling 이하), 없으면 기본값(바이트).
             usedBytes:
               type: string
               pattern: '^[0-9]+$'

@@ -21,9 +21,15 @@ describe('toNamespaceResponse', () => {
 
     expect(
       toNamespaceResponse(entity, {
+        defaultMaxFileSizeBytes: 5368709120,
         maxFileSizeBytes: 5368709120,
+        defaultMaxTotalLogicalBytes: 30n,
         maxTotalLogicalBytes: 30n,
         maxRetainedTrashNodes: 100000,
+        defaultMaxFilesPerFolder: 10000,
+        maxFilesPerFolder: 10000,
+        defaultMaxLiveNodes: 1000000,
+        maxLiveNodes: 1000000,
       }),
     ).toEqual({
       id: 'ns-1',
@@ -59,9 +65,15 @@ describe('toNamespaceResponse', () => {
       } as NamespaceEntity;
 
       const response = toNamespaceResponse(entity, {
+        defaultMaxFileSizeBytes: global,
         maxFileSizeBytes: global,
+        defaultMaxTotalLogicalBytes: 30n,
         maxTotalLogicalBytes: 30n,
         maxRetainedTrashNodes: 100000,
+        defaultMaxFilesPerFolder: 10000,
+        maxFilesPerFolder: 10000,
+        defaultMaxLiveNodes: 1000000,
+        maxLiveNodes: 1000000,
       });
       expect(response.limits).toEqual({ maxFileSizeBytes: expected });
       expect(response.quota).toEqual({
@@ -85,9 +97,15 @@ describe('toNamespaceResponse', () => {
       } as NamespaceEntity;
       expect(
         toNamespaceResponse(entity, {
+          defaultMaxFileSizeBytes: 64,
           maxFileSizeBytes: 64,
+          defaultMaxTotalLogicalBytes: 30n,
           maxTotalLogicalBytes: 30n,
           maxRetainedTrashNodes: 100000,
+          defaultMaxFilesPerFolder: 10000,
+          maxFilesPerFolder: 10000,
+          defaultMaxLiveNodes: 1000000,
+          maxLiveNodes: 1000000,
         }).limits,
       ).toEqual({ maxFileSizeBytes: '64' });
     } finally {
@@ -106,9 +124,15 @@ describe('toNamespaceResponse', () => {
       updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     } as NamespaceEntity;
     const limits = {
+      defaultMaxFileSizeBytes: 64,
       maxFileSizeBytes: 64,
+      defaultMaxTotalLogicalBytes: 30n,
       maxTotalLogicalBytes: 30n,
       maxRetainedTrashNodes: Number.MAX_SAFE_INTEGER,
+      defaultMaxFilesPerFolder: 10000,
+      maxFilesPerFolder: 10000,
+      defaultMaxLiveNodes: 1000000,
+      maxLiveNodes: 1000000,
     };
 
     expect(toNamespaceResponse(entity, limits).quota.trash.retainedNodeCount).toBe(Number.MAX_SAFE_INTEGER);

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
+import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
@@ -38,7 +39,7 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
         referenceCount: 1,
       }),
     );
-    return nodeRepo.save(
+    const node = await nodeRepo.save(
       nodeRepo.create({
         namespaceId,
         parentId,
@@ -49,6 +50,9 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
         mimeType: 'application/octet-stream',
       }),
     );
+    await nodeRepo.increment({ id: parentId }, 'childFileCount', 1);
+    await getDs().getRepository(NamespaceEntity).increment({ id: namespaceId }, 'liveNodeCount', 1);
+    return node;
   }
 
   async function captureState(namespaceId: string) {

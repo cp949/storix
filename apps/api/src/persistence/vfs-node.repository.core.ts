@@ -10,9 +10,12 @@ import {
   VfsNotDirectoryError,
   VfsRevisionExhaustedError,
   VfsQuotaExceededError,
+  VfsFolderFileLimitExceededError,
+  VfsNamespaceNodeLimitExceededError,
 } from '../vfs/vfs.errors.js';
+import { DEFAULT_MAX_LIVE_NODES, resolveCountLimits } from '../common/resource-limit.js';
 import {
-  resolveGlobalTotalLogicalByteLimit,
+  resolveGlobalTotalLogicalByteLimits,
   resolveNamespaceQuota,
   resolveTotalLogicalBytes,
 } from '../vfs/namespace-quota.js';
@@ -34,7 +37,12 @@ import {
 import type { ChangeFeedState } from './vfs-change-feed-journal.js';
 
 export class VfsNodeRepositoryCore {
+  protected readonly defaultMaxTotalLogicalBytes: bigint;
   protected readonly maxTotalLogicalBytes: bigint;
+  protected readonly defaultMaxFilesPerFolder: bigint;
+  protected readonly maxFilesPerFolder: bigint;
+  protected readonly defaultMaxLiveNodes: bigint;
+  protected readonly maxLiveNodes: bigint;
   protected readonly namespaceRepo: Repository<NamespaceEntity>;
   protected readonly nodeRepo: Repository<VfsNodeEntity>;
   protected readonly blobRepo: Repository<BlobEntity>;
@@ -54,9 +62,25 @@ export class VfsNodeRepositoryCore {
     this.blobRepo = blobRepo;
     this.dataSource = dataSource;
     this.blobRepository = blobRepository;
-    this.maxTotalLogicalBytes = resolveGlobalTotalLogicalByteLimit(
+    const totalLogicalByteLimits = resolveGlobalTotalLogicalByteLimits(
+      config.get<string>('STORIX_DEFAULT_TOTAL_LOGICAL_BYTES'),
       config.get<string>('STORIX_MAX_TOTAL_LOGICAL_BYTES'),
     );
+    this.defaultMaxTotalLogicalBytes = totalLogicalByteLimits.defaultBytes;
+    this.maxTotalLogicalBytes = totalLogicalByteLimits.ceilingBytes;
+    const folderLimits = resolveCountLimits(
+      config.get<string>('STORIX_DEFAULT_MAX_FILES_PER_FOLDER'),
+      config.get<string>('STORIX_MAX_FILES_PER_FOLDER'),
+    );
+    this.defaultMaxFilesPerFolder = BigInt(folderLimits.defaultValue);
+    this.maxFilesPerFolder = BigInt(folderLimits.ceilingValue);
+    const liveNodeLimits = resolveCountLimits(
+      config.get<string>('STORIX_DEFAULT_MAX_LIVE_NODES'),
+      config.get<string>('STORIX_MAX_LIVE_NODES'),
+      DEFAULT_MAX_LIVE_NODES,
+    );
+    this.defaultMaxLiveNodes = BigInt(liveNodeLimits.defaultValue);
+    this.maxLiveNodes = BigInt(liveNodeLimits.ceilingValue);
   }
 
   protected get isSqlite(): boolean {
@@ -94,6 +118,8 @@ export class VfsNodeRepositoryCore {
           feedBefore: before,
           liveFileByteDelta: 0n,
           logicalByteDelta: 0n,
+          liveNodeDelta: 0n,
+          folderFileDeltas: new Map(),
         };
         let value: T;
         try {
@@ -102,6 +128,7 @@ export class VfsNodeRepositoryCore {
           callbackError = error;
           throw error;
         }
+        await this.applyNodeCounters(tx);
         await this.applyLogicalByteQuota(tx);
         const affectedRevisions = await this.bumpAndReadChangedNodes(tx);
         if (afterBump) {
@@ -215,6 +242,74 @@ export class VfsNodeRepositoryCore {
     tx.logicalByteDelta += delta;
   }
 
+  protected recordFolderFileDelta(tx: MutationTx, parentId: string, delta: bigint): void {
+    if (delta === 0n) return;
+    tx.folderFileDeltas.set(parentId, (tx.folderFileDeltas.get(parentId) ?? 0n) + delta);
+  }
+
+  protected recordLiveNodeDelta(tx: MutationTx, delta: bigint): void {
+    tx.liveNodeDelta += delta;
+  }
+
+  private async applyNodeCounters(tx: MutationTx): Promise<void> {
+    const deltas = [...tx.folderFileDeltas].filter(([, delta]) => delta !== 0n);
+    if (deltas.length === 0 && tx.liveNodeDelta === 0n) return;
+    const namespace = (
+      await withExactNamespaceBigints(tx.manager, [
+        await tx.manager.getRepository(NamespaceEntity).findOneByOrFail({ id: tx.namespaceId }),
+      ])
+    )[0];
+    if (tx.liveNodeDelta !== 0n) {
+      const nextLiveNodes = BigInt(String(namespace.liveNodeCount)) + tx.liveNodeDelta;
+      if (nextLiveNodes < 0n) throw new Error('namespace live node counter became negative');
+      const nodeLimit =
+        namespace.maxLiveNodes === null
+          ? this.defaultMaxLiveNodes
+          : BigInt(String(namespace.maxLiveNodes)) < this.maxLiveNodes
+            ? BigInt(String(namespace.maxLiveNodes))
+            : this.maxLiveNodes;
+      if (tx.liveNodeDelta > 0n && nextLiveNodes > nodeLimit)
+        throw new VfsNamespaceNodeLimitExceededError(nodeLimit.toString(), nextLiveNodes.toString());
+      await tx.manager
+        .getRepository(NamespaceEntity)
+        .createQueryBuilder()
+        .update(NamespaceEntity)
+        .set({ liveNodeCount: nextLiveNodes.toString(), updatedAt: () => 'updated_at' })
+        .where('id = :namespaceId', { namespaceId: tx.namespaceId })
+        .execute();
+    }
+    const limit =
+      namespace.maxFilesPerFolder === null
+        ? this.defaultMaxFilesPerFolder
+        : BigInt(String(namespace.maxFilesPerFolder)) < this.maxFilesPerFolder
+          ? BigInt(String(namespace.maxFilesPerFolder))
+          : this.maxFilesPerFolder;
+    const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    for (const [parentId, delta] of deltas) {
+      const parent = await nodeRepo.findOneBy({
+        id: parentId,
+        namespaceId: tx.namespaceId,
+        type: 'DIRECTORY',
+      });
+      if (!parent && delta < 0n) continue;
+      if (!parent) throw new Error('folder child FILE counter parent is missing');
+      const next = BigInt(String(parent.childFileCount ?? '0')) + delta;
+      if (next < 0n) throw new Error('folder child FILE counter became negative');
+      if (delta > 0n && next > limit)
+        throw new VfsFolderFileLimitExceededError(limit.toString(), next.toString());
+      await nodeRepo
+        .createQueryBuilder()
+        .update(VfsNodeEntity)
+        .set({
+          childFileCount: next.toString(),
+          version: () => 'version',
+          updatedAt: () => 'updated_at',
+        })
+        .where('id = :parentId', { parentId })
+        .execute();
+    }
+  }
+
   private async applyLogicalByteQuota(tx: MutationTx): Promise<void> {
     if (tx.logicalByteDelta <= 0n && tx.liveFileByteDelta === 0n) return;
 
@@ -238,6 +333,7 @@ export class VfsNodeRepositoryCore {
       const limit = resolveNamespaceQuota(
         namespace.maxTotalLogicalBytes === null ? null : String(namespace.maxTotalLogicalBytes),
         this.maxTotalLogicalBytes,
+        this.defaultMaxTotalLogicalBytes,
       );
       if (totalBytes > limit) throw new VfsQuotaExceededError(limit.toString(), totalBytes.toString());
     }
@@ -347,6 +443,7 @@ export class VfsNodeRepositoryCore {
           throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
         }
         child = await nodeRepo.save(nodeRepo.create({ namespaceId, parentId, type: 'DIRECTORY', name }));
+        if (tx) this.recordLiveNodeDelta(tx, 1n);
         if (tx) {
           await this.markAncestorChain(tx, parentId);
           this.markChanged(tx, child.id, false);

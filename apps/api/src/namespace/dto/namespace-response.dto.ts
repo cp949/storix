@@ -53,13 +53,18 @@ export function toNamespaceResponse(
     updatedAt: entity.updatedAt.toISOString(),
     limits: {
       maxFileSizeBytes: String(
-        resolveMaxFileSizeBytes(entity.maxFileSizeBytes, globalLimits.maxFileSizeBytes),
+        resolveMaxFileSizeBytes(
+          entity.maxFileSizeBytes,
+          globalLimits.maxFileSizeBytes,
+          globalLimits.defaultMaxFileSizeBytes,
+        ),
       ),
     },
     quota: {
       limitBytes: resolveNamespaceQuota(
         entity.maxTotalLogicalBytes ?? null,
         globalLimits.maxTotalLogicalBytes,
+        globalLimits.defaultMaxTotalLogicalBytes,
       ).toString(),
       usedBytes: resolveTotalLogicalBytes(
         String(entity.liveFileByteCount ?? '0'),

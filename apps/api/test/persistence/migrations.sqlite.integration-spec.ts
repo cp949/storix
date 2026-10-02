@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { AuditLogEntity } from '../../src/persistence/entities/audit-log.entity.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
@@ -14,6 +14,9 @@ import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/mig
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
+import { AddFolderFileCount1791700000018 } from '../../src/persistence/migrations/1791700000018-AddFolderFileCount.js';
+import { AddLiveNodeCount1791700000019 } from '../../src/persistence/migrations/1791700000019-AddLiveNodeCount.js';
+import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -406,7 +409,56 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddNamespaceDeletionCompletedIndex1791700000015',
       'ConvertNamespaceIdToString1791700000016',
       'MakeNamespaceNameNullable1791700000017',
+      'AddFolderFileCount1791700000018',
+      'AddLiveNodeCount1791700000019',
     ]);
+  });
+
+  it('기존 트리의 폴더 FILE·namespace live node counter를 backfill한다', async () => {
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
+      'counter-backfill',
+    );
+    const root = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({
+      namespaceId: namespace.id,
+      parentId: IsNull(),
+    });
+    const folderId = randomUUID();
+    const fileId = randomUUID();
+    const blobId = randomUUID();
+    const folderMigration = new AddFolderFileCount1791700000018();
+    const nodeMigration = new AddLiveNodeCount1791700000019();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await nodeMigration.down(runner);
+      await folderMigration.down(runner);
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name) VALUES (?, ?, ?, 'DIRECTORY', 'dir')`,
+        [folderId, namespace.id, root.id],
+      );
+      await runner.query(
+        `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count)
+         VALUES (?, ?, ?, 0, 'application/octet-stream', ?, 1)`,
+        [blobId, namespace.id, `backfill/${blobId}`, '0'.repeat(64)],
+      );
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name, blob_id, size)
+         VALUES (?, ?, ?, 'FILE', 'file', ?, 0)`,
+        [fileId, namespace.id, folderId, blobId],
+      );
+      await folderMigration.up(runner);
+      await nodeMigration.up(runner);
+      const [folder] = await runner.query('SELECT child_file_count FROM vfs_node WHERE id = ?', [folderId]);
+      const [storedNamespace] = await runner.query('SELECT live_node_count FROM namespace WHERE id = ?', [
+        namespace.id,
+      ]);
+      expect(String(folder.child_file_count)).toBe('1');
+      expect(String(storedNamespace.live_node_count)).toBe('2');
+    } finally {
+      await nodeMigration.up(runner).catch(() => undefined);
+      await folderMigration.up(runner).catch(() => undefined);
+      await runner.release();
+    }
   });
 
   it('최대 길이 namespace ID와 48자 usage 키를 SQLite에서 저장한다', async () => {

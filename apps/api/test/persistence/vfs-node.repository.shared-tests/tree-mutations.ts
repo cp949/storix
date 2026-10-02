@@ -15,6 +15,20 @@ import {
 
 export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): void {
   const { getDs, getRepo, createNamespace, createFile, captureState, makeBlobData } = helpers;
+  async function addFixtureFileCounters(namespaceId: string, parentId: string, count: number) {
+    await getDs().getRepository(NamespaceEntity).increment({ id: namespaceId }, 'liveNodeCount', count);
+    await getDs()
+      .getRepository(VfsNodeEntity)
+      .createQueryBuilder()
+      .update(VfsNodeEntity)
+      .set({
+        childFileCount: () => `child_file_count + ${count}`,
+        version: () => 'version',
+        updatedAt: () => 'updated_at',
+      })
+      .where('id = :parentId', { parentId })
+      .execute();
+  }
   describe('removeNode', () => {
     const UNLIMITED = Number.MAX_SAFE_INTEGER;
 
@@ -104,6 +118,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
           mimeType: 'application/octet-stream',
         }),
       );
+      await addFixtureFileCounters(namespace.id, dir.node.id, 2);
 
       await getRepo().removeNode(namespace.id, root!.id, ['a'], true, UNLIMITED);
 
@@ -287,6 +302,7 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
           mimeType: 'application/octet-stream',
         }),
       );
+      await addFixtureFileCounters(namespace.id, dir.node.id, 2);
 
       await getRepo().copyNode(namespace.id, root!.id, ['a'], ['a2'], false, UNLIMITED);
 

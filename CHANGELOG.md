@@ -10,6 +10,9 @@
 
 ### Added
 
+- 폴더별 직접 자식 `FILE` 수 상한을 추가했다. 기본값은 `STORIX_DEFAULT_MAX_FILES_PER_FOLDER=10000`이고 `STORIX_MAX_FILES_PER_FOLDER`가 전역 ceiling이다. migration `AddFolderFileCount1791700000018`은 기존 폴더 counter를 backfill하며, 초과 생성은 413 `VFS_FOLDER_FILE_LIMIT_EXCEEDED`로 거부한다.
+- namespace의 root를 제외한 live `FILE`·`DIRECTORY` 수 상한을 추가했다. 기본값은 `STORIX_DEFAULT_MAX_LIVE_NODES=1000000`이고 `STORIX_MAX_LIVE_NODES`가 전역 ceiling이다. migration `AddLiveNodeCount1791700000019`가 기존 수를 backfill하며, 상한 초과 생성은 413 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`로 거부한다. namespace 삭제 GC도 counter를 배치별 정산한다.
+
 - Namespace 생성에서 `name`을 생략하거나 `null`로 지정할 수 있다. 응답의 `name`은 항상 존재하며 미지정이면 `null`이다. 목록은 이름 있는 항목을 `(name, id)` 순으로 반환하고 이름 없는 항목을 뒤에 `id` 순으로 반환한다. migration `MakeNamespaceNameNullable1791700000017`이 nullable 제약과 이름 없는 항목용 인덱스를 추가한다. 이름 없는 행이 있으면 migration down을 거부한다.
 - Namespace ID 생성 시 선택 필드 `idPrefix`를 지원한다. ID는 기존 UUID 또는 `{prefix}_{UUID v4의 하이픈 제거 32자리}` 형식이다. capability·resumable upload namespace 설정도 새 형식을 받으며 대소문자·하이픈 변형은 별칭으로 취급하지 않는다. migration `ConvertNamespaceIdToString1791700000016`은 PostgreSQL namespace 참조 컬럼을 `varchar(45) COLLATE "C"`로 바꾸고 `vfs_upload_usage.id`를 `varchar(64)`로 확장한다. SQLite는 `varchar` 길이를 제한하지 않으므로 새 migration은 타입 변경이 없다. 새 ID가 만들어진 뒤 migration down은 UUID 형식이 아닌 참조가 남아 있으면 거부된다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 `30`): 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간이다. 완료 시점부터 이 기간이 지나면 namespace·삭제 operation·삭제 receipt 행을 지운다(GC 결과 `purgedNamespaces`). 이후 `GET /api/v2/namespaces/{id}`·삭제 상태 조회·같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다(보존 기간 안에서는 `DELETED` 상태 응답과 최초 202 재생). 물리 삭제는 되돌릴 수 없고 복구에는 삭제 전 백업이 필요하다. 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)에 적은 namespace가 물리 삭제되면 시작이 거부되므로 삭제한 namespace는 설정에서 지운다. migration `AddNamespaceDeletionCompletedIndex1791700000015`(인덱스만 추가)가 필요하다. 결정은 api ADR-0035다.
@@ -22,6 +25,8 @@
 - `limit`·`cursor` 없이 호출하는 `GET /api/v2/namespaces`(ACTIVE 전체 배열). 동작은 그대로이고 개수에 상한이 없다. 새 호출자는 page 모드를 쓴다.
 
 ### Changed
+
+- `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`·`STORIX_DEFAULT_FILE_SIZE_BYTES`와 `STORIX_MAX_TOTAL_LOGICAL_BYTES`·`STORIX_MAX_FILE_SIZE_BYTES`를 분리했다. MAX만 지정하면 이전처럼 기본값과 ceiling이 같고, DEFAULT만 지정하면 기본값 아래·위 namespace override를 허용하며 ceiling은 구조 상한으로 제한한다. 시작 시 DEFAULT가 ceiling을 넘거나 파일 크기 ceiling이 S3 multipart 구조 상한(16 MiB × 10,000 parts)을 넘으면 거부한다.
 
 - namespace 생성(201·이름 충돌 409)과 관리 API(quota, trash 정책)의 `Idempotency-Key` receipt(`idempotency_key`)를 생성 시점부터 30일 보존한 뒤 GC가 지운다(GC 결과 `prunedIdempotencyReceipts`). 이전에는 영구 보존이었다. 30일이 지난 key의 재요청은 최초 응답을 재생하지 않고 새 요청으로 처리된다: 생성은 이름이 비어 있으면 새 namespace(201), 있으면 409이고, 같은 key에 다른 본문도 422가 아니다. 100만 namespace 데이터셋에서 receipt 140만 행을 지우는 데 약 30초가 걸린다. migration `AddIdempotencyKeyCreatedAtIndex1791700000014`(인덱스만 추가)가 필요하다. 삭제한 행은 백업 복원 외에 되돌릴 수 없다. 결정은 api ADR-0034다.
 - 업로드 세션 정책 파일의 `namespaces` 항목은 선택 override가 됐다. `resumable-upload`가 켜진 namespace의 항목이 없으면 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다. 이전에는 시작 오류(`Missing upload session policy for enabled namespace`)였다.
