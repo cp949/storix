@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- `STORIX_SENTRY_DSN`을 설정한 배포에서 오류 이벤트가 `Authorization` 헤더 원문(Bearer API 키)을 Sentry로 전송하던 문제를 수정했다. v1.1.0을 포함한 이전 버전이 영향을 받는다. 오류 이벤트 전송 직전에 `request.headers.authorization`을 지운다. 영향을 받은 배포는 Sentry에 남은 이벤트를 삭제하고 `STORIX_API_KEY`·`STORIX_ADMIN_API_KEY`를 교체한다.
+
 ### Fixed
 
 - Namespace ID·제한 상속·휴지통 기본 정책·quota 제외와 Postgres 서버/client 버전과 백업 일관성의 문서 설명을 현재 구현에 맞췄다. 데모 검증 문서의 깨진 링크를 수정했다.

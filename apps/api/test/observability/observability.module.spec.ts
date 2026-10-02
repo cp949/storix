@@ -10,7 +10,11 @@ import type { ErrorReporter } from '../../src/observability/error-reporter.js';
 import { ERROR_REPORTER } from '../../src/observability/observability.constants.js';
 import { ObservabilityModule, resolveErrorReporter } from '../../src/observability/observability.module.js';
 import { NoopErrorReporter } from '../../src/observability/noop-error-reporter.js';
-import { SentryErrorReporter, type SentryClient } from '../../src/observability/sentry-error-reporter.js';
+import {
+  SentryErrorReporter,
+  scrubAuthorizationHeader,
+  type SentryClient,
+} from '../../src/observability/sentry-error-reporter.js';
 
 function createFakeClient(): jest.Mocked<SentryClient> {
   return { init: jest.fn(), captureException: jest.fn() };
@@ -26,6 +30,7 @@ describe('resolveErrorReporter', () => {
     expect(client.init).toHaveBeenCalledWith({
       dsn: 'https://public@example.sentry.io/1',
       sendDefaultPii: false,
+      beforeSend: scrubAuthorizationHeader,
     });
   });
 

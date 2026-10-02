@@ -1,5 +1,11 @@
 import { jest } from '@jest/globals';
-import { SentryErrorReporter, type SentryClient } from '../../src/observability/sentry-error-reporter.js';
+import * as Sentry from '@sentry/node';
+import type { ErrorEvent } from '@sentry/node';
+import {
+  SentryErrorReporter,
+  scrubAuthorizationHeader,
+  type SentryClient,
+} from '../../src/observability/sentry-error-reporter.js';
 
 function createFakeClient(): jest.Mocked<SentryClient> {
   return {
@@ -17,6 +23,7 @@ describe('SentryErrorReporter', () => {
     expect(client.init).toHaveBeenCalledWith({
       dsn: 'https://public@example.sentry.io/1',
       sendDefaultPii: false,
+      beforeSend: scrubAuthorizationHeader,
     });
   });
 
@@ -40,5 +47,58 @@ describe('SentryErrorReporter', () => {
     reporter.report(error);
 
     expect(client.captureException).toHaveBeenCalledWith(error, undefined);
+  });
+
+  describe('scrubAuthorizationHeader', () => {
+    it('request.headers의 authorization을 대소문자와 무관하게 지우고 다른 헤더는 유지한다', () => {
+      const event = {
+        type: undefined,
+        request: {
+          headers: {
+            Authorization: 'Bearer secret-key',
+            authorization: 'Bearer other',
+            'x-request-id': 'req-1',
+          },
+        },
+      } as ErrorEvent;
+
+      const result = scrubAuthorizationHeader(event);
+
+      expect(result.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+    });
+
+    it('request나 headers가 없는 이벤트는 그대로 반환한다', () => {
+      const event = { type: undefined } as ErrorEvent;
+
+      expect(scrubAuthorizationHeader(event)).toBe(event);
+    });
+  });
+
+  describe('실제 @sentry/node 연동', () => {
+    it('Bearer 키를 보낸 요청의 오류 이벤트가 전송 전에 authorization 없이 beforeSend를 통과한다', async () => {
+      const sent: ErrorEvent[] = [];
+      Sentry.init({
+        dsn: 'https://public@example.sentry.io/1',
+        sendDefaultPii: false,
+        beforeSend: (event) => {
+          sent.push(scrubAuthorizationHeader(event));
+          return null;
+        },
+      });
+
+      Sentry.withIsolationScope((scope) => {
+        scope.setSDKProcessingMetadata({
+          normalizedRequest: { headers: { authorization: 'Bearer secret-key', host: 'storix.test' } },
+        });
+        Sentry.captureException(new Error('boom'));
+      });
+      await Sentry.flush(2000);
+      await Sentry.close(2000);
+
+      expect(sent).toHaveLength(1);
+      // sdkProcessingMetadata는 SDK가 envelope 직렬화 전에 제거하므로 전송되는 request만 검사한다.
+      expect(JSON.stringify(sent[0].request)).not.toContain('secret-key');
+      expect(sent[0].request?.headers).toEqual({ host: 'storix.test' });
+    });
   });
 });
