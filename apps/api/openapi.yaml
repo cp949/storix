@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Storix API
-  version: 1.0.1
+  version: 1.1.0
   description: |
     Storix는 호출 서버가 사용하는 독립 VFS(Virtual File System) 저장 서버다. 파일의
     업무적 의미와 최종 사용자 인증·권한 판단은 호출 서버의 책임이며 Storix 도메인에

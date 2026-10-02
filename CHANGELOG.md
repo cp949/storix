@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-02
+
 ### Added
 
 - 폴더별 직접 자식 `FILE` 수 상한을 추가했다. 기본값은 `STORIX_DEFAULT_MAX_FILES_PER_FOLDER=10000`이고 `STORIX_MAX_FILES_PER_FOLDER`가 전역 ceiling이다. migration `AddFolderFileCount1791700000018`은 기존 폴더 counter를 backfill하며, 초과 생성은 413 `VFS_FOLDER_FILE_LIMIT_EXCEEDED`로 거부한다.
