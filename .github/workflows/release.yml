@@ -77,6 +77,12 @@ jobs:
             echo "docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}"
             echo '```'
             echo ""
+            echo "이 이미지의 \`backup\`·\`restore\`는 Postgres 17 client를 쓴다. Postgres 16 서버에는 \`${{ steps.version.outputs.tag }}-pg16\` 이미지를 쓴다."
+            echo ""
+            echo '```'
+            echo "docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}-pg16"
+            echo '```'
+            echo ""
             echo "## 업그레이드와 롤백"
             echo ""
             echo "- 스키마 마이그레이션은 자동으로 되돌리지 않는다(\`migration:revert\` 없음)."
@@ -105,6 +111,23 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}
             ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ steps.guard.outputs.commit }}
+            org.opencontainers.image.version=${{ steps.version.outputs.tag }}
+            org.opencontainers.image.created=${{ steps.version.outputs.created }}
+
+      # Postgres 16 서버용 변형. backup·restore client major가 서버와 같아야 한다(api ADR-0039).
+      - name: Postgres 16 변형 이미지 빌드 및 push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            PG_CLIENT_MAJOR=16
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}-pg16
           labels: |
             org.opencontainers.image.revision=${{ steps.guard.outputs.commit }}
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
