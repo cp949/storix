@@ -13,6 +13,7 @@ import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/17917
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
+import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
 
 // 이 파일은 STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행으로만 돌린다
 // (Task 6 Step 6 참고) — 전체 test:integration에 포함시키면 같은 워커의
@@ -404,6 +405,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddIdempotencyKeyCreatedAtIndex1791700000014',
       'AddNamespaceDeletionCompletedIndex1791700000015',
       'ConvertNamespaceIdToString1791700000016',
+      'MakeNamespaceNameNullable1791700000017',
     ]);
   });
 
@@ -451,6 +453,25 @@ describe('마이그레이션 체인 (SQLite)', () => {
       WHERE request_id = 'before-snapshot-id-migration'`),
     ).toEqual([{ snapshot_id: null }]);
     await runner.release();
+  });
+
+  it('이름 없는 namespace가 있으면 down을 거부하고 비운 뒤 up/down이 가역이다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new MakeNamespaceNameNullable1791700000017();
+    const id = randomUUID();
+    try {
+      await dataSource.query('INSERT INTO namespace (id, name) VALUES (?, NULL)', [id]);
+      await expect(migration.down(runner)).rejects.toThrow(/이름 없는 namespace/);
+      await dataSource.query('DELETE FROM namespace WHERE id = ?', [id]);
+      await migration.down(runner);
+      await migration.up(runner);
+      expect(await dataSource.query('PRAGMA foreign_key_check')).toEqual([]);
+      expect(
+        (await dataSource.query('PRAGMA index_list("namespace")')).map((row: { name: string }) => row.name),
+      ).toContain('idx_namespace_active_unnamed');
+    } finally {
+      await runner.release();
+    }
   });
 
   it('snapshot 목록 인덱스 migration은 up/down이 가역이다', async () => {

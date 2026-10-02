@@ -74,7 +74,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -94,7 +94,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -108,7 +108,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -121,7 +121,7 @@ describe('Namespace HTTP contract (SQLite)', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -202,13 +202,13 @@ describe('Namespace HTTP contract (SQLite)', () => {
     await request(app.getHttpServer())
       .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'namespace-sqlite-name-owner')
-      .send({ name })
+      .send(name === null ? {} : { name })
       .expect(201);
 
     const collision = await request(app.getHttpServer())
       .post('/api/v2/namespaces')
       .set('Idempotency-Key', 'namespace-sqlite-name-contender')
-      .send({ name })
+      .send(name === null ? {} : { name })
       .expect(409);
     expect(collision.body).toMatchObject({ code: 'NAMESPACE_ALREADY_EXISTS' });
     expect(await namespaceCounts(name)).toEqual({ namespaces: 1, roots: 1 });

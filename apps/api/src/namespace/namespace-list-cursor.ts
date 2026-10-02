@@ -7,7 +7,7 @@ import { VfsInvalidCursorError } from '../vfs/vfs.errors.js';
 
 /** cursor가 가리키는 마지막 항목의 위치. */
 export interface NamespaceListCursor {
-  readonly name: string;
+  readonly name: string | null;
   readonly id: string;
 }
 
@@ -16,9 +16,8 @@ const MAX_NAME_LENGTH = 128;
 
 function valid(value: NamespaceListCursor): boolean {
   return (
-    typeof value.name === 'string' &&
-    value.name.length >= 1 &&
-    value.name.length <= MAX_NAME_LENGTH &&
+    (value.name === null ||
+      (typeof value.name === 'string' && value.name.length >= 1 && value.name.length <= MAX_NAME_LENGTH)) &&
     isNamespaceId(value.id)
   );
 }
@@ -36,7 +35,11 @@ export function decodeNamespaceListCursor(raw: string): NamespaceListCursor {
     const value: unknown = JSON.parse(Buffer.from(raw.slice(4), 'base64url').toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('shape');
     const record = value as Record<string, unknown>;
-    if (Object.keys(record).length !== 2 || typeof record.name !== 'string' || typeof record.id !== 'string')
+    if (
+      Object.keys(record).length !== 2 ||
+      !(record.name === null || typeof record.name === 'string') ||
+      typeof record.id !== 'string'
+    )
       throw new Error('fields');
     const cursor = { name: record.name, id: record.id };
     if (!valid(cursor) || encodeNamespaceListCursor(cursor) !== raw) throw new Error('canonicality');

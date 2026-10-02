@@ -7,6 +7,11 @@ import { VfsInvalidCursorError } from '../../src/vfs/vfs.errors.js';
 const ID = '123e4567-e89b-42d3-a456-426614174000';
 
 describe('namespace 목록 cursor', () => {
+  it('이름 없는 namespace 위치를 인코딩하고 되돌린다', () => {
+    const cursor = { name: null, id: `abcdefghijkl_${'a'.repeat(32)}` };
+    expect(decodeNamespaceListCursor(encodeNamespaceListCursor(cursor))).toEqual(cursor);
+  });
+
   it('(name, id)를 인코딩하고 같은 값으로 디코딩한다', () => {
     const raw = encodeNamespaceListCursor({ name: 'member-1', id: ID });
     expect(raw).toMatch(/^nl1\.[A-Za-z0-9_-]+$/);

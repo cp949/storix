@@ -165,7 +165,7 @@ info:
     | --- | ---: | --- | --- | --- |
     | `UNAUTHORIZED` | 401 | 인증을 갱신한 뒤 가능; receipt 없음 | 인증 문제를 고친 뒤 같은 key 가능 | 없음 |
     | `NAMESPACE_NOT_FOUND`, `NAMESPACE_DELETION_NOT_FOUND`, `VFS_NODE_NOT_FOUND`, `VFS_SNAPSHOT_NOT_FOUND` | 404 | 같은 상태에서는 재평가; 조건부 receipt가 있으면 최초 결과 재생 | 새 key | 없음 |
-    | `VFS_INVALID_PATH`, `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`, `VFS_INVALID_CURSOR`, `IDEMPOTENCY_KEY_REQUIRED`, `NAMESPACE_INVALID_NAME`, `NAMESPACE_INVALID_ENCRYPTION_POLICY`, `NAMESPACE_INVALID_ACCESS_POLICY`, `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`, `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, `NAMESPACE_ENCRYPTION_NOT_CONFIGURED`, `NAMESPACE_INVALID_DELETE_REQUEST` | 400 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
+    | `VFS_INVALID_PATH`, `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`, `VFS_INVALID_CURSOR`, `IDEMPOTENCY_KEY_REQUIRED`, `NAMESPACE_INVALID_NAME`, `NAMESPACE_INVALID_ID_PREFIX`, `NAMESPACE_INVALID_ENCRYPTION_POLICY`, `NAMESPACE_INVALID_ACCESS_POLICY`, `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`, `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, `NAMESPACE_ENCRYPTION_NOT_CONFIGURED`, `NAMESPACE_INVALID_DELETE_REQUEST` | 400 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
     | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_ALREADY_EXISTS`, `VFS_VERSION_CONFLICT`, `VFS_INVALID_OPERATION`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_REVISION_EXHAUSTED`, `VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`, `VFS_FEATURE_DISABLED` | 409 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
     | `NAMESPACE_ALREADY_EXISTS` | 409 | namespace idempotency receipt가 저장한 409를 같은 key에서 반환 | name/body를 고치려면 새 key | 없음 |
     | `MUTATION_IN_PROGRESS` | 409 | 같은 key로 재시도 | 해당 없음 | 있으면 대기 |
@@ -225,7 +225,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Namespace'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: 잘못된 name·idPrefix·encryptionPolicy·accessPolicy 또는 생성 설정
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -3071,8 +3074,7 @@ components:
       properties:
         id:
           type: string
-          maxLength: 45
-          pattern: '^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:[a-z][a-z0-9_-]{0,11}_)?[0-9a-f]{32})$'
+          format: uuid
         path:
           type: string
         name:
@@ -3139,12 +3141,14 @@ components:
       properties:
         id:
           type: string
-          format: uuid
-          description: 불변 식별자.
+          maxLength: 45
+          pattern: '^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:[a-z][a-z0-9_-]{0,11}_)?[0-9a-f]{32})$'
+          description: 기존 UUID 또는 소문자 prefix ID 형식의 불변 식별자.
         name:
           type: string
+          nullable: true
           pattern: '^[a-z0-9_-]{1,128}$'
-          description: 사람이 정하는 재사용 가능한 slug. 식별자가 아님.
+          description: 선택 가능한 사람이 정하는 재사용 가능한 slug. 없으면 null이며 식별자가 아니다.
         encryptionPolicy:
           type: string
           enum: [NONE, ENCRYPTED]
@@ -3192,7 +3196,6 @@ components:
           format: date-time
     CreateNamespaceRequest:
       type: object
-      required: [name]
       properties:
         idPrefix:
           type: string
@@ -3202,6 +3205,7 @@ components:
           description: Namespace ID에 붙일 선택 prefix. 생략, null, 빈 문자열은 prefix 없이 생성한다.
         name:
           type: string
+          nullable: true
           pattern: '^[a-z0-9_-]{1,128}$'
         encryptionPolicy:
           type: string

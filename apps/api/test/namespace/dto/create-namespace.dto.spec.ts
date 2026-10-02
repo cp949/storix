@@ -15,8 +15,8 @@ describe('parseCreateNamespaceRequest', () => {
     expect(result).toEqual({ name: 'acme-01', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' });
   });
 
-  it('name이 없으면 NamespaceInvalidNameError를 던진다', () => {
-    expect(() => parseCreateNamespaceRequest({})).toThrow(NamespaceInvalidNameError);
+  it.each([{}, { name: null }])('name이 생략되거나 null이면 이름 없는 요청으로 읽는다: %o', (value) => {
+    expect(parseCreateNamespaceRequest(value)).toMatchObject({ name: null });
   });
 
   it('name에 대문자가 있으면 거부한다', () => {

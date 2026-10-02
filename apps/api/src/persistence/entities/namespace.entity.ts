@@ -11,8 +11,8 @@ export class NamespaceEntity {
   @PrimaryColumn({ type: 'varchar', length: NAMESPACE_ID_COLUMN_LENGTH })
   id: string = randomUUID();
 
-  @Column({ type: 'varchar', length: 128 })
-  name: string;
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  name: string | null;
 
   @Column({
     name: 'encryption_policy',

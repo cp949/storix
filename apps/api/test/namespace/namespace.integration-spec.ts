@@ -102,7 +102,7 @@ describe('Namespace HTTP contract', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -122,7 +122,7 @@ describe('Namespace HTTP contract', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -136,7 +136,7 @@ describe('Namespace HTTP contract', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },
@@ -149,7 +149,7 @@ describe('Namespace HTTP contract', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
-        .send({ name })
+        .send(name === null ? {} : { name })
         .expect(201);
       return response.body.id as string;
     },

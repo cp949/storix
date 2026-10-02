@@ -14,7 +14,7 @@ const VALID_ENCRYPTION_POLICIES: readonly EncryptionPolicy[] = ['NONE', 'ENCRYPT
 const VALID_ACCESS_POLICIES: readonly AccessPolicy[] = ['PRIVATE', 'PUBLIC'];
 
 export interface CreateNamespaceRequest {
-  readonly name: string;
+  readonly name: string | null;
   readonly idPrefix?: string;
   readonly encryptionPolicy: EncryptionPolicy;
   readonly accessPolicy: AccessPolicy;
@@ -22,10 +22,17 @@ export interface CreateNamespaceRequest {
 }
 
 export function parseCreateNamespaceRequest(body: unknown): CreateNamespaceRequest {
-  const record = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new NamespaceInvalidNameError(undefined);
+  }
+  const record = body as Record<string, unknown>;
   const name = record.name;
 
-  if (typeof name !== 'string' || !NAMESPACE_NAME_PATTERN.test(name)) {
+  if (
+    name !== undefined &&
+    name !== null &&
+    (typeof name !== 'string' || !NAMESPACE_NAME_PATTERN.test(name))
+  ) {
     throw new NamespaceInvalidNameError(name);
   }
 
@@ -60,7 +67,7 @@ export function parseCreateNamespaceRequest(body: unknown): CreateNamespaceReque
   }
 
   return {
-    name,
+    name: (name as string | null | undefined) ?? null,
     ...(rawIdPrefix === undefined || rawIdPrefix === null || rawIdPrefix === ''
       ? {}
       : { idPrefix: rawIdPrefix }),

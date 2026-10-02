@@ -15,6 +15,7 @@ import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/17917
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
+import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -27,7 +28,7 @@ describe('Migration: InitSchema', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: ALL_MIGRATIONS.slice(0, -1),
+      migrations: ALL_MIGRATIONS.slice(0, -2),
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -1161,6 +1162,27 @@ describe('Migration: InitSchema', () => {
       await migration.down(runner);
       await migration.up(runner);
       expect(await runner.query('SELECT count(*)::text AS count FROM namespace')).toEqual(before);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('이름 없는 행이 있으면 down을 거부하고 제거한 뒤 가역 migration을 수행한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new MakeNamespaceNameNullable1791700000017();
+    const id = randomUUID();
+    try {
+      await migration.up(runner);
+      await runner.query('INSERT INTO namespace (id, name) VALUES ($1, NULL)', [id]);
+      await expect(migration.down(runner)).rejects.toThrow(
+        '이름 없는 namespace가 있어 migration down을 거부합니다',
+      );
+      await runner.query('DELETE FROM namespace WHERE id = $1', [id]);
+      await migration.down(runner);
+      await migration.up(runner);
+      const columns = await runner.query(`SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'namespace' AND column_name = 'name'`);
+      expect(columns).toEqual([{ is_nullable: 'YES' }]);
     } finally {
       await runner.release();
     }

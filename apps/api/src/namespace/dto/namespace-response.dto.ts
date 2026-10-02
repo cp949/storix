@@ -10,7 +10,7 @@ import type { NamespaceGlobalLimits } from '../namespace-global-limits.js';
 
 export interface NamespaceResponseDto {
   readonly id: string;
-  readonly name: string;
+  readonly name: string | null;
   readonly encryptionPolicy: EncryptionPolicy;
   readonly accessPolicy: AccessPolicy;
   readonly status: NamespaceStatus;

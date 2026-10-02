@@ -507,7 +507,7 @@ it('namespace capability 조회는 활성 ID, 인증, 오류 및 캐시 계약�
   expect(operation.responses['200'].description).toMatch(/의존/);
   expect(Object.keys(operation.responses)).toEqual(expect.arrayContaining(['401', '404', '500']));
   expect(operation.responses['401']).toEqual({ $ref: '#/components/responses/Unauthorized' });
-  expect(operation.responses['404'].description).toMatch(/UUID 형식 오류.*namespace 부재.*ACTIVE/);
+  expect(operation.responses['404'].description).toMatch(/Namespace ID 형식 오류.*namespace 부재.*ACTIVE/);
   expect(operation.responses['404'].content['application/json'].schema).toEqual({
     $ref: '#/components/schemas/ErrorResponse',
   });

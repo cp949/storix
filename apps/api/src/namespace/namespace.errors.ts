@@ -4,8 +4,8 @@ export class NamespaceAlreadyExistsError extends DomainError {
   readonly code = 'NAMESPACE_ALREADY_EXISTS';
   readonly status = 409;
 
-  constructor(readonly namespaceName: string) {
-    super(`이미 존재하는 namespace name: ${namespaceName}`);
+  constructor(readonly namespaceName: string | null) {
+    super(`이미 존재하는 namespace name: ${namespaceName ?? ''}`);
   }
 }
 

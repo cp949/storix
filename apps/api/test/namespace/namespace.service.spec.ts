@@ -336,20 +336,24 @@ describe('NamespaceService', () => {
 
   describe('findAll', () => {
     it('activate namespace 목록을 name/id 오름차순으로 응답 DTO 배열로 반환한다', async () => {
-      namespaceRepo.find.mockResolvedValue([
-        makeNamespaceEntity(),
-        makeNamespaceEntity({ id: 'ns-2', name: 'beta' }),
-      ]);
+      namespaceRepo.find
+        .mockResolvedValueOnce([makeNamespaceEntity(), makeNamespaceEntity({ id: 'ns-2', name: 'beta' })])
+        .mockResolvedValueOnce([makeNamespaceEntity({ id: 'ns-3', name: null })]);
 
       const result = await service.findAll();
 
-      expect(namespaceRepo.find).toHaveBeenCalledWith({
-        where: { status: 'ACTIVE' },
+      expect(namespaceRepo.find).toHaveBeenNthCalledWith(1, {
+        where: { status: 'ACTIVE', name: expect.anything() },
         order: { name: 'ASC', id: 'ASC' },
+      });
+      expect(namespaceRepo.find).toHaveBeenNthCalledWith(2, {
+        where: { status: 'ACTIVE', name: expect.anything() },
+        order: { id: 'ASC' },
       });
       expect(result).toEqual([
         expect.objectContaining({ id: 'ns-1' }),
         expect.objectContaining({ id: 'ns-2' }),
+        expect.objectContaining({ id: 'ns-3', name: null }),
       ]);
     });
   });

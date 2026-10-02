@@ -4,6 +4,7 @@ import { AddNamespaceEncryptedIndex1791700000013 } from './1791700000013-AddName
 import { AddIdempotencyKeyCreatedAtIndex1791700000014 } from './1791700000014-AddIdempotencyKeyCreatedAtIndex.js';
 import { AddNamespaceDeletionCompletedIndex1791700000015 } from './1791700000015-AddNamespaceDeletionCompletedIndex.js';
 import { ConvertNamespaceIdToString1791700000016 } from './1791700000016-ConvertNamespaceIdToString.js';
+import { MakeNamespaceNameNullable1791700000017 } from './1791700000017-MakeNamespaceNameNullable.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -63,4 +64,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddIdempotencyKeyCreatedAtIndex1791700000014,
   AddNamespaceDeletionCompletedIndex1791700000015,
   ConvertNamespaceIdToString1791700000016,
+  MakeNamespaceNameNullable1791700000017,
 ];

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryDeepPartialEntity, Repository } from 'typeorm';
+import { IsNull, Not, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { classifyPersistenceFailure } from '../persistence/persistence-failure.js';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
@@ -63,7 +63,7 @@ export class NamespaceService {
 
   async create(
     idempotencyKey: string,
-    name: string,
+    name: string | null,
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
     maxTotalLogicalBytes: string | null = null,
@@ -182,10 +182,15 @@ export class NamespaceService {
    * 개수에 비례한다. 새 호출자는 `findPage`를 쓴다.
    */
   async findAll(): Promise<NamespaceResponseDto[]> {
-    const namespaces = await this.namespaceRepo.find({
-      where: { status: 'ACTIVE' },
+    const named = await this.namespaceRepo.find({
+      where: { status: 'ACTIVE', name: Not(IsNull()) },
       order: { name: 'ASC', id: 'ASC' },
     });
+    const unnamed = await this.namespaceRepo.find({
+      where: { status: 'ACTIVE', name: IsNull() },
+      order: { id: 'ASC' },
+    });
+    const namespaces = [...named, ...unnamed];
 
     return (await withExactNamespaceBigints(this.namespaceRepo.manager, namespaces)).map((namespace) =>
       toNamespaceResponse(namespace, this.globalLimits),
@@ -200,15 +205,28 @@ export class NamespaceService {
   async findPage(rawLimit: string | undefined, rawCursor: string | undefined): Promise<NamespacePage> {
     const limit = resolveLimit(rawLimit);
     const after = rawCursor === undefined ? null : decodeNamespaceListCursor(rawCursor);
-    const query = this.namespaceRepo
+    const namedRemaining = after?.name === null ? 0 : limit + 1;
+    const namedQuery = this.namespaceRepo
       .createQueryBuilder('n')
-      .where("n.status = 'ACTIVE'")
+      .where("n.status = 'ACTIVE' AND n.name IS NOT NULL")
       .orderBy('n.name', 'ASC')
       .addOrderBy('n.id', 'ASC')
-      .limit(limit + 1);
-    if (after)
-      query.andWhere('(n.name, n.id) > (:afterName, :afterId)', { afterName: after.name, afterId: after.id });
-    const rows = await query.getMany();
+      .limit(namedRemaining);
+    if (after?.name !== undefined && after?.name !== null)
+      namedQuery.andWhere('(n.name, n.id) > (:afterName, :afterId)', {
+        afterName: after.name,
+        afterId: after.id,
+      });
+    const named = namedRemaining === 0 ? [] : await namedQuery.getMany();
+    const needsUnnamed = named.length <= limit;
+    const unnamedQuery = this.namespaceRepo
+      .createQueryBuilder('n')
+      .where("n.status = 'ACTIVE' AND n.name IS NULL")
+      .orderBy('n.id', 'ASC')
+      .limit(limit + 1 - named.length);
+    if (after && after.name === null) unnamedQuery.andWhere('n.id > :afterId', { afterId: after.id });
+    const unnamed = needsUnnamed ? await unnamedQuery.getMany() : [];
+    const rows = [...named, ...unnamed];
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const exact = await withExactNamespaceBigints(this.namespaceRepo.manager, page);

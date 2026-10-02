@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { QueryDeepPartialEntity } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { isNamespaceId } from '../common/namespace-id.js';
@@ -69,7 +70,7 @@ export class NamespaceQuotaService {
         requestHash,
         responseStatus: 200,
         responseBody: { ...body },
-      });
+      } as QueryDeepPartialEntity<IdempotencyKeyEntity>);
       return { status: 200, body };
     });
 

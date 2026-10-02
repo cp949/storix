@@ -31,7 +31,7 @@ export class NamespaceProvisioningRepository {
 
   async createWithRoot(
     id: string,
-    name: string,
+    name: string | null,
     encryptionPolicy: EncryptionPolicy = 'NONE',
     accessPolicy: AccessPolicy = 'PRIVATE',
     maxTotalLogicalBytes: string | null = null,
