@@ -11,6 +11,9 @@ import { BlobEntity } from './entities/blob.entity.js';
 import { VfsUploadSessionEntity, type VfsUploadSessionState } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 
+// staging_key 대조 질의 한 번에 넣는 key 수. SQLite 변수 제한을 피하려고 두 드라이버 모두 청크로 나눈다.
+const KEY_LOOKUP_CHUNK_SIZE = 1000;
+
 export interface UploadSessionCaps {
   readonly global: { readonly maxStagedBytes: bigint; readonly maxActiveSessions: number };
   readonly namespace: { readonly maxStagedBytes: bigint; readonly maxActiveSessions: number };
@@ -743,8 +746,9 @@ export class VfsUploadSessionRepository {
   async findExpiredOpenSessions(
     now: Date,
     batchSize = 500,
-  ): Promise<Array<Pick<VfsUploadSessionEntity, 'id' | 'namespaceId'>>> {
-    return this.dataSource
+    after: { expiresAt: string; id: string } | null = null,
+  ): Promise<Array<Pick<VfsUploadSessionEntity, 'id' | 'namespaceId' | 'expiresAt'>>> {
+    const query = this.dataSource
       .getRepository(VfsUploadSessionEntity)
       .createQueryBuilder('session')
       .select(['session.id', 'session.namespaceId', 'session.expiresAt'])
@@ -753,18 +757,39 @@ export class VfsUploadSessionRepository {
         now,
       })
       .orderBy('session.expires_at', 'ASC')
-      .take(batchSize)
-      .getMany();
+      .addOrderBy('session.id', 'ASC')
+      .take(batchSize);
+    if (after) {
+      query.andWhere(
+        '(session.expires_at > :afterAt OR (session.expires_at = :afterAt AND session.id > :afterId))',
+        { afterAt: new Date(after.expiresAt), afterId: after.id },
+      );
+    }
+    return query.getMany();
   }
 
+  /** `FINALIZING` lease가 만료된 session을 OPEN으로 되돌린다. 한 번에 최대 `batchSize`개이며 복구한 수를 돌려준다. */
   @classifyPersistenceOperation
-  async recoverStaleFinalizingLeases(now: Date): Promise<number> {
+  async recoverStaleFinalizingLeases(now: Date, batchSize = 500): Promise<number> {
+    const stale = await this.dataSource
+      .getRepository(VfsUploadSessionEntity)
+      .createQueryBuilder('session')
+      .select('session.id', 'id')
+      .where('session.state = :state AND session.lease_expires_at <= :now', { state: 'FINALIZING', now })
+      .orderBy('session.id', 'ASC')
+      .take(batchSize)
+      .getRawMany<{ id: string }>();
+    if (stale.length === 0) return 0;
     const result = await this.dataSource
       .getRepository(VfsUploadSessionEntity)
       .createQueryBuilder()
       .update()
       .set({ state: 'OPEN', leaseToken: null, leaseExpiresAt: null, updatedAt: now })
-      .where('state = :state AND lease_expires_at <= :now', { state: 'FINALIZING', now })
+      .where('id IN (:...ids) AND state = :state AND lease_expires_at <= :now', {
+        ids: stale.map((row) => row.id),
+        state: 'FINALIZING',
+        now,
+      })
       .execute();
     return result.affected ?? 0;
   }
@@ -859,19 +884,29 @@ export class VfsUploadSessionRepository {
   }
 
   @classifyPersistenceOperation
-  async findAllStagingKeys(): Promise<Set<string>> {
-    const parts = await this.dataSource
-      .getRepository(VfsUploadPartEntity)
-      .createQueryBuilder('part')
-      .select('part.stagingKey', 'stagingKey')
-      .where('part.state != :deleted', { deleted: 'DELETED' })
-      .getRawMany<{ stagingKey: string }>();
-    const old = await this.dataSource
-      .getRepository(VfsUploadStagingCleanupEntity)
-      .createQueryBuilder('old')
-      .select('old.stagingKey', 'stagingKey')
-      .getRawMany<{ stagingKey: string }>();
-    return new Set([...parts.map((part) => part.stagingKey), ...old.map((part) => part.stagingKey)]);
+  /**
+   * `keys` 중 아직 DB가 소유한 staging key만 돌려준다. 삭제되지 않은 part와 cleanup tombstone이 소유한다.
+   * 질의는 청크 단위로 나눈다.
+   */
+  async findKnownStagingKeys(keys: readonly string[]): Promise<Set<string>> {
+    const known = new Set<string>();
+    const sqlite = isSqliteDataSource(this.dataSource.options);
+    for (let i = 0; i < keys.length; i += KEY_LOOKUP_CHUNK_SIZE) {
+      const chunk = keys.slice(i, i + KEY_LOOKUP_CHUNK_SIZE);
+      const rows: { staging_key: string }[] = sqlite
+        ? await this.dataSource.query(
+            `SELECT staging_key FROM vfs_upload_part WHERE state != 'DELETED' AND staging_key IN (${chunk.map(() => '?').join(',')})
+             UNION SELECT staging_key FROM vfs_upload_staging_cleanup WHERE staging_key IN (${chunk.map(() => '?').join(',')})`,
+            [...chunk, ...chunk],
+          )
+        : await this.dataSource.query(
+            `SELECT staging_key FROM vfs_upload_part WHERE state != 'DELETED' AND staging_key = ANY($1::text[])
+             UNION SELECT staging_key FROM vfs_upload_staging_cleanup WHERE staging_key = ANY($1::text[])`,
+            [chunk],
+          );
+      for (const row of rows) known.add(row.staging_key);
+    }
+    return known;
   }
 
   @classifyPersistenceOperation

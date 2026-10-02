@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { databaseEnv } from '../infra/containers.ts';
 import { assertExperimentDatabase, templateDatabaseName } from '../infra/guard.ts';
 import { adminSql, createDatabase, execSql, queryOne } from '../infra/psql.ts';
-import { REPO_ROOT } from '../paths.ts';
+import path from 'node:path';
+import { API_DIR } from '../paths.ts';
 import { type DatasetSpec, expectedCounts, type ExpectedCounts } from './spec.ts';
 import { ANALYZE_SQL, COUNT_SQL, activeChunkSql, chunkRanges, deletedChunkSql } from './sql.ts';
 
@@ -11,15 +12,19 @@ const CHUNK_SIZE = 50_000;
 /** 빌드된 API의 migration을 `database`에 적용한다. */
 export function migrate(database: string): void {
   assertExperimentDatabase(database);
-  const result = spawnSync('pnpm', ['--filter', '@cp949/storix-api', 'run', 'migration:run:prod'], {
-    cwd: REPO_ROOT,
-    env: {
-      PATH: process.env.PATH ?? '',
-      HOME: process.env.HOME ?? '',
-      ...databaseEnv(database),
+  const result = spawnSync(
+    path.join(API_DIR, 'node_modules/.bin/typeorm'),
+    ['migration:run', '-d', 'dist/persistence/data-source.js'],
+    {
+      cwd: API_DIR,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '',
+        ...databaseEnv(database),
+      },
+      encoding: 'utf-8',
     },
-    encoding: 'utf-8',
-  });
+  );
   if (result.status !== 0) throw new Error(`migration 실패:\n${result.stdout}\n${result.stderr}`);
 }
 
@@ -30,7 +35,14 @@ export function readDatasetSpec(database: string): DatasetSpec | null {
     `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = '${database}'`,
   ).trim();
   // 필드가 추가되기 전에 적재한 템플릿은 새 필드가 없다. 추가된 필드의 기본값(비활성)으로 채운다.
-  return text === '' ? null : ({ blockedEvery: 0, ...JSON.parse(text) } as DatasetSpec);
+  if (text === '') return null;
+  const raw = JSON.parse(text) as Partial<DatasetSpec> & { namespaces: number };
+  return {
+    blockedEvery: 0,
+    staleObjects: Math.floor(raw.namespaces / 100),
+    staleStagingObjects: Math.floor(raw.namespaces / 1000),
+    ...raw,
+  } as DatasetSpec;
 }
 
 /** 적재된 행 수를 읽는다. */

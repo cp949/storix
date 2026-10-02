@@ -160,12 +160,13 @@ usage 잠금:
 ### GC 연결
 
 - `GcJob.run()`은 `collectOrphanBlobs` 앞에서 UPLOADS·METADATA, 뒤에서 OBJECTS 완료 판정을 실행한다.
-- 미완료 operation을 UUID keyset으로 순회한다. 앞 namespace의 보류가 뒤 작업을 막지 않는다.
+- 미완료 operation을 UUID keyset으로 100개씩 순회한다. 앞 namespace의 보류가 뒤 작업을 막지 않는다.
+- 순회는 GC 단계 예산(`STORIX_GC_MAX_ROWS_PER_STAGE`, 단위는 읽은 operation 수)을 쓴다. 소진되면 위치를 `gc_cursor`에 저장하고 다음 실행이 이어간다(`namespace-deletion-advance`, `namespace-deletion-settle`. api ADR-0033).
 - namespace별 정리 예외를 격리한다. 정합성 오류는 DATA_INCONSISTENT로 기록한다.
 - 기존 GC 단계 자체의 실패는 해당 단계의 오류 처리를 따른다.
 - 휴지통 보존 GC와 파일 만료 GC는 ACTIVE 후보만 선택한다.
 - 정리 진행에는 배포의 GC 예약이 필요하다. 완료 시간의 상한을 보장하지 않는다.
-- METADATA 단계는 namespace 하나의 live·snapshot·trash를 한 GC 실행 안에서 끝까지 제거한다. 실행당 배치 수 상한이 없다.
+- METADATA 단계는 namespace 하나의 live·snapshot·trash를 한 GC 실행 안에서 끝까지 제거한다. namespace 하나 안에서는 배치 수 상한이 없다.
 - 큰 namespace는 같은 실행에서 뒤 namespace의 정리를 그만큼 늦춘다. 배치마다 커밋하므로 중단 뒤 재시작은 안전하다. 지연 시간은 측정하지 않았다.
 - 상한을 두지 않은 이유: 실행 사이에 `STORIX_GC_MIN_INTERVAL`(기본 3600초) 간격이 있어, 상한은 큰 namespace의 완료를 실행 횟수만큼의 간격으로 늦춘다. 측정 없이 값을 정하지 않는다.
 

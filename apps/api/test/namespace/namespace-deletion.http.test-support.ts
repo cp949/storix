@@ -96,6 +96,13 @@ export function namespaceDeletionAccessSuite(sqlite: boolean): void {
           for (const key of objects.keys())
             if (key.startsWith(prefix)) yield { key, lastModified: new Date() };
         },
+        async listPage(prefix, { startAfter, limit }) {
+          const keys = [...objects.keys()]
+            .filter((key) => key.startsWith(prefix) && (startAfter === undefined || key > startAfter))
+            .sort();
+          const items = keys.slice(0, limit).map((key) => ({ key, lastModified: new Date() }));
+          return { items, nextAfter: keys.length > limit ? items[items.length - 1].key : null };
+        },
         async getPresignedUrl(key) {
           return `https://storage.example/${key}`;
         },

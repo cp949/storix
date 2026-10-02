@@ -35,6 +35,10 @@ class RecordingBlobStorage implements BlobStorage {
   }
 
   async *list(): AsyncIterable<BlobObjectInfo> {}
+
+  async listPage(): Promise<{ items: []; nextAfter: null }> {
+    return { items: [], nextAfter: null };
+  }
 }
 
 // storage.put()이 스트림을 전혀 소비하지 않고 즉시 실패하는 저장소.
@@ -55,6 +59,10 @@ class PromptlyFailingBlobStorage implements BlobStorage {
   async delete(_key: string): Promise<void> {}
 
   async *list(): AsyncIterable<BlobObjectInfo> {}
+
+  async listPage(): Promise<{ items: []; nextAfter: null }> {
+    return { items: [], nextAfter: null };
+  }
 }
 
 // 느린 소비 동작을 시뮬레이션하여 PassThrough 버퍼를 채우는 저장소
@@ -89,6 +97,10 @@ class SlowConsumingBlobStorage implements BlobStorage {
   async delete(_key: string): Promise<void> {}
 
   async *list(): AsyncIterable<BlobObjectInfo> {}
+
+  async listPage(): Promise<{ items: []; nextAfter: null }> {
+    return { items: [], nextAfter: null };
+  }
 }
 
 function* chunksOf(text: string, chunkSize: number): Generator<Buffer> {

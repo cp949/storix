@@ -49,6 +49,12 @@ export interface DatasetSpec {
   /** DELETED(정리 완료) namespace 수. ACTIVE namespace와 별도로 추가한다. */
   readonly deletedNamespaces: number;
 
+  /** DB가 모르는 `blobs/` object 수(60일 전 수정). GC가 회수해야 한다. 실제 object는 `seed-objects`가 만든다. */
+  readonly staleObjects: number;
+
+  /** DB가 모르는 `upload-staging/` object 수(60일 전 수정) */
+  readonly staleStagingObjects: number;
+
   /** FILE 크기(바이트). blob.size·vfs_node.size·namespace.live_file_byte_count가 이 값에서 나온다. */
   readonly fileSizeBytes: number;
 
@@ -76,6 +82,8 @@ export function defaultSpec(namespaces: number, refTime: string, seed = 'storix-
     orphanEvery: 500,
     orphanBlobsPerDue: 2,
     deletedNamespaces: Math.floor(namespaces / 10),
+    staleObjects: Math.floor(namespaces / 100),
+    staleStagingObjects: Math.floor(namespaces / 1000),
     fileSizeBytes: 1024,
     defaults: {
       maxFileSizeBytes: '5368709120',
@@ -172,6 +180,12 @@ export function validateSpec(spec: DatasetSpec): string[] {
     ['orphanEvery', spec.orphanEvery],
     ['orphanBlobsPerDue', spec.orphanBlobsPerDue],
   ];
+  for (const [name, value] of [
+    ['staleObjects', spec.staleObjects],
+    ['staleStagingObjects', spec.staleStagingObjects],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) errors.push(`${name}은 0 이상의 정수여야 한다`);
+  }
   for (const [name, value] of positive) {
     if (!Number.isSafeInteger(value) || value < 1) errors.push(`${name}은 1 이상의 정수여야 한다`);
   }

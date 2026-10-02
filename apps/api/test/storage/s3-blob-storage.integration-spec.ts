@@ -67,6 +67,32 @@ describe('S3BlobStorage', () => {
     }
   });
 
+  it('listPage는 key 오름차순으로 limit개씩 startAfter 뒤에서 이어 읽고 끝에서 nextAfter가 null이다', async () => {
+    const prefix = 'blobs/list-page/';
+    for (const name of ['d', 'a', 'c', 'e', 'b']) {
+      await storage.put(`${prefix}${name}`, Readable.from(Buffer.from(name)));
+    }
+    await storage.put('blobs/list-page-other/z', Readable.from(Buffer.from('z')));
+
+    const first = await storage.listPage(prefix, { limit: 2 });
+    expect(first.items.map((item) => item.key)).toEqual([`${prefix}a`, `${prefix}b`]);
+    expect(first.nextAfter).toBe(`${prefix}b`);
+
+    const second = await storage.listPage(prefix, { limit: 2, startAfter: first.nextAfter! });
+    expect(second.items.map((item) => item.key)).toEqual([`${prefix}c`, `${prefix}d`]);
+    expect(second.nextAfter).toBe(`${prefix}d`);
+
+    const last = await storage.listPage(prefix, { limit: 2, startAfter: second.nextAfter! });
+    expect(last.items.map((item) => item.key)).toEqual([`${prefix}e`]);
+    expect(last.nextAfter).toBeNull();
+    expect(last.items[0].lastModified).toBeInstanceOf(Date);
+  });
+
+  it('listPage는 limit이 SDK 한 page(1000)를 넘으면 거부한다', async () => {
+    await expect(storage.listPage('blobs/', { limit: 1001 })).rejects.toThrow(/limit/);
+    await expect(storage.listPage('blobs/', { limit: 0 })).rejects.toThrow(/limit/);
+  });
+
   it('0-byte content를 put하면 0-byte object가 생성된다', async () => {
     const key = 'blobs/ab/test-empty';
     await storage.put(key, Readable.from(Buffer.alloc(0)));

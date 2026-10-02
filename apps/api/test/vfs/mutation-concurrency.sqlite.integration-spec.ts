@@ -44,6 +44,10 @@ class SlowGetBlobStorage implements BlobStorage {
 
   async *list(): AsyncIterable<{ key: string; lastModified: Date }> {}
 
+  async listPage(): Promise<{ items: []; nextAfter: null }> {
+    return { items: [], nextAfter: null };
+  }
+
   async getPresignedUrl(): Promise<string> {
     throw new Error('not supported');
   }

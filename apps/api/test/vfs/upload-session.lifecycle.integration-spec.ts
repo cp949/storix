@@ -231,12 +231,12 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
     const gc = app.get(GcJob);
     await gc.run();
     expect((await repo.findForStatus(namespaceId, id))?.session.state).toBe('CANCELLED');
-    expect((await repo.findAllStagingKeys()).has(stagingKey)).toBe(true);
+    expect((await repo.findKnownStagingKeys([stagingKey])).has(stagingKey)).toBe(true);
     expect((await storage.get(orphanKey)).readable).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 1200));
     await gc.run();
-    expect((await repo.findAllStagingKeys()).has(stagingKey)).toBe(false);
-    expect((await repo.findAllStagingKeys()).has(orphanKey)).toBe(false);
+    expect((await repo.findKnownStagingKeys([stagingKey])).has(stagingKey)).toBe(false);
+    expect((await repo.findKnownStagingKeys([orphanKey])).has(orphanKey)).toBe(false);
     await expect(storage.get(orphanKey)).rejects.toThrow();
     deleteSpy.mockRestore();
   });

@@ -4,24 +4,43 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { seedTemplate } from './dataset/seed.ts';
+import { ensureObjects, removeAllObjects } from './dataset/objects.ts';
+import { readDatasetSpec, seedTemplate } from './dataset/seed.ts';
 import { applyOverrides, defaultSpec, validateSpec } from './dataset/spec.ts';
-import { ensurePostgres, ensureStorage, removeContainers } from './infra/containers.ts';
+import { STORAGE_BUCKET_DIR, ensurePostgres, ensureStorage, removeContainers } from './infra/containers.ts';
+import { templateDatabaseName } from './infra/guard.ts';
 import { verifyFidelity } from './fidelity.ts';
 import { measure, type MeasureOptions } from './measure/run.ts';
-import { RESULTS_DIR } from './paths.ts';
+import { OBJECTS_MARKER, RESULTS_DIR, WORK_DIR } from './paths.ts';
 import { renderReport, type ReportInput } from './report.ts';
 
 const USAGE = `사용법: pnpm scale <명령> [옵션]
   env up                          전용 PostgreSQL·VersityGW 컨테이너 기동
   env down [--volumes]            컨테이너 제거(--volumes면 seed 데이터까지 삭제)
   seed --scale N [--seed S] [--set 키=값 ...]  규모 N 템플릿 database 적재(변형은 seed 이름을 달리한다)
+  seed-objects --scale N [--seed S]  blob 행에 대응하는 실제 storage object를 만든다(GC 측정 전에 필요)
   verify-fidelity                 API 생성 표본과 SQL 적재 표본의 행 모양을 대조
   measure --scale N --label L     측정 실행. 옵션:
+      [--gc-env KEY=VALUE ...]  GC 프로세스에만 전달할 env(예: STORIX_GC_MAX_ROWS_PER_STAGE=10000000, NODE_OPTIONS=--max-old-space-size=128)
+      [--objects]  GC 단계에서 storage object를 복원하고 함께 측정한다
       [--phases startup,requests,list,gc] [--capability-namespaces K]
       [--requests R] [--concurrency C] [--lifecycle K] [--gc-timeout-min M] [--list-timeout-sec S]
   report [--label L]              저장된 결과 JSON을 표로 출력`;
+
+/** `--gc-env KEY=VALUE` 목록을 GC 프로세스 env로 바꾼다. `STORIX_`·`NODE_OPTIONS`만 허용한다. */
+export function parseEnvPairs(pairs: readonly string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const pair of pairs) {
+    const index = pair.indexOf('=');
+    const key = pair.slice(0, index);
+    if (index < 1 || !/^(STORIX_[A-Z0-9_]+|NODE_OPTIONS)$/.test(key))
+      throw new Error(`--gc-env는 STORIX_* 또는 NODE_OPTIONS만 받는다: ${pair}`);
+    env[key] = pair.slice(index + 1);
+  }
+  return env;
+}
 
 function intOption(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
@@ -46,6 +65,8 @@ async function main(): Promise<number> {
       lifecycle: { type: 'string' },
       'gc-timeout-min': { type: 'string' },
       'list-timeout-sec': { type: 'string' },
+      objects: { type: 'boolean', default: false },
+      'gc-env': { type: 'string', multiple: true },
     },
   });
   const [command, sub] = positionals;
@@ -75,6 +96,18 @@ async function main(): Promise<number> {
     console.log(`템플릿 database: ${database}`);
     return 0;
   }
+  if (command === 'seed-objects') {
+    ensureStorage();
+    const database = templateDatabaseName(Number(values.scale), values.seed);
+    const spec = readDatasetSpec(database);
+    if (spec === null) throw new Error(`template ${database}가 없다. 먼저 seed를 실행한다.`);
+    removeAllObjects(STORAGE_BUCKET_DIR);
+    const result = await ensureObjects(spec, STORAGE_BUCKET_DIR, (message) => console.log(message));
+    mkdirSync(WORK_DIR, { recursive: true });
+    writeFileSync(OBJECTS_MARKER, JSON.stringify({ template: database, refTime: spec.refTime }));
+    console.log(`object ${result.total}개 준비(새로 만든 ${result.created}개): ${STORAGE_BUCKET_DIR}`);
+    return 0;
+  }
   if (command === 'verify-fidelity') {
     const problems = await verifyFidelity((message) => console.log(message));
     if (problems.length > 0) {
@@ -99,6 +132,8 @@ async function main(): Promise<number> {
       },
       gcTimeoutMs: intOption(values['gc-timeout-min'], 120) * 60_000,
       listTimeoutMs: intOption(values['list-timeout-sec'], 600) * 1000,
+      objects: values.objects,
+      gcEnv: parseEnvPairs(values['gc-env'] ?? []),
       phases: values.phases === '' ? [] : values.phases.split(','),
     };
     await measure(options);

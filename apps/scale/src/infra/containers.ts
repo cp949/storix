@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { WORK_DIR } from '../paths.ts';
 import { run } from './exec.ts';
 import { POSTGRES_CONTAINER, STORAGE_CONTAINER, assertExperimentContainer } from './guard.ts';
 
@@ -8,6 +11,12 @@ export const PG_PASSWORD = 'storix';
 export const STORAGE_ACCESS_KEY = 'storix';
 export const STORAGE_SECRET_KEY = 'storix-secret';
 export const STORAGE_BUCKET = 'storix';
+
+/** VersityGW posix 백엔드의 데이터 디렉터리(호스트). bucket은 이 아래 최상위 디렉터리다. */
+export const STORAGE_DATA_DIR = path.join(WORK_DIR, 'vgw-data');
+
+/** bucket 디렉터리(호스트). 데이터셋의 object 파일을 직접 만들고 지운다. */
+export const STORAGE_BUCKET_DIR = path.join(STORAGE_DATA_DIR, STORAGE_BUCKET);
 
 /** 호스트에 공개하는 PostgreSQL 포트. `STORIX_SCALE_PG_PORT`로 바꾼다. */
 export function postgresPort(): number {
@@ -70,13 +79,15 @@ export function ensureStorage(): void {
     run('docker', ['start', STORAGE_CONTAINER]);
     return;
   }
+  // object 파일을 호스트에서 직접 만들 수 있도록 bind mount한다. bucket은 posix 백엔드의 최상위 디렉터리다.
+  mkdirSync(STORAGE_BUCKET_DIR, { recursive: true });
   run('docker', [
     'run',
     '-d',
     '--name',
     STORAGE_CONTAINER,
     '-v',
-    'storix-scale-vgwdata:/data',
+    `${STORAGE_DATA_DIR}:/data`,
     '-p',
     `127.0.0.1:${storagePort()}:7070`,
     '-e',
@@ -100,7 +111,7 @@ export function removeContainers(volumes: boolean): void {
     if (containerState(name) !== 'absent') run('docker', ['rm', '-f', name]);
   }
   if (volumes) {
-    for (const volume of ['storix-scale-pgdata', 'storix-scale-vgwdata']) {
+    for (const volume of ['storix-scale-pgdata']) {
       try {
         run('docker', ['volume', 'rm', volume]);
       } catch {

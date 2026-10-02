@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { activeNamespaceId, pickActiveNumbers } from '../dataset/ids.ts';
 import { migrate, readCounts, readDatasetSpec } from '../dataset/seed.ts';
+import { ensureObjects, expectedObjectCounts } from '../dataset/objects.ts';
 import { type DatasetSpec, expectedCounts } from '../dataset/spec.ts';
 import { ANALYZE_SQL } from '../dataset/sql.ts';
 import {
@@ -11,12 +12,13 @@ import {
   ensurePostgres,
   ensureStorage,
   POSTGRES_SETTINGS,
+  STORAGE_BUCKET_DIR,
   storageEnv,
 } from '../infra/containers.ts';
 import { run as exec } from '../infra/exec.ts';
 import { POSTGRES_CONTAINER, runDatabaseName, templateDatabaseName } from '../infra/guard.ts';
 import { cloneDatabase, dropDatabase, execSql } from '../infra/psql.ts';
-import { REPO_ROOT, RESULTS_DIR, WORK_DIR } from '../paths.ts';
+import { API_DIR, OBJECTS_MARKER, REPO_ROOT, RESULTS_DIR, WORK_DIR } from '../paths.ts';
 import {
   type DbCounters,
   diffCounters,
@@ -50,6 +52,11 @@ export interface MeasureOptions {
   /** 같은 데이터셋에 capability 설정으로 나열할 namespace 수. 0이면 설정 없이 기동한다. */
   readonly capabilityNamespaces: number;
   readonly workload: WorkloadOptions;
+  /** GC 단계 전에 storage object를 복원하고 측정에 포함한다(`seed-objects` 선행) */
+  readonly objects: boolean;
+
+  /** GC 프로세스에만 덧씌우는 env. 결과 JSON에 기록한다. */
+  readonly gcEnv: Readonly<Record<string, string>>;
   readonly gcTimeoutMs: number;
   readonly listTimeoutMs: number;
   /** 단계 이름 목록. 비면 전부 실행한다. */
@@ -116,13 +123,12 @@ function gitInfo(): { rev: string; dirty: boolean } {
 function environmentInfo(): Record<string, unknown> {
   return {
     node: process.version,
+    apiDir: API_DIR,
     postgres: exec('docker', ['exec', POSTGRES_CONTAINER, 'postgres', '--version']).trim(),
     postgresSettings: POSTGRES_SETTINGS,
     cpus: Number(exec('nproc', []).trim()),
     memTotalKb: Number(/MemTotal:\s+(\d+)/.exec(exec('cat', ['/proc/meminfo']))![1]),
     git: gitInfo(),
-    // 저장소에 실제 object를 만들지 않는다. S6의 storage 목록·삭제 I/O는 이 측정으로 검증되지 않는다.
-    storageObjects: '없음(DB 행만 적재)',
   };
 }
 
@@ -299,18 +305,33 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
 
     if (want('gc')) {
       console.log('GC 단계: 템플릿 복원');
+      let objectInfo: unknown = '없음(DB 행만 적재)';
+      if (options.objects) {
+        const marker = existsSync(OBJECTS_MARKER)
+          ? (JSON.parse(readFileSync(OBJECTS_MARKER, 'utf-8')) as { template?: string })
+          : null;
+        if (marker?.template !== template)
+          throw new Error(`storage object가 ${template}용이 아니다. seed-objects를 먼저 실행한다.`);
+        const restored = await ensureObjects(spec, STORAGE_BUCKET_DIR);
+        objectInfo = {
+          expected: expectedObjectCounts(spec),
+          restoredBeforeGc: restored.created,
+          total: restored.total,
+        };
+      }
+      phases['storage-objects'] = { ok: true, error: null, data: objectInfo };
       cloneDatabase(template, gcDb);
       migrate(gcDb);
       await execSql(gcDb, ANALYZE_SQL);
       phases.gc = await phase('gc', async () => {
         const before = await readDbCounters(gcDb);
         const run: GcRun = await runGc({
-          env: { ...apiEnv(gcDb), STORIX_GC_MIN_INTERVAL: '1' },
+          env: { ...apiEnv(gcDb), STORIX_GC_MIN_INTERVAL: '1', ...options.gcEnv },
           label: `${runId}`,
           timeoutMs: options.gcTimeoutMs,
         });
         const db: DbCounters = diffCounters(before, await readDbCounters(gcDb));
-        const data = { ...run, db };
+        const data = { ...run, gcEnv: options.gcEnv, db };
         if (run.timedOut || run.exitCode !== 0)
           throw new PhaseFailure(
             `GC 실패: exit ${run.exitCode}, timedOut ${run.timedOut}, wall ${Math.round(run.wallMs)}ms`,

@@ -5,13 +5,18 @@ import { jest } from '@jest/globals';
 import { DataSource, IsNull } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
+import { GcCursorRepository } from '../../src/persistence/gc-cursor.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js';
 import { VfsTrashEntity } from '../../src/persistence/entities/vfs-trash.entity.js';
 import { VfsTrashEntryEntity } from '../../src/persistence/entities/vfs-trash-entry.entity.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
-import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
+import {
+  type ExpiredFileBatch,
+  type FileExpiryCursor,
+  VfsFileExpiryRepository,
+} from '../../src/persistence/vfs-file-expiry.repository.js';
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { readDbNow } from '../../src/persistence/vfs-node.repository.helpers.js';
@@ -35,7 +40,9 @@ export interface GcJobTestContext {
 // 대해 반복한다 — 테스트 로직 중복 없이 드라이버별 실행만 분리한다.
 export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
   function makeConfig(gracePeriodSeconds: number): ConfigService {
-    return { get: () => String(gracePeriodSeconds) } as unknown as ConfigService;
+    return {
+      get: (key: string) => (key === 'STORIX_ORPHAN_GRACE_PERIOD' ? String(gracePeriodSeconds) : undefined),
+    } as unknown as ConfigService;
   }
 
   async function createBlob(referenceCount: number): Promise<BlobEntity> {
@@ -167,6 +174,23 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     return { namespaceId: namespace.id, rootId: root.id, ids };
   }
 
+  // 만료 삭제는 한 호출에 한 batch다. cursor를 이어 끝까지 돌려 합산한다.
+  async function drainExpiry(
+    fileExpiry: VfsFileExpiryRepository,
+    batchSize: number,
+  ): Promise<{ files: number; bytes: string }> {
+    let cursor: FileExpiryCursor | null = null;
+    let files = 0;
+    let bytes = 0n;
+    do {
+      const batch: ExpiredFileBatch = await fileExpiry.expireDue(batchSize, cursor);
+      files += batch.files;
+      bytes += BigInt(batch.bytes);
+      cursor = batch.next;
+    } while (cursor !== null);
+    return { files, bytes: bytes.toString() };
+  }
+
   async function makeOverdue(id: string, secondsAgo = 60): Promise<void> {
     const { dataSource } = getContext();
     const now = await readDbNow(dataSource.manager);
@@ -182,7 +206,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await makeOverdue(fixture.ids[1]);
     await dataSource.getRepository(VfsNodeEntity).update({ id: fixture.ids[1] }, { expiresAt: null });
 
-    expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+    expect(await drainExpiry(fileExpiry, 500)).toEqual({ files: 1, bytes: '7' });
     const remaining = await dataSource
       .getRepository(VfsNodeEntity)
       .findBy({ namespaceId: fixture.namespaceId, type: 'FILE' });
@@ -201,7 +225,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     const fixture = await createExpiringFixture(true, ['a']);
     await makeOverdue(fixture.ids[0]);
 
-    expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+    expect(await drainExpiry(fileExpiry, 500)).toEqual({ files: 1, bytes: '7' });
     const trash = await dataSource.getRepository(VfsTrashEntity).findBy({ namespaceId: fixture.namespaceId });
     expect(trash).toHaveLength(1);
     expect(trash[0].originalPath).toBe('/a');
@@ -220,7 +244,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
         return originalExpire(namespaceId, nodeId, cutoff);
       });
     try {
-      expect(await fileExpiry.expireDue(500)).toEqual({ files: 1, bytes: '7' });
+      expect(await drainExpiry(fileExpiry, 500)).toEqual({ files: 1, bytes: '7' });
     } finally {
       expire.mockRestore();
     }
@@ -273,7 +297,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
         return originalExpire(namespaceId, id, cutoff);
       });
     try {
-      expect(await fileExpiry.expireDue(2)).toEqual({ files: 4, bytes: '28' });
+      expect(await drainExpiry(fileExpiry, 2)).toEqual({ files: 4, bytes: '28' });
     } finally {
       expire.mockRestore();
     }
@@ -287,7 +311,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       .getRepository(NamespaceEntity)
       .update({ id: fixture.namespaceId }, { status: 'DELETING' });
 
-    expect(await fileExpiry.expireDue(500)).toEqual({ files: 0, bytes: '0' });
+    expect(await drainExpiry(fileExpiry, 500)).toEqual({ files: 0, bytes: '0' });
     expect(await dataSource.getRepository(VfsNodeEntity).findOneBy({ id: fixture.ids[0] })).not.toBeNull();
   });
 
@@ -539,4 +563,53 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
 
     await expect(storage.get(freshOrphanKey)).resolves.toBeDefined();
   });
+  it('storage page 한도를 넘는 미등록 object를 예산을 나눠 모두 회수하고 등록된 object는 보존한다', async () => {
+    const { dataSource, storage, blobRepository } = getContext();
+    const known = await createBlob(1);
+    const unknownKeys = Array.from({ length: 1100 }, () => `blobs/ab/orphan-${randomUUID()}`);
+    for (let start = 0; start < unknownKeys.length; start += 50) {
+      await Promise.all(
+        unknownKeys
+          .slice(start, start + 50)
+          .map((key) => storage.put(key, Readable.from(Buffer.from('orphan')))),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const config = {
+      get: (key: string) =>
+        key === 'STORIX_ORPHAN_GRACE_PERIOD'
+          ? '1'
+          : key === 'STORIX_GC_MAX_ROWS_PER_STAGE'
+            ? '500'
+            : undefined,
+    } as unknown as ConfigService;
+    const cursors = new GcCursorRepository(dataSource);
+    const job = new GcJob(
+      storage,
+      blobRepository,
+      config,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      cursors,
+    );
+
+    const first = await job.run();
+    expect(first.budgetExhaustedStages).toContain('orphan-objects-blobs');
+    expect(await cursors.read('orphan-objects-blobs')).not.toBeNull();
+
+    let deleted = first.deletedOrphanObjects;
+    for (let run = 0; run < 10 && (await cursors.read('orphan-objects-blobs')) !== null; run++) {
+      deleted += (await job.run()).deletedOrphanObjects;
+    }
+
+    expect(deleted).toBeGreaterThanOrEqual(unknownKeys.length);
+    for (const key of [unknownKeys[0], unknownKeys[549], unknownKeys[1099]])
+      await expect(storage.get(key)).rejects.toThrow();
+    await expect(storage.get(known.storageKey)).resolves.toBeDefined();
+    expect(await cursors.read('orphan-objects-blobs')).toBeNull();
+  }, 120000);
 }

@@ -134,4 +134,8 @@ class MemoryBlobStorage implements BlobStorage {
   }
 
   async *list(): AsyncIterable<BlobObjectInfo> {}
+
+  async listPage(): Promise<{ items: []; nextAfter: null }> {
+    return { items: [], nextAfter: null };
+  }
 }

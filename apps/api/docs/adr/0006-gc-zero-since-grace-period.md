@@ -13,8 +13,8 @@ GC job은 `reference_count=0`이고 `zero_since`가 grace period(`ORPHAN_GRACE_P
 (S3 DELETE 표준), 이 순서는 crash 후 재시작해도 안전하게 재시도된다: object만
 지워지고 metadata 삭제 전에 죽어도 다음 실행이 같은 row를 다시 골라 멱등하게
 끝낸다. metadata 없는 스토리지 object(실패·충돌한 업로드의 잔여물)도 같은 grace
-period를 적용해 회수한다 — `list()`가 반환하는 object의 lastModified와 DB에 존재하는
-전체 storage_key 집합을 대조해 찾아낸다.
+period를 적용해 회수한다 — storage가 돌려준 object의 lastModified와 DB에 존재하는
+storage_key를 대조해 찾아낸다. 대조는 storage page 단위로 한다(ADR-0033).
 
 Postgres row lock을 스토리지 I/O(네트워크 호출) 동안 붙들지 않기 위해, 후보 조회는 lock
 없이 수행하고 DB 삭제는 스토리지 삭제가 끝난 뒤 짧은 트랜잭션으로 일괄 수행한다.

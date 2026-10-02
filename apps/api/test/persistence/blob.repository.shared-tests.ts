@@ -53,7 +53,7 @@ export function runBlobRepositorySharedTests(getContext: () => BlobRepositoryTes
     });
   });
 
-  describe('findOrphanBlobs', () => {
+  describe('findOrphanBlobsPage', () => {
     it('grace period가 지난 reference_count=0 blob만 반환한다', async () => {
       const { repository, setZeroSinceSecondsAgo } = getContext();
       const stillReferenced = await createBlob(1);
@@ -64,12 +64,36 @@ export function runBlobRepositorySharedTests(getContext: () => BlobRepositoryTes
       await setZeroSinceSecondsAgo(eligible.id, 3600);
 
       const cutoff = new Date(Date.now() - 60_000);
-      const orphans = await repository.findOrphanBlobs(cutoff);
-      const orphanIds = orphans.map((row) => row.id);
+      const orphanIds = (await repository.findOrphanBlobsPage(cutoff, null, 1000)).map((row) => row.id);
 
       expect(orphanIds).toContain(eligible.id);
       expect(orphanIds).not.toContain(tooRecent.id);
       expect(orphanIds).not.toContain(stillReferenced.id);
+    });
+
+    it('(zero_since, id) 순서의 keyset으로 모든 후보를 한 번씩만 page 단위로 돌려준다', async () => {
+      const { repository, setZeroSinceSecondsAgo } = getContext();
+      const blobs = await Promise.all(Array.from({ length: 7 }, () => createBlob(0)));
+      // 3개는 같은 zero_since라 id가 tie-breaker가 된다.
+      for (const [index, blob] of blobs.entries())
+        await setZeroSinceSecondsAgo(blob.id, index < 3 ? 7200 : 7200 + index * 60);
+      const mine = new Set(blobs.map((blob) => blob.id));
+      const cutoff = new Date(Date.now() - 60_000);
+
+      const seen: string[] = [];
+      let cursor: { zeroSince: string; id: string } | null = null;
+      for (let guard = 0; guard < 100; guard++) {
+        const page = await repository.findOrphanBlobsPage(cutoff, cursor, 2);
+        if (page.length === 0) break;
+        expect(page.length).toBeLessThanOrEqual(2);
+        seen.push(...page.map((row) => row.id));
+        const last = page[page.length - 1];
+        cursor = { zeroSince: last.zeroSince, id: last.id };
+      }
+
+      const filtered = seen.filter((id) => mine.has(id));
+      expect(filtered).toHaveLength(7);
+      expect(new Set(seen).size).toBe(seen.length);
     });
   });
 
@@ -113,16 +137,34 @@ export function runBlobRepositorySharedTests(getContext: () => BlobRepositoryTes
     });
   });
 
-  describe('findAllStorageKeys', () => {
-    it('참조 여부와 무관하게 모든 blob의 storage_key를 반환한다', async () => {
+  describe('findKnownStorageKeys', () => {
+    it('참조 여부와 무관하게 DB에 있는 storage_key만 돌려준다', async () => {
       const { repository } = getContext();
       const referenced = await createBlob(1);
       const orphaned = await createBlob(0);
 
-      const keys = await repository.findAllStorageKeys();
+      const known = await repository.findKnownStorageKeys([
+        referenced.storageKey,
+        orphaned.storageKey,
+        'blobs/ab/not-in-db',
+      ]);
 
-      expect(keys.has(referenced.storageKey)).toBe(true);
-      expect(keys.has(orphaned.storageKey)).toBe(true);
+      expect(known).toEqual(new Set([referenced.storageKey, orphaned.storageKey]));
+    });
+
+    it('빈 목록은 빈 집합이다', async () => {
+      expect(await getContext().repository.findKnownStorageKeys([])).toEqual(new Set());
+    });
+
+    it('질의 청크 크기를 넘는 key 목록도 모두 대조한다', async () => {
+      const { repository } = getContext();
+      const blobs = await Promise.all(Array.from({ length: 3 }, () => createBlob(1)));
+      const filler = Array.from({ length: 1200 }, (_, i) => `blobs/zz/missing-${i}`);
+      const keys = [...filler.slice(0, 600), blobs[0].storageKey, ...filler.slice(600), blobs[1].storageKey];
+
+      const known = await repository.findKnownStorageKeys(keys);
+
+      expect(known).toEqual(new Set([blobs[0].storageKey, blobs[1].storageKey]));
     });
   });
 }

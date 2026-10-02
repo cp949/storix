@@ -147,6 +147,61 @@ describe('upload session repository (SQLite)', () => {
     ).toEqual([]);
   });
 
+  async function insertSessions(
+    rows: Array<{ id: string; state: string; expiresAt: string; leaseExpiresAt?: string }>,
+  ): Promise<void> {
+    for (const row of rows) {
+      await db.query(
+        `INSERT INTO vfs_upload_session
+        (id, namespace_id, scope, creation_key, fingerprint, target_path, size_bytes, mime_type,
+         condition_type, part_size_bytes, part_count, state, expires_at, max_expires_at, lease_expires_at,
+         created_at, updated_at)
+        VALUES (?, '${NAMESPACE}', 'scope', ?, '${'a'.repeat(64)}', '/file', 1, 'text/plain',
+          'ABSENT', 1, 1, ?, ?, '2099-01-01 00:00:00', ?, '2026-08-01 00:00:00', '2026-08-01 00:00:00')`,
+        [row.id, randomUUID(), row.state, row.expiresAt, row.leaseExpiresAt ?? null],
+      );
+    }
+  }
+
+  it('만료된 OPEN session을 (expires_at, id) keyset으로 batch마다 이어 읽는다', async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    await insertSessions([
+      { id: ids[0], state: 'OPEN', expiresAt: '2020-01-01 00:00:00.000' },
+      { id: ids[1], state: 'OPEN', expiresAt: '2020-01-02 00:00:00.000' },
+      { id: ids[2], state: 'OPEN', expiresAt: '2020-01-02 00:00:00.000' },
+    ]);
+    const now = new Date('2021-01-01T00:00:00Z');
+    const first = await repository.findExpiredOpenSessions(now, 2, null);
+    expect(first.map((row) => row.id)).toEqual([ids[0], [ids[1], ids[2]].sort()[0]]);
+    const last = first[first.length - 1];
+    const second = await repository.findExpiredOpenSessions(now, 2, {
+      expiresAt: last.expiresAt.toISOString(),
+      id: last.id,
+    });
+    expect(second.map((row) => row.id)).toEqual([[ids[1], ids[2]].sort()[1]]);
+  });
+
+  it('lease가 만료된 FINALIZING session은 batch 크기만큼씩 OPEN으로 되돌린다', async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    await insertSessions(
+      ids.map((id) => ({
+        id,
+        state: 'FINALIZING',
+        expiresAt: '2099-01-01 00:00:00',
+        leaseExpiresAt: '2020-01-01 00:00:00',
+      })),
+    );
+    const now = new Date('2021-01-01T00:00:00Z');
+    expect(await repository.recoverStaleFinalizingLeases(now, 2)).toBe(2);
+    expect(await repository.recoverStaleFinalizingLeases(now, 2)).toBe(1);
+    expect(await repository.recoverStaleFinalizingLeases(now, 2)).toBe(0);
+    const states = (await db.query(
+      `SELECT state FROM vfs_upload_session WHERE id IN (?, ?, ?)`,
+      ids,
+    )) as Array<{ state: string }>;
+    expect(states.every((row) => row.state === 'OPEN')).toBe(true);
+  });
+
   it('initializes namespace usage only after reading the global usage row', async () => {
     const queries: { sql: string; parameters: unknown }[] = [];
     db.setOptions({ logging: ['query'] });
@@ -244,7 +299,9 @@ describe('upload session repository (SQLite)', () => {
     expect((await repository.reservePart(id, 0, '4', 'upload-staging/blocked', caps)).kind).toBe(
       'in-progress',
     );
-    expect(await repository.findAllStagingKeys()).toContain(oldKey);
+    expect(await repository.findKnownStagingKeys([oldKey, 'upload-staging/unknown'])).toEqual(
+      new Set([oldKey]),
+    );
     // mark is called only after storage.delete(oldKey) has acknowledged completion.
     expect(await repository.markTombstoneDeleted(oldKey, null)).toBe(true);
     // Repeated GC deletes do not provide evidence that the old PUT has settled.

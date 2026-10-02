@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   paginateListObjectsV2,
   type S3Client,
@@ -8,7 +9,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'node:stream';
-import type { BlobObjectInfo, BlobRange, BlobStorage } from './blob-storage.js';
+import type { BlobObjectInfo, BlobPage, BlobPageOptions, BlobRange, BlobStorage } from './blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 import { StorageFailureError } from '../common/storage-failure.errors.js';
 import { classifyBlobFailure } from './storage-failure.js';
@@ -125,6 +126,31 @@ export class S3BlobStorage implements BlobStorage {
           yield { key: item.Key, lastModified: item.LastModified };
         }
       }
+    }
+  }
+
+  async listPage(prefix: string, options: BlobPageOptions): Promise<BlobPage> {
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 1000)
+      throw new Error('listPage limit은 1 이상 1000 이하의 정수여야 한다');
+    try {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          StartAfter: options.startAfter,
+          MaxKeys: options.limit,
+        }),
+      );
+      const items: BlobObjectInfo[] = [];
+      for (const item of response.Contents ?? []) {
+        if (item.Key && item.LastModified) items.push({ key: item.Key, lastModified: item.LastModified });
+      }
+      return {
+        items,
+        nextAfter: response.IsTruncated === true && items.length > 0 ? items[items.length - 1].key : null,
+      };
+    } catch (error) {
+      throw sdkFailure(error);
     }
   }
 

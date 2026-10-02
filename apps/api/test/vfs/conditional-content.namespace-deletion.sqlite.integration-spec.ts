@@ -167,7 +167,7 @@ describe('conditional content 삭제 중 claim 소실 (SQLite)', () => {
         new NamespaceDeletionCleanupRepository(db, nodes, blobs, uploads),
         uploads,
       );
-      expect(await cleanup.advance(new Date())).toEqual({ advanced: 1, completed: 0, failed: 0 });
+      expect(await cleanup.advance(new Date())).toMatchObject({ advanced: 1, completed: 0, failed: 0 });
       expect(
         await db.getRepository(NamespaceDeletionEntity).findOneByOrFail({ namespaceId: ns.id }),
       ).toMatchObject({
