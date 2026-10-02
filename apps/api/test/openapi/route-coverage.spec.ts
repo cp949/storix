@@ -15,6 +15,7 @@ import { UploadSessionController } from '../../src/vfs/upload-session.controller
 import { NamespaceController } from '../../src/namespace/namespace.controller.js';
 import { NamespaceQuotaController } from '../../src/namespace/namespace-quota.controller.js';
 import { NamespaceTrashPolicyController } from '../../src/namespace/namespace-trash-policy.controller.js';
+import { NamespaceSettingsController } from '../../src/namespace/namespace-settings.controller.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -95,6 +96,7 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
       ...controllerRoutes(NamespaceController),
       ...controllerRoutes(NamespaceQuotaController),
       ...controllerRoutes(NamespaceTrashPolicyController),
+      ...controllerRoutes(NamespaceSettingsController),
       ...controllerRoutes(NamespaceDeletionController),
       ...controllerRoutes(FsController),
       ...controllerRoutes(ChangeFeedController),

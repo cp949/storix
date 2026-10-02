@@ -101,6 +101,28 @@ export class NamespaceInvalidTrashPolicyError extends DomainError {
   }
 }
 
+export class NamespaceInvalidSettingsRequestError extends DomainError {
+  readonly code = 'NAMESPACE_INVALID_SETTINGS_REQUEST';
+  readonly status = 400;
+
+  constructor() {
+    super('namespace settings 요청은 지원 필드 하나 이상과 유효한 값을 포함해야 함');
+  }
+}
+
+export class NamespaceSettingExceedsCeilingError extends DomainError {
+  readonly code = 'NAMESPACE_SETTING_EXCEEDS_CEILING';
+  readonly status = 400;
+
+  constructor(
+    readonly field: string,
+    readonly value: string,
+    readonly ceiling: string,
+  ) {
+    super(`${field} 값 ${value}가 전역 ceiling ${ceiling}을 초과함`);
+  }
+}
+
 export class NamespaceQuotaLimitExceedsGlobalError extends DomainError {
   readonly code = 'NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL';
   readonly status = 400;

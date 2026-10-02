@@ -463,6 +463,55 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /api/v2/admin/namespaces/{namespaceId}/settings:
+    patch:
+      operationId: updateNamespaceSettings
+      summary: Namespace 설정 일괄 변경
+      description: 별도 관리자 인증과 `Idempotency-Key`가 필요하다. 지정한 필드만 원자적으로 변경하며 숫자 설정의 null은 기본값 상속을 뜻한다. 같은 키의 응답 재생은 30일간 보장한다.
+      security:
+        - AdminApiKeyAuth: []
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema: { type: string, maxLength: 45 }
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                maxTotalLogicalBytes: { type: string, nullable: true, pattern: '^[1-9][0-9]*$' }
+                maxFileSizeBytes: { type: string, nullable: true, pattern: '^[1-9][0-9]*$' }
+                maxFilesPerFolder: { type: string, nullable: true, pattern: '^[1-9][0-9]*$' }
+                maxNodes: { type: string, nullable: true, pattern: '^[1-9][0-9]*$' }
+                maxRetainedTrashBytes: { type: string, nullable: true, pattern: '^[1-9][0-9]*$' }
+                excludeTrashFromQuota: { type: boolean }
+                excludeSnapshotsFromQuota: { type: boolean }
+                trashEnabled: { type: boolean }
+      responses:
+        '200':
+          description: 변경 또는 동일 키 응답 재생
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Namespace' }
+        '400':
+          description: 잘못된 요청, Idempotency-Key 누락, 또는 설정 상한 초과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: 같은 key를 다른 요청에 재사용함 (`IDEMPOTENCY_KEY_REUSED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /api/v2/admin/namespaces/{namespaceId}/delete:
     post:
       operationId: acceptNamespaceDeletion

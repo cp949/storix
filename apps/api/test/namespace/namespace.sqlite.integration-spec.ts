@@ -15,6 +15,7 @@ import { registerNamespaceListPageTests } from './namespace-list.http.shared-tes
 import { registerNamespacePurgeHttpTests } from './namespace-purge.http.shared-tests.js';
 import { registerNamespaceReceiptRetentionTests } from './namespace-receipt-retention.http.shared-tests.js';
 import { registerNamespaceTrashPolicyHttpTests } from './namespace-trash-policy.http.shared-tests.js';
+import { registerNamespaceSettingsHttpTests } from './namespace-settings.http.shared-tests.js';
 
 type RowCount = { count: number };
 
@@ -109,6 +110,19 @@ describe('Namespace HTTP contract (SQLite)', () => {
         .post('/api/v2/namespaces')
         .set('Idempotency-Key', key)
         .send(name === null ? {} : { name })
+        .expect(201);
+      return response.body.id as string;
+    },
+  });
+
+  registerNamespaceSettingsHttpTests({
+    app: () => app,
+    adminKey: 'namespace-admin-secret',
+    createNamespace: async (name, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v2/namespaces')
+        .set('Idempotency-Key', key)
+        .send({ name })
         .expect(201);
       return response.body.id as string;
     },
