@@ -256,7 +256,18 @@ describe('Namespace HTTP contract', () => {
     expect(response.body.quota).toEqual({
       limitBytes: '53687091200',
       usedBytes: '0',
-      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      liveBytes: '0',
+      trashBytes: '0',
+      snapshotBytes: '0',
+      enforcedBytes: '0',
+      excludeTrash: false,
+      excludeSnapshots: false,
+      trash: {
+        enabled: false,
+        retainedNodeCount: 0,
+        maxRetainedNodes: 100000,
+        maxRetainedBytes: '53687091200',
+      },
     });
   });
 
@@ -270,7 +281,18 @@ describe('Namespace HTTP contract', () => {
     expect(created.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '0',
-      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      liveBytes: '0',
+      trashBytes: '0',
+      snapshotBytes: '0',
+      enforcedBytes: '0',
+      excludeTrash: false,
+      excludeSnapshots: false,
+      trash: {
+        enabled: false,
+        retainedNodeCount: 0,
+        maxRetainedNodes: 100000,
+        maxRetainedBytes: '1024',
+      },
     });
     const fetched = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${created.body.id}`)
@@ -278,7 +300,18 @@ describe('Namespace HTTP contract', () => {
     expect(fetched.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '0',
-      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      liveBytes: '0',
+      trashBytes: '0',
+      snapshotBytes: '0',
+      enforcedBytes: '0',
+      excludeTrash: false,
+      excludeSnapshots: false,
+      trash: {
+        enabled: false,
+        retainedNodeCount: 0,
+        maxRetainedNodes: 100000,
+        maxRetainedBytes: '1024',
+      },
     });
   });
 
@@ -297,11 +330,26 @@ describe('Namespace HTTP contract', () => {
     const fetched = await request(app.getHttpServer())
       .get(`/api/v2/namespaces/${created.body.id}`)
       .expect(200);
-    expect(fetched.body.limits).toEqual({ maxFileSizeBytes: '512' });
+    expect(fetched.body.limits).toEqual({
+      maxFileSizeBytes: '512',
+      maxFilesPerFolder: '10000',
+      maxNodes: '1000000',
+    });
     expect(fetched.body.quota).toEqual({
       limitBytes: '1024',
       usedBytes: '17',
-      trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
+      liveBytes: '12',
+      trashBytes: '0',
+      snapshotBytes: '5',
+      enforcedBytes: '17',
+      excludeTrash: false,
+      excludeSnapshots: false,
+      trash: {
+        enabled: false,
+        retainedNodeCount: 0,
+        maxRetainedNodes: 100000,
+        maxRetainedBytes: '1024',
+      },
     });
   });
 

@@ -12,6 +12,7 @@
 
 - 폴더별 직접 자식 `FILE` 수 상한을 추가했다. 기본값은 `STORIX_DEFAULT_MAX_FILES_PER_FOLDER=10000`이고 `STORIX_MAX_FILES_PER_FOLDER`가 전역 ceiling이다. migration `AddFolderFileCount1791700000018`은 기존 폴더 counter를 backfill하며, 초과 생성은 413 `VFS_FOLDER_FILE_LIMIT_EXCEEDED`로 거부한다.
 - namespace의 root를 제외한 live `FILE`·`DIRECTORY` 수 상한을 추가했다. 기본값은 `STORIX_DEFAULT_MAX_LIVE_NODES=1000000`이고 `STORIX_MAX_LIVE_NODES`가 전역 ceiling이다. migration `AddLiveNodeCount1791700000019`가 기존 수를 backfill하며, 상한 초과 생성은 413 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`로 거부한다. namespace 삭제 GC도 counter를 배치별 정산한다.
+- namespace quota에서 휴지통·snapshot 보존 바이트를 각각 제외하는 설정과, 제외된 휴지통의 보존 바이트 상한을 추가했다. migration `AddQuotaExclusion1791700000020`을 적용한다. `quota.usedBytes`는 총량을 유지하고, 응답에 `liveBytes`, `trashBytes`, `snapshotBytes`, `enforcedBytes`, 제외 플래그와 유효 상한을 추가했다. 휴지통 바이트 상한 초과는 413 `VFS_TRASH_LIMIT_EXCEEDED`다.
 
 - Namespace 생성에서 `name`을 생략하거나 `null`로 지정할 수 있다. 응답의 `name`은 항상 존재하며 미지정이면 `null`이다. 목록은 이름 있는 항목을 `(name, id)` 순으로 반환하고 이름 없는 항목을 뒤에 `id` 순으로 반환한다. migration `MakeNamespaceNameNullable1791700000017`이 nullable 제약과 이름 없는 항목용 인덱스를 추가한다. 이름 없는 행이 있으면 migration down을 거부한다.
 - Namespace ID 생성 시 선택 필드 `idPrefix`를 지원한다. ID는 기존 UUID 또는 `{prefix}_{UUID v4의 하이픈 제거 32자리}` 형식이다. capability·resumable upload namespace 설정도 새 형식을 받으며 대소문자·하이픈 변형은 별칭으로 취급하지 않는다. migration `ConvertNamespaceIdToString1791700000016`은 PostgreSQL namespace 참조 컬럼을 `varchar(45) COLLATE "C"`로 바꾸고 `vfs_upload_usage.id`를 `varchar(64)`로 확장한다. SQLite는 `varchar` 길이를 제한하지 않으므로 새 migration은 타입 변경이 없다. 새 ID가 만들어진 뒤 migration down은 UUID 형식이 아닌 참조가 남아 있으면 거부된다.

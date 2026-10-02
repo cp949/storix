@@ -411,7 +411,25 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'MakeNamespaceNameNullable1791700000017',
       'AddFolderFileCount1791700000018',
       'AddLiveNodeCount1791700000019',
+      'AddQuotaExclusion1791700000020',
     ]);
+  });
+
+  it('quota 제외 migration은 기존 namespace에서 제외를 비활성화하고 바이트 override를 비운다', async () => {
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
+      'quota-exclusion-defaults',
+    );
+    const [row] = await dataSource.query(
+      `SELECT exclude_trash_from_quota, exclude_snapshots_from_quota, max_retained_trash_bytes
+       FROM namespace WHERE id = ?`,
+      [namespace.id],
+    );
+    expect(row).toEqual({
+      exclude_trash_from_quota: 0,
+      exclude_snapshots_from_quota: 0,
+      max_retained_trash_bytes: null,
+    });
   });
 
   it('기존 트리의 폴더 FILE·namespace live node counter를 backfill한다', async () => {

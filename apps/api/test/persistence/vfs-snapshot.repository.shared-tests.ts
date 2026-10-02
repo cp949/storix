@@ -350,6 +350,25 @@ export function runSnapshotRepositoryTests(
       (await ds().getRepository(BlobEntity).findOneByOrFail({ id: live.node.blobId! })).referenceCount,
     ).toBe(1);
   });
+
+  it('snapshot quota 제외 시 snapshot 생성으로 quota가 초과되어도 manifest를 보존한다', async () => {
+    const { namespace, root } = await fixture();
+    await ds()
+      .getRepository(NamespaceEntity)
+      .update({ id: namespace.id }, { maxTotalLogicalBytes: '13', excludeSnapshotsFromQuota: true });
+    await file(namespace.id, root.id, 'a');
+
+    const snapshot = await capture(namespace.id, root.id, ['a']);
+
+    expect(snapshot.logicalBytes).toBe('7');
+    expect(await ds().getRepository(VfsSnapshotEntity).countBy({ namespaceId: namespace.id })).toBe(1);
+    expect(
+      String(
+        (await ds().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+          .retainedSnapshotByteCount,
+      ),
+    ).toBe('7');
+  });
   it('receipt-stage failure rolls back snapshot accounting, manifest and Blob pin', async () => {
     const { namespace, root } = await fixture();
     const { blob } = await file(namespace.id, root.id, 'a');

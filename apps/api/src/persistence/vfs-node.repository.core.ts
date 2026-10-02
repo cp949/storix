@@ -17,7 +17,7 @@ import { DEFAULT_MAX_LIVE_NODES, resolveCountLimits } from '../common/resource-l
 import {
   resolveGlobalTotalLogicalByteLimits,
   resolveNamespaceQuota,
-  resolveTotalLogicalBytes,
+  resolveEnforcedLogicalBytes,
 } from '../vfs/namespace-quota.js';
 import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
@@ -120,6 +120,10 @@ export class VfsNodeRepositoryCore {
           logicalByteDelta: 0n,
           liveNodeDelta: 0n,
           folderFileDeltas: new Map(),
+          trashByteDelta: 0n,
+          snapshotByteDelta: 0n,
+          defaultMaxTotalLogicalBytes: this.defaultMaxTotalLogicalBytes,
+          maxTotalLogicalBytes: this.maxTotalLogicalBytes,
         };
         let value: T;
         try {
@@ -311,7 +315,7 @@ export class VfsNodeRepositoryCore {
   }
 
   private async applyLogicalByteQuota(tx: MutationTx): Promise<void> {
-    if (tx.logicalByteDelta <= 0n && tx.liveFileByteDelta === 0n) return;
+    if (tx.liveFileByteDelta === 0n && tx.trashByteDelta === 0n && tx.snapshotByteDelta === 0n) return;
 
     const namespaces = tx.manager.getRepository(NamespaceEntity);
     const namespace = (
@@ -323,19 +327,25 @@ export class VfsNodeRepositoryCore {
     if (liveBytes < 0n || liveBytes > 9223372036854775807n) {
       throw new Error('namespace live file byte counter out of int64 range');
     }
-    const totalBytes = resolveTotalLogicalBytes(
+    const enforcedBytes = resolveEnforcedLogicalBytes(
       liveBytes.toString(),
-      retainedBytes.toString(),
       retainedTrashBytes.toString(),
+      retainedBytes.toString(),
+      namespace.excludeTrashFromQuota ?? false,
+      namespace.excludeSnapshotsFromQuota ?? false,
     );
+    const enforcedDelta =
+      tx.liveFileByteDelta +
+      ((namespace.excludeTrashFromQuota ?? false) ? 0n : tx.trashByteDelta) +
+      ((namespace.excludeSnapshotsFromQuota ?? false) ? 0n : tx.snapshotByteDelta);
 
-    if (tx.logicalByteDelta > 0n) {
+    if (enforcedDelta > 0n) {
       const limit = resolveNamespaceQuota(
         namespace.maxTotalLogicalBytes === null ? null : String(namespace.maxTotalLogicalBytes),
         this.maxTotalLogicalBytes,
         this.defaultMaxTotalLogicalBytes,
       );
-      if (totalBytes > limit) throw new VfsQuotaExceededError(limit.toString(), totalBytes.toString());
+      if (enforcedBytes > limit) throw new VfsQuotaExceededError(limit.toString(), enforcedBytes.toString());
     }
 
     if (tx.liveFileByteDelta !== 0n) {

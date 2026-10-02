@@ -948,7 +948,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '413':
-          description: 보존 휴지통 노드 한도 초과(`VFS_TRASH_LIMIT_EXCEEDED`). 삭제와 quota 등 전체 상태는 변경되지 않음
+          description: 보존 휴지통 노드 또는, quota에서 휴지통을 제외한 namespace의 보존 바이트 상한 초과(`VFS_TRASH_LIMIT_EXCEEDED`). 삭제와 quota 등 전체 상태는 변경되지 않음
           content:
             application/json:
               schema:
@@ -992,7 +992,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '413':
-          description: 삭제 대상 Node 수 상한(`VFS_DELETE_LIMIT_EXCEEDED`) 또는 namespace 휴지통 보존 node 수 상한(`VFS_TRASH_LIMIT_EXCEEDED`) 초과. 상태는 바뀌지 않는다.
+          description: 삭제 대상 Node 수 상한(`VFS_DELETE_LIMIT_EXCEEDED`) 또는 namespace 휴지통 node/바이트 상한(`VFS_TRASH_LIMIT_EXCEEDED`) 초과. 상태는 바뀌지 않는다.
           content:
             application/json:
               schema:
@@ -3162,15 +3162,34 @@ components:
           enum: [ACTIVE, DELETING, DELETED]
         limits:
           type: object
-          required: [maxFileSizeBytes]
+          required: [maxFileSizeBytes, maxFilesPerFolder, maxNodes]
           properties:
             maxFileSizeBytes:
               type: string
               pattern: '^[0-9]+$'
               description: namespace override가 있으면 전역 ceiling 이하 값, 없으면 전역 기본값을 적용한다. 바이트 단위 10진 문자열이다.
+            maxFilesPerFolder:
+              { type: string, pattern: '^[0-9]+$', description: 폴더 직접 자식 FILE 수의 유효 상한. }
+            maxNodes:
+              {
+                type: string,
+                pattern: '^[0-9]+$',
+                description: root를 제외한 namespace live node 수의 유효 상한.,
+              }
         quota:
           type: object
-          required: [limitBytes, usedBytes, trash]
+          required:
+            [
+              limitBytes,
+              usedBytes,
+              liveBytes,
+              trashBytes,
+              snapshotBytes,
+              enforcedBytes,
+              excludeTrash,
+              excludeSnapshots,
+              trash,
+            ]
           properties:
             limitBytes:
               type: string
@@ -3179,15 +3198,25 @@ components:
             usedBytes:
               type: string
               pattern: '^[0-9]+$'
-              description: live FILE, 보존 snapshot FILE entry, purge 전 휴지통 FILE entry의 논리 크기 합.
+              description: 검사 제외 여부와 무관하게 live FILE, 보존 snapshot FILE entry, purge 전 휴지통 FILE entry의 논리 크기 합.
+            liveBytes: { type: string, pattern: '^[0-9]+$' }
+            trashBytes: { type: string, pattern: '^[0-9]+$' }
+            snapshotBytes: { type: string, pattern: '^[0-9]+$' }
+            enforcedBytes:
+              type: string
+              pattern: '^[0-9]+$'
+              description: '`excludeTrash`·`excludeSnapshots` 설정을 반영한 quota 검사 대상 사용량.'
+            excludeTrash: { type: boolean, default: false }
+            excludeSnapshots: { type: boolean, default: false }
             trash:
               type: object
-              required: [enabled, retainedNodeCount, maxRetainedNodes]
+              required: [enabled, retainedNodeCount, maxRetainedNodes, maxRetainedBytes]
               properties:
                 enabled:
                   { type: boolean, description: 기본값은 false이며 namespace 관리자 정책으로 변경한다. }
                 retainedNodeCount: { type: integer, minimum: 0 }
                 maxRetainedNodes: { type: integer, minimum: 1, default: 100000 }
+                maxRetainedBytes: { type: string, pattern: '^[0-9]+$' }
         createdAt:
           type: string
           format: date-time

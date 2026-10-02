@@ -7,6 +7,7 @@ import { ConvertNamespaceIdToString1791700000016 } from './1791700000016-Convert
 import { MakeNamespaceNameNullable1791700000017 } from './1791700000017-MakeNamespaceNameNullable.js';
 import { AddFolderFileCount1791700000018 } from './1791700000018-AddFolderFileCount.js';
 import { AddLiveNodeCount1791700000019 } from './1791700000019-AddLiveNodeCount.js';
+import { AddQuotaExclusion1791700000020 } from './1791700000020-AddQuotaExclusion.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -69,4 +70,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   MakeNamespaceNameNullable1791700000017,
   AddFolderFileCount1791700000018,
   AddLiveNodeCount1791700000019,
+  AddQuotaExclusion1791700000020,
 ];

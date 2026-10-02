@@ -69,6 +69,10 @@ export interface MutationTx {
   liveFileByteDelta: bigint;
   logicalByteDelta: bigint;
   liveNodeDelta: bigint;
+  trashByteDelta: bigint;
+  snapshotByteDelta: bigint;
+  readonly defaultMaxTotalLogicalBytes: bigint;
+  readonly maxTotalLogicalBytes: bigint;
   readonly folderFileDeltas: Map<string, bigint>;
 }
 

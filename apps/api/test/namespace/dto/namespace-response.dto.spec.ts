@@ -2,6 +2,42 @@ import { NamespaceEntity } from '../../../src/persistence/entities/namespace.ent
 import { toNamespaceResponse } from '../../../src/namespace/dto/namespace-response.dto.js';
 
 describe('toNamespaceResponse', () => {
+  it('검사 제외 설정과 휴지통 보존 byte override를 응답한다', () => {
+    const entity = {
+      liveFileByteCount: '8',
+      retainedTrashByteCount: '20',
+      retainedSnapshotByteCount: '30',
+      maxTotalLogicalBytes: '40',
+      maxRetainedTrashBytes: '15',
+      excludeTrashFromQuota: true,
+      excludeSnapshotsFromQuota: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    } as NamespaceEntity;
+    const response = toNamespaceResponse(entity, {
+      defaultMaxFileSizeBytes: 64,
+      maxFileSizeBytes: 64,
+      defaultMaxTotalLogicalBytes: 50n,
+      maxTotalLogicalBytes: 50n,
+      maxRetainedTrashNodes: 100,
+      defaultMaxFilesPerFolder: 10,
+      maxFilesPerFolder: 10,
+      defaultMaxLiveNodes: 100,
+      maxLiveNodes: 100,
+    });
+
+    expect(response.quota).toMatchObject({
+      usedBytes: '58',
+      liveBytes: '8',
+      trashBytes: '20',
+      snapshotBytes: '30',
+      enforcedBytes: '8',
+      excludeTrash: true,
+      excludeSnapshots: true,
+      trash: { maxRetainedBytes: '15' },
+    });
+  });
+
   it('NamespaceEntity를 응답 DTO로 변환하고 날짜를 ISO 문자열로 직렬화한다', () => {
     const entity = {
       id: 'ns-1',
@@ -39,11 +75,22 @@ describe('toNamespaceResponse', () => {
       status: 'ACTIVE',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
-      limits: { maxFileSizeBytes: '5368709120' },
+      limits: { maxFileSizeBytes: '5368709120', maxFilesPerFolder: '10000', maxNodes: '1000000' },
       quota: {
         limitBytes: '20',
         usedBytes: '24',
-        trash: { enabled: false, retainedNodeCount: 3, maxRetainedNodes: 100000 },
+        liveBytes: '12',
+        trashBytes: '7',
+        snapshotBytes: '5',
+        enforcedBytes: '24',
+        excludeTrash: false,
+        excludeSnapshots: false,
+        trash: {
+          enabled: false,
+          retainedNodeCount: 3,
+          maxRetainedNodes: 100000,
+          maxRetainedBytes: '20',
+        },
       },
     });
   });
@@ -75,11 +122,26 @@ describe('toNamespaceResponse', () => {
         defaultMaxLiveNodes: 1000000,
         maxLiveNodes: 1000000,
       });
-      expect(response.limits).toEqual({ maxFileSizeBytes: expected });
+      expect(response.limits).toEqual({
+        maxFileSizeBytes: expected,
+        maxFilesPerFolder: '10000',
+        maxNodes: '1000000',
+      });
       expect(response.quota).toEqual({
         limitBytes: '20',
         usedBytes: '17',
-        trash: { enabled: false, retainedNodeCount: 0, maxRetainedNodes: 100000 },
+        liveBytes: '12',
+        trashBytes: '0',
+        snapshotBytes: '5',
+        enforcedBytes: '17',
+        excludeTrash: false,
+        excludeSnapshots: false,
+        trash: {
+          enabled: false,
+          retainedNodeCount: 0,
+          maxRetainedNodes: 100000,
+          maxRetainedBytes: '20',
+        },
       });
     },
   );
@@ -107,7 +169,7 @@ describe('toNamespaceResponse', () => {
           defaultMaxLiveNodes: 1000000,
           maxLiveNodes: 1000000,
         }).limits,
-      ).toEqual({ maxFileSizeBytes: '64' });
+      ).toEqual({ maxFileSizeBytes: '64', maxFilesPerFolder: '10000', maxNodes: '1000000' });
     } finally {
       if (previous === undefined) delete process.env.STORIX_MAX_FILE_SIZE_BYTES;
       else process.env.STORIX_MAX_FILE_SIZE_BYTES = previous;

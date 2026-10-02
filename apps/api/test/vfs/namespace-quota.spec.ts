@@ -2,10 +2,17 @@ import {
   assertNamespaceQuotaWithinGlobalLimit,
   resolveGlobalTotalLogicalByteLimit,
   resolveNamespaceQuota,
+  resolveEnforcedLogicalBytes,
   resolveTotalLogicalBytes,
 } from '../../src/vfs/namespace-quota.js';
 
 describe('namespace quota', () => {
+  it('휴지통·snapshot 제외 조합에 따라 검사 대상 사용량을 계산한다', () => {
+    expect(resolveEnforcedLogicalBytes('10', '20', '30', false, false)).toBe(60n);
+    expect(resolveEnforcedLogicalBytes('10', '20', '30', true, false)).toBe(40n);
+    expect(resolveEnforcedLogicalBytes('10', '20', '30', false, true)).toBe(30n);
+    expect(resolveEnforcedLogicalBytes('10', '20', '30', true, true)).toBe(10n);
+  });
   it('uses namespace override unless the service cap is lower', () => {
     expect(resolveNamespaceQuota('20', 30n)).toBe(20n);
     expect(resolveNamespaceQuota('40', 30n)).toBe(30n);

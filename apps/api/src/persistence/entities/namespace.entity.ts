@@ -86,6 +86,15 @@ export class NamespaceEntity {
   @Column({ name: 'max_live_nodes', type: 'bigint', nullable: true })
   maxLiveNodes: string | null;
 
+  @Column({ name: 'exclude_trash_from_quota', type: 'boolean', default: false })
+  excludeTrashFromQuota: boolean;
+
+  @Column({ name: 'exclude_snapshots_from_quota', type: 'boolean', default: false })
+  excludeSnapshotsFromQuota: boolean;
+
+  @Column({ name: 'max_retained_trash_bytes', type: 'bigint', nullable: true })
+  maxRetainedTrashBytes: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE })
   createdAt: Date;
 

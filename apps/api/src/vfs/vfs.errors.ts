@@ -230,8 +230,8 @@ export class VfsTrashLimitExceededError extends DomainError {
   readonly code = 'VFS_TRASH_LIMIT_EXCEEDED';
   readonly status = 413;
 
-  constructor(readonly maxNodes: number) {
-    super(`휴지통 보존 Node 수가 상한(${maxNodes})을 초과함`);
+  constructor(readonly maxNodes: number | string) {
+    super(`휴지통 보존 상한(${maxNodes})을 초과함`);
   }
 }
 

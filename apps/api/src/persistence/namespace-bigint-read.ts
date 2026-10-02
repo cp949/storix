@@ -13,6 +13,7 @@ interface ExactNamespaceCounters {
   maxFilesPerFolder: string | null;
   liveNodeCount: string;
   maxLiveNodes: string | null;
+  maxRetainedTrashBytes: string | null;
   liveFileByteCount: string;
   retainedSnapshotByteCount: string;
   retainedTrashByteCount: string;
@@ -40,6 +41,7 @@ export async function withExactNamespaceBigints(
     CAST(max_files_per_folder AS TEXT) AS "maxFilesPerFolder",
     CAST(live_node_count AS TEXT) AS "liveNodeCount",
     CAST(max_live_nodes AS TEXT) AS "maxLiveNodes",
+    CAST(max_retained_trash_bytes AS TEXT) AS "maxRetainedTrashBytes",
     CAST(live_file_byte_count AS TEXT) AS "liveFileByteCount",
     CAST(retained_snapshot_byte_count AS TEXT) AS "retainedSnapshotByteCount",
     CAST(retained_trash_byte_count AS TEXT) AS "retainedTrashByteCount",

@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { classifyPersistenceOperation } from './persistence-failure.js';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { resolveTrashRetentionNodeLimit } from '../vfs/trash-policy.js';
+import { resolveNamespaceQuota } from '../vfs/namespace-quota.js';
 import { snapshotPathKey } from '../vfs/snapshot-path.js';
 import { VfsTrashLimitExceededError } from '../vfs/vfs.errors.js';
 import { VfsTrashItemNotFoundError } from '../vfs/vfs.errors.js';
@@ -112,7 +113,9 @@ export class VfsTrashRepository {
       .getRepository(VfsTrashEntity)
       .delete({ id: item.trash.id, namespaceId: tx.namespaceId });
     if (deleted.affected !== 1) throw new Error('Trash item changed during mutation');
-    tx.logicalByteDelta -= BigInt(String(item.trash.logicalBytes));
+    const consumedBytes = BigInt(String(item.trash.logicalBytes));
+    tx.trashByteDelta -= consumedBytes;
+    tx.logicalByteDelta -= consumedBytes;
   }
 
   @classifyPersistenceOperation
@@ -132,16 +135,38 @@ export class VfsTrashRepository {
     const ph = new DialectPlaceholders(isSqliteDataSource(this.dataSource.options));
     const counters = (await tx.manager.query(
       `SELECT CAST(retained_trash_node_count AS TEXT) AS nodes,
-        CAST(retained_trash_byte_count AS TEXT) AS bytes
+        CAST(retained_trash_byte_count AS TEXT) AS bytes,
+        CAST(max_retained_trash_bytes AS TEXT) AS "maxRetainedTrashBytes",
+        CAST(max_total_logical_bytes AS TEXT) AS "maxTotalLogicalBytes",
+        exclude_trash_from_quota AS "excludeTrashFromQuota"
        FROM namespace WHERE id = ${ph.bind(tx.namespaceId)}`,
       ph.params,
-    )) as Array<{ nodes: string; bytes: string }>;
+    )) as Array<{
+      nodes: string;
+      bytes: string;
+      maxRetainedTrashBytes: string | null;
+      maxTotalLogicalBytes: string | null;
+      excludeTrashFromQuota: boolean | number;
+    }>;
     if (counters.length !== 1) throw new Error('Trash namespace missing');
     const limit = resolveTrashRetentionNodeLimit(process.env.STORIX_MAX_RETAINED_TRASH_NODES);
     const retained = BigInt(counters[0].nodes);
     const nextCount = retained + BigInt(rows.length);
     const nextBytes = BigInt(counters[0].bytes) + bytes;
     if (nextCount > BigInt(limit)) throw new VfsTrashLimitExceededError(limit);
+    if (Boolean(counters[0].excludeTrashFromQuota)) {
+      const quotaLimit = resolveNamespaceQuota(
+        counters[0].maxTotalLogicalBytes,
+        tx.maxTotalLogicalBytes,
+        tx.defaultMaxTotalLogicalBytes,
+      );
+      const trashByteLimit = counters[0].maxRetainedTrashBytes
+        ? BigInt(counters[0].maxRetainedTrashBytes) < tx.maxTotalLogicalBytes
+          ? BigInt(counters[0].maxRetainedTrashBytes)
+          : tx.maxTotalLogicalBytes
+        : quotaLimit;
+      if (nextBytes > trashByteLimit) throw new VfsTrashLimitExceededError(trashByteLimit.toString());
+    }
     if (nextBytes > MAX_INT64) throw new Error('namespace trash byte counter out of int64 range');
 
     const raw = (await tx.manager.query('SELECT CURRENT_TIMESTAMP AS now')) as Array<{ now: Date | string }>;
@@ -188,6 +213,7 @@ export class VfsTrashRepository {
         retainedTrashByteCount: nextBytes.toString(),
       },
     );
+    tx.trashByteDelta += bytes;
     tx.logicalByteDelta += bytes;
     return trash.id;
   }

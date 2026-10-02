@@ -30,10 +30,15 @@ Storage key나 object ID가 아니라 경로(path) 기준으로 동작한다.
 10진 문자열이다. namespace override가 없으면 `STORIX_DEFAULT_FILE_SIZE_BYTES`를
 사용한다. override가 있으면 `STORIX_MAX_FILE_SIZE_BYTES` ceiling으로 제한한다.
 기본값과 ceiling의 내장값은 `5368709120`(5 GiB)이다. 같은 응답의
-`quota.limitBytes`는 namespace의 적용 논리 저장량 상한, `quota.usedBytes`는
-live FILE과 보존 snapshot·휴지통 FILE entry의 논리 크기 합계다. 두 quota 값도 바이트
-단위 10진 문자열이다. namespace 생성·목록·quota 변경 응답도 같은 `limits`·`quota`
-필드를 포함한다. `quota.trash.retainedNodeCount`와 `maxRetainedNodes`는 현재 보존
+`quota.limitBytes`는 적용 상한이다. `quota.usedBytes`는 제외 여부와 관계없이 live FILE과
+보존 snapshot·휴지통 FILE entry 크기를 모두 더한 총량이다. `quota.enforcedBytes`는
+`excludeTrash`·`excludeSnapshots`를 반영한 quota 검사 대상이다. `liveBytes`, `trashBytes`,
+`snapshotBytes`는 구성요소별 사용량이며 바이트 단위 10진 문자열이다. namespace 생성·목록·관리
+응답에도 같은 `limits`·`quota` 필드가 포함된다. `limits.maxFilesPerFolder`와 `limits.maxNodes`는
+각 상한의 유효값이다. `quota.trash.maxRetainedBytes`는 휴지통 제외 시 적용하는 보존 바이트
+상한이며 기본값은 namespace quota다. 이 상한을 넘으면 휴지통이 켜진 namespace의 삭제가
+413 `VFS_TRASH_LIMIT_EXCEEDED`로 거부된다. 휴지통을 quota에 포함하면 별도 휴지통 바이트
+상한은 적용하지 않는다. `quota.trash.retainedNodeCount`와 `maxRetainedNodes`는 현재 보존
 node 수와 적용 상한이다.
 
 ### 삭제 복구

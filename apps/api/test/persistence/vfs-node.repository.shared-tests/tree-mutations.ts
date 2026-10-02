@@ -11,6 +11,7 @@ import {
   VfsInvalidPathError,
   VfsIsDirectoryError,
   VfsNodeNotFoundError,
+  VfsQuotaExceededError,
 } from '../../../src/vfs/vfs.errors.js';
 
 export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): void {
@@ -31,6 +32,118 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
   }
   describe('removeNode', () => {
     const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
+    it('quota에서 제외된 휴지통은 보존 바이트 ceiling을 넘으면 삭제를 거부한다', async () => {
+      const namespace = await createNamespace('trash-byte-limit-ns');
+      await getDs()
+        .getRepository(NamespaceEntity)
+        .update(
+          { id: namespace.id },
+          { trashEnabled: true, excludeTrashFromQuota: true, maxRetainedTrashBytes: '1' },
+        );
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['large.bin'],
+        false,
+        makeBlobData({ size: '2' }),
+        null,
+        false,
+      );
+
+      await expect(
+        getRepo().removeNode(namespace.id, root!.id, ['large.bin'], false, UNLIMITED),
+      ).rejects.toMatchObject({ code: 'VFS_TRASH_LIMIT_EXCEEDED', status: 413 });
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['large.bin'])).not.toBeNull();
+    });
+
+    it('휴지통 ceiling을 현재 보존량 아래로 낮춰도 보존 항목을 유지하고 quota 포함 전환은 cap을 해제한다', async () => {
+      const namespace = await createNamespace('trash-lowered-byte-limit-ns');
+      await getDs().getRepository(NamespaceEntity).update(
+        { id: namespace.id },
+        {
+          trashEnabled: true,
+          excludeTrashFromQuota: true,
+          maxTotalLogicalBytes: '20',
+          maxRetainedTrashBytes: '10',
+        },
+      );
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['first.bin'],
+        false,
+        makeBlobData({ size: '2' }),
+        null,
+        false,
+      );
+      await getRepo().removeNode(namespace.id, root!.id, ['first.bin'], false, UNLIMITED);
+      await getDs()
+        .getRepository(NamespaceEntity)
+        .update({ id: namespace.id }, { maxRetainedTrashBytes: '1' });
+      await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['second.bin'],
+        false,
+        makeBlobData({ size: '1' }),
+        null,
+        false,
+      );
+
+      await expect(
+        getRepo().removeNode(namespace.id, root!.id, ['second.bin'], false, UNLIMITED),
+      ).rejects.toMatchObject({ code: 'VFS_TRASH_LIMIT_EXCEEDED', status: 413 });
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['second.bin'])).not.toBeNull();
+
+      await getDs()
+        .getRepository(NamespaceEntity)
+        .update({ id: namespace.id }, { excludeTrashFromQuota: false });
+      await expect(
+        getRepo().removeNode(namespace.id, root!.id, ['second.bin'], false, UNLIMITED),
+      ).resolves.toBeTruthy();
+    });
+
+    it('quota 제외 휴지통 복원은 검사 대상 quota를 넘으면 rollback한다', async () => {
+      const namespace = await createNamespace('trash-excluded-restore-quota-ns');
+      await getDs()
+        .getRepository(NamespaceEntity)
+        .update(
+          { id: namespace.id },
+          { trashEnabled: true, excludeTrashFromQuota: true, maxTotalLogicalBytes: '7' },
+        );
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['saved.bin'],
+        false,
+        makeBlobData({ size: '7' }),
+        null,
+        false,
+      );
+      const trashId = await getRepo().removeNode(namespace.id, root!.id, ['saved.bin'], false, UNLIMITED);
+      await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['other.bin'],
+        false,
+        makeBlobData({ size: '1' }),
+        null,
+        false,
+      );
+
+      await expect(getRepo().restoreTrashItem(namespace.id, trashId!)).rejects.toThrow(VfsQuotaExceededError);
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['saved.bin'])).toBeNull();
+      expect(
+        String(
+          (await getDs().getRepository(NamespaceEntity).findOneByOrFail({ id: namespace.id }))
+            .retainedTrashNodeCount,
+        ),
+      ).toBe('1');
+    });
 
     it('FILE을 삭제하면 Blob 참조를 휴지통에 보존한다', async () => {
       const namespace = await createNamespace('rm-file-ns');

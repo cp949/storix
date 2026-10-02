@@ -65,6 +65,20 @@ export function resolveTotalLogicalBytes(
   return total;
 }
 
+export function resolveEnforcedLogicalBytes(
+  liveBytes: string,
+  trashBytes: string,
+  snapshotBytes: string,
+  excludeTrash: boolean,
+  excludeSnapshots: boolean,
+): bigint {
+  return (
+    BigInt(liveBytes) +
+    (excludeTrash ? 0n : BigInt(trashBytes)) +
+    (excludeSnapshots ? 0n : BigInt(snapshotBytes))
+  );
+}
+
 export function assertNamespaceQuotaWithinGlobalLimit(
   namespaceLimit: string | null,
   globalBytes: bigint,

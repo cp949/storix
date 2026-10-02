@@ -296,7 +296,11 @@ describe('NamespaceService', () => {
       const result = await service.findById('11111111-1111-1111-1111-111111111111');
 
       expect(result.id).toBe('11111111-1111-1111-1111-111111111111');
-      expect(result.limits).toEqual({ maxFileSizeBytes: '5368709120' });
+      expect(result.limits).toEqual({
+        maxFileSizeBytes: '5368709120',
+        maxFilesPerFolder: '10000',
+        maxNodes: '1000000',
+      });
     });
 
     it('응답 파일 한도는 ConfigService의 STORIX_MAX_FILE_SIZE_BYTES를 사용한다', async () => {
@@ -313,7 +317,11 @@ describe('NamespaceService', () => {
 
       const result = await service.findById('11111111-1111-1111-1111-111111111111');
 
-      expect(result.limits).toEqual({ maxFileSizeBytes: '4096' });
+      expect(result.limits).toEqual({
+        maxFileSizeBytes: '4096',
+        maxFilesPerFolder: '10000',
+        maxNodes: '1000000',
+      });
     });
 
     it('응답 quota 상한은 ConfigService의 STORIX_MAX_TOTAL_LOGICAL_BYTES를 사용한다', async () => {
