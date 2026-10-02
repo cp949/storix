@@ -27,7 +27,7 @@ x-postgres-deps: &postgres-deps
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${STORIX_DB_USERNAME:-storix}
       POSTGRES_PASSWORD: ${STORIX_DB_PASSWORD:-storix}
