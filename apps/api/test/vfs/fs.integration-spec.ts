@@ -3,6 +3,7 @@ import { createFsHttpFixture } from './fs-http-fixture.test-support.js';
 import { registerFsPrerequisiteContract } from './fs-prerequisite.test-support.js';
 import { registerFsFileSnapshotContract } from './fs-file-snapshot.test-support.js';
 import { registerFsMutationReceiptContract } from './fs-mutation-receipt.test-support.js';
+import { registerFsCounterHttpContract } from './fs-counter-http.test-support.js';
 import { registerFsConditionalContentContract } from './fs-conditional-content.test-support.js';
 import { registerFsErrorReceiptContract } from './fs-error-receipt.test-support.js';
 import { registerFsRevisionReadContract } from './fs-revision-read.test-support.js';
@@ -20,6 +21,11 @@ describe('Fs HTTP contract', () => {
   registerFsPrerequisiteContract(ctx);
   registerFsFileSnapshotContract(ctx);
   registerFsMutationReceiptContract(ctx);
+  registerFsCounterHttpContract({
+    server: () => ctx.httpServer,
+    dataSource: () => ctx.migrationDataSource,
+    createNamespace: ctx.createNamespace,
+  });
   registerFsConditionalContentContract(ctx);
   registerFsErrorReceiptContract(ctx);
   registerFsRevisionReadContract(ctx);

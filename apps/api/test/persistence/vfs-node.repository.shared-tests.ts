@@ -9,6 +9,7 @@ import { runRepositoryReadsTests } from './vfs-node.repository.shared-tests/repo
 import { runFileMutationsTests } from './vfs-node.repository.shared-tests/file-mutations.js';
 import { runTreeMutationsTests } from './vfs-node.repository.shared-tests/tree-mutations.js';
 import { runFileExpiryTests } from './vfs-node.repository.shared-tests/file-expiry.js';
+import { runCounterMatrixTests } from './vfs-node.repository.shared-tests/counter-matrix.js';
 import { runMimeTypeUpdateTests } from './vfs-node.repository.shared-tests/mimetype-update.js';
 
 // Postgres/SQLite 공용 테스트 진입점. 드라이버별 실행 파일이 동일한 suite들을 등록한다.
@@ -22,4 +23,5 @@ export function runVfsNodeRepositorySharedTests(getContext: () => VfsNodeReposit
   runTreeMutationsTests(helpers);
   runFileExpiryTests(helpers);
   runMimeTypeUpdateTests(helpers);
+  runCounterMatrixTests(helpers);
 }

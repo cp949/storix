@@ -12,6 +12,7 @@ import { VfsUploadUsageEntity } from '../../src/persistence/entities/vfs-upload-
 import { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
+import { expectCountersMatchRows } from '../persistence/vfs-counter-invariants.js';
 import { UploadSessionFinalizeService } from '../../src/vfs/upload-session-finalize.service.js';
 
 export interface FinalizeContext {
@@ -173,6 +174,59 @@ export function registerFinalizeTests(context: FinalizeContext): void {
       (await context.app().get(DataSource).getRepository(VfsUploadSessionEntity).findOneByOrFail({ id }))
         .state,
     ).toBe('OPEN');
+  });
+
+  it('새 FILE 완료만 폴더 FILE 수와 live node 수를 올리고 교체·재생·상한 초과 실패는 올리지 않는다', async () => {
+    const db = context.app().get(DataSource);
+    const root = `/api/v2/namespaces/${context.namespace()}/fs`;
+    await auth(api().post(`${root}/mkdir`))
+      .send({ path: '/final-counter', parents: false })
+      .expect(201);
+    await expectCountersMatchRows(db, context.namespace());
+    const folder = () =>
+      db.getRepository(VfsNodeEntity).findOneByOrFail({
+        namespaceId: context.namespace(),
+        name: 'final-counter',
+      });
+    const liveNodes = async () =>
+      String(
+        (await db.getRepository(NamespaceEntity).findOneByOrFail({ id: context.namespace() })).liveNodeCount,
+      );
+    const nodesBefore = Number(await liveNodes());
+    await db.getRepository(NamespaceEntity).update({ id: context.namespace() }, { maxFilesPerFolder: '1' });
+    try {
+      const first = await create('/final-counter/first.bin', '2');
+      await put(first, 0, 'ab');
+      const created = await complete(first).expect(201);
+      await complete(first).expect(201);
+      expect(String((await folder()).childFileCount)).toBe('1');
+      expect(await liveNodes()).toBe(String(nodesBefore + 1));
+      await expectCountersMatchRows(db, context.namespace());
+
+      const replace = await create('/final-counter/first.bin', '3', context.namespace(), {
+        ifRevision: created.body.resource.revision,
+      });
+      await put(replace, 0, 'abc');
+      await complete(replace).expect(200);
+      expect(String((await folder()).childFileCount)).toBe('1');
+      expect(await liveNodes()).toBe(String(nodesBefore + 1));
+      await expectCountersMatchRows(db, context.namespace());
+
+      const second = await create('/final-counter/second.bin', '1');
+      await put(second, 0, 'z');
+      const rejected = await complete(second).expect(413);
+      expect(rejected.body.code).toBe('VFS_FOLDER_FILE_LIMIT_EXCEEDED');
+      expect((await db.getRepository(VfsUploadSessionEntity).findOneByOrFail({ id: second })).state).toBe(
+        'OPEN',
+      );
+      expect(String((await folder()).childFileCount)).toBe('1');
+      expect(await liveNodes()).toBe(String(nodesBefore + 1));
+      await expectCountersMatchRows(db, context.namespace());
+    } finally {
+      await db
+        .getRepository(NamespaceEntity)
+        .update({ id: context.namespace() }, { maxFilesPerFolder: null });
+    }
   });
 
   it('rolls back quota rejection without a Node or referenced Blob', async () => {

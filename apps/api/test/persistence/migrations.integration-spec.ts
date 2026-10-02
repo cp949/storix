@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { DataSource, QueryDeepPartialEntity } from 'typeorm';
+import { DataSource, IsNull, QueryDeepPartialEntity } from 'typeorm';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
@@ -11,6 +11,9 @@ import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
+import { AddFolderFileCount1791700000018 } from '../../src/persistence/migrations/1791700000018-AddFolderFileCount.js';
+import { AddLiveNodeCount1791700000019 } from '../../src/persistence/migrations/1791700000019-AddLiveNodeCount.js';
+import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
@@ -142,6 +145,67 @@ describe('Migration: InitSchema', () => {
       await migration.up(runner);
       expect(await runner.hasTable('gc_cursor')).toBe(true);
     } finally {
+      await runner.release();
+    }
+  });
+
+  it('기존 트리의 폴더 FILE·namespace live node counter를 backfill한다', async () => {
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
+      `counter-backfill-${randomUUID()}`,
+    );
+    const root = await dataSource.getRepository(VfsNodeEntity).findOneByOrFail({
+      namespaceId: namespace.id,
+      parentId: IsNull(),
+    });
+    const folderId = randomUUID();
+    const blobId = randomUUID();
+    const folderMigration = new AddFolderFileCount1791700000018();
+    const nodeMigration = new AddLiveNodeCount1791700000019();
+    const runner = dataSource.createQueryRunner();
+    try {
+      await nodeMigration.down(runner);
+      await folderMigration.down(runner);
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name) VALUES ($1, $2, $3, 'DIRECTORY', 'dir')`,
+        [folderId, namespace.id, root.id],
+      );
+      await runner.query(
+        `INSERT INTO blob (id, namespace_id, storage_key, size, mime_type, sha256, reference_count)
+         VALUES ($1, $2, $3, 0, 'application/octet-stream', $4, 1)`,
+        [blobId, namespace.id, `backfill/${blobId}`, '0'.repeat(64)],
+      );
+      for (const [parentId, name] of [
+        [folderId, 'in-dir'],
+        [root.id, 'in-root'],
+      ]) {
+        await runner.query(
+          `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name, blob_id, size)
+           VALUES ($1, $2, $3, 'FILE', $4, $5, 0)`,
+          [randomUUID(), namespace.id, parentId, name, blobId],
+        );
+      }
+      await folderMigration.up(runner);
+      await nodeMigration.up(runner);
+      const rows = await runner.query(
+        'SELECT id, child_file_count FROM vfs_node WHERE namespace_id = $1 AND type = $2',
+        [namespace.id, 'DIRECTORY'],
+      );
+      expect(
+        Object.fromEntries(
+          rows.map((row: { id: string; child_file_count: string }) => [row.id, row.child_file_count]),
+        ),
+      ).toEqual({
+        [root.id]: '1',
+        [folderId]: '1',
+      });
+      const [stored] = await runner.query('SELECT live_node_count FROM namespace WHERE id = $1', [
+        namespace.id,
+      ]);
+      expect(String(stored.live_node_count)).toBe('3');
+    } finally {
+      await nodeMigration.up(runner).catch(() => undefined);
+      await folderMigration.up(runner).catch(() => undefined);
       await runner.release();
     }
   });

@@ -17,6 +17,7 @@ import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity
 import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
+import { registerFsCounterHttpContract } from './fs-counter-http.test-support.js';
 import { snapshotPost } from './vfs-snapshot-tree.test-support.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
 
@@ -128,6 +129,12 @@ describe('SQLite 동시 조건부 mutation HTTP', () => {
       .set('Content-Type', 'application/json')
       .send(JSON.stringify({ kind: 'mkdir', path, ifAbsent: true }));
   }
+
+  registerFsCounterHttpContract({
+    server: () => app.getHttpServer(),
+    dataSource: () => app.get(DataSource),
+    createNamespace,
+  });
 
   it('서로 다른 경로를 동시에 mkdir하면 전부 성공하고 전부 저장된다', async () => {
     const base = `/api/v2/namespaces/${await createNamespace('concurrent-distinct')}/fs`;
