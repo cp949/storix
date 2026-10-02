@@ -1,11 +1,12 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { namespaceIdSqlType } from './namespace-id-sql-type.js';
 
 export class AddVfsChangeFeed1791700000006 implements MigrationInterface {
   name = 'AddVfsChangeFeed1791700000006';
 
   async up(runner: QueryRunner): Promise<void> {
     const sqlite = runner.connection.options.type === 'better-sqlite3';
-    const uuid = sqlite ? 'varchar(36)' : 'uuid';
+    const uuid = await namespaceIdSqlType(runner);
     const time = sqlite ? 'datetime' : 'timestamptz';
     await runner.query(`CREATE TABLE "vfs_change_feed_state" (
       "namespace_id" ${uuid} PRIMARY KEY REFERENCES "namespace"("id") ON DELETE CASCADE,

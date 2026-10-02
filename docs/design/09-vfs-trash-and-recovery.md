@@ -29,3 +29,5 @@ OFF 전환은 이미 만들어진 trash item을 제거하거나 숨기지 않는
 삭제는 change feed에 `deleted`, 복구는 `created` net 이벤트를 남긴다. 목록과 purge는 파일 변경 이벤트를 만들지 않는다. Snapshot은 원본 삭제·복구·purge와 독립적으로 유지된다. 조건부 `kind: delete` mutation 및 휴지통 restore·purge의 성공과 결정적 실패 receipt는 namespace·scope·key·요청 fingerprint에 묶여 30일간 재생된다. Legacy `/fs/rm`과 `/fs/rmdir`는 204와 `X-Trash-Id`를 반환하며 mutation receipt를 만들지 않는다. 감사 기록에는 대상 `trash_id`를 남긴다.
 
 로컬 PostgreSQL과 SQLite 자동 검증은 코드 경계의 근거다. 운영 DB migration, 실제 백업 복원, 외부 consumer 동작은 별도 검증 대상이다.
+
+휴지통은 namespace별 `trashEnabled` 정책으로 새 삭제의 보존 여부를 결정한다. 비활성화해도 기존 retained 항목은 목록·복구·purge가 가능하다. 휴지통 quota 제외 여부와 retained byte cap은 namespace settings에서 관리한다. 기존 보존량보다 cap을 낮춰도 기존 항목을 지우지 않는다.

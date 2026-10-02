@@ -28,7 +28,7 @@ describe('Migration: InitSchema', () => {
       url: container.getConnectionUri(),
       synchronize: false,
       entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity, AuditLogEntity],
-      migrations: ALL_MIGRATIONS.slice(0, -2),
+      migrations: ALL_MIGRATIONS,
     });
     await dataSource.initialize();
     await dataSource.runMigrations();
@@ -346,7 +346,7 @@ describe('Migration: InitSchema', () => {
           expect.objectContaining({
             table_name: 'vfs_change_feed_state',
             column_name: 'namespace_id',
-            data_type: 'uuid',
+            data_type: 'character varying',
           }),
           expect.objectContaining({
             table_name: 'vfs_change_feed_state',
@@ -463,7 +463,7 @@ describe('Migration: InitSchema', () => {
           expect.objectContaining({
             table_name: 'vfs_snapshot',
             column_name: 'namespace_id',
-            data_type: 'uuid',
+            data_type: 'character varying',
           }),
           expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'kind' }),
           expect.objectContaining({ table_name: 'vfs_snapshot', column_name: 'source_path' }),
@@ -489,7 +489,7 @@ describe('Migration: InitSchema', () => {
           expect.objectContaining({
             table_name: 'vfs_snapshot_entry',
             column_name: 'namespace_id',
-            data_type: 'uuid',
+            data_type: 'character varying',
           }),
           expect.objectContaining({
             table_name: 'vfs_snapshot_entry',
@@ -607,7 +607,7 @@ describe('Migration: InitSchema', () => {
     `);
     expect(columns).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ column_name: 'namespace_id', data_type: 'uuid' }),
+        expect.objectContaining({ column_name: 'namespace_id', data_type: 'character varying' }),
         expect.objectContaining({ column_name: 'idempotency_key', data_type: 'uuid' }),
         expect.objectContaining({ column_name: 'generation', data_type: 'integer' }),
         expect.objectContaining({ column_name: 'expires_at', data_type: 'timestamp with time zone' }),
@@ -1172,7 +1172,6 @@ describe('Migration: InitSchema', () => {
     const migration = new MakeNamespaceNameNullable1791700000017();
     const id = randomUUID();
     try {
-      await migration.up(runner);
       await runner.query('INSERT INTO namespace (id, name) VALUES ($1, NULL)', [id]);
       await expect(migration.down(runner)).rejects.toThrow(
         '이름 없는 namespace가 있어 migration down을 거부합니다',

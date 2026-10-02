@@ -1,3 +1,5 @@
+> 대체됨: api ADR-0037이 namespace 상한을 default와 ceiling으로 분리하고 counter 제한을 추가한다.
+
 # namespace별 리소스 상한은 전역값을 상한으로 하는 오버라이드 컬럼으로 구현한다
 
 Storix는 파일 업로드 크기(`MAX_FILE_SIZE_BYTES`)와 동기 cp/rm 처리 노드 수

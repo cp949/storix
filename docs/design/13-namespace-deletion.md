@@ -51,16 +51,16 @@
 
 재요청 규칙:
 
-- receipt identity는 정규화한 namespace UUID와 삭제 key의 SHA-256 hash다.
+- receipt identity는 namespace ID와 삭제 key의 SHA-256 hash다.
 - 생성·quota·trash receipt와 별도 테이블을 쓴다.
 - 요청 본문이 없어 fingerprint를 두지 않는다.
-- 같은 UUID·key는 최초 HTTP status·body를 재생한다. 완료 뒤에도 최초 202는 202다.
+- 같은 namespace ID·key는 최초 HTTP status·body를 재생한다. 완료 뒤에도 최초 202는 202다.
 - `Location`은 UUID로 재구성한다. receipt에 header를 저장하지 않는다.
 - 같은 key를 다른 UUID에 쓸 수 있다. `422 IDEMPOTENCY_KEY_REUSED`는 이 라우트에서 발생하지 않는다.
 - 다른 key로 DELETING을 삭제하면 같은 operation을 가리키는 202를 새 receipt로 저장한다.
 - 다른 key로 DELETED를 삭제하면 `200 {namespaceId, status: "DELETED"}`를 저장한다.
 - COMPLETED에서는 root 대신 operation 행을 잠가 새 receipt를 직렬화한다.
-- 인증·입력 오류와 없는 UUID는 삭제 receipt를 저장하지 않는다.
+- 인증·입력 오류와 없는 namespace ID는 삭제 receipt를 저장하지 않는다.
 - 커밋 뒤 transport 장애는 접수를 취소하지 않는다.
 - 삭제 receipt와 namespace tombstone은 자동 만료하지 않는다.
 
@@ -73,7 +73,7 @@
 
 | 필드            | 의미                                                                           |
 | --------------- | ------------------------------------------------------------------------------ |
-| `namespaceId`   | 삭제 대상 UUID                                                                 |
+| `namespaceId`   | 삭제 대상 namespace ID                                                         |
 | `status`        | 현재 namespace 상태 `DELETING`·`DELETED`                                       |
 | `phase`         | `UPLOADS`·`METADATA`·`OBJECTS`·`COMPLETED`                                     |
 | `requestedAt`   | 접수 시각의 ISO 8601 문자열                                                    |
@@ -112,16 +112,16 @@ DELETING·DELETED에서는 다음 요청을 `404 NAMESPACE_NOT_FOUND`로 차단�
 이름과 생성 receipt:
 
 - 이름은 DELETING 전환 커밋부터 재사용한다. ACTIVE partial UNIQUE index를 유지한다.
-- 같은 이름을 재생성할 때 새 생성 key와 새 UUID를 쓴다. 정리는 기존 UUID로만 조회한다.
+- 같은 이름을 재생성할 때 새 생성 key와 새 namespace ID를 쓴다. 정리는 기존 ID로만 조회한다.
 - 기존 생성 key는 최초 응답을 유지한다.
-  - 201 receipt는 기존 UUID와 생성 당시 `status: "ACTIVE"`를 재생한다.
+  - 201 receipt는 기존 namespace ID와 생성 당시 `status: "ACTIVE"`를 재생한다.
   - 409 receipt는 이름 해제 뒤에도 `409 NAMESPACE_ALREADY_EXISTS`를 재생한다.
 - 현재 상태는 상세 GET으로 확인한다. 삭제 API는 생성 receipt를 고치거나 지우지 않는다.
 
 ## 영속 상태와 잠금
 
-- `namespace_deletion`은 UUID별 단일 operation이다. phase·시각·blockedReason을 보존한다.
-- `namespace_deletion_receipt`는 UUID·key hash에 UNIQUE를 둔다.
+- `namespace_deletion`은 namespace ID별 단일 operation이다. phase·시각·blockedReason을 보존한다.
+- `namespace_deletion_receipt`는 namespace ID·key hash에 UNIQUE를 둔다.
 - namespace 행은 DELETED 뒤에도 정책과 ID를 tombstone으로 보존한다.
 - 접수는 `NamespaceDeletionService`·`NamespaceDeletionRepository`가 담당한다.
 - 정리는 `NamespaceDeletionCleanup`·`NamespaceDeletionCleanupRepository`가 담당한다.
@@ -249,7 +249,7 @@ PostgreSQL에는 `STORIX_GC_MIN_INTERVAL`도 적용된다.
   - `GET /api/v2/namespaces/{id}`는 404다. 보존 기간 안에서는 `status: DELETED`를 반환한다.
   - 삭제 상태 조회와 같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다. 보존 기간 안에서는 최초 202 재생이다.
   - 같은 이름의 namespace 생성은 접수 커밋부터 가능하다. 이 점은 바뀌지 않는다.
-- 운영 주의: `STORIX_VFS_CAPABILITIES_CONFIG_PATH`에 namespace UUID를 적었다면 그 namespace가 물리 삭제된 뒤의 시작은 `unknown namespace ID` 오류로 거부된다. 삭제한 namespace는 설정에서 지운다.
+- 운영 주의: `STORIX_VFS_CAPABILITIES_CONFIG_PATH`에 namespace ID를 적었다면 그 namespace가 물리 삭제된 뒤의 시작은 `unknown namespace ID` 오류로 거부된다. 삭제한 namespace는 설정에서 지운다.
 
 ## 배포와 복원
 

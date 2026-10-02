@@ -73,6 +73,7 @@ export async function runWorkload(
   spec: DatasetSpec,
   options: WorkloadOptions,
   runTag: string,
+  onSettingsComplete?: () => Promise<void>,
 ): Promise<WorkloadResult> {
   const ids = pickActiveNumbers(spec, options.namespaces).map((i) => activeNamespaceId(spec, i));
   if (ids.length === 0) throw new Error('활동 namespace가 없다');
@@ -105,6 +106,25 @@ export async function runWorkload(
       (s) => s === 200,
     ),
   );
+  await kind('updateNamespaceSettings', (k, samples) =>
+    timed(
+      samples,
+      options.timeoutMs,
+      (signal) =>
+        fetch(`${target.baseUrl}/api/v2/admin/namespaces/${idOf(k)}/settings`, {
+          method: 'PATCH',
+          headers: {
+            ...adminAuth,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `scale-settings-${runTag}-${k}`,
+          },
+          body: JSON.stringify({ trashEnabled: k % 2 === 0 }),
+          signal,
+        }),
+      (s) => s === 200,
+    ),
+  );
+  await onSettingsComplete?.();
   await kind('stat', (k, samples) =>
     timed(
       samples,

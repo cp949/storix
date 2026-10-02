@@ -273,3 +273,27 @@ Storix는 호출 서버가 지정한 namespace 안에서 파일과 디렉터리,
 - [소비자 요구와 Storix 계약](../design/03-consumer-contracts.md): 범용 저장 기능과 호출 서버 어댑터의 책임.
 - [Storix 로드맵](../ROADMAP.md): 실행 항목과 이 문서의 RQ ID 연결.
 - [Storix OpenAPI](../../apps/api/openapi.yaml): 현재 제공하는 HTTP 계약.
+
+### RQ-031 Namespace ID와 선택 이름
+
+- [x] **진행 상태:** PostgreSQL·SQLite 로컬 통합·공개 계약 검증 완료
+- Namespace ID는 기존 UUID 형식과 선택 prefix를 가진 UUID v4 형식을 지원한다. name은 생략 가능하며 `null`을 반환한다.
+- **수용 조건:** ID 참조·cursor·capability·resumable upload·삭제 경로가 새 형식을 정확히 유지하고 다른 ID 계약은 유지한다. migration 뒤 기존 namespace를 조회·변경할 수 있다.
+
+### RQ-032 Namespace별 폴더·node 상한
+
+- [x] **진행 상태:** PostgreSQL·SQLite 로컬 통합 검증 완료
+- 폴더별 직접 자식 FILE 수와 namespace root 제외 live node 수를 namespace counter로 유지하고 default·ceiling·override를 적용한다.
+- **수용 조건:** mutation·복구·GC의 counter delta, 제한 거부와 rollback이 counter 및 실제 행을 일치시킨다. 제한 판정에서 요청별 전체 COUNT를 수행하지 않는다.
+
+### RQ-033 Quota 구성요소와 제외 정책
+
+- [x] **진행 상태:** PostgreSQL·SQLite 로컬 통합 검증 완료
+- live·trash·snapshot 바이트 합계를 조회하고 trash·snapshot 제외 플래그 및 retained trash byte cap을 지원한다.
+- **수용 조건:** 네 제외 조합에서 조회와 검사 대상이 일치한다. 구성요소별 증가·감소 delta를 검사하고 cap 하향 시 기존 항목을 삭제하지 않는다.
+
+### RQ-034 Namespace 설정 관리 API
+
+- [x] **진행 상태:** PostgreSQL·SQLite HTTP 통합 및 공개 계약 검증 완료
+- 관리자 전용 PATCH API에서 quota·FILE 크기·폴더 FILE 수·live node 수·retained trash bytes 및 boolean 정책을 부분 변경한다. 변경은 ACTIVE 재확인, ceiling 검증, idempotency receipt 저장과 원자적이어야 한다.
+- **수용 조건:** 필드 validation·권한·ceiling·부분 갱신·reset·동일 key 재생·다른 요청 충돌·삭제 경합을 PostgreSQL·SQLite에서 확인한다.

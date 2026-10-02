@@ -9,6 +9,8 @@ export class AddFolderFileCount1791700000018 implements MigrationInterface {
       CHECK ("max_files_per_folder" IS NULL OR "max_files_per_folder" > 0)`);
     await queryRunner.query(`ALTER TABLE "vfs_node" ADD COLUMN "child_file_count" bigint NOT NULL DEFAULT 0
       CONSTRAINT "CHK_vfs_node_child_file_count_non_negative" CHECK ("child_file_count" >= 0)`);
+    // 기존 namespace·parent 인덱스는 선두에 namespace_id가 있어 전체 backfill의 parent lookup에 쓸 수 없다.
+    await queryRunner.query('CREATE INDEX "tmp_vfs_node_parent_type" ON "vfs_node" ("parent_id", "type")');
     await queryRunner.query(`
       UPDATE "vfs_node"
       SET "child_file_count" = (
@@ -17,6 +19,7 @@ export class AddFolderFileCount1791700000018 implements MigrationInterface {
       )
       WHERE "type" = 'DIRECTORY'
     `);
+    await queryRunner.query('DROP INDEX "tmp_vfs_node_parent_type"');
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

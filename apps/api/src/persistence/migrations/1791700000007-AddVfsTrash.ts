@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { namespaceIdSqlType } from './namespace-id-sql-type.js';
 
 export class AddVfsTrash1791700000007 implements MigrationInterface {
   name = 'AddVfsTrash1791700000007';
@@ -6,6 +7,7 @@ export class AddVfsTrash1791700000007 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
     const sqlite = runner.connection.options.type === 'better-sqlite3';
     const uuid = sqlite ? 'varchar(36)' : 'uuid';
+    const namespaceId = await namespaceIdSqlType(runner);
     const time = sqlite ? 'datetime' : 'timestamptz';
     const generatedId = sqlite ? '' : ' DEFAULT gen_random_uuid()';
 
@@ -16,7 +18,7 @@ export class AddVfsTrash1791700000007 implements MigrationInterface {
 
     await runner.query(`CREATE TABLE "vfs_trash" (
       "id" ${uuid} PRIMARY KEY${generatedId},
-      "namespace_id" ${uuid} NOT NULL REFERENCES "namespace"("id") ON DELETE CASCADE,
+      "namespace_id" ${namespaceId} NOT NULL REFERENCES "namespace"("id") ON DELETE CASCADE,
       "root_type" varchar(16) NOT NULL CHECK ("root_type" IN ('FILE', 'DIRECTORY')),
       "original_path" text NOT NULL,
       "root_node_id" ${uuid} NOT NULL,
@@ -35,7 +37,7 @@ export class AddVfsTrash1791700000007 implements MigrationInterface {
 
     await runner.query(`CREATE TABLE "vfs_trash_entry" (
       "id" ${uuid} PRIMARY KEY${generatedId},
-      "namespace_id" ${uuid} NOT NULL REFERENCES "namespace"("id") ON DELETE CASCADE,
+      "namespace_id" ${namespaceId} NOT NULL REFERENCES "namespace"("id") ON DELETE CASCADE,
       "trash_id" ${uuid} NOT NULL,
       "relative_path" text NOT NULL,
       "path_key" text NOT NULL,

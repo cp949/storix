@@ -154,6 +154,12 @@ describe('Namespace HTTP contract', () => {
         .expect(201);
       return response.body.id as string;
     },
+    markInactive: async (namespaceId) => {
+      await migrationDataSource.query('UPDATE namespace SET status = $1 WHERE id = $2', [
+        'DELETING',
+        namespaceId,
+      ]);
+    },
   });
 
   registerNamespaceDeletionHttpTests({

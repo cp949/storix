@@ -94,3 +94,18 @@ DEPLOY-03. self-host 배포에서 Storix를 새 버전으로 올리는 절차다
   추가적(additive)이라 문제되지 않았지만, 컬럼 삭제·타입 변경처럼 구버전
   앱과 호환되지 않는 마이그레이션을 다루는 정책은 아직 없다.
 - 자동 스키마 되돌리기(`migration:revert`) — ADR-0017.
+
+## Namespace 제한·ID migration 주의
+
+Namespace ID와 counter 컬럼을 변경하는 버전은 기존 API와 혼합 실행하지 않는다. 이 migration은 쓰기를 중단한 상태에서 실행한다. 배포 전 namespace-scale에서 실제 데이터 규모에 맞는 migration 시간·잠금·WAL을 확인한다.
+
+백업은 필수다. migration 후 새 prefix ID가 생성되면 이전 UUID-only 코드로 재배포하지 않는다. 되돌리려면 새 형식 ID와 모든 참조를 역변환할 수 있는지 확인하고, 불가능하면 migration 전 백업을 복원한다. migration down은 UUID 이외 ID가 존재하면 거부된다.
+
+신규 폴더 FILE 상한 기본값은 10000이고 live node 상한 기본값은 1000000이다. 기존 데이터가 상한보다 많아도 migration은 삭제하지 않는다. 상한을 초과한 폴더·namespace는 감소 작업은 계속할 수 있지만 해당 제한을 늘리는 새 저장은 제한 아래로 내려올 때까지 거부된다.
+
+```text
+위험도: 높음
+롤백: migration 전 데이터 백업 복원. 새 prefix ID가 생성된 뒤에는 ID·참조 역변환 없이 이전 스키마로 되돌릴 수 없다.
+```
+
+현재 PostgreSQL 16 전용 하네스에서 `storix-scale-v1` seed로 migration 전체 시간을 재면 1만 namespace 5.53초, 10만 10.78초, 100만 105.77초였다. 100만 값은 migration transaction 전체 경과 시간이며 개별 테이블 lock·WAL bytes의 직접 계측은 아니다. 배포 DB의 데이터 분포·하드웨어·WAL 설정에 따라 실제 값은 다르므로 운영 전 같은 배포 조건에서 재측정한다.

@@ -16,7 +16,7 @@
 - 관리자용 `PATCH /api/v2/admin/namespaces/{namespaceId}/settings`를 추가했다. namespace의 quota·파일 크기·폴더 파일 수·live node 수·휴지통 바이트 상한과 quota 제외·휴지통 사용 설정을 한 요청에서 부분 변경하며, 설정 ceiling과 `Idempotency-Key`를 적용한다.
 
 - Namespace 생성에서 `name`을 생략하거나 `null`로 지정할 수 있다. 응답의 `name`은 항상 존재하며 미지정이면 `null`이다. 목록은 이름 있는 항목을 `(name, id)` 순으로 반환하고 이름 없는 항목을 뒤에 `id` 순으로 반환한다. migration `MakeNamespaceNameNullable1791700000017`이 nullable 제약과 이름 없는 항목용 인덱스를 추가한다. 이름 없는 행이 있으면 migration down을 거부한다.
-- Namespace ID 생성 시 선택 필드 `idPrefix`를 지원한다. ID는 기존 UUID 또는 `{prefix}_{UUID v4의 하이픈 제거 32자리}` 형식이다. capability·resumable upload namespace 설정도 새 형식을 받으며 대소문자·하이픈 변형은 별칭으로 취급하지 않는다. migration `ConvertNamespaceIdToString1791700000016`은 PostgreSQL namespace 참조 컬럼을 `varchar(45) COLLATE "C"`로 바꾸고 `vfs_upload_usage.id`를 `varchar(64)`로 확장한다. SQLite는 `varchar` 길이를 제한하지 않으므로 새 migration은 타입 변경이 없다. 새 ID가 만들어진 뒤 migration down은 UUID 형식이 아닌 참조가 남아 있으면 거부된다.
+- Namespace ID 생성 시 선택 필드 `idPrefix`를 지원한다. ID는 기존 UUID 또는 `{prefix}_{UUID v4의 하이픈 제거 32자리}` 형식이다. UUID 타입으로만 파싱하는 클라이언트는 새 형식을 처리하도록 수정해야 한다. capability·resumable upload namespace 설정도 새 형식을 받으며 대소문자·하이픈 변형은 별칭으로 취급하지 않는다. migration `ConvertNamespaceIdToString1791700000016`은 PostgreSQL namespace 참조 컬럼을 `varchar(45) COLLATE "C"`로 바꾸고 `vfs_upload_usage.id`를 `varchar(64)`로 확장한다. SQLite는 `varchar` 길이를 제한하지 않으므로 새 migration은 타입 변경이 없다. 새 ID가 만들어진 뒤 migration down은 UUID 형식이 아닌 참조가 남아 있으면 거부된다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`(기본 `30`): 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간이다. 완료 시점부터 이 기간이 지나면 namespace·삭제 operation·삭제 receipt 행을 지운다(GC 결과 `purgedNamespaces`). 이후 `GET /api/v2/namespaces/{id}`·삭제 상태 조회·같은 key의 삭제 재요청은 404 `NAMESPACE_NOT_FOUND`다(보존 기간 안에서는 `DELETED` 상태 응답과 최초 202 재생). 물리 삭제는 되돌릴 수 없고 복구에는 삭제 전 백업이 필요하다. 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)에 적은 namespace가 물리 삭제되면 시작이 거부되므로 삭제한 namespace는 설정에서 지운다. migration `AddNamespaceDeletionCompletedIndex1791700000015`(인덱스만 추가)가 필요하다. 결정은 api ADR-0035다.
 - `GET /api/v2/namespaces`의 page 모드: `limit`(기본 100·최대 1000)·`cursor`를 주면 `{ items, nextCursor }`를 `(name, id)` 순서의 keyset으로 반환한다. 잘못된 cursor는 400 `VFS_INVALID_CURSOR`다. 100만 namespace에서 첫 page가 9ms, 전체 순회(page 1000개)가 11.5s·API RSS 416MiB다. 이전 계약의 전체 배열은 100만 개에서 응답 364MiB·9.8s·RSS 2.6GiB였다.
 - capability 설정 파일의 선택 키 `defaultEnabledCapabilities`: `namespaceAllowedCapabilities`에 항목이 없는 모든 namespace(설정 이후 만든 namespace 포함)에 켤 capability 목록이다. 전역 허용이 최종 상한이고 namespace 항목이 있으면 그 값이 기본 목록을 대신한다(빈 목록은 비활성). 키가 없으면 이전 동작과 같다. 회원마다 namespace를 만드는 배포가 namespace를 설정에 나열하거나 재시작하지 않아도 된다.
@@ -27,6 +27,8 @@
 - `limit`·`cursor` 없이 호출하는 `GET /api/v2/namespaces`(ACTIVE 전체 배열). 동작은 그대로이고 개수에 상한이 없다. 새 호출자는 page 모드를 쓴다.
 
 ### Changed
+
+- 폴더별 FILE counter migration이 backfill 중 `(parent_id, type)` 임시 인덱스를 사용한다. PostgreSQL 16 scale 하네스의 10만 namespace 측정에서 migration 전체 시간이 237초 이상 진행 후 취소된 상태에서 10.78초로 줄었다. 환경별 migration 시간은 다를 수 있다.
 
 - `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`·`STORIX_DEFAULT_FILE_SIZE_BYTES`와 `STORIX_MAX_TOTAL_LOGICAL_BYTES`·`STORIX_MAX_FILE_SIZE_BYTES`를 분리했다. MAX만 지정하면 이전처럼 기본값과 ceiling이 같고, DEFAULT만 지정하면 기본값 아래·위 namespace override를 허용하며 ceiling은 구조 상한으로 제한한다. 시작 시 DEFAULT가 ceiling을 넘거나 파일 크기 ceiling이 S3 multipart 구조 상한(16 MiB × 10,000 parts)을 넘으면 거부한다.
 

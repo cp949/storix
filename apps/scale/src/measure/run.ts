@@ -17,7 +17,7 @@ import {
 } from '../infra/containers.ts';
 import { run as exec } from '../infra/exec.ts';
 import { POSTGRES_CONTAINER, runDatabaseName, templateDatabaseName } from '../infra/guard.ts';
-import { cloneDatabase, dropDatabase, execSql } from '../infra/psql.ts';
+import { cloneDatabase, dropDatabase, execSql, queryOne } from '../infra/psql.ts';
 import { API_DIR, OBJECTS_MARKER, REPO_ROOT, RESULTS_DIR, WORK_DIR } from '../paths.ts';
 import {
   type DbCounters,
@@ -80,6 +80,16 @@ const API_KEY = 'scale-api-key';
 const ADMIN_KEY = 'scale-admin-key';
 /** 요청 측정에서 데이터셋이 며칠 지나면 보존 기간 의미가 바뀐다. 이 기간을 넘으면 재적재를 요구한다. */
 const MAX_DATASET_AGE_DAYS = 20;
+
+async function readNamespaceReceiptStats(database: string): Promise<{ rows: number; bytes: number }> {
+  const stats = await queryOne<{ rows: string; bytes: string }>(
+    database,
+    `SELECT COUNT(*)::text AS rows,
+            COALESCE(SUM(octet_length(key) + pg_column_size(response_body)), 0)::text AS bytes
+     FROM idempotency_key`,
+  );
+  return { rows: Number(stats.rows), bytes: Number(stats.bytes) };
+}
 
 /** 단계가 실패했어도 관측한 값(예: timeout까지의 시간·최대 RSS)을 결과에 남기려고 쓴다. */
 class PhaseFailure extends Error {
@@ -295,18 +305,39 @@ export async function measure(options: MeasureOptions): Promise<MeasureResult> {
       if (want('requests')) {
         phases.requests = await phase('requests', async () => {
           const before = await readDbCounters(apiDb);
+          const receiptsBefore = await readNamespaceReceiptStats(apiDb);
+          let receiptsAfterSettings: { rows: number; bytes: number } | undefined;
           const api = await startApi({
             env: apiEnv(apiDb),
             port,
             label: `${runId}-requests`,
           });
           try {
-            const results: WorkloadResult = await runWorkload(target, spec, options.workload, tag);
+            const results: WorkloadResult = await runWorkload(
+              target,
+              spec,
+              options.workload,
+              tag,
+              async () => {
+                receiptsAfterSettings = await readNamespaceReceiptStats(apiDb);
+              },
+            );
             const peakRssBytes = api.peakRssBytes();
+            const receiptsAfter = await readNamespaceReceiptStats(apiDb);
             return {
               workload: options.workload,
               results,
               peakRssBytes,
+              idempotencyReceipts: {
+                before: receiptsBefore,
+                after: receiptsAfter,
+                deltaRows: receiptsAfter.rows - receiptsBefore.rows,
+                deltaKeyAndResponseBytes: receiptsAfter.bytes - receiptsBefore.bytes,
+                successfulSettingsRequests: results.updateNamespaceSettings?.count ?? 0,
+                settingsDeltaRows: (receiptsAfterSettings?.rows ?? receiptsBefore.rows) - receiptsBefore.rows,
+                settingsDeltaKeyAndResponseBytes:
+                  (receiptsAfterSettings?.bytes ?? receiptsBefore.bytes) - receiptsBefore.bytes,
+              },
               db: diffCounters(before, await readDbCounters(apiDb)),
             };
           } finally {

@@ -21,14 +21,18 @@ describe('업로드 세션 정책', () => {
     ).toThrow(/exceeds global/);
   });
 
-  it('namespace 항목이 있으면 그 값을, 없으면 전역 한도를 돌려준다', () => {
+  it('namespace ID 표기가 정확히 일치할 때만 override를 사용한다', () => {
     const policy = parseUploadSessionPolicy({
       global: GLOBAL,
       namespaces: { [NS]: { maxStagedBytes: '500', maxActiveSessions: 2 } },
     });
-    expect(resolveNamespaceUploadLimits(policy, NS.toUpperCase())).toEqual({
+    expect(resolveNamespaceUploadLimits(policy, NS)).toEqual({
       maxStagedBytes: 500n,
       maxActiveSessions: 2,
+    });
+    expect(resolveNamespaceUploadLimits(policy, NS.toUpperCase())).toEqual({
+      maxStagedBytes: 1000n,
+      maxActiveSessions: 10,
     });
     expect(resolveNamespaceUploadLimits(policy, '123e4567-e89b-42d3-a456-426614174001')).toEqual({
       maxStagedBytes: 1000n,

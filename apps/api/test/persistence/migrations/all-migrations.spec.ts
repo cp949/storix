@@ -31,6 +31,11 @@ describe('ALL_MIGRATIONS', () => {
       'AddNamespaceEncryptedIndex1791700000013',
       'AddIdempotencyKeyCreatedAtIndex1791700000014',
       'AddNamespaceDeletionCompletedIndex1791700000015',
+      'ConvertNamespaceIdToString1791700000016',
+      'MakeNamespaceNameNullable1791700000017',
+      'AddFolderFileCount1791700000018',
+      'AddLiveNodeCount1791700000019',
+      'AddQuotaExclusion1791700000020',
     ]);
   });
 });

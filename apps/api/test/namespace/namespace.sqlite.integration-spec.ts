@@ -126,6 +126,12 @@ describe('Namespace HTTP contract (SQLite)', () => {
         .expect(201);
       return response.body.id as string;
     },
+    markInactive: async (namespaceId) => {
+      await migrationDataSource.query('UPDATE namespace SET status = ? WHERE id = ?', [
+        'DELETING',
+        namespaceId,
+      ]);
+    },
   });
 
   registerNamespaceDeletionHttpTests({

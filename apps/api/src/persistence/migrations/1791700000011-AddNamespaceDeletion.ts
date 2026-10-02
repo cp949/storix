@@ -3,13 +3,14 @@
  * 규칙은 docs/design/13-namespace-deletion.md "영속 상태와 잠금". 결정은 api ADR-0032.
  */
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { namespaceIdSqlType } from './namespace-id-sql-type.js';
 
 export class AddNamespaceDeletion1791700000011 implements MigrationInterface {
   name = 'AddNamespaceDeletion1791700000011';
 
   async up(runner: QueryRunner): Promise<void> {
     const sqlite = runner.connection.options.type === 'better-sqlite3';
-    const uuid = sqlite ? 'varchar(36)' : 'uuid';
+    const uuid = await namespaceIdSqlType(runner);
     const time = sqlite ? 'datetime' : 'timestamptz';
     await runner.query(`CREATE TABLE "namespace_deletion" (
       "namespace_id" ${uuid} PRIMARY KEY REFERENCES "namespace"("id"),

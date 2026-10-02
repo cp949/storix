@@ -12,6 +12,10 @@ Storix가 관리하는 최상위 VFS 격리 단위로, 하나의 VFS root·파�
 식별자가 아닌 재사용 가능한 자동화용 slug다. name은 생략할 수 있으며 응답에서는 `null`이다.
 _Avoid_: 테넌트, 버킷, 워크스페이스
 
+Namespace에는 quota·파일 크기·폴더 파일 수·live node 수·휴지통 보존 바이트 상한과
+quota 제외·휴지통 사용 설정이 있다. 숫자 상한의 `null`은 전역 default 상속을 뜻한다.
+관리자는 settings API에서 지정한 필드만 부분 변경한다.
+
 **VFS Node**:
 Namespace 안에서 파일 또는 디렉터리 하나를 가리키는 단위로, FILE과 DIRECTORY 두
 종류가 있다. 위치는 parent-child 관계로 표현하고 사용자가 보는 경로 문자열은

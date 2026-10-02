@@ -21,3 +21,11 @@
 `.env.example` 및 compose는 전역 상한과 별도 현재/이전 관리자 키를 API에 전달한다. 키가 설정되지 않으면 관리자 route는 fail closed다. 일반 API key로 관리자 route를 호출할 수 없다.
 
 통합 검증은 SQLite와 PostgreSQL 두 드라이버의 migration backfill, root-lock 동시 변경, snapshot 유지량, quota 거부/rollback과 HTTP response를 확인한다. 실행된 자동 검증은 실제 배포 DB migration, 운영 설정, 백업 복원, 외부 consumer 연동을 증명하지 않는다.
+
+## 구성요소 제외와 관리자 설정
+
+`quota.usedBytes`는 live·trash·snapshot 총량을 유지한다. 응답의 `liveBytes`, `trashBytes`, `snapshotBytes`는 구성요소별 값이며 `enforcedBytes`는 `excludeTrash`·`excludeSnapshots` 적용 후 검사할 합계다. 제외 조합은 조회와 mutation에서 동일하게 적용한다.
+
+복합 mutation은 live·trash·snapshot byte delta를 따로 검사한다. 구성요소 간 이동을 전체 합계 delta 하나로 판정하지 않는다. 휴지통 보존 bytes에는 quota와 별도 상한을 적용하며, 상한을 낮춰 이미 보존한 항목을 자동 삭제하지 않는다.
+
+관리자는 `PATCH /api/v2/admin/namespaces/{namespaceId}/settings`로 quota, FILE 크기, 폴더 FILE 수, live node 수, 휴지통 보존 상한과 boolean 정책을 부분 변경한다. 설정과 성공 receipt는 root lock transaction 안에서 원자적으로 저장한다. 동일 key·body는 최초 응답을 재생한다.
