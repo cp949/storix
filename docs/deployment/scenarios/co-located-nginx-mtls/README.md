@@ -111,6 +111,12 @@ server {
 내부 listener의 `storix.internal:9443`은 private network에서만 접근을 허용한다.
 운영에서는 방화벽으로 9443의 출발지를 WAS A/B로 제한한다.
 
+내부 listener는 `access_log`를 지정하지 않는다.
+기존 Nginx `http` context의 로그 설정을 그대로 쓴다.
+이 listener를 지나는 요청에는 `Authorization: Bearer <STORIX_API_KEY>` 원문이 들어 있다.
+따라서 기존 `log_format`에 `$http_authorization`을 넣지 않는다.
+요청 헤더를 남기는 `debug` 수준 `error_log`도 운영에서 쓰지 않는다.
+
 공개 `/storage/`는 path-style S3 URL의 bucket 부분이다. 따라서 이 시나리오는
 `STORIX_STORAGE_BUCKET=storage`를 요구한다. Nginx가 `/storage/`를 제거하거나
 Host·query string을 변경하면 presigned SigV4 검증이 실패한다.
