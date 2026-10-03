@@ -1,8 +1,25 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { SECRET_ENV_NAMES } from '../src/secrets/secret-source.js';
 
 export const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * 호스트 셸에 남은 비밀값 변수가 자식 프로세스의 비밀값 해석을 바꾸지 않도록 지운 복사본을 돌려준다.
+ * 비밀 변수 `X`·`X_FILE`·`X_REF`와 어댑터 설정(`STORIX_SECRET_ADAPTERS`, `STORIX_SECRET_RESOLVE_TIMEOUT_MS`)을 지운다.
+ */
+export function stripSecretEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const copy: NodeJS.ProcessEnv = { ...env };
+  for (const name of SECRET_ENV_NAMES) {
+    delete copy[name];
+    delete copy[`${name}_FILE`];
+    delete copy[`${name}_REF`];
+  }
+  delete copy.STORIX_SECRET_ADAPTERS;
+  delete copy.STORIX_SECRET_RESOLVE_TIMEOUT_MS;
+  return copy;
+}
 
 export function buildApp(): void {
   const result = spawnSync('pnpm', ['run', 'build'], { cwd: apiRoot, encoding: 'utf-8' });
@@ -17,7 +34,7 @@ export function runMigrations(sqlitePath: string): void {
     ['exec', 'typeorm-ts-node-esm', 'migration:run', '-d', 'src/persistence/data-source.ts'],
     {
       cwd: apiRoot,
-      env: { ...process.env, STORIX_DB_DRIVER: 'sqlite', STORIX_DB_SQLITE_PATH: sqlitePath },
+      env: { ...stripSecretEnv(process.env), STORIX_DB_DRIVER: 'sqlite', STORIX_DB_SQLITE_PATH: sqlitePath },
       encoding: 'utf-8',
     },
   );

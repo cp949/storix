@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildApp, runMigrations, runProcess } from './boot-env-file-harness.js';
+import { buildApp, runMigrations, runProcess, stripSecretEnv } from './boot-env-file-harness.js';
 
 // main.ts는 실제 배포 진입점(`node dist/main.js`)을 별도 프로세스로 띄워야
 // 검증할 수 있다 — job-modules-boot.integration-spec.ts처럼 같은 jest 워커
@@ -49,7 +49,7 @@ describe('main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', () =>
     const { output } = await runProcess({
       cwd: workDir,
       distFile: 'main.js',
-      env: { ...process.env, STORIX_DB_DRIVER: undefined },
+      env: { ...stripSecretEnv(process.env), STORIX_DB_DRIVER: undefined },
       timeoutMs: 20000,
       untilOutputIncludes: 'Nest application successfully started',
     });

@@ -14,7 +14,7 @@ describe('buildPgChildEnv', () => {
         STORIX_DB_PASSWORD: 'db-secret',
         STORIX_API_KEY: 'api-secret',
         STORIX_ENCRYPTION_MASTER_KEY: 'master',
-        VAULT_TOKEN: 'adapter-credential',
+        ADAPTER_TOKEN: 'adapter-credential',
         NODE_OPTIONS: '--max-old-space-size=512',
       },
       'pw',

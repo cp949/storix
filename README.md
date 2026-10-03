@@ -463,6 +463,8 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_API_KEY_PREVIOUS`                 | 선택   | —             | app     | 키 로테이션 중 함께 유효한 이전 키                                             |
 | `STORIX_ENCRYPTION_MASTER_KEY`            | 조건부 | —             | app     | ENCRYPTED namespace가 하나라도 있으면 필요한 키                                |
 | `STORIX_SENTRY_DSN`                       | 선택   | —             | app·잡  | 설정 시 500 에러·잡 실패를 Sentry로 리포팅                                     |
+| `STORIX_SECRET_ADAPTERS`                  | 선택   | —             | 모두    | 쉼표로 구분한 통신형 비밀값 어댑터 패키지 이름                                 |
+| `STORIX_SECRET_RESOLVE_TIMEOUT_MS`        | 선택   | `10000`       | 모두    | 통신형 비밀값 해석 1건의 타임아웃(ms)                                          |
 | `STORIX_BACKUP_DIR`                       | 필수   | —             | backup  | 백업 저장 디렉터리                                                             |
 | `STORIX_RESTORE_SOURCE_DIR`               | 필수   | —             | restore | 복구할 백업 디렉터리                                                           |
 | `STORIX_RESTORE_FORCE`                    | 선택   | `false`       | restore | 대상에 데이터가 있어도 덮어쓴다(되돌릴 수 없음)                                |

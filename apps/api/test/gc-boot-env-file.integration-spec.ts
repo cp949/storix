@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildApp, runMigrations, runProcess } from './boot-env-file-harness.js';
+import { buildApp, runMigrations, runProcess, stripSecretEnv } from './boot-env-file-harness.js';
 
 // gc-main.ts는 main.ts와 같은 이유로 별도 프로세스(`node dist/gc-main.js`)를 띄워야
 // 검증할 수 있다 — main-boot-env-file.integration-spec.ts 참고. gc-main.ts는
@@ -46,7 +46,7 @@ describe('gc-main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', ()
     const { output } = await runProcess({
       cwd: workDir,
       distFile: 'gc-main.js',
-      env: { ...process.env, STORIX_DB_DRIVER: undefined },
+      env: { ...stripSecretEnv(process.env), STORIX_DB_DRIVER: undefined },
       timeoutMs: 15000,
     });
 
