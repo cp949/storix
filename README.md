@@ -579,6 +579,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 - 어댑터 패키지를 설치한 사용자 이미지가 필요하다. 기본 이미지에는 어댑터가 없다.
 - `STORIX_SECRET_ADAPTERS`에 어댑터 패키지 이름을 지정한다.
 - 해석 1건의 타임아웃은 `STORIX_SECRET_RESOLVE_TIMEOUT_MS`다.
+- 기본 `docker-compose.yml`은 `<비밀 변수>_REF`와 이 두 변수를 컨테이너에 넘기지 않는다. 루트 `.env`에 적어도 무시된다. override의 `environment:`에 직접 적는다.
 
 compose에서 파일로 전달하는 절차는 [단일 호스트 private 배포](docs/deployment/scenarios/single-host-private/README.md)의 "비밀값 파일 전달"을 따른다.
 규칙의 상세는 `docs/design/15-secret-sources.md`다.

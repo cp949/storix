@@ -13,7 +13,8 @@ export interface PgConnectionOptions {
 }
 
 // libpq와 실행 파일 탐색에 필요한 변수만 넘긴다.
-// - STORIX_* 비밀값과 어댑터 자격증명(이름을 코어가 모름)을 자식에게 넘기지 않으려고 차단 목록 대신 허용 목록을 쓴다.
+// - 허용 목록을 쓴다. STORIX_* 비밀값과 어댑터 자격증명을 자식에게 넘기지 않기 위해서다.
+// - 차단 목록은 쓰지 않는다. 코어가 어댑터 자격증명 변수의 이름을 모르기 때문이다.
 // - HOME은 libpq가 ~/.pgpass와 ~/.postgresql/ 인증서를 찾는 기준이다.
 // - PG*는 운영자가 PGSSLMODE 등으로 libpq를 설정하는 경로다.
 const PG_CHILD_ENV_NAMES = new Set(['PATH', 'HOME', 'TZ', 'LANG']);

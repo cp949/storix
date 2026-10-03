@@ -16,7 +16,7 @@
 - 빈 문자열은 지정하지 않은 것으로 본다. `X`, `X_FILE`, `X_REF` 모두 같다.
 - 빈 값이 아닌 항목이 둘 이상이면 기동을 실패시킨다.
 - `bootstrapWithEnv()` 경로에서는 `.env`에서 온 값도 포함한다. `typeorm` CLI 경로는 `.env`를 읽지 않는다.
-- 새 변수는 모두 선택이다. 아무것도 지정하지 않으면 기존 동작과 같다.
+- `X_FILE`·`X_REF`·`STORIX_SECRET_*`는 모두 선택이다. 아무것도 지정하지 않으면 환경변수 `X`만 쓴다.
 - 새 이름은 `STORIX_` 접두어를 유지한다(ADR-0005).
 - `_FILE` 접미어는 Docker 공식 이미지 관례(`POSTGRES_PASSWORD_FILE`)와 같다.
 
@@ -30,6 +30,15 @@
 - `STORIX_SENTRY_DSN`
 
 값은 기동 시 한 번 읽는다. 바꾸면 재시작한다(api ADR-0007).
+
+## compose 전달 범위
+
+기본 `docker-compose.yml`은 `environment:`에 적은 변수만 컨테이너에 넘긴다. 루트 `.env`는 compose 보간에만 쓰인다.
+
+- `X_FILE`은 시나리오 override가 `environment:`에 직접 적는다.
+- `X_REF`, `STORIX_SECRET_ADAPTERS`, `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 기본 compose가 넘기지 않는다.
+  - 루트 `.env`에 적어도 컨테이너에 전달되지 않고, 오류 없이 무시된다.
+  - 통신형은 사용자 이미지와 override의 `environment:`에서 지정한다.
 
 ## 해석 위치
 
@@ -114,7 +123,7 @@
 - 어댑터가 `signal`을 무시해도 코어는 그 시점에 `timeout`으로 처리한다.
 - 어댑터의 늦은 거부는 미처리 거부가 되지 않는다.
 - 이 값이 양의 정수가 아니면 `SecretResolutionError`가 아닌 일반 `Error`(`잘못된 정수 환경변수 값: ...`)가 나온다.
-  - 값 검증은 어댑터 로드 뒤에 한다.
+  - 값 검증은 어댑터를 불러오기 전에 한다.
   - 메시지에 이 설정값이 들어간다. 비밀값이 아니다.
 
 ## 어댑터 계약
@@ -131,7 +140,10 @@ export interface SecretSource {
 - 계약은 구조적 타입이다. 어댑터 패키지는 Storix 소스를 import하지 않는다.
 - `scheme`은 `SECRET_SCHEME_PATTERN`(소문자 영문으로 시작하는 `[a-z0-9+.-]`)을 따른다.
 - `resolve`는 `X_REF` 값 전체(`<scheme>://<참조>`)를 받는다. 비밀값을 문자열로 돌려준다.
-- `signal`이 abort되면 작업을 멈춘다.
+- `signal`이 abort되면 작업을 멈추고 열어 둔 연결을 닫는다.
+  - 닫지 않으면 `gc`·`backup`·`restore`가 해석 실패 뒤에도 종료되지 않을 수 있다. 이 세 진입점은 해석 실패 시 `process.exitCode`만 설정하고 프로세스를 강제로 끝내지 않는다.
+- 코어는 어댑터가 돌려준 값을 그대로 쓴다. 파일 소스와 달리 끝의 줄바꿈을 제거하지 않는다.
+  - 어댑터는 줄바꿈이 없는 값을 돌려준다.
 - 어댑터의 저장소 접근 자격증명은 어댑터가 자기 표준 방식으로 얻는다. Storix 환경변수로 받지 않는다.
 - 코어는 해석값을 로그에 남기지 않는다. 테스트로 고정한다.
 - 어댑터 내부의 로그는 코어가 통제하지 못한다. 어댑터는 해석값과 참조의 비밀 부분을 로그에 쓰지 않는다.
