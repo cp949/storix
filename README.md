@@ -404,70 +404,71 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | app·잡  | app·gc·backup·restore            |
 | compose | 코드가 읽지 않는 compose 보간 값 |
 
-| 변수                                      | 구분   | 기본값        | 읽는 곳 | 용도                                                                           |
-| ----------------------------------------- | ------ | ------------- | ------- | ------------------------------------------------------------------------------ |
-| `STORIX_PUBLISH_HOST`                     | 선택   | `0.0.0.0`     | compose | `app` 컨테이너의 호스트 bind 주소                                              |
-| `STORIX_PUBLISH_PORT`                     | 선택   | `3000`        | compose | `app` 컨테이너를 호스트에 노출하는 포트                                        |
-| `STORIX_PORT`                             | 선택   | `3000`        | app     | app의 listen 포트                                                              |
-| `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`      | 선택   | `53687091200` | app     | Namespace quota override가 없을 때 적용하는 기본값(50 GiB)                     |
-| `STORIX_MAX_TOTAL_LOGICAL_BYTES`          | 선택   | 기본값과 같음 | app     | namespace quota override의 전역 ceiling                                        |
-| `STORIX_VFS_CAPABILITIES_CONFIG_PATH`     | 선택   | —             | app     | 시작 시 읽는 선택 VFS capability JSON 파일 경로                                |
-| `STORIX_VFS_CHANGE_RETENTION_DAYS`        | 선택   | `30`          | gc      | 변경 feed 이벤트 보존 기간(양의 정수 일수)                                     |
-| `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`  | 조건부 | —             | app     | 재개 업로드 정책 JSON 경로                                                     |
-| `STORIX_ADMIN_API_KEY`                    | 선택   | —             | app     | `/api/v2/admin/*` 전용 관리자 Bearer key                                       |
-| `STORIX_ADMIN_API_KEY_PREVIOUS`           | 선택   | —             | app     | 관리자 키 교체 기간에만 허용하는 이전 Bearer key                               |
-| `STORIX_DB_DRIVER`                        | 선택   | `postgres`    | 모두    | `postgres` 또는 `sqlite`                                                       |
-| `STORIX_DB_SQLITE_PATH`                   | 조건부 | —             | 모두    | `STORIX_DB_DRIVER=sqlite`일 때 필수                                            |
-| `STORIX_DB_HOST`                          | 필수   | —             | 모두    | Postgres 호스트                                                                |
-| `STORIX_DB_PORT`                          | 선택   | `5432`        | 모두    | Postgres 포트                                                                  |
-| `STORIX_DB_USERNAME`                      | 필수   | —             | 모두    | Postgres 사용자                                                                |
-| `STORIX_DB_PASSWORD`                      | 필수   | —             | 모두    | Postgres 비밀번호                                                              |
-| `STORIX_DB_NAME`                          | 필수   | —             | 모두    | 데이터베이스 이름                                                              |
-| `STORIX_STORAGE_ENDPOINT`                 | 필수   | —             | app·잡  | S3 호환 엔드포인트 호스트                                                      |
-| `STORIX_STORAGE_PORT`                     | 선택   | `9000`        | app·잡  | 스토리지 포트                                                                  |
-| `STORIX_STORAGE_USE_SSL`                  | 선택   | `false`       | app·잡  | 스토리지 TLS 사용 여부                                                         |
-| `STORIX_STORAGE_ACCESS_KEY`               | 필수   | —             | app·잡  | 스토리지 access key                                                            |
-| `STORIX_STORAGE_SECRET_KEY`               | 필수   | —             | app·잡  | 스토리지 secret key                                                            |
-| `STORIX_STORAGE_BUCKET`                   | 필수   | —             | app·잡  | 버킷 이름                                                                      |
-| `STORIX_STORAGE_PATH_STYLE`               | 선택   | `true`        | app·잡  | path-style 주소 사용                                                           |
-| `STORIX_STORAGE_REGION`                   | 선택   | `us-east-1`   | app·잡  | 서명에 쓰는 리전                                                               |
-| `STORIX_STORAGE_PUBLIC_ENDPOINT`          | 선택   | —             | app·잡  | presigned download URL의 외부 접근 주소                                        |
-| `STORIX_STORAGE_PUBLIC_PORT`              | 선택   | `9000`        | app·잡  | 외부 접근 포트                                                                 |
-| `STORIX_STORAGE_PUBLIC_USE_SSL`           | 선택   | `false`       | app·잡  | 외부 접근 TLS 여부                                                             |
-| `STORIX_VERSITYGW_DATA_PATH`              | 선택   | —             | compose | `docker-compose.versitygw.yml` 전용                                            |
-| `STORIX_NGINX_PUBLIC_PORT`                | 선택   | `8443`        | compose | `docs/deployment/compose.nginx-demo.yml` 전용 호스트 포트                      |
-| `STORIX_SCENARIO_VERSITYGW_PORT`          | 선택   | `7070`        | compose | `co-located-nginx-mtls` 시나리오에서 host Nginx가 접근할 loopback 포트         |
-| `STORIX_DEFAULT_FILE_SIZE_BYTES`          | 선택   | `5368709120`  | app     | namespace 파일 크기 override가 없을 때 적용하는 기본값(5 GiB)                  |
-| `STORIX_MAX_FILE_SIZE_BYTES`              | 선택   | 기본값과 같음 | app     | 단일 파일의 전역 ceiling                                                       |
-| `STORIX_DEFAULT_MAX_FILES_PER_FOLDER`     | 선택   | `10000`       | app     | 폴더의 직접 자식 FILE 기본 상한                                                |
-| `STORIX_MAX_FILES_PER_FOLDER`             | 선택   | 기본값과 같음 | app     | 폴더별 직접 자식 FILE 상한의 전역 ceiling                                      |
-| `STORIX_DEFAULT_MAX_LIVE_NODES`           | 선택   | `1000000`     | app     | namespace의 root를 제외한 live FILE·DIRECTORY 기본 상한                        |
-| `STORIX_MAX_LIVE_NODES`                   | 선택   | 기본값과 같음 | app     | namespace live node 상한의 전역 ceiling                                        |
-| `STORIX_MAX_SYNC_DELETE_NODES`            | 선택   | `1000`        | app     | recursive rm이 동기 처리하는 노드 수 상한                                      |
-| `STORIX_MAX_SYNC_COPY_NODES`              | 선택   | `1000`        | app     | recursive cp 노드 수 상한                                                      |
-| `STORIX_MAX_SYNC_SNAPSHOT_NODES`          | 선택   | `1000`        | app     | snapshot 한 건의 최대 manifest 노드 수(디렉터리 포함)                          |
-| `STORIX_MAX_SNAPSHOT_BYTES`               | 선택   | `5368709120`  | app     | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB)                             |
-| `STORIX_MAX_RETAINED_SNAPSHOT_NODES`      | 선택   | `100000`      | app     | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한              |
-| `STORIX_MAX_RETAINED_SNAPSHOT_BYTES`      | 선택   | `53687091200` | app     | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB)      |
-| `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`      | app     | namespace별 보존 휴지통 node 수 상한                                           |
-| `STORIX_MUTATION_LEASE_SECONDS`           | 선택   | `60`          | app     | 조건부 업로드 claim lease(초)                                                  |
-| `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`       | app     | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간)    |
-| `STORIX_VFS_EXPIRY_MIN_SECONDS`           | 선택   | `60`          | app     | 새 FILE 만료 입력의 최소 기간(초)                                              |
-| `STORIX_VFS_EXPIRY_MAX_SECONDS`           | 선택   | `2592000`     | app     | 새 FILE 만료 입력의 최대 기간(초)                                              |
-| `STORIX_PRESIGNED_URL_EXPIRY_SECONDS`     | 선택   | `300`         | app     | presigned URL 만료(초)                                                         |
-| `STORIX_ORPHAN_GRACE_PERIOD`              | 선택   | `86400`       | gc      | 참조 0 이후 회수까지 유예(초)                                                  |
-| `STORIX_GC_MIN_INTERVAL`                  | 선택   | `3600`        | gc      | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초)                        |
-| `STORIX_GC_MAX_ROWS_PER_STAGE`            | 선택   | `200000`      | gc      | 한 실행에서 단계마다 처리하는 행 수 예산                                       |
-| `STORIX_NAMESPACE_DELETED_RETENTION_DAYS` | 선택   | `30`          | gc      | 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간(일) |
-| `STORIX_API_KEY`                          | 필수   | —             | app     | 서비스 간 인증 키                                                              |
-| `STORIX_API_KEY_PREVIOUS`                 | 선택   | —             | app     | 키 로테이션 중 함께 유효한 이전 키                                             |
-| `STORIX_ENCRYPTION_MASTER_KEY`            | 조건부 | —             | app     | ENCRYPTED namespace가 하나라도 있으면 필요한 키                                |
-| `STORIX_SENTRY_DSN`                       | 선택   | —             | app·잡  | 설정 시 500 에러·잡 실패를 Sentry로 리포팅                                     |
-| `STORIX_SECRET_ADAPTERS`                  | 선택   | —             | 모두    | 쉼표로 구분한 통신형 비밀값 어댑터 패키지 이름                                 |
-| `STORIX_SECRET_RESOLVE_TIMEOUT_MS`        | 선택   | `10000`       | 모두    | 통신형 비밀값 해석 1건의 타임아웃(ms)                                          |
-| `STORIX_BACKUP_DIR`                       | 필수   | —             | backup  | 백업 저장 디렉터리                                                             |
-| `STORIX_RESTORE_SOURCE_DIR`               | 필수   | —             | restore | 복구할 백업 디렉터리                                                           |
-| `STORIX_RESTORE_FORCE`                    | 선택   | `false`       | restore | 대상에 데이터가 있어도 덮어쓴다(되돌릴 수 없음)                                |
+| 변수                                      | 구분   | 기본값                | 읽는 곳 | 용도                                                                           |
+| ----------------------------------------- | ------ | --------------------- | ------- | ------------------------------------------------------------------------------ |
+| `STORIX_PUBLISH_HOST`                     | 선택   | `0.0.0.0`             | compose | `app` 컨테이너의 호스트 bind 주소                                              |
+| `STORIX_PUBLISH_PORT`                     | 선택   | `3000`                | compose | `app` 컨테이너를 호스트에 노출하는 포트                                        |
+| `STORIX_PORT`                             | 선택   | `3000`                | app     | app의 listen 포트                                                              |
+| `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`      | 선택   | `53687091200`         | app     | Namespace quota override가 없을 때 적용하는 기본값(50 GiB)                     |
+| `STORIX_MAX_TOTAL_LOGICAL_BYTES`          | 선택   | 기본값과 같음         | app     | namespace quota override의 전역 ceiling                                        |
+| `STORIX_VFS_CAPABILITIES_CONFIG_PATH`     | 선택   | —                     | app     | 시작 시 읽는 선택 VFS capability JSON 파일 경로                                |
+| `STORIX_VFS_CHANGE_RETENTION_DAYS`        | 선택   | `30`                  | gc      | 변경 feed 이벤트 보존 기간(양의 정수 일수)                                     |
+| `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`  | 조건부 | —                     | app     | 재개 업로드 정책 JSON 경로                                                     |
+| `STORIX_ADMIN_API_KEY`                    | 선택   | —                     | app     | `/api/v2/admin/*` 전용 관리자 Bearer key                                       |
+| `STORIX_ADMIN_API_KEY_PREVIOUS`           | 선택   | —                     | app     | 관리자 키 교체 기간에만 허용하는 이전 Bearer key                               |
+| `STORIX_DB_DRIVER`                        | 선택   | `postgres`            | 모두    | `postgres` 또는 `sqlite`                                                       |
+| `STORIX_DB_SQLITE_PATH`                   | 조건부 | —                     | 모두    | `STORIX_DB_DRIVER=sqlite`일 때 필수                                            |
+| `STORIX_DB_HOST`                          | 필수   | —                     | 모두    | Postgres 호스트                                                                |
+| `STORIX_DB_PORT`                          | 선택   | `5432`                | 모두    | Postgres 포트                                                                  |
+| `STORIX_DB_USERNAME`                      | 필수   | —                     | 모두    | Postgres 사용자                                                                |
+| `STORIX_DB_PASSWORD`                      | 필수   | —                     | 모두    | Postgres 비밀번호                                                              |
+| `STORIX_DB_NAME`                          | 필수   | —                     | 모두    | 데이터베이스 이름                                                              |
+| `STORIX_STORAGE_ENDPOINT`                 | 필수   | —                     | app·잡  | S3 호환 엔드포인트 호스트                                                      |
+| `STORIX_STORAGE_PORT`                     | 선택   | `9000`                | app·잡  | 스토리지 포트                                                                  |
+| `STORIX_STORAGE_USE_SSL`                  | 선택   | `false`               | app·잡  | 스토리지 TLS 사용 여부                                                         |
+| `STORIX_STORAGE_ACCESS_KEY`               | 필수   | —                     | app·잡  | 스토리지 access key                                                            |
+| `STORIX_STORAGE_SECRET_KEY`               | 필수   | —                     | app·잡  | 스토리지 secret key                                                            |
+| `STORIX_STORAGE_BUCKET`                   | 필수   | —                     | app·잡  | 버킷 이름                                                                      |
+| `STORIX_STORAGE_PATH_STYLE`               | 선택   | `true`                | app·잡  | path-style 주소 사용                                                           |
+| `STORIX_STORAGE_REGION`                   | 선택   | `us-east-1`           | app·잡  | 서명에 쓰는 리전                                                               |
+| `STORIX_STORAGE_PUBLIC_ENDPOINT`          | 선택   | —                     | app·잡  | presigned download URL의 외부 접근 주소                                        |
+| `STORIX_STORAGE_PUBLIC_PORT`              | 선택   | `9000`                | app·잡  | 외부 접근 포트                                                                 |
+| `STORIX_STORAGE_PUBLIC_USE_SSL`           | 선택   | `false`               | app·잡  | 외부 접근 TLS 여부                                                             |
+| `STORIX_VERSITYGW_DATA_PATH`              | 선택   | —                     | compose | `docker-compose.versitygw.yml` 전용                                            |
+| `STORIX_NGINX_PUBLIC_PORT`                | 선택   | `8443`                | compose | `docs/deployment/compose.nginx-demo.yml` 전용 호스트 포트                      |
+| `STORIX_SCENARIO_VERSITYGW_PORT`          | 선택   | `7070`                | compose | `co-located-nginx-mtls` 시나리오에서 host Nginx가 접근할 loopback 포트         |
+| `STORIX_SCENARIO_SECRETS_DIR`             | 선택   | `/etc/storix/secrets` | compose | `single-host-private` 시나리오의 비밀 파일 디렉터리                            |
+| `STORIX_DEFAULT_FILE_SIZE_BYTES`          | 선택   | `5368709120`          | app     | namespace 파일 크기 override가 없을 때 적용하는 기본값(5 GiB)                  |
+| `STORIX_MAX_FILE_SIZE_BYTES`              | 선택   | 기본값과 같음         | app     | 단일 파일의 전역 ceiling                                                       |
+| `STORIX_DEFAULT_MAX_FILES_PER_FOLDER`     | 선택   | `10000`               | app     | 폴더의 직접 자식 FILE 기본 상한                                                |
+| `STORIX_MAX_FILES_PER_FOLDER`             | 선택   | 기본값과 같음         | app     | 폴더별 직접 자식 FILE 상한의 전역 ceiling                                      |
+| `STORIX_DEFAULT_MAX_LIVE_NODES`           | 선택   | `1000000`             | app     | namespace의 root를 제외한 live FILE·DIRECTORY 기본 상한                        |
+| `STORIX_MAX_LIVE_NODES`                   | 선택   | 기본값과 같음         | app     | namespace live node 상한의 전역 ceiling                                        |
+| `STORIX_MAX_SYNC_DELETE_NODES`            | 선택   | `1000`                | app     | recursive rm이 동기 처리하는 노드 수 상한                                      |
+| `STORIX_MAX_SYNC_COPY_NODES`              | 선택   | `1000`                | app     | recursive cp 노드 수 상한                                                      |
+| `STORIX_MAX_SYNC_SNAPSHOT_NODES`          | 선택   | `1000`                | app     | snapshot 한 건의 최대 manifest 노드 수(디렉터리 포함)                          |
+| `STORIX_MAX_SNAPSHOT_BYTES`               | 선택   | `5368709120`          | app     | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB)                             |
+| `STORIX_MAX_RETAINED_SNAPSHOT_NODES`      | 선택   | `100000`              | app     | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한              |
+| `STORIX_MAX_RETAINED_SNAPSHOT_BYTES`      | 선택   | `53687091200`         | app     | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB)      |
+| `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`              | app     | namespace별 보존 휴지통 node 수 상한                                           |
+| `STORIX_MUTATION_LEASE_SECONDS`           | 선택   | `60`                  | app     | 조건부 업로드 claim lease(초)                                                  |
+| `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`               | app     | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간)    |
+| `STORIX_VFS_EXPIRY_MIN_SECONDS`           | 선택   | `60`                  | app     | 새 FILE 만료 입력의 최소 기간(초)                                              |
+| `STORIX_VFS_EXPIRY_MAX_SECONDS`           | 선택   | `2592000`             | app     | 새 FILE 만료 입력의 최대 기간(초)                                              |
+| `STORIX_PRESIGNED_URL_EXPIRY_SECONDS`     | 선택   | `300`                 | app     | presigned URL 만료(초)                                                         |
+| `STORIX_ORPHAN_GRACE_PERIOD`              | 선택   | `86400`               | gc      | 참조 0 이후 회수까지 유예(초)                                                  |
+| `STORIX_GC_MIN_INTERVAL`                  | 선택   | `3600`                | gc      | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초)                        |
+| `STORIX_GC_MAX_ROWS_PER_STAGE`            | 선택   | `200000`              | gc      | 한 실행에서 단계마다 처리하는 행 수 예산                                       |
+| `STORIX_NAMESPACE_DELETED_RETENTION_DAYS` | 선택   | `30`                  | gc      | 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간(일) |
+| `STORIX_API_KEY`                          | 필수   | —                     | app     | 서비스 간 인증 키                                                              |
+| `STORIX_API_KEY_PREVIOUS`                 | 선택   | —                     | app     | 키 로테이션 중 함께 유효한 이전 키                                             |
+| `STORIX_ENCRYPTION_MASTER_KEY`            | 조건부 | —                     | app     | ENCRYPTED namespace가 하나라도 있으면 필요한 키                                |
+| `STORIX_SENTRY_DSN`                       | 선택   | —                     | app·잡  | 설정 시 500 에러·잡 실패를 Sentry로 리포팅                                     |
+| `STORIX_SECRET_ADAPTERS`                  | 선택   | —                     | 모두    | 쉼표로 구분한 통신형 비밀값 어댑터 패키지 이름                                 |
+| `STORIX_SECRET_RESOLVE_TIMEOUT_MS`        | 선택   | `10000`               | 모두    | 통신형 비밀값 해석 1건의 타임아웃(ms)                                          |
+| `STORIX_BACKUP_DIR`                       | 필수   | —                     | backup  | 백업 저장 디렉터리                                                             |
+| `STORIX_RESTORE_SOURCE_DIR`               | 필수   | —                     | restore | 복구할 백업 디렉터리                                                           |
+| `STORIX_RESTORE_FORCE`                    | 선택   | `false`               | restore | 대상에 데이터가 있어도 덮어쓴다(되돌릴 수 없음)                                |
 
 ### 환경변수 적용 규칙
 
