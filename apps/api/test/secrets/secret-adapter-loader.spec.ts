@@ -81,6 +81,16 @@ describe('loadSecretAdapters', () => {
     await expect(promise).rejects.not.toThrow(/import-secret-555/);
   });
 
+  it('import가 null을 던져도 import-failed로 분류한다', async () => {
+    const importModule: ImportModule = async () => {
+      throw null;
+    };
+
+    const failures = await loadFailures(loadSecretAdapters(['storix-secret-a'], importModule));
+
+    expect(failures).toEqual([{ specifier: 'storix-secret-a', kind: 'import-failed' }]);
+  });
+
   it('기본 export가 SecretSource 구조가 아니면 invalid-export로 실패한다', async () => {
     const exports: Record<string, unknown> = {
       'no-default': {},

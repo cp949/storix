@@ -43,6 +43,17 @@ describe('resolveSecrets 어댑터 계약', () => {
     await expect(resolveSecrets(env, hangingModule)).rejects.toThrow('STORIX_API_KEY(fake): timeout');
   });
 
+  it('타임아웃 설정이 잘못되면 어댑터를 불러오기 전에 실패한다', async () => {
+    const importModule = jest.fn<ImportModule>(fakeModule);
+    const env: NodeJS.ProcessEnv = {
+      STORIX_SECRET_ADAPTERS: 'storix-secret-fake',
+      STORIX_SECRET_RESOLVE_TIMEOUT_MS: 'abc',
+    };
+
+    await expect(resolveSecrets(env, importModule)).rejects.toThrow('잘못된 정수 환경변수 값');
+    expect(importModule).not.toHaveBeenCalled();
+  });
+
   it('해석 중 콘솔과 표준 출력에 아무것도 쓰지 않는다', async () => {
     const spies = [
       jest.spyOn(console, 'log'),

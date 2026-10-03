@@ -82,7 +82,7 @@ export async function loadSecretAdapters(
     try {
       loaded = await importModule(specifier);
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? '';
+      const code = (error as NodeJS.ErrnoException | null | undefined)?.code ?? '';
       failures.push({ specifier, kind: NOT_FOUND_CODES.has(code) ? 'not-found' : 'import-failed' });
       continue;
     }

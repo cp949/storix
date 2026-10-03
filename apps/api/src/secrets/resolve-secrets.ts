@@ -23,7 +23,8 @@ export async function resolveSecrets(
   env: NodeJS.ProcessEnv = process.env,
   importModule?: ImportModule,
 ): Promise<void> {
-  const sources = await loadSecretAdapters(parseAdapterSpecifiers(env[SECRET_ADAPTERS_ENV]), importModule);
+  // 잘못된 설정은 어댑터를 불러오기 전에 거부한다.
   const timeoutMs = parsePositiveInt(env[SECRET_RESOLVE_TIMEOUT_ENV], DEFAULT_SECRET_RESOLVE_TIMEOUT_MS);
+  const sources = await loadSecretAdapters(parseAdapterSpecifiers(env[SECRET_ADAPTERS_ENV]), importModule);
   await resolveSecretValues(env, { sources, timeoutMs });
 }
