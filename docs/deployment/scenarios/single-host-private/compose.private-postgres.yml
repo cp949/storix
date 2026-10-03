@@ -1,0 +1,13 @@
+# docker-compose.postgres.yml을 함께 쓸 때만 겹쳐 쓰는 override다.
+# SQLite를 쓰면 이 파일을 쓰지 않는다. postgres 서비스가 없으면 compose가 거부한다.
+#
+# 이 파일이 하는 일:
+#   - docker-compose.postgres.yml이 연 127.0.0.1:${STORIX_DB_PORT} 게시를 제거한다.
+#     DB는 default(internal) network 안에서만 접근한다.
+#   - NET_RAW 제거와 no-new-privileges는 compose.private.yml과 같다.
+
+services:
+  postgres:
+    ports: !reset []
+    cap_drop: [NET_RAW]
+    security_opt: ["no-new-privileges:true"]

@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 배포 시나리오 `docs/deployment/scenarios/single-host-private/`를 추가했다. NAS 없이 한 호스트에서 WAS·Storix·VersityGW를 모두 Docker로 운영하는 구성이다. `storix-front` network에는 WAS와 Storix `app`만 두고 VersityGW·DB는 internal network에 분리한다. `app`의 host 포트 게시를 제거하고 `NET_RAW`를 제거한다. 코드와 공개 계약은 바뀌지 않는다.
+
 ### Security
 
 - `STORIX_SENTRY_DSN`을 설정한 배포에서 오류 이벤트가 `Authorization` 헤더 원문(Bearer API 키)을 Sentry로 전송하던 문제를 수정했다. v1.1.0을 포함한 이전 버전이 영향을 받는다. 오류 이벤트 전송 직전에 `request.headers.authorization`을 지운다. 영향을 받은 배포는 Sentry에 남은 이벤트를 삭제하고 `STORIX_API_KEY`·`STORIX_ADMIN_API_KEY`를 교체한다.

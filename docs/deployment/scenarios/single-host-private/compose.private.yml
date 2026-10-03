@@ -1,0 +1,45 @@
+# 단일 호스트 private 배포 override — base docker-compose.yml과 백엔드·DB override에
+# -f로 겹쳐 쓴다. 설명과 절차는 README.md에 있다.
+#
+# 이 파일이 하는 일:
+#   - app의 host 포트 게시를 제거한다. Docker가 게시한 포트는 호스트 방화벽(ufw 등)을
+#     우회하므로 게시하지 않는 것이 가장 안전하다.
+#   - Storix project의 default network를 internal로 만든다. VersityGW·DB·잡은 여기에만
+#     속하므로 외부와 WAS에서 접근할 수 없다.
+#   - app만 외부에서 만든 storix-front network에 추가로 붙인다. WAS도 이 network에
+#     붙어 http://storix:3000으로 호출한다.
+#   - 모든 서비스에서 NET_RAW를 제거하고 no-new-privileges를 켠다. 같은 bridge의
+#     침해 컨테이너가 ARP spoofing으로 트래픽을 가로채는 경로를 줄인다.
+#   - app은 capability를 전부 제거한다.
+#
+# 사전 조건: docker network create --internal storix-front
+#
+# Postgres 컨테이너(docker-compose.postgres.yml)를 함께 쓰면
+# compose.private-postgres.yml도 겹쳐 쓴다.
+
+x-hardening: &hardening
+  cap_drop: [NET_RAW]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  app:
+    <<: *hardening
+    cap_drop: [ALL]
+    ports: !reset []
+    networks:
+      default: {}
+      storix-front:
+        aliases: [storix]
+
+  migrate: *hardening
+  gc: *hardening
+  backup: *hardening
+  restore: *hardening
+  versitygw: *hardening
+  versitygw-init: *hardening
+
+networks:
+  default:
+    internal: true
+  storix-front:
+    external: true
