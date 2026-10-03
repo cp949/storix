@@ -12,13 +12,34 @@ export interface PgConnectionOptions {
   readonly database: string;
 }
 
+// libpq와 실행 파일 탐색에 필요한 변수만 넘긴다.
+// - STORIX_* 비밀값과 어댑터 자격증명(이름을 코어가 모름)을 자식에게 넘기지 않으려고 차단 목록 대신 허용 목록을 쓴다.
+// - HOME은 libpq가 ~/.pgpass와 ~/.postgresql/ 인증서를 찾는 기준이다.
+// - PG*는 운영자가 PGSSLMODE 등으로 libpq를 설정하는 경로다.
+const PG_CHILD_ENV_NAMES = new Set(['PATH', 'HOME', 'TZ', 'LANG']);
+
+/** `pg_dump`·`pg_restore` 자식 환경변수를 허용 목록으로 만든다. `PGPASSWORD`는 `password`로 덮어쓴다. */
+export function buildPgChildEnv(source: NodeJS.ProcessEnv, password: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (PG_CHILD_ENV_NAMES.has(key) || key.startsWith('LC_') || key.startsWith('PG')) {
+      env[key] = value;
+    }
+  }
+  env.PGPASSWORD = password;
+  return env;
+}
+
 function runProcess(command: string, args: string[], password: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // stdout은 읽지 않으므로 명시적으로 버린다 — 파이프로 열어 두면 나중에
     // verbose 플래그가 붙었을 때 64KB 파이프 버퍼가 차서 자식이 블록된다.
     // stderr만 파이프로 열고 아래에서 실제로 소비한다.
     const child = spawn(command, args, {
-      env: { ...process.env, PGPASSWORD: password },
+      env: buildPgChildEnv(process.env, password),
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
