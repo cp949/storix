@@ -49,6 +49,8 @@ Storix `app`만 `default`와 `storix-front`에 동시에 속한다. WAS는 `defa
 
 - [`compose.private.yml`](compose.private.yml): network 분리, 포트 게시 제거, capability 제한
 - [`compose.private-postgres.yml`](compose.private-postgres.yml): `docker-compose.postgres.yml`이 연 호스트 포트 제거. Postgres를 쓸 때만 겹친다.
+- [`compose.secrets.yml`](compose.secrets.yml): `STORIX_API_KEY`·`STORIX_ENCRYPTION_MASTER_KEY`를 compose secret 파일로 전달한다.
+- [`compose.secrets-postgres.yml`](compose.secrets-postgres.yml): Postgres 비밀번호를 파일로 전달한다. `compose.secrets.yml`과 Postgres를 함께 쓸 때만 겹친다.
 - [`env/storix.env.example`](env/storix.env.example): 비밀값 파일 틀
 
 ## 설치
@@ -69,6 +71,7 @@ Storix `app`만 `default`와 `storix-front`에 동시에 속한다. WAS는 `defa
 
    - `STORIX_API_KEY`, `STORIX_ENCRYPTION_MASTER_KEY`, `STORIX_STORAGE_*` 비밀값은 `openssl rand -hex 32`로 만든다.
    - `STORIX_VERSITYGW_DATA_PATH`에 디스크 암호화를 적용한 마운트 경로를 넣는다.
+   - 권장: API key·마스터 키·Postgres 비밀번호는 환경변수 대신 파일로 전달한다. 3단계 전에 아래 "비밀값 파일 전달"을 따른다.
 
 3. Storix를 기동한다. SQLite 조합이다.
 
@@ -100,15 +103,131 @@ Storix `app`만 `default`와 `storix-front`에 동시에 속한다. WAS는 `defa
 
 `storix` 호스트명은 `storix-front` network에서 `app` 컨테이너에 붙은 alias다. alias를 쓰지 않으려면 `compose.private.yml`의 `aliases`를 지우고 WAS가 `http://app:3000`을 쓴다.
 
+## 비밀값 파일 전달
+
+권장 방식이다. 비밀값을 환경변수 대신 compose secret 파일로 전달한다.
+규약과 규칙은 [비밀값 전달 방식](../../../../README.md#비밀값-전달-방식)과 [비밀값 소스 설계](../../../design/15-secret-sources.md)에 있다.
+
+전달하는 값:
+
+- `compose.secrets.yml`: `STORIX_API_KEY`, `STORIX_ENCRYPTION_MASTER_KEY`.
+- `compose.secrets-postgres.yml`: `STORIX_DB_PASSWORD`(Postgres 서비스의 `POSTGRES_PASSWORD`도 같은 파일).
+
+### 절차
+
+1. 비밀 파일 디렉터리를 만든다.
+
+   ```bash
+   sudo install -d -m 700 /etc/storix/secrets
+   ```
+
+2. 비밀 파일을 만든다. 파일 이름은 compose secret 이름과 같다.
+
+   ```bash
+   openssl rand -hex 32 | sudo tee /etc/storix/secrets/storix_api_key >/dev/null
+   openssl rand -hex 32 | sudo tee /etc/storix/secrets/storix_encryption_master_key >/dev/null
+   sudo chmod 444 /etc/storix/secrets/storix_api_key /etc/storix/secrets/storix_encryption_master_key
+   ```
+
+   Postgres 조합이면 비밀번호 파일도 만든다.
+
+   ```bash
+   openssl rand -hex 32 | sudo tee /etc/storix/secrets/storix_db_password >/dev/null
+   sudo chmod 444 /etc/storix/secrets/storix_db_password
+   ```
+
+   - 마스터 키는 `ENCRYPTED` namespace를 쓰지 않아도 파일을 만든다.
+   - 빈 파일은 해석 단계에서 `empty`로 실패한다.
+   - 파일이 없을 때 `docker compose`가 어떻게 동작하는지는 확인하지 않았다.
+   - 다른 위치를 쓰려면 `STORIX_SCENARIO_SECRETS_DIR`을 지정한다.
+
+3. `/etc/storix/storix.env`에서 `STORIX_API_KEY`와 `STORIX_ENCRYPTION_MASTER_KEY` 값을 비운다. Postgres 조합이면 `STORIX_DB_PASSWORD`도 비운다.
+   - override가 `app`의 해당 환경변수를 `""`로 덮어쓴다.
+   - 값이 남아 있으면 호스트의 env 파일에 평문이 남는다.
+
+4. 기동 명령에 override를 추가한다. SQLite 조합이다.
+
+   ```bash
+   docker compose \
+     --env-file /etc/storix/storix.env \
+     -f docker-compose.yml \
+     -f docker-compose.versitygw.yml \
+     -f docker-compose.sqlite.yml \
+     -f docs/deployment/scenarios/single-host-private/compose.private.yml \
+     -f docs/deployment/scenarios/single-host-private/compose.secrets.yml \
+     up -d --build
+   ```
+
+   Postgres 조합은 `docker-compose.sqlite.yml` 자리에 `docker-compose.postgres.yml`을 넣는다. `compose.private-postgres.yml`을 `compose.private.yml` 뒤에, `compose.secrets-postgres.yml`을 `compose.secrets.yml` 뒤에 추가한다.
+
+파일 권한:
+
+- 비밀 파일은 0444, 디렉터리는 0700이다.
+- 디렉터리 0700은 호스트의 다른 사용자가 파일에 닿지 못하게 한다.
+- postgres 이미지가 어느 사용자로 `POSTGRES_PASSWORD_FILE`을 읽는지는 확인하지 않았다.
+- 0444 파일은 postgres 이미지가 읽었다.
+- 그래서 파일을 0444로 둔다.
+- 더 좁은 권한(0400 root 등)에서 읽히는지는 확인하지 않았다.
+- 컨테이너 안에서 `/run/secrets`의 파일은 `-r--r--r--`이다. 호스트 디렉터리의 0700은 컨테이너 안에 적용되지 않는다.
+
+### 위협 모델 요약
+
+막는 경로(파일 전달 컨테이너에서 확인):
+
+- `docker inspect`의 `Config.Env`에 비밀값이 없다.
+- `app` 프로세스와 컨테이너에 exec한 셸의 `/proc/*/environ`에 비밀값이 없다.
+
+막는 경로(코드):
+
+- `backup`·`restore`가 실행하는 `pg_dump`·`pg_restore` 자식은 허용 목록(`PATH`, `HOME`, `TZ`, `LANG`, `LC_*`, `PG*`)만 받는다. 비밀값을 상속하지 않는다.
+- 단위 테스트(`apps/api/test/jobs/pg-dump-cli.tool.spec.ts`)로 확인했다. 컨테이너 안 자식 프로세스의 환경은 확인하지 않았다.
+
+막는 경로(구성상):
+
+- compose `.env`·env 파일 보간으로 다른 서비스에 값이 전달되지 않는다. 비밀값이 env 파일에 없기 때문이다.
+
+막지 못하는 경로:
+
+- 호스트의 평문 파일. 호스트 root와 Docker daemon 권한자는 `/etc/storix/secrets`를 읽는다.
+- 컨테이너 안의 `/run/secrets` 파일. 0444이므로 컨테이너 안의 모든 프로세스가 읽는다.
+- 같은 프로세스 권한의 읽기. 해석값이 `app` 프로세스의 `process.env`에 있다.
+
+### VersityGW 한계
+
+- 이 override는 VersityGW에 비밀값을 파일로 전달하지 않는다.
+- VersityGW v1.8.0의 최상위 `--help` 범위에서 파일 기반 자격증명 옵션이 없었다. `posix` 등 하위 명령 도움말은 확인하지 않았다.
+- `STORIX_STORAGE_ACCESS_KEY`·`STORIX_STORAGE_SECRET_KEY`는 VersityGW root 자격증명으로도 쓰인다.
+- 따라서 두 값은 `/etc/storix/storix.env`에 남고 컨테이너 환경변수로 전달된다. 파일 전달로 노출 경로가 줄지 않는다.
+- `STORIX_DB_USERNAME`과 `STORIX_SENTRY_DSN`도 이 override의 대상이 아니다.
+
+### 확인한 범위
+
+- 시나리오 override로 Postgres 조합을 기동했다. VersityGW는 v1.8.0이다.
+  - `postgres`와 `versitygw`가 `healthy`이고 `app`이 `healthy`이다.
+  - `migrate`와 `versitygw-init`이 종료 코드 0이다.
+- `app` 컨테이너에서 확인했다.
+  - `STORIX_API_KEY`, `STORIX_ENCRYPTION_MASTER_KEY`, `STORIX_DB_PASSWORD`의 비밀값이 `Config.Env`와 `/proc/*/environ`에 없다.
+  - `/proc/*/environ`에서 세 변수의 `_FILE=` 줄은 나왔다. 검사 대상이 비어 있지 않다는 대조다.
+  - 키 없이 호출하면 401이다. 파일에서 읽은 키로 호출하면 400이다. 401이 아니므로 인증은 통과했다. 200 응답은 확인하지 않았다.
+- `docker compose config`에서 `app`에 세 비밀이 모두 있다. compose가 override 파일들의 `secrets:` 목록을 병합한다.
+- postgres 공식 이미지가 0444 비밀 파일을 `POSTGRES_PASSWORD_FILE`로 읽었다. 같은 파일로 `migrate`와 `app`이 접속했다.
+- `backup` 서비스가 종료 코드 0으로 끝났다.
+
+확인하지 않은 것:
+
+- 통신형(`_REF`) 어댑터를 쓰는 구성. 어댑터 패키지를 설치한 사용자 이미지에서 패키지가 해석되는지도 확인하지 않았다.
+- SQLite 조합에서 `compose.secrets.yml`을 쓴 기동.
+- `/etc/storix/secrets` 생성과 `sudo install`·`tee`·`chmod` 절차. 이 절차는 실행하지 않았다. L3는 임시 디렉터리로 실행했다.
+
 ## 개발과 운영의 차이
 
-| 항목                         | 개발                          | 운영                                                    |
-| ---------------------------- | ----------------------------- | ------------------------------------------------------- |
-| 토폴로지                     | 같다                          | 같다                                                    |
-| DB                           | SQLite 또는 Postgres          | 규모에 맞게 선택한다. 백업 형식은 서로 호환되지 않는다. |
-| `STORIX_VERSITYGW_DATA_PATH` | 비워 두면 named volume을 쓴다 | 디스크 암호화를 적용한 마운트 경로                      |
-| 비밀값                       | 약한 값 허용                  | 무작위 값, `/etc/storix/storix.env` 0600                |
-| 백업                         | 호스트 안에 둬도 된다         | 호스트 밖으로 보낸다                                    |
+| 항목                         | 개발                          | 운영                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 토폴로지                     | 같다                          | 같다                                                                                                                                                                                                                         |
+| DB                           | SQLite 또는 Postgres          | 규모에 맞게 선택한다. 백업 형식은 서로 호환되지 않는다.                                                                                                                                                                      |
+| `STORIX_VERSITYGW_DATA_PATH` | 비워 두면 named volume을 쓴다 | 디스크 암호화를 적용한 마운트 경로                                                                                                                                                                                           |
+| 비밀값                       | 약한 값 허용                  | 무작위 값. 대상은 SQLite 조합 2개(`STORIX_API_KEY`, `STORIX_ENCRYPTION_MASTER_KEY`)와 Postgres 조합 3개(DB 비밀번호 포함)이며 `/etc/storix/secrets` 파일(0444, 디렉터리 0700)로 둔다. 나머지는 `/etc/storix/storix.env` 0600 |
+| 백업                         | 호스트 안에 둬도 된다         | 호스트 밖으로 보낸다                                                                                                                                                                                                         |
 
 ## 데이터 보호
 

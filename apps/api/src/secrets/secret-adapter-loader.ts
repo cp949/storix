@@ -1,6 +1,7 @@
 /**
  * `STORIX_SECRET_ADAPTERS`에 지정한 통신형 비밀값 어댑터 모듈을 불러온다.
- * - 지정자는 bare 패키지 이름만 허용한다. 경로·URL·내장 모듈·하위 경로는 거부한다.
+ * - 지정자는 bare 패키지 이름만 허용한다. 경로·URL·`node:` 접두 형식·하위 경로는 거부한다.
+ * - `fs` 같은 bare 내장 모듈 이름은 형식상 통과한다. 이 경우 `invalid-export`로 실패한다.
  * - 지정자는 이 파일 위치(`apps/api`)의 node_modules에서 해석된다.
  * - 오류 메시지에는 지정자와 실패 종류만 쓴다. import 오류 메시지는 옮기지 않는다.
  * 위협 모델은 docs/design/15-secret-sources.md "어댑터 로더"에 있다.

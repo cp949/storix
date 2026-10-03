@@ -28,3 +28,4 @@
 | [12-contract-checks.md](./12-contract-checks.md)                             | `apps/contract` 정의·작성 규약, 프로필 기동, RQ 연결, 실행·검증 범위                                                  |
 | [13-namespace-deletion.md](./13-namespace-deletion.md)                       | 관리자 비동기 namespace 삭제, 접근 차단·이름 재사용·receipt, GC 단계와 DELETED의 완료 경계                            |
 | [14-namespace-limits-and-counters.md](./14-namespace-limits-and-counters.md) | namespace별 default·ceiling·counter 제한, quota 구성요소 제외와 관리자 설정 API                                       |
+| [15-secret-sources.md](./15-secret-sources.md)                               | 비밀값 `_FILE`·`_REF` 규약, 해석 위치·규칙·실패 정책, 통신형 어댑터 계약과 자식 프로세스 환경                         |

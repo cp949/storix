@@ -129,8 +129,9 @@ services:
       STORIX_MAX_SYNC_DELETE_NODES: ${STORIX_MAX_SYNC_DELETE_NODES:-1000}
       STORIX_MAX_SYNC_COPY_NODES: ${STORIX_MAX_SYNC_COPY_NODES:-1000}
       STORIX_PRESIGNED_URL_EXPIRY_SECONDS: ${STORIX_PRESIGNED_URL_EXPIRY_SECONDS:-300}
-      # `${VAR:?}` 필수 마커는 override 병합 전에 파일 전체에 평가된다.
-      # 그래서 STORIX_API_KEY_FILE만 주는 배포도 막힌다.
+      # `${VAR:?}` 필수 마커는 override 병합 전에 파일 전체에 평가되므로,
+      # 이 마커를 쓰면 STORIX_API_KEY_FILE만 주는 배포가 막혔다.
+      # 그래서 `:-`를 쓴다.
       # 미설정은 app이 부팅 시점에 거부한다(auth.module). 값은 openssl rand -hex 32로 만든다.
       STORIX_API_KEY: ${STORIX_API_KEY:-}
       STORIX_API_KEY_PREVIOUS: ${STORIX_API_KEY_PREVIOUS:-}

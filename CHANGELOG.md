@@ -11,9 +11,16 @@
 ### Added
 
 - 배포 시나리오 `docs/deployment/scenarios/single-host-private/`를 추가했다. NAS 없이 한 호스트에서 WAS·Storix·VersityGW를 모두 Docker로 운영하는 구성이다. `storix-front` network에는 WAS와 Storix `app`만 두고 VersityGW·DB는 internal network에 분리한다. `app`의 host 포트 게시를 제거하고 `NET_RAW`를 제거한다. 코드와 공개 계약은 바뀌지 않는다.
+- 비밀값을 파일(`<변수>_FILE`)과 통신형 어댑터(`<변수>_REF`, `STORIX_SECRET_ADAPTERS`)로 받는다. 대상은 API key, 마스터 키, DB·스토리지 자격증명, Sentry DSN이다. 값은 기동 시 한 번 읽는다. 결정은 api ADR-0040이고 규칙은 `docs/design/15-secret-sources.md`다.
+- `single-host-private` 시나리오에 compose secret override(`compose.secrets.yml`, `compose.secrets-postgres.yml`)를 추가했다. VersityGW는 이 override의 파일 전달 대상이 아니다. `STORIX_STORAGE_*`는 환경변수로 남는다.
+
+### Changed
+
+- 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.
 
 ### Security
 
+- `pg_dump`·`pg_restore`가 `STORIX_*` 비밀 환경변수를 상속하지 않는다. 허용 목록(`PATH`, `HOME`, `TZ`, `LANG`, `LC_*`, `PG*`)만 넘긴다. 이 이름 밖의 변수(`SSL_CERT_FILE`, `LD_LIBRARY_PATH` 등)로 libpq를 설정한 운영 환경은 그 값이 자식에 전달되지 않는다.
 - `STORIX_SENTRY_DSN`을 설정한 배포에서 오류 이벤트가 `Authorization` 헤더 원문(Bearer API 키)을 Sentry로 전송하던 문제를 수정했다. v1.1.0을 포함한 이전 버전이 영향을 받는다. 오류 이벤트 전송 직전에 `request.headers.authorization`을 지운다. 영향을 받은 배포는 Sentry에 남은 이벤트를 삭제하고 `STORIX_API_KEY`·`STORIX_ADMIN_API_KEY`를 교체한다.
 
 ### Fixed

@@ -544,6 +544,45 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 - `STORIX_BACKUP_DIR`: compose 실행에서는 `/backups`(호스트 `./backups`)가 기본.
 - `STORIX_RESTORE_SOURCE_DIR`: 빈 문자열도 거부.
 
+### 비밀값 전달 방식
+
+대상 변수 10개는 환경변수 외에 파일이나 통신형 어댑터로 받을 수 있다.
+
+- `STORIX_API_KEY`, `STORIX_API_KEY_PREVIOUS`
+- `STORIX_ADMIN_API_KEY`, `STORIX_ADMIN_API_KEY_PREVIOUS`
+- `STORIX_ENCRYPTION_MASTER_KEY`
+- `STORIX_STORAGE_ACCESS_KEY`, `STORIX_STORAGE_SECRET_KEY`
+- `STORIX_DB_USERNAME`, `STORIX_DB_PASSWORD`
+- `STORIX_SENTRY_DSN`
+
+변수마다 한 방식만 쓴다.
+
+기본 `docker-compose.yml`은 `STORIX_DB_USERNAME`·`STORIX_DB_PASSWORD`·`STORIX_STORAGE_ACCESS_KEY`·`STORIX_STORAGE_SECRET_KEY`에 기본값을 넣는다. 이 변수를 `_FILE`로 주려면 override에서 `<변수>: ""`로 비워야 한다. 비우지 않으면 환경변수와 파일이 함께 지정되어 기동이 실패한다.
+
+| 방식     | 지정               | 값을 얻는 곳                                           |
+| -------- | ------------------ | ------------------------------------------------------ |
+| 환경변수 | `<비밀 변수>`      | 환경변수 값                                            |
+| 파일     | `<비밀 변수>_FILE` | 지정한 경로의 파일 내용                                |
+| 통신     | `<비밀 변수>_REF`  | `<scheme>://<참조>`의 scheme이 고른 어댑터가 돌려준 값 |
+
+규칙:
+
+- 빈 문자열은 지정하지 않은 것으로 본다. `.env`의 빈 `STORIX_API_KEY=` 줄은 충돌을 일으키지 않는다.
+- 빈 값이 아닌 방식이 둘 이상이면 기동이 실패한다.
+- `.env`에 적은 값은 `app`, `gc`, `backup`, `restore`가 해석한다. `migrate`와 `migration:run`(`typeorm` CLI)은 `.env`를 읽지 않으므로 셸·컨테이너 환경변수만 해석한다.
+- 파일 값은 끝의 줄바꿈 하나만 제거한다.
+- 해석에 실패하면 변수명, 방식, 실패 종류만 출력하고 기동이 실패한다. 값은 출력하지 않는다.
+- 값은 기동 시 한 번 읽는다. 값을 바꾸면 재시작한다.
+
+통신형:
+
+- 어댑터 패키지를 설치한 사용자 이미지가 필요하다. 기본 이미지에는 어댑터가 없다.
+- `STORIX_SECRET_ADAPTERS`에 어댑터 패키지 이름을 지정한다.
+- 해석 1건의 타임아웃은 `STORIX_SECRET_RESOLVE_TIMEOUT_MS`다.
+
+compose에서 파일로 전달하는 절차는 [단일 호스트 private 배포](docs/deployment/scenarios/single-host-private/README.md)의 "비밀값 파일 전달"을 따른다.
+규칙의 상세는 `docs/design/15-secret-sources.md`다.
+
 ### 재개 업로드 활성화
 
 `resumable-upload`는 기본 비활성이다.
