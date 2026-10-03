@@ -142,8 +142,9 @@ storix/
 마이그레이션이 필요해 비용이 크다.
 
 - [x] SEC-01: **서비스 간 인증** — API key 발급. 키를 슬라이스(현재 키 + 이전
-      키)로 관리해 무중단 로테이션을 지원한다(imgproxy
-      `IMGPROXY_KEY`/`IMGPROXY_SALT` 패턴 참고).
+      키)로 관리한다(imgproxy `IMGPROXY_KEY`/`IMGPROXY_SALT` 패턴 참고). 키 교체는
+      프로세스 재시작으로 반영한다. 재시작 구간에 신·구 키를 함께 허용해 호출 서버의
+      키 전환 중에도 인증이 실패하지 않게 한다(api ADR-0007).
 - [x] SEC-02: **리소스 상한** — namespace별 업로드 크기·전역 JSON/urlencoded 요청 본문 크기 상한. DoS
       방어를 보안 기반 범위에 포함한다.
 - [x] SEC-03: **암호화 정책 구현** — ADR-0001에서 설계만 된 `ENCRYPTED`
