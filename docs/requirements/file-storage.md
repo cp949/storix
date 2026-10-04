@@ -692,7 +692,8 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 **판정 근거:**
 
 - 성공 요청은 기존 `AuditLogInterceptor`가 request ID, caller, namespace, operation, 대상 경로, HTTP 결과를 기록한다.
-- `InvalidApiKeyError`는 공통 예외 필터에서 `request_id`, HTTP method와 request path로 구성한 128자 operation, 전체 request path, 401 결과를 best-effort 기록하며 caller·namespace는 null로 둔다.
+- `InvalidApiKeyError`는 공통 예외 필터에서 `request_id`, HTTP method와 request path로 구성한 128자 operation, request path(4096 코드 유닛까지), 401 결과를 best-effort 기록하며 caller·namespace는 null로 둔다.
+- 401 감사 행은 프로세스당 60초에 60행까지 기록한다. 초과분은 다음 윈도의 요약 행 1개(`AUTH_REJECT_SUPPRESSED`)에 건수로만 남는다(api ADR-0010).
 - 감사 행은 nullable `snapshot_id`를 가지며 생성 결과와 개별 ID 경로를 기록하고 목록은 null을 유지한다.
 - snapshot 감사 ID는 PostgreSQL/SQLite migration과 저장 테스트로 확인했다.
 - 단위·PostgreSQL 통합 검증은 키 원문과 본문 미기록 및 저장 실패 시 401 응답 보존을 확인한다.

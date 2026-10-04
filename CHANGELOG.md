@@ -44,6 +44,7 @@
 
 - `pg_dump`·`pg_restore`가 `STORIX_*` 비밀 환경변수를 상속하지 않는다. 허용 목록(`PATH`, `HOME`, `TZ`, `LANG`, `LC_*`, `PG*`)만 넘긴다. 이 이름 밖의 변수(`SSL_CERT_FILE`, `LD_LIBRARY_PATH` 등)로 libpq를 설정한 운영 환경은 그 값이 자식에 전달되지 않는다.
 - `STORIX_SENTRY_DSN`을 설정한 배포에서 오류 이벤트가 `Authorization` 헤더 원문(Bearer API 키)을 Sentry로 전송하던 문제를 수정했다. v1.1.0을 포함한 이전 버전이 영향을 받는다. 오류 이벤트 전송 직전에 `request.headers.authorization`을 지운다. 영향을 받은 배포는 Sentry에 남은 이벤트를 삭제하고 `STORIX_API_KEY`·`STORIX_ADMIN_API_KEY`를 교체한다.
+- 인증 거부(401) 감사 행이 요청 수에 비례해 무제한으로 쌓이던 문제를 수정했다. 키가 없거나 잘못된 요청마다 `audit_log`에 행을 insert했고 `path`는 길이 제한 없이 저장됐다. 이제 프로세스당 60초에 60행까지만 기록한다. 초과분은 건수만 세고 다음 윈도의 첫 거부 때 요약 행 1개(`operation='AUTH_REJECT_SUPPRESSED'`, `detail={suppressed, windowSeconds}`)로 남긴다. 윈도당 첫 생략 때 경고 로그를 한 번 남긴다. 401 `path`는 4096 코드 유닛까지만 저장한다. 마지막 윈도의 요약 행은 다음 거부가 올 때까지 기록되지 않는다. 상한은 인스턴스별이며 환경변수로 바꿀 수 없다. `audit_log`의 보존 정책은 이 변경에 없다. api ADR-0010의 "알려진 한계"를 현재 동작에 맞게 고쳤다(GitHub 이슈 #28).
 
 ### Fixed
 
