@@ -15,6 +15,7 @@ import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsSnapshotEntity, type VfsSnapshotKind } from './entities/vfs-snapshot.entity.js';
 import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
 import type { MutationTx, SnapshotSourceRow } from './vfs-node.repository.js';
+import { parseSqlTimestamp } from './vfs-node.repository.helpers.js';
 
 export type SnapshotMetadata = Readonly<VfsSnapshotEntity> & { readonly sha256: string | null };
 export type LockedSnapshot = Readonly<VfsSnapshotEntity>;
@@ -290,7 +291,7 @@ export class VfsSnapshotRepository {
     const raw = (await this.dataSource.query(sql, params)) as Array<Record<string, unknown>>;
     const items = raw.slice(0, limit).map((row) => ({
       snapshotId: String(row.snapshotId),
-      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt)),
+      createdAt: parseSqlTimestamp(row.createdAt as Date | string),
       createdAtKey: String(row.createdAtKey),
       sourceRevision: String(row.sourceRevision),
       logicalBytes: String(row.logicalBytes),

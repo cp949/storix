@@ -167,6 +167,23 @@ export function runSnapshotRepositoryTests(
       (await context().snapshots.listFileSnapshots(otherNamespace.namespace.id, node.id, null, 10)).items,
     ).toEqual([]);
   });
+  it('호스트 시간대가 UTC가 아니어도 FILE snapshot 목록의 createdAt은 저장된 UTC 시각이다', async () => {
+    const { namespace, root } = await fixture();
+    const { node } = await file(namespace.id, root.id, 'tz-listed');
+    const snapshot = await capture(namespace.id, root.id, ['tz-listed']);
+    const stored = new Date('2026-09-26T01:02:03.004Z');
+    await ds().getRepository(VfsSnapshotEntity).update(snapshot.id, { createdAt: stored });
+
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'Asia/Seoul';
+    try {
+      const page = await context().snapshots.listFileSnapshots(namespace.id, node.id, null, 10);
+      expect(page.items.map((item) => item.createdAt.toISOString())).toEqual([stored.toISOString()]);
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
+  });
   it('rejects kind/source mismatches and missing capture paths', async () => {
     const { namespace, root } = await fixture();
     const { blob } = await file(namespace.id, root.id, 'a');
