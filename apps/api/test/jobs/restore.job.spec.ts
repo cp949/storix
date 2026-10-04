@@ -5,7 +5,10 @@ import * as path from 'node:path';
 import type { ConfigService } from '@nestjs/config';
 import type { DbDumpTool } from '../../src/jobs/db-dump.tool.js';
 import { RestoreJob } from '../../src/jobs/restore.job.js';
-import { RestoreUnsupportedBackupError } from '../../src/jobs/restore.errors.js';
+import {
+  RestoreIncompleteBackupError,
+  RestoreUnsupportedBackupError,
+} from '../../src/jobs/restore.errors.js';
 import type { BackupRepository } from '../../src/persistence/backup.repository.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 
@@ -19,9 +22,9 @@ describe('RestoreJob 백업 구조 검사', () => {
   let backupRepository: { hasExistingNamespaces: jest.Mock<() => Promise<boolean>> };
   let dumpTool: DbDumpTool & { restore: jest.Mock<DbDumpTool['restore']> };
 
-  function createJob(force: boolean | string = false): RestoreJob {
+  function createJob(force: boolean | string = false, source: string = sourceDir): RestoreJob {
     const values: Record<string, string> = {
-      STORIX_RESTORE_SOURCE_DIR: sourceDir,
+      STORIX_RESTORE_SOURCE_DIR: source,
       STORIX_RESTORE_FORCE: String(force),
     };
     const config = {
@@ -91,6 +94,51 @@ describe('RestoreJob 백업 구조 검사', () => {
       expect(() => createJob(value)).toThrow(`STORIX_RESTORE_FORCE=${value}`);
     },
   );
+
+  describe('완료되지 않은 백업(.partial)', () => {
+    let partialDir: string;
+
+    beforeEach(async () => {
+      partialDir = `${sourceDir}.partial`;
+      await fs.mkdir(path.join(partialDir, 'blobs', 'ab'), { recursive: true });
+      await fs.writeFile(path.join(partialDir, 'test.dump'), 'dump');
+      await fs.writeFile(path.join(partialDir, 'blobs', 'ab', 'one'), 'x');
+    });
+
+    afterEach(async () => {
+      await fs.rm(partialDir, { recursive: true, force: true });
+    });
+
+    it('.partial 디렉터리는 DB 복구와 스토리지 호출 전에 거부한다', async () => {
+      await expect(createJob(true, partialDir).run()).rejects.toBeInstanceOf(RestoreIncompleteBackupError);
+
+      expect(backupRepository.hasExistingNamespaces).not.toHaveBeenCalled();
+      expect(dumpTool.restore).not.toHaveBeenCalled();
+      expect(storage.list).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('끝 슬래시가 붙은 경로도 거부한다', async () => {
+      await expect(createJob(false, `${partialDir}${path.sep}`).run()).rejects.toBeInstanceOf(
+        RestoreIncompleteBackupError,
+      );
+    });
+
+    it('상대경로로 가리킨 .partial 디렉터리도 거부한다', async () => {
+      const relative = path.relative(process.cwd(), partialDir);
+
+      await expect(createJob(false, relative).run()).rejects.toBeInstanceOf(RestoreIncompleteBackupError);
+    });
+
+    it('중간 이름에만 .partial이 들어간 디렉터리는 거부하지 않는다', async () => {
+      const named = path.join(sourceDir, 'a.partial.d');
+      await fs.mkdir(named);
+      await fs.writeFile(path.join(named, 'test.dump'), 'dump');
+
+      await expect(createJob(false, named).run()).resolves.toMatchObject({ restoredObjectCount: 0 });
+    });
+  });
 
   describe('force 복구 순서', () => {
     function listsExisting(...keys: string[]): void {

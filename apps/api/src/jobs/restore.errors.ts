@@ -19,3 +19,14 @@ export class RestoreUnsupportedBackupError extends DomainError {
     );
   }
 }
+
+export class RestoreIncompleteBackupError extends DomainError {
+  readonly code = 'RESTORE_INCOMPLETE_BACKUP';
+  readonly status = 422;
+
+  constructor(sourceDir: string) {
+    super(
+      `완료되지 않은 백업 — 이름이 '.partial'로 끝나는 디렉터리는 진행 중이거나 실패한 백업이라 복구할 수 없음: ${sourceDir}`,
+    );
+  }
+}

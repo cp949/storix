@@ -7,7 +7,11 @@ import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
-import { RestoreTargetNotEmptyError, RestoreUnsupportedBackupError } from './restore.errors.js';
+import {
+  RestoreIncompleteBackupError,
+  RestoreTargetNotEmptyError,
+  RestoreUnsupportedBackupError,
+} from './restore.errors.js';
 
 export interface RestoreResult {
   readonly sourceDir: string;
@@ -40,6 +44,14 @@ export class RestoreJob {
   }
 
   async run(): Promise<RestoreResult> {
+    // BackupJob은 모든 단계가 성공한 뒤에만 `.partial`을 떼는 rename을 한다. 이름이
+    // `.partial`로 끝나면 blob 미러가 잘렸을 수 있어, DB만 복구되고 blob이 누락된 채
+    // 성공으로 끝난다(force면 백업에 없는 기존 object까지 지운다). 상대경로·끝 슬래시를
+    // 정규화한 뒤 판정한다.
+    if (path.basename(path.resolve(this.sourceDir)).endsWith('.partial')) {
+      throw new RestoreIncompleteBackupError(this.sourceDir);
+    }
+
     // 파괴적 작업(clearExistingObjects/dump 복구)에 들어가기 전에 백업 실체부터
     // 확인한다. 경로 오타로 force 복구를 돌리면 대상 버킷만 비워 두고 복구가
     // 실패해, 복구 전보다 나쁜 상태로 끝난다. ENOENT를 그대로 올려보내 어떤
