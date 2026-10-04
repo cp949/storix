@@ -9,6 +9,7 @@ import {
   mutationLeaseSeconds,
   VfsMutationReceiptRepository,
 } from '../persistence/vfs-mutation-receipt.repository.js';
+import { BlobRepository } from '../persistence/blob.repository.js';
 import type { ReceiptIdentity } from '../persistence/vfs-mutation-receipt.repository.js';
 import { ContentPrecondition, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
@@ -91,6 +92,7 @@ export class ConditionalContentService {
     private readonly keys: StorageKeyGenerator,
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     private readonly contentIngress: ContentIngressService,
+    private readonly blobs: BlobRepository,
     config: ConfigService,
   ) {
     const fileSizeLimits = resolveFileSizeLimits(
@@ -277,8 +279,13 @@ export class ConditionalContentService {
           headers: { 'x-request-id': requestId },
         };
       } catch (error) {
-        // 반영에 실패했으므로(트랜잭션 롤백 또는 claim lost) 업로드한 object를 가리키는 Blob row가 없다.
-        await this.storage.delete(storageKey).catch(() => undefined);
+        // commit 결과가 불명확한 DB 장애(ack 유실)에서 참조된 객체를 지우면 공개 파일이 손실된다.
+        // 참조 여부를 확인하지 못해도 보존하고 orphan GC에 맡긴다.
+        const referenced = await this.blobs
+          .findKnownStorageKeys([storageKey])
+          .then((known) => known.has(storageKey))
+          .catch(() => true);
+        if (!referenced) await this.storage.delete(storageKey).catch(() => undefined);
         return await storeErrorReceipt(this.receipts, owner, error, requestId);
       }
     } catch (error) {

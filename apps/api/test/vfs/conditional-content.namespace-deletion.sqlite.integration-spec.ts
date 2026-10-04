@@ -139,6 +139,7 @@ describe('conditional content 삭제 중 claim 소실 (SQLite)', () => {
       { generate: () => 'blocked-object' } as StorageKeyGenerator,
       storage,
       new ContentIngressService(storage, null),
+      blobs,
       new ConfigService(),
     );
     const pending = service.put(

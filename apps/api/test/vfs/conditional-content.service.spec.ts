@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ConfigService } from '@nestjs/config';
+import type { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { VfsMutationReceiptEntity } from '../../src/persistence/entities/vfs-mutation-receipt.entity.js';
 import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
@@ -32,6 +33,7 @@ describe('ConditionalContentService 오류 receipt', () => {
   const namespaceIsActive = jest.fn<() => Promise<boolean>>();
   const put = jest.fn<BlobStorage['put']>();
   const deleteObject = jest.fn<BlobStorage['delete']>();
+  const findKnownStorageKeys = jest.fn<BlobRepository['findKnownStorageKeys']>();
   const nodes = {
     getRootWithLimits: async () => ({
       root: { id: rootId },
@@ -55,6 +57,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     { generate: () => 'object-key' } as StorageKeyGenerator,
     { put, delete: deleteObject } as unknown as BlobStorage,
     new ContentIngressService({ put, delete: deleteObject } as unknown as BlobStorage, null),
+    { findKnownStorageKeys } as unknown as BlobRepository,
     { get: () => undefined } as unknown as ConfigService,
   );
 
@@ -67,6 +70,7 @@ describe('ConditionalContentService 오류 receipt', () => {
     completeAfterRollback.mockResolvedValue(undefined);
     release.mockResolvedValue(undefined);
     deleteObject.mockResolvedValue(undefined);
+    findKnownStorageKeys.mockResolvedValue(new Set());
     put.mockImplementation(async (_key, stream) => {
       for await (const chunk of stream) {
         void chunk;
@@ -306,6 +310,35 @@ describe('ConditionalContentService 오류 receipt', () => {
     expect(deleteObject).toHaveBeenCalledWith('object-key');
     expect(completeAfterRollback).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('commit 결과가 불명확한 오류에서 Blob row가 참조 중이면 object를 보존한다', async () => {
+    withMutation.mockRejectedValueOnce(new Error('connection lost after commit'));
+    findKnownStorageKeys.mockResolvedValueOnce(new Set(['object-key']));
+
+    await expect(upload('/valid', 'true', undefined)).rejects.toThrow('connection lost after commit');
+
+    expect(findKnownStorageKeys).toHaveBeenCalledWith(['object-key']);
+    expect(deleteObject).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('참조 여부를 확인하지 못하면 object를 삭제하지 않는다', async () => {
+    putConditionalContent.mockRejectedValueOnce(new Error('database unavailable'));
+    findKnownStorageKeys.mockRejectedValueOnce(new Error('lookup failed'));
+
+    await expect(upload('/valid', 'true', undefined)).rejects.toThrow('database unavailable');
+
+    expect(deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('claim lost 뒤 Blob row가 참조 중이면 object를 보존한다', async () => {
+    renew.mockResolvedValueOnce(false);
+    findKnownStorageKeys.mockResolvedValueOnce(new Set(['object-key']));
+
+    await expect(upload('/valid', 'true', undefined)).rejects.toThrow('VFS mutation claim lost');
+
+    expect(deleteObject).not.toHaveBeenCalled();
   });
 
   it('잘못된 path를 hash한 뒤 삭제로 claim이 소실되면 receipt 저장 없이 404를 반환한다', async () => {
