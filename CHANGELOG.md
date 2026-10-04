@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- SQLite 드라이버에서 `SQLITE_FULL`·`SQLITE_IOERR` 등으로 SQLite가 트랜잭션을 스스로 롤백하면 쿼리 게이트가 해제되지 않아 프로세스를 재시작할 때까지 모든 쿼리가 30초 대기 뒤 503 `DB_BUSY`로 실패하던 문제를 수정했다. 게이트가 트랜잭션·SAVEPOINT 깊이를 직접 세어 최상위 트랜잭션이 끝나면 해제한다. 중첩 트랜잭션이 자동 롤백된 뒤 바깥 콜백이 오류를 삼키고 쿼리를 이어 보내면 autocommit으로 실행하지 않고 내부 오류(`SqliteTransactionAbortedError`, 미분류 500)로 실패시킨다. `ROLLBACK` 재시도에도 트랜잭션이 남으면 게이트를 해제하지 않고 error 로그를 남긴다. 이 경우 프로세스 재시작이 필요하다. PostgreSQL에는 영향이 없다(GitHub 이슈 #22).
 - 감사 로그의 `detail`에 짝이 맞지 않는 UTF-16 surrogate가 들어가면 PostgreSQL `jsonb` INSERT가 실패해 해당 요청의 감사 행이 사라지던 문제를 수정했다. 입력의 lone surrogate는 `U+FFFD`로 기록하고, 4096 코드 유닛 경계가 surrogate pair 중간이면 그 글자를 버린다. 같은 정리를 `path`에도 적용한다.
 - 기본 compose가 `gc`에 `STORIX_GC_MAX_ROWS_PER_STAGE`·`STORIX_NAMESPACE_DELETED_RETENTION_DAYS`를, `app`에 `STORIX_MAX_SYNC_SNAPSHOT_NODES`·`STORIX_MAX_SNAPSHOT_BYTES`·`STORIX_MAX_RETAINED_SNAPSHOT_NODES`·`STORIX_MAX_RETAINED_SNAPSHOT_BYTES`·`STORIX_MUTATION_LEASE_SECONDS`·`STORIX_MUTATION_MAX_UPLOAD_SECONDS`·`STORIX_VFS_EXPIRY_MIN_SECONDS`·`STORIX_VFS_EXPIRY_MAX_SECONDS`를 전달하지 않아 `.env`의 값이 무시되고 코드 기본값으로 동작하던 문제를 수정했다. 기본값은 코드와 같다.
 - 기본 compose가 `STORIX_SENTRY_DSN`을 `app`·`gc`·`backup`·`restore`에 전달하지 않아 `.env`에 적어도 Sentry 리포팅이 켜지지 않던 문제를 수정했다. 값이 비어 있으면 기존처럼 리포팅하지 않는다. README 변수표에서 `STORIX_STORAGE_PUBLIC_*`의 "읽는 곳"을 `app`으로 고쳤다. gc·backup·restore는 presigned URL을 발급하지 않아 전달하지 않는다. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`·`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`는 컨테이너 안 파일 경로가 필요해 기본 compose가 전달하지 않는다. override에서 경로와 volume을 함께 지정하도록 README에 적었다(GitHub 이슈 #20).

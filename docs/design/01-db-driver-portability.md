@@ -200,5 +200,10 @@ TypeORM better-sqlite3 드라이버는 DataSource당 연결 하나와 QueryRunne
   - prepared statement 캐시는 연결 객체별로 runner 사이에 공유한다.
 - 트랜잭션 콜백 안(같은 비동기 범위)에서 만든 QueryRunner는 소유 runner를 그대로 받는다. manager 없이 실행한 쿼리와 다시 연 트랜잭션이 교착하지 않고 같은 트랜잭션에 참여한다(중첩은 `SAVEPOINT`). 범위는 최상위 `dataSource.manager.transaction` 호출마다 AsyncLocalStorage로 만들고 트랜잭션이 끝나면 닫는다.
 - 대기 상한은 30초(`SQLITE_GATE_WAIT_TIMEOUT_MS`)다. 넘기면 그 쿼리는 실행하지 않고 `SqliteGateTimeoutError`(503 `DB_BUSY`, `Retry-After: 1`)로 실패한다.
+- 소유 runner는 트랜잭션·SAVEPOINT 깊이를 직접 센다(start 성공 +1, commit 성공 −1, rollback은 성공·실패와 무관하게 −1).
+  - SQLite는 `SQLITE_FULL`·`SQLITE_IOERR`·`SQLITE_NOMEM` 등에서 트랜잭션을 자동 롤백한다. 이후 TypeORM의 `ROLLBACK`·`ROLLBACK TO SAVEPOINT`는 실패하고 `isTransactionActive`·`transactionDepth`는 그대로 남으므로 TypeORM 상태로는 해제 시점을 알 수 없다.
+  - 깊이가 0이 되면 runner의 TypeORM 상태를 초기화하고 소유권을 푼다.
+  - 깊이가 1 이상인데 연결의 `inTransaction`이 false이면 소유자의 쿼리를 실행하지 않고 `SqliteTransactionAbortedError`(내부 오류, 미분류 500)로 실패시킨다. 실행하면 autocommit으로 원자성이 깨진다.
+  - 깊이가 0인데 연결에 트랜잭션이 남아 있으면 `ROLLBACK`을 직접 한 번 재시도한다. 그래도 남으면 소유권을 풀지 않고 error 로그를 남긴다. 이 상태는 프로세스 재시작으로만 복구한다.
 - 불변식: 한 시점에 연결에서 실행 중인 쿼리 흐름은 하나다. 트랜잭션 안에서 외부 I/O를 기다리는 동안 다른 모든 요청이 대기하므로, 트랜잭션 콜백 안에 외부 I/O를 새로 넣지 않는다(현재는 스냅샷 본문 조회의 `storage.get`이 유일하다).
 - 게이트는 읽기 동시성을 제공하지 않는다. 클라이언트 취소는 처리하지 않는다.
