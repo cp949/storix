@@ -1,6 +1,11 @@
+import { jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { installSqliteGate } from '../../src/persistence/sqlite-gate.js';
-import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors.js';
+import {
+  SqliteGateTimeoutError,
+  SqliteTransactionAbortedError,
+} from '../../src/persistence/sqlite-gate.errors.js';
 
 const tick = (ms = 10) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -182,5 +187,138 @@ describe('SQLite 쿼리 게이트', () => {
 
     await ds.query("INSERT INTO t VALUES ('after')");
     expect(await rows()).toEqual(['after']);
+  });
+
+  // PRAGMA max_page_count로 DB 크기를 막아 실제 SQLITE_FULL(트랜잭션 자동 롤백)을 일으킨다.
+  async function fillUntilFull(m: { query: (sql: string, params?: unknown[]) => Promise<unknown> }) {
+    for (let i = 0; i < 100; i++) await m.query('INSERT INTO t VALUES (?)', ['x'.repeat(4000)]);
+  }
+
+  interface RawConnection {
+    inTransaction: boolean;
+    prepare: (sql: string) => unknown;
+    exec: (sql: string) => unknown;
+  }
+  const connectionOf = () =>
+    (ds.driver as unknown as { databaseConnection: RawConnection }).databaseConnection;
+
+  describe('SQLite가 트랜잭션을 자동 롤백한 경우', () => {
+    beforeEach(async () => {
+      await open(300);
+      await ds.query('PRAGMA max_page_count = 20');
+    });
+
+    it('최상위 트랜잭션이 SQLITE_FULL로 자동 롤백돼도 게이트가 해제되어 이후 쿼리가 정상 동작한다', async () => {
+      const error = await ds.transaction((m) => fillUntilFull(m)).catch((e: { code?: string }) => e);
+      expect(error).toMatchObject({ code: 'SQLITE_FULL' });
+      expect(connectionOf().inTransaction).toBe(false);
+
+      await ds.query("INSERT INTO t VALUES ('after')");
+      expect(await rows()).toEqual(['after']);
+      // 해제 뒤 새 트랜잭션도 시작할 수 있다
+      await ds.transaction(async (m) => {
+        await m.query("INSERT INTO t VALUES ('next')");
+      });
+      expect(await rows()).toEqual(['after', 'next']);
+    });
+
+    it('자동 롤백된 트랜잭션을 기다리던 다른 트랜잭션은 이어서 정상 실행된다', async () => {
+      const mayFill = deferred();
+      const first = ds
+        .transaction(async (m) => {
+          await mayFill.promise;
+          await fillUntilFull(m);
+        })
+        .catch(() => 'full');
+      await tick();
+      const second = ds.transaction(async (m) => {
+        await m.query("INSERT INTO t VALUES ('second')");
+      });
+      await tick(20);
+      mayFill.resolve();
+
+      expect(await first).toBe('full');
+      await second;
+      expect(await rows()).toEqual(['second']);
+    });
+
+    it('중첩 트랜잭션이 자동 롤백된 뒤 바깥이 오류를 삼키고 계속해도 쿼리를 실행하지 않는다', async () => {
+      let afterAbort: unknown;
+      const outerError = await ds
+        .transaction(async (outer) => {
+          await outer.query("INSERT INTO t VALUES ('outer')");
+          await ds.transaction((inner) => fillUntilFull(inner)).catch(() => undefined);
+          // 자동 롤백 뒤라 이 쓰기가 autocommit으로 남으면 안 된다
+          afterAbort = await outer.query("INSERT INTO t VALUES ('leak')").catch((e: unknown) => e);
+        })
+        .catch((e: unknown) => e);
+
+      expect(afterAbort).toBeInstanceOf(SqliteTransactionAbortedError);
+      // 바깥 트랜잭션은 커밋되지 않고 오류로 끝난다
+      expect(outerError).toBeInstanceOf(SqliteTransactionAbortedError);
+      expect(await rows()).toEqual([]);
+    });
+
+    it('중첩 자동 롤백이 있는 최상위 트랜잭션이 끝나면 게이트가 해제된다', async () => {
+      await ds
+        .transaction(async (outer) => {
+          await ds.transaction((inner) => fillUntilFull(inner)).catch(() => undefined);
+          await outer.query('SELECT 1').catch(() => undefined);
+        })
+        .catch(() => undefined);
+
+      await ds.query("INSERT INTO t VALUES ('after')");
+      expect(await rows()).toEqual(['after']);
+    });
+  });
+
+  describe('카운터가 0인데 연결에 트랜잭션이 남은 경우', () => {
+    // TypeORM의 ROLLBACK만 실패시켜 연결에 트랜잭션이 열린 채 남게 만든다.
+    function failRollback(connection: RawConnection) {
+      const original = connection.prepare.bind(connection);
+      return jest.spyOn(connection, 'prepare').mockImplementation((sql: string) => {
+        if (sql === 'ROLLBACK') throw new Error('ROLLBACK 실패');
+        return original(sql);
+      });
+    }
+
+    it('ROLLBACK을 직접 재시도해 트랜잭션이 닫히면 게이트를 해제한다', async () => {
+      await open(300);
+      const prepare = failRollback(connectionOf());
+      await ds
+        .transaction(async (m) => {
+          await m.query("INSERT INTO t VALUES ('a')");
+          throw new Error('콜백 실패');
+        })
+        .catch(() => undefined);
+      prepare.mockRestore();
+
+      expect(connectionOf().inTransaction).toBe(false);
+      await ds.query("INSERT INTO t VALUES ('after')");
+      expect(await rows()).toEqual(['after']);
+    });
+
+    it('재시도해도 트랜잭션이 남으면 게이트를 해제하지 않고 오류 로그를 남긴다', async () => {
+      await open(50);
+      const connection = connectionOf();
+      const prepare = failRollback(connection);
+      const exec = jest.spyOn(connection, 'exec').mockImplementation(() => {
+        throw new Error('재시도 ROLLBACK 실패');
+      });
+      const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      await ds
+        .transaction(async (m) => {
+          await m.query("INSERT INTO t VALUES ('a')");
+          throw new Error('콜백 실패');
+        })
+        .catch(() => undefined);
+
+      expect(logError).toHaveBeenCalledTimes(1);
+      await expect(ds.query('SELECT 1')).rejects.toBeInstanceOf(SqliteGateTimeoutError);
+
+      prepare.mockRestore();
+      exec.mockRestore();
+      logError.mockRestore();
+    });
   });
 });

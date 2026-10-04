@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Logger } from '@nestjs/common';
 import type { DataSource, QueryRunner } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
-import { SqliteGateTimeoutError } from './sqlite-gate.errors.js';
+import { SqliteGateTimeoutError, SqliteTransactionAbortedError } from './sqlite-gate.errors.js';
 
 /** 게이트 대기 상한 기본값. receipt lease(60초)보다 짧게 잡는다. */
 export const SQLITE_GATE_WAIT_TIMEOUT_MS = 30_000;
@@ -67,6 +68,21 @@ interface TransactionScope {
   done: boolean;
 }
 
+// better-sqlite3 연결 중 게이트가 쓰는 부분이다.
+interface SqliteConnection {
+  /** SQLite가 트랜잭션을 자동 롤백하면 false가 된다. */
+  readonly inTransaction: boolean;
+  exec(sql: string): unknown;
+}
+
+// TypeORM BaseQueryRunner의 트랜잭션 상태다. 타입 선언에는 노출되지 않는다.
+interface RunnerTransactionState {
+  isTransactionActive: boolean;
+  transactionDepth: number;
+}
+
+const logger = new Logger('SqliteGate');
+
 // 믹스인 패턴이 요구하는 시그니처다.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RunnerConstructor = new (...args: any[]) => QueryRunner;
@@ -80,6 +96,15 @@ function createGatedRunnerClass(
 ) {
   return class GatedQueryRunner extends Base {
     private scope: TransactionScope | undefined;
+    // 이 runner가 연 트랜잭션·SAVEPOINT의 중첩 깊이. TypeORM은 SQLite가 트랜잭션을 자동 롤백해
+    // ROLLBACK·ROLLBACK TO SAVEPOINT가 실패하면 isTransactionActive·transactionDepth를 그대로 둔다.
+    // 그 상태로는 해제 시점을 알 수 없어 게이트가 영구 점유되므로 깊이를 따로 센다.
+    private gateDepth = 0;
+
+    private get rawConnection(): SqliteConnection {
+      return (this.dataSource.driver as unknown as { databaseConnection: SqliteConnection })
+        .databaseConnection;
+    }
 
     // 소유자 runner는 게이트를 이미 쥐고 있으므로 통과하고, 그 외에는 쿼리마다 한 번 대기한다.
     // QueryRunner.query의 오버로드(일반/structured 결과)를 모두 만족하려면 any가 필요하다.
@@ -87,7 +112,12 @@ function createGatedRunnerClass(
     override async query(query: string, parameters?: any, useStructuredResult?: boolean): Promise<any> {
       /* eslint-enable @typescript-eslint/no-explicit-any */
       const run = () => super.query(query, parameters, useStructuredResult as true);
-      if (gate.owner === this) return run();
+      if (gate.owner === this) {
+        // 트랜잭션이 열려 있어야 하는데 SQLite가 이미 롤백했다면 쿼리가 autocommit으로 실행돼 원자성이 깨진다.
+        if (this.gateDepth > 0 && !this.rawConnection.inTransaction)
+          throw new SqliteTransactionAbortedError();
+        return run();
+      }
       await gate.acquire();
       try {
         return await run();
@@ -98,7 +128,11 @@ function createGatedRunnerClass(
 
     override async startTransaction(...args: Parameters<QueryRunner['startTransaction']>): Promise<void> {
       // 이미 사용권을 쥔 runner의 중첩 시작은 SAVEPOINT다.
-      if (gate.owner === this) return super.startTransaction(...args);
+      if (gate.owner === this) {
+        await super.startTransaction(...args);
+        this.gateDepth += 1;
+        return;
+      }
 
       await gate.acquire();
       gate.owner = this;
@@ -109,6 +143,7 @@ function createGatedRunnerClass(
       }
       try {
         await super.startTransaction(...args);
+        this.gateDepth = 1;
       } catch (error) {
         this.releaseOwnership();
         throw error;
@@ -116,19 +151,47 @@ function createGatedRunnerClass(
     }
 
     override async commitTransaction(): Promise<void> {
-      try {
-        await super.commitTransaction();
-      } finally {
-        if (!this.isTransactionActive) this.releaseOwnership();
-      }
+      await super.commitTransaction();
+      // 커밋이 실패하면 깊이를 유지한다. 호출자가 이어서 롤백한다.
+      this.leaveTransaction();
     }
 
     override async rollbackTransaction(): Promise<void> {
       try {
         await super.rollbackTransaction();
       } finally {
-        if (!this.isTransactionActive) this.releaseOwnership();
+        // 자동 롤백 뒤에는 ROLLBACK이 실패하지만 트랜잭션은 이미 끝났으므로 성공·실패와 무관하게 센다.
+        this.leaveTransaction();
       }
+    }
+
+    // 트랜잭션·SAVEPOINT 하나를 마쳤을 때 깊이를 줄이고, 최상위가 끝나면 상태를 정리해 게이트를 해제한다.
+    private leaveTransaction(): void {
+      if (this.gateDepth > 0) this.gateDepth -= 1;
+      if (this.gateDepth > 0) return;
+
+      // 마지막 ROLLBACK이 실패했거나 자동 롤백이 있었다면 TypeORM 상태가 어긋나 있다.
+      const state = this as unknown as RunnerTransactionState;
+      state.isTransactionActive = false;
+      state.transactionDepth = 0;
+      if (this.rawConnection.inTransaction && !this.rollbackConnection()) {
+        // 트랜잭션이 남은 연결을 풀면 다음 쿼리가 그 트랜잭션에 섞이므로 게이트를 쥔 채 둔다.
+        logger.error(
+          'ROLLBACK 재시도에도 SQLite 트랜잭션이 닫히지 않아 게이트를 해제하지 않음. 프로세스 재시작이 필요함',
+        );
+        return;
+      }
+      this.releaseOwnership();
+    }
+
+    // TypeORM을 거치지 않고 연결에 ROLLBACK을 직접 보낸다. 트랜잭션이 닫혔으면 true를 돌려준다.
+    private rollbackConnection(): boolean {
+      try {
+        this.rawConnection.exec('ROLLBACK');
+      } catch {
+        // 아래 inTransaction 확인으로 판단한다.
+      }
+      return !this.rawConnection.inTransaction;
     }
 
     private releaseOwnership(): void {
