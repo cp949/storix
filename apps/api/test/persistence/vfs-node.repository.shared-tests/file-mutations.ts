@@ -207,7 +207,15 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
 
       await expect(
-        getRepo().putFileContent(namespace.id, root!.id, ['newdir', 'gone.txt'], true, makeBlobData(), 3, false),
+        getRepo().putFileContent(
+          namespace.id,
+          root!.id,
+          ['newdir', 'gone.txt'],
+          true,
+          makeBlobData(),
+          3,
+          false,
+        ),
       ).rejects.toThrow(VfsVersionConflictError);
 
       await expect(getRepo().resolvePath(namespace.id, root!.id, ['newdir'])).resolves.toBeNull();
@@ -256,7 +264,14 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
       await createFile(namespace.id, root!.id, 'a.txt');
 
-      const result = await getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['b.txt'], false);
+      const result = await getRepo().moveNode(
+        namespace.id,
+        root!.id,
+        ['a.txt'],
+        ['b.txt'],
+        false,
+        Number.MAX_SAFE_INTEGER,
+      );
 
       expect(result).toMatchObject({ finalPath: '/b.txt', node: { name: 'b.txt' } });
       expect(await getRepo().resolvePath(namespace.id, root!.id, ['a.txt'])).toBeNull();
@@ -268,7 +283,14 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await getRepo().ensureDirectory(namespace.id, root!.id, ['dest'], false);
       await createFile(namespace.id, root!.id, 'a.txt');
 
-      const result = await getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['dest'], false);
+      const result = await getRepo().moveNode(
+        namespace.id,
+        root!.id,
+        ['a.txt'],
+        ['dest'],
+        false,
+        Number.MAX_SAFE_INTEGER,
+      );
 
       expect(result.finalPath).toBe('/dest/a.txt');
       const moved = await getRepo().resolvePath(namespace.id, root!.id, ['dest', 'a.txt']);
@@ -280,7 +302,14 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
       await createFile(namespace.id, root!.id, 'a.txt');
 
-      const result = await getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['x', 'y', 'a.txt'], true);
+      const result = await getRepo().moveNode(
+        namespace.id,
+        root!.id,
+        ['a.txt'],
+        ['x', 'y', 'a.txt'],
+        true,
+        Number.MAX_SAFE_INTEGER,
+      );
 
       expect(result.finalPath).toBe('/x/y/a.txt');
       const dir = await getRepo().resolvePath(namespace.id, root!.id, ['x', 'y']);
@@ -293,7 +322,7 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await createFile(namespace.id, root!.id, 'a.txt');
 
       await expect(
-        getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['x', 'a.txt'], false),
+        getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['x', 'a.txt'], false, Number.MAX_SAFE_INTEGER),
       ).rejects.toThrow(VfsNodeNotFoundError);
     });
 
@@ -303,9 +332,9 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await createFile(namespace.id, root!.id, 'a.txt');
       await createFile(namespace.id, root!.id, 'b.txt');
 
-      await expect(getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['b.txt'], false)).rejects.toThrow(
-        VfsAlreadyExistsError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['b.txt'], false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsAlreadyExistsError);
     });
 
     it('목적지 디렉터리 아래 동일 이름이 이미 있으면 VfsAlreadyExistsError를 던진다', async () => {
@@ -315,9 +344,9 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await createFile(namespace.id, dest.node.id, 'a.txt');
       await createFile(namespace.id, root!.id, 'a.txt');
 
-      await expect(getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['dest'], false)).rejects.toThrow(
-        VfsAlreadyExistsError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['dest'], false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsAlreadyExistsError);
     });
 
     it('디렉터리를 자기 자신 아래로 move하면 VfsInvalidOperationError를 던진다', async () => {
@@ -325,9 +354,9 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
       await getRepo().ensureDirectory(namespace.id, root!.id, ['a'], false);
 
-      await expect(getRepo().moveNode(namespace.id, root!.id, ['a'], ['a'], false)).rejects.toThrow(
-        VfsInvalidOperationError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root!.id, ['a'], ['a'], false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsInvalidOperationError);
     });
 
     it('디렉터리를 자기 subtree 아래로 move하면 VfsInvalidOperationError를 던진다', async () => {
@@ -335,9 +364,9 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
       await getRepo().ensureDirectory(namespace.id, root!.id, ['a', 'b'], true);
 
-      await expect(getRepo().moveNode(namespace.id, root!.id, ['a'], ['a', 'b'], false)).rejects.toThrow(
-        VfsInvalidOperationError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root!.id, ['a'], ['a', 'b'], false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsInvalidOperationError);
     });
 
     it('file을 정확히 같은 경로로 move하면 자신과 충돌해 VfsAlreadyExistsError를 던진다', async () => {
@@ -345,9 +374,9 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
       await createFile(namespace.id, root!.id, 'a.txt');
 
-      await expect(getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['a.txt'], false)).rejects.toThrow(
-        VfsAlreadyExistsError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root!.id, ['a.txt'], ['a.txt'], false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsAlreadyExistsError);
     });
 
     it('존재하지 않는 source 경로는 VfsNodeNotFoundError를 던진다', async () => {
@@ -355,7 +384,14 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       const root = await getRepo().getRoot(namespace.id);
 
       await expect(
-        getRepo().moveNode(namespace.id, root!.id, ['missing.txt'], ['x.txt'], false),
+        getRepo().moveNode(
+          namespace.id,
+          root!.id,
+          ['missing.txt'],
+          ['x.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        ),
       ).rejects.toThrow(VfsNodeNotFoundError);
     });
   });

@@ -620,11 +620,11 @@ it('노드·폴더·quota 상한 413 코드를 던질 수 있는 operation은 41
   const expected: Array<[string, string[]]> = [
     ['/mkdir', [node]],
     ['/touch', [node, folder]],
-    ['/mv', [node, folder]],
+    ['/mv', ['VFS_MOVE_LIMIT_EXCEEDED', node, folder]],
     ['/cp', ['VFS_COPY_LIMIT_EXCEEDED', node, folder, quota]],
     ['/content', ['VFS_FILE_TOO_LARGE', node, folder, quota]],
     ['/content/conditional', [node, folder, quota]],
-    ['/mutations', [node, folder, quota]],
+    ['/mutations', ['VFS_MOVE_LIMIT_EXCEEDED', node, folder, quota]],
     ['/upload-sessions/{sessionId}/complete', [node, folder, quota]],
     ['/trash/{trashId}/restore', [node, folder, quota]],
     ['/snapshots', ['VFS_SNAPSHOT_LIMIT_EXCEEDED', quota]],

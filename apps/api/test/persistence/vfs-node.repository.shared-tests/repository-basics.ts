@@ -130,7 +130,7 @@ export function runRepositoryBasicsTests(helpers: VfsNodeRepositoryTestHelpers):
         false,
       );
 
-      await getRepo().moveNode(namespace.id, root.id, ['file'], ['moved'], false);
+      await getRepo().moveNode(namespace.id, root.id, ['file'], ['moved'], false, Number.MAX_SAFE_INTEGER);
       await expect(
         getRepo().copyNode(namespace.id, root.id, ['moved'], ['copy'], false, 100),
       ).rejects.toThrow(VfsQuotaExceededError);
@@ -183,6 +183,7 @@ export function runRepositoryBasicsTests(helpers: VfsNodeRepositoryTestHelpers):
         maxFileSizeBytes: null,
         maxSyncDeleteNodes: null,
         maxSyncCopyNodes: null,
+        maxSyncMoveNodes: null,
         encryptionPolicy: 'NONE',
         accessPolicy: 'PRIVATE',
       });
@@ -195,6 +196,7 @@ export function runRepositoryBasicsTests(helpers: VfsNodeRepositoryTestHelpers):
         maxFileSizeBytes: '2048',
         maxSyncDeleteNodes: 3,
         maxSyncCopyNodes: 4,
+        maxSyncMoveNodes: 6,
       });
 
       const result = await getRepo().getRootWithLimits(namespace.id);
@@ -203,6 +205,7 @@ export function runRepositoryBasicsTests(helpers: VfsNodeRepositoryTestHelpers):
         maxFileSizeBytes: '2048',
         maxSyncDeleteNodes: 3,
         maxSyncCopyNodes: 4,
+        maxSyncMoveNodes: 6,
         encryptionPolicy: 'NONE',
         accessPolicy: 'PRIVATE',
       });

@@ -60,6 +60,7 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
         maxFileSizeBytes: namespace.maxFileSizeBytes === null ? null : String(namespace.maxFileSizeBytes),
         maxSyncDeleteNodes: namespace.maxSyncDeleteNodes,
         maxSyncCopyNodes: namespace.maxSyncCopyNodes,
+        maxSyncMoveNodes: namespace.maxSyncMoveNodes,
         encryptionPolicy: namespace.encryptionPolicy,
         accessPolicy: namespace.accessPolicy,
       },

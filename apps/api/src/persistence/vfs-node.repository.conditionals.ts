@@ -94,12 +94,17 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     this.assertRevision(source, command.sourceRevision, command.source);
     try {
       if (command.kind === 'move') {
+        const maxMove = resolveEffectiveLimit(
+          namespace.maxSyncMoveNodes,
+          parsePositiveInt(process.env.STORIX_MAX_SYNC_MOVE_NODES, 10000),
+        );
         const result = await this.moveNode(
           namespaceId,
           rootId,
           command.sourceSegments,
           command.destinationSegments,
           false,
+          maxMove,
           tx,
           command.destinationResolution,
         );

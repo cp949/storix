@@ -392,6 +392,41 @@ export function registerFsMutationReceiptContract(ctx: FsHttpContext) {
       expect(changed.body.code).toBe('MUTATION_KEY_REUSED');
     });
 
+    it('move 노드 수 상한 초과 413은 변경 없이 거부하고 같은 key로 재생한다', async () => {
+      const namespaceId = await ctx.createNamespace('conditional-move-limit-http-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/big' }).expect(201);
+      for (const name of ['1', '2', '3', '4', '5']) {
+        await request(ctx.httpServer)
+          .post(`${base}/touch`)
+          .send({ path: `/big/${name}.txt` })
+          .expect(201);
+      }
+      // big 자신 + file 5개 = 6개 Node > 스위트 상한(5)
+      const sourceRevision = (await request(ctx.httpServer).get(`${base}/revision`).query({ path: '/big' }))
+        .body.revision as string;
+      const key = randomUUID();
+      const send = () =>
+        request(ctx.httpServer)
+          .post(`${base}/mutations`)
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'move-limit')
+          .send({
+            kind: 'move',
+            source: '/big',
+            destination: '/moved',
+            sourceRevision,
+            destinationAbsent: true,
+          });
+
+      const first = await send().expect(413);
+      expect(first.body.code).toBe('VFS_MOVE_LIMIT_EXCEEDED');
+      const replay = await send().expect(413);
+      expect(replay.body).toEqual(first.body);
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/moved' }).expect(404);
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/big/5.txt' }).expect(200);
+    });
+
     it('replays deterministic 428 and 400 responses with the original request ID', async () => {
       const namespaceId = await ctx.createNamespace('conditional-errors-http-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs/mutations`;

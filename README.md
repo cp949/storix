@@ -446,6 +446,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_MAX_LIVE_NODES`                   | 선택   | 기본값과 같음         | app     | namespace live node 상한의 전역 ceiling                                        |
 | `STORIX_MAX_SYNC_DELETE_NODES`            | 선택   | `1000`                | app     | recursive rm이 동기 처리하는 노드 수 상한                                      |
 | `STORIX_MAX_SYNC_COPY_NODES`              | 선택   | `1000`                | app     | recursive cp 노드 수 상한                                                      |
+| `STORIX_MAX_SYNC_MOVE_NODES`              | 선택   | `10000`               | app     | mv가 동기 처리하는 subtree 노드 수 상한(이동 대상 자신 포함)                   |
 | `STORIX_MAX_SYNC_SNAPSHOT_NODES`          | 선택   | `1000`                | app     | snapshot 한 건의 최대 manifest 노드 수(디렉터리 포함)                          |
 | `STORIX_MAX_SNAPSHOT_BYTES`               | 선택   | `5368709120`          | app     | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB)                             |
 | `STORIX_MAX_RETAINED_SNAPSHOT_NODES`      | 선택   | `100000`              | app     | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한              |

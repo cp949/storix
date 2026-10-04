@@ -161,6 +161,7 @@ export function createFsHttpFixture() {
     process.env.STORIX_MAX_FILE_SIZE_BYTES = String(MAX_FILE_SIZE_BYTES);
     process.env.STORIX_MAX_SYNC_DELETE_NODES = '5';
     process.env.STORIX_MAX_SYNC_COPY_NODES = '5';
+    process.env.STORIX_MAX_SYNC_MOVE_NODES = '5';
 
     const s3Client = createTestS3Client(s3Container);
     await createTestBucket(s3Client, process.env.STORIX_STORAGE_BUCKET);

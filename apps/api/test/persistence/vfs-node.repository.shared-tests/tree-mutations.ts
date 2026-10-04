@@ -10,6 +10,7 @@ import {
   VfsInvalidOperationError,
   VfsInvalidPathError,
   VfsIsDirectoryError,
+  VfsMoveLimitExceededError,
   VfsNodeNotFoundError,
   VfsQuotaExceededError,
 } from '../../../src/vfs/vfs.errors.js';
@@ -509,6 +510,50 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
     });
   });
 
+  describe('moveNode 상한', () => {
+    it('이동 대상 subtree의 Node 수가 상한을 넘으면 VfsMoveLimitExceededError를 던지고 아무것도 바꾸지 않는다', async () => {
+      const namespace = await createNamespace('mv-limit-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const dir = await getRepo().ensureDirectory(namespace.id, root.id, ['big'], false);
+      await createFile(namespace.id, dir.node.id, '1.txt');
+      await createFile(namespace.id, dir.node.id, '2.txt');
+      await createFile(namespace.id, dir.node.id, '3.txt');
+      // big 자신 포함 4개 Node > 상한 3
+      const before = await captureState(namespace.id);
+
+      await expect(getRepo().moveNode(namespace.id, root.id, ['big'], ['moved'], false, 3)).rejects.toThrow(
+        VfsMoveLimitExceededError,
+      );
+
+      expect(await captureState(namespace.id)).toEqual(before);
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['moved'])).toBeNull();
+    });
+
+    it('subtree의 Node 수가 상한과 같으면 이동한다', async () => {
+      const namespace = await createNamespace('mv-limit-boundary-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      const dir = await getRepo().ensureDirectory(namespace.id, root.id, ['big'], false);
+      await createFile(namespace.id, dir.node.id, '1.txt');
+      await createFile(namespace.id, dir.node.id, '2.txt');
+      await createFile(namespace.id, dir.node.id, '3.txt');
+
+      await getRepo().moveNode(namespace.id, root.id, ['big'], ['moved'], false, 4);
+
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['moved', '3.txt'])).not.toBeNull();
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['big'])).toBeNull();
+    });
+
+    it('FILE 이동은 상한이 1이어도 허용한다', async () => {
+      const namespace = await createNamespace('mv-limit-file-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await createFile(namespace.id, root.id, 'a.txt');
+
+      await getRepo().moveNode(namespace.id, root.id, ['a.txt'], ['b.txt'], false, 1);
+
+      expect(await getRepo().resolvePath(namespace.id, root.id, ['b.txt'])).not.toBeNull();
+    });
+  });
+
   describe('결과 경로 길이', () => {
     it('기존 디렉터리에 basename을 붙인 이동 결과가 4096바이트를 넘으면 무변경이다', async () => {
       const namespace = await createNamespace('move-result-path-limit-ns');
@@ -519,9 +564,9 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await createFile(namespace.id, root.id, 'a');
       const before = await captureState(namespace.id);
 
-      await expect(getRepo().moveNode(namespace.id, root.id, ['a'], destination, false)).rejects.toThrow(
-        VfsInvalidPathError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root.id, ['a'], destination, false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsInvalidPathError);
       expect(await captureState(namespace.id)).toEqual(before);
     });
 
@@ -550,9 +595,9 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await getRepo().ensureDirectory(namespace.id, root.id, destination, true);
       const before = await captureState(namespace.id);
 
-      await expect(getRepo().moveNode(namespace.id, root.id, ['s'], destination, false)).rejects.toThrow(
-        VfsInvalidPathError,
-      );
+      await expect(
+        getRepo().moveNode(namespace.id, root.id, ['s'], destination, false, Number.MAX_SAFE_INTEGER),
+      ).rejects.toThrow(VfsInvalidPathError);
       expect(await captureState(namespace.id)).toEqual(before);
     });
 
@@ -563,7 +608,14 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       await getRepo().ensureDirectory(namespace.id, root.id, destination, true);
       await createFile(namespace.id, root.id, 'a');
 
-      const result = await getRepo().moveNode(namespace.id, root.id, ['a'], destination, false);
+      const result = await getRepo().moveNode(
+        namespace.id,
+        root.id,
+        ['a'],
+        destination,
+        false,
+        Number.MAX_SAFE_INTEGER,
+      );
       expect(Buffer.byteLength(result.finalPath, 'utf8')).toBe(4096);
       expect(await getRepo().resolvePath(namespace.id, root.id, [...destination, 'a'])).not.toBeNull();
     });

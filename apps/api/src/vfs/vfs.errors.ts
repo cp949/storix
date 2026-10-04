@@ -271,6 +271,15 @@ export class VfsCopyLimitExceededError extends DomainError {
   }
 }
 
+export class VfsMoveLimitExceededError extends DomainError {
+  readonly code = 'VFS_MOVE_LIMIT_EXCEEDED';
+  readonly status = 413;
+
+  constructor(readonly maxNodes: number) {
+    super(`이동 대상 Node 수가 상한(${maxNodes})을 초과함`);
+  }
+}
+
 export class VfsPresignedEncryptedUnsupportedError extends DomainError {
   readonly code = 'VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED';
   readonly status = 409;

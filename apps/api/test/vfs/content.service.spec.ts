@@ -13,7 +13,11 @@ import {
 import { ContentService } from '../../src/vfs/content.service.js';
 import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';
-import { VfsIsDirectoryError, VfsNodeNotFoundError, VfsVersionConflictError } from '../../src/vfs/vfs.errors.js';
+import {
+  VfsIsDirectoryError,
+  VfsNodeNotFoundError,
+  VfsVersionConflictError,
+} from '../../src/vfs/vfs.errors.js';
 import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
 
 const NAMESPACE_ID = '11111111-1111-1111-1111-111111111111';
@@ -21,6 +25,7 @@ const NONE_LIMITS = {
   maxFileSizeBytes: null,
   maxSyncDeleteNodes: null,
   maxSyncCopyNodes: null,
+  maxSyncMoveNodes: null,
   encryptionPolicy: 'NONE',
   accessPolicy: 'PRIVATE',
 } as const;

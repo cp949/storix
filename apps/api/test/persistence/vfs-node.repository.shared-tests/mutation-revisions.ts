@@ -97,7 +97,7 @@ export function runMutationRevisionsTests(helpers: VfsNodeRepositoryTestHelpers)
         sub: (await getRepo().resolvePath(namespace.id, root.id, ['a', 'sub']))!.version,
         x: (await getRepo().resolvePath(namespace.id, root.id, ['a', 'sub', 'x']))!.version,
       };
-      await getRepo().moveNode(namespace.id, root.id, ['a', 'sub'], ['b'], false);
+      await getRepo().moveNode(namespace.id, root.id, ['a', 'sub'], ['b'], false, Number.MAX_SAFE_INTEGER);
       expect((await getRepo().getRoot(namespace.id))!.version).toBe(before.root + 1);
       expect((await getRepo().resolvePath(namespace.id, root.id, ['a']))!.version).toBe(before.a + 1);
       expect((await getRepo().resolvePath(namespace.id, root.id, ['b']))!.version).toBe(before.b + 1);

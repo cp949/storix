@@ -941,6 +941,7 @@ describe('Migration: InitSchema', () => {
       expect(saved.maxFileSizeBytes).toBeNull();
       expect(saved.maxSyncDeleteNodes).toBeNull();
       expect(saved.maxSyncCopyNodes).toBeNull();
+      expect(saved.maxSyncMoveNodes).toBeNull();
     });
 
     it('값을 채워 넣고 조회할 수 있다', async () => {
@@ -951,6 +952,7 @@ describe('Migration: InitSchema', () => {
           maxFileSizeBytes: '1000',
           maxSyncDeleteNodes: 5,
           maxSyncCopyNodes: 5,
+          maxSyncMoveNodes: 5,
         }),
       );
 
@@ -959,6 +961,7 @@ describe('Migration: InitSchema', () => {
       expect(found.maxFileSizeBytes).toBe('1000');
       expect(found.maxSyncDeleteNodes).toBe(5);
       expect(found.maxSyncCopyNodes).toBe(5);
+      expect(found.maxSyncMoveNodes).toBe(5);
     });
 
     it('0 이하 값은 CHECK 제약 위반으로 거부된다', async () => {
@@ -982,6 +985,14 @@ describe('Migration: InitSchema', () => {
 
       await expect(
         repo.save(repo.create({ name: 'limits-invalid-copy-nodes', maxSyncCopyNodes: 0 })),
+      ).rejects.toThrow();
+    });
+
+    it('동기 이동 노드 상한이 0이면 CHECK 제약 위반으로 거부된다', async () => {
+      const repo = dataSource.getRepository(NamespaceEntity);
+
+      await expect(
+        repo.save(repo.create({ name: 'limits-invalid-move-nodes', maxSyncMoveNodes: 0 })),
       ).rejects.toThrow();
     });
   });

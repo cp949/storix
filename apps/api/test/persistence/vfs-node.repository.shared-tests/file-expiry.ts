@@ -293,7 +293,14 @@ export function runFileExpiryTests(helpers: VfsNodeRepositoryTestHelpers): void 
       const nodes = getDs().getRepository(VfsNodeEntity);
       const original = (await nodes.findOneByOrFail({ id: resource.id })).expiresAt!.toISOString();
 
-      await getRepo().moveNode(namespace.id, root.id, ['temp.bin'], ['moved.bin'], false);
+      await getRepo().moveNode(
+        namespace.id,
+        root.id,
+        ['temp.bin'],
+        ['moved.bin'],
+        false,
+        Number.MAX_SAFE_INTEGER,
+      );
       expect((await nodes.findOneByOrFail({ id: resource.id })).expiresAt!.toISOString()).toBe(original);
 
       const moved = await nodes.findOneByOrFail({ id: resource.id });

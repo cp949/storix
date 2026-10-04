@@ -156,9 +156,23 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
         await getRepo().ensureDirectory(namespaceId, rootId, ['to'], false);
         await getRepo().touchFile(namespaceId, rootId, ['from', 'f.txt'], false, makeBlobData());
 
-        await getRepo().moveNode(namespaceId, rootId, ['from', 'f.txt'], ['to', 'f.txt'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['from', 'f.txt'],
+          ['to', 'f.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         await check(namespaceId);
-        await getRepo().moveNode(namespaceId, rootId, ['to', 'f.txt'], ['to', 'renamed.txt'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['to', 'f.txt'],
+          ['to', 'renamed.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         await check(namespaceId);
 
         const to = await getRepo().resolvePath(namespaceId, rootId, ['to']);
@@ -173,7 +187,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
         await getRepo().touchFile(namespaceId, rootId, ['tree', 'sub', 'a.txt'], true, makeBlobData());
         await getRepo().ensureDirectory(namespaceId, rootId, ['dest'], false);
 
-        await getRepo().moveNode(namespaceId, rootId, ['tree'], ['dest', 'tree'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['tree'],
+          ['dest', 'tree'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
 
         await check(namespaceId);
       });
@@ -189,7 +210,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
           getRepo().copyNode(namespaceId, rootId, ['a', 'one.txt'], ['b', 'copy.txt'], false, UNLIMITED),
         ).rejects.toMatchObject({ code: 'VFS_FOLDER_FILE_LIMIT_EXCEEDED' });
         await expect(
-          getRepo().moveNode(namespaceId, rootId, ['a', 'one.txt'], ['b', 'one.txt'], false),
+          getRepo().moveNode(
+            namespaceId,
+            rootId,
+            ['a', 'one.txt'],
+            ['b', 'one.txt'],
+            false,
+            Number.MAX_SAFE_INTEGER,
+          ),
         ).rejects.toMatchObject({ code: 'VFS_FOLDER_FILE_LIMIT_EXCEEDED' });
 
         await check(namespaceId);
@@ -343,7 +371,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
           makeBlobData(),
         );
         expect(replaced.kind).toBe('replaced');
-        await getRepo().moveNode(namespaceId, rootId, ['d', 'a.txt'], ['d', 'renamed.txt'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['d', 'a.txt'],
+          ['d', 'renamed.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         await check(namespaceId);
 
         // 늘리는 요청: 초과 폴더에 새 FILE, 초과 폴더로 이동은 거부
@@ -352,7 +387,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
         ).rejects.toMatchObject({ code: 'VFS_FOLDER_FILE_LIMIT_EXCEEDED' });
         await getRepo().touchFile(namespaceId, rootId, ['top.txt'], false, makeBlobData());
         await expect(
-          getRepo().moveNode(namespaceId, rootId, ['top.txt'], ['d', 'top.txt'], false),
+          getRepo().moveNode(
+            namespaceId,
+            rootId,
+            ['top.txt'],
+            ['d', 'top.txt'],
+            false,
+            Number.MAX_SAFE_INTEGER,
+          ),
         ).rejects.toMatchObject({ code: 'VFS_FOLDER_FILE_LIMIT_EXCEEDED' });
         await check(namespaceId);
 
@@ -360,7 +402,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
         await getRepo().removeNode(namespaceId, rootId, ['d', 'b.txt'], false, 100);
         await check(namespaceId);
         await getRepo().ensureDirectory(namespaceId, rootId, ['other'], false);
-        await getRepo().moveNode(namespaceId, rootId, ['d', 'c.txt'], ['other', 'c.txt'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['d', 'c.txt'],
+          ['other', 'c.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         await check(namespaceId);
 
         const folder = await getRepo().resolvePath(namespaceId, rootId, ['d']);
@@ -384,7 +433,14 @@ export function runCounterMatrixTests(helpers: VfsNodeRepositoryTestHelpers): vo
           makeBlobData(),
         );
         expect(replaced.kind).toBe('replaced');
-        await getRepo().moveNode(namespaceId, rootId, ['d', 'a.txt'], ['d', 'renamed.txt'], false);
+        await getRepo().moveNode(
+          namespaceId,
+          rootId,
+          ['d', 'a.txt'],
+          ['d', 'renamed.txt'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         await check(namespaceId);
 
         // 늘리는 요청: 새 FILE·DIRECTORY, copy는 거부

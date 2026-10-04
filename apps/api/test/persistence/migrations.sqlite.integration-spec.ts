@@ -413,6 +413,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddLiveNodeCount1791700000019',
       'AddQuotaExclusion1791700000020',
       'WidenUploadSessionRequestId1791700000021',
+      'AddNamespaceMoveLimit1791700000022',
     ]);
   });
 
@@ -431,6 +432,20 @@ describe('마이그레이션 체인 (SQLite)', () => {
       exclude_snapshots_from_quota: 0,
       max_retained_trash_bytes: null,
     });
+  });
+
+  it('이동 노드 수 상한 migration은 기존 namespace의 override를 비우고 0 이하 값을 거부한다', async () => {
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
+      'move-limit-defaults',
+    );
+    const [row] = await dataSource.query('SELECT max_sync_move_nodes FROM namespace WHERE id = ?', [
+      namespace.id,
+    ]);
+    expect(row).toEqual({ max_sync_move_nodes: null });
+    await expect(
+      dataSource.query('UPDATE namespace SET max_sync_move_nodes = 0 WHERE id = ?', [namespace.id]),
+    ).rejects.toThrow();
   });
 
   it('기존 트리의 폴더 FILE·namespace live node counter를 backfill한다', async () => {

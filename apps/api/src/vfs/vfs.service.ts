@@ -58,6 +58,7 @@ function isNameFilterMode(value: string | undefined): value is NameFilterMode {
 export class VfsService {
   private readonly maxSyncDeleteNodes: number;
   private readonly maxSyncCopyNodes: number;
+  private readonly maxSyncMoveNodes: number;
 
   constructor(
     private readonly pathResolver: PathResolver,
@@ -66,6 +67,7 @@ export class VfsService {
   ) {
     this.maxSyncDeleteNodes = parsePositiveInt(config.get<string>('STORIX_MAX_SYNC_DELETE_NODES'), 1000);
     this.maxSyncCopyNodes = parsePositiveInt(config.get<string>('STORIX_MAX_SYNC_COPY_NODES'), 1000);
+    this.maxSyncMoveNodes = parsePositiveInt(config.get<string>('STORIX_MAX_SYNC_MOVE_NODES'), 10000);
   }
 
   async mkdir(
@@ -90,7 +92,7 @@ export class VfsService {
     rawDestination: string,
     destinationParents: boolean,
   ): Promise<{ status: number; body: VfsNodeResponseDto }> {
-    const root = await requireRoot(this.repo, namespaceId);
+    const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
     const source = this.pathResolver.resolve(rawSource);
     const destination = this.pathResolver.resolve(rawDestination);
 
@@ -98,12 +100,14 @@ export class VfsService {
       throw new VfsInvalidOperationError(source.canonical);
     }
 
+    const maxSyncMoveNodes = resolveEffectiveLimit(limits.maxSyncMoveNodes, this.maxSyncMoveNodes);
     const result = await this.repo.moveNode(
       namespaceId,
       root.id,
       source.segments,
       destination.segments,
       destinationParents,
+      maxSyncMoveNodes,
     );
 
     return { status: 200, body: toNodeResponse(result.node, result.finalPath) };

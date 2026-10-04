@@ -85,6 +85,7 @@ describe('requireRootWithLimits', () => {
       maxFileSizeBytes: null,
       maxSyncDeleteNodes: null,
       maxSyncCopyNodes: null,
+      maxSyncMoveNodes: null,
       encryptionPolicy: 'NONE',
       accessPolicy: 'PRIVATE',
     };

@@ -240,7 +240,14 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       .spyOn(nodeRepository, 'expireNode')
       .mockImplementationOnce(async (namespaceId, nodeId, cutoff) => {
         await nodeRepository.ensureDirectory(fixture.namespaceId, fixture.rootId, ['moved'], false);
-        await nodeRepository.moveNode(fixture.namespaceId, fixture.rootId, ['a'], ['moved', 'a'], false);
+        await nodeRepository.moveNode(
+          fixture.namespaceId,
+          fixture.rootId,
+          ['a'],
+          ['moved', 'a'],
+          false,
+          Number.MAX_SAFE_INTEGER,
+        );
         return originalExpire(namespaceId, nodeId, cutoff);
       });
     try {

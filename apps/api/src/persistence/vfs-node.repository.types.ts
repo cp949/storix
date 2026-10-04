@@ -27,6 +27,7 @@ export interface NamespaceResourceLimits {
   readonly maxFileSizeBytes: string | null;
   readonly maxSyncDeleteNodes: number | null;
   readonly maxSyncCopyNodes: number | null;
+  readonly maxSyncMoveNodes: number | null;
   readonly encryptionPolicy: EncryptionPolicy;
   readonly accessPolicy: AccessPolicy;
 }

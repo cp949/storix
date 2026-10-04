@@ -248,7 +248,7 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
       '/copy',
       '/copy/f',
     ]);
-    await c.repository.moveNode(c.namespaceId, c.rootId, ['src'], ['moved'], false);
+    await c.repository.moveNode(c.namespaceId, c.rootId, ['src'], ['moved'], false, Number.MAX_SAFE_INTEGER);
     const moved = (await c.events()).filter((event) => event.kind === 'moved');
     expect(moved.map((event) => [event.previousPath, event.path])).toEqual([
       ['/src', '/moved'],

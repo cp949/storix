@@ -307,24 +307,78 @@ describe('VfsService', () => {
   });
 
   describe('move', () => {
+    const limitsOf = (maxSyncMoveNodes: number | null) => ({
+      maxFileSizeBytes: null,
+      maxSyncDeleteNodes: null,
+      maxSyncCopyNodes: null,
+      maxSyncMoveNodes,
+      encryptionPolicy: 'NONE' as const,
+      accessPolicy: 'PRIVATE' as const,
+    });
+
     it('source가 root(/)이면 VfsInvalidOperationError를 던진다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(null),
+      });
 
       await expect(service.move(NAMESPACE_ID, '/', '/x', false)).rejects.toThrow(VfsInvalidOperationError);
       expect(repo.moveNode).not.toHaveBeenCalled();
     });
 
-    it('repository에 source/destination segments와 destinationParents를 그대로 전달한다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+    it('repository에 source/destination segments, destinationParents, STORIX_MAX_SYNC_MOVE_NODES를 그대로 전달한다', async () => {
+      config.get.mockReturnValue('7');
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(null),
+      });
       repo.moveNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
       await service.move(NAMESPACE_ID, '/a', '/dest', true);
 
-      expect(repo.moveNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], ['dest'], true);
+      expect(repo.moveNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], ['dest'], true, 7);
+    });
+
+    it('namespace override가 env보다 작으면 override를 전달하고, env보다 크면 env로 제한한다', async () => {
+      config.get.mockReturnValue('7');
+      service = createService();
+      repo.moveNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
+
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(3),
+      });
+      await service.move(NAMESPACE_ID, '/a', '/dest', false);
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(50),
+      });
+      await service.move(NAMESPACE_ID, '/a', '/dest', false);
+
+      expect(repo.moveNode).toHaveBeenNthCalledWith(1, NAMESPACE_ID, 'root', ['a'], ['dest'], false, 3);
+      expect(repo.moveNode).toHaveBeenNthCalledWith(2, NAMESPACE_ID, 'root', ['a'], ['dest'], false, 7);
+    });
+
+    it('STORIX_MAX_SYNC_MOVE_NODES가 없으면 기본 상한 10000을 전달한다', async () => {
+      config.get.mockReturnValue(undefined);
+      service = createService();
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(null),
+      });
+      repo.moveNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
+
+      await service.move(NAMESPACE_ID, '/a', '/dest', false);
+
+      expect(repo.moveNode).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a'], ['dest'], false, 10000);
     });
 
     it('이동에 성공하면 200과 repository가 반환한 최종 경로를 반환한다', async () => {
-      repo.getRoot.mockResolvedValue(makeNode({ id: 'root', name: '' }));
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeNode({ id: 'root', name: '' }),
+        limits: limitsOf(null),
+      });
       repo.moveNode.mockResolvedValue({ node: makeNode({ name: 'b' }), finalPath: '/dest/b' });
 
       const result = await service.move(NAMESPACE_ID, '/a', '/dest', false);
@@ -342,6 +396,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -360,6 +415,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -378,6 +434,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -399,6 +456,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: 3,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -419,6 +477,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: 999,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -457,6 +516,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -475,6 +535,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: null,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -495,6 +556,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: 3,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },
@@ -515,6 +577,7 @@ describe('VfsService', () => {
           maxFileSizeBytes: null,
           maxSyncDeleteNodes: 999,
           maxSyncCopyNodes: null,
+          maxSyncMoveNodes: null,
           encryptionPolicy: 'NONE',
           accessPolicy: 'PRIVATE',
         },

@@ -172,7 +172,7 @@ info:
     | `MUTATION_KEY_REUSED` | 409 | 기존 mutation receipt와 fingerprint가 다름; 기존 receipt를 변경하지 않음 | 새 key | 없음 |
     | `IDEMPOTENCY_KEY_REUSED` | 422 | namespace idempotency key에 다른 본문이 저장되어 있음 | 새 key | 없음 |
     | `VFS_PRECONDITION_FAILED` | 412 | 저장된 최초 충돌 응답 재생 | 최신 revision/조건으로 새 key | 없음 |
-    | `VFS_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key | 없음 |
+    | `VFS_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key | 없음 |
     | `VFS_PRECONDITION_REQUIRED` | 428 | 저장된 조건부 오류는 재생 | 조건을 추가한 뒤 새 key | 없음 |
     | `VFS_INVALID_RANGE`, `VFS_RANGE_NOT_SATISFIABLE` | 416 | 조회를 다시 평가 | range 입력을 고친 뒤 조회 재시도 | 없음 |
     | `DB_BUSY` | 503 | 같은 key로 재시도; receipt 없음 | 해당 없음 | 통상 `1` |
@@ -808,7 +808,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: 동기 삭제·복사 상한 초과, `mkdir`·`move`·`copy` 결과가 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`), 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`) 또는 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘는 경우(receipt로 재생), 또는 JSON 본문 16 KiB 초과(재생 불가)
+          description: 동기 삭제·복사 상한 초과, 동기 이동 상한 초과(`VFS_MOVE_LIMIT_EXCEEDED`, 이동 대상 자신을 포함한 subtree 노드 수가 namespace/전역 상한을 넘는 디렉터리 `move`), `mkdir`·`move`·`copy` 결과가 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`), 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`) 또는 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘는 경우(receipt로 재생), 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -934,7 +934,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '413':
-          description: FILE을 다른 폴더로 옮길 때 대상 폴더의 직접 하위 FILE 수 상한 초과(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`). `destinationParents=true`로 함께 만드는 상위 디렉터리가 namespace live Node 수 상한을 넘으면 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`다. 디렉터리 이동과 같은 폴더 안의 이름 변경에는 FILE 수 상한이 적용되지 않는다. 변경은 적용되지 않는다.
+          description: 이동 대상 자신을 포함한 subtree 노드 수가 namespace/전역 상한을 넘는 디렉터리 이동(`VFS_MOVE_LIMIT_EXCEEDED`). FILE을 다른 폴더로 옮길 때 대상 폴더의 직접 하위 FILE 수 상한 초과(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`). `destinationParents=true`로 함께 만드는 상위 디렉터리가 namespace live Node 수 상한을 넘으면 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`다. 디렉터리 이동과 같은 폴더 안의 이름 변경에는 FILE 수 상한이 적용되지 않는다. 변경은 적용되지 않는다.
           content:
             application/json:
               schema:

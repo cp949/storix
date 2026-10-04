@@ -7,6 +7,7 @@ import {
   VfsAlreadyExistsError,
   VfsInvalidOperationError,
   VfsIsDirectoryError,
+  VfsMoveLimitExceededError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
   VfsRevisionExhaustedError,
@@ -371,6 +372,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     sourceSegments: string[],
     destinationSegments: string[],
     destinationParents: boolean,
+    maxSyncMoveNodes: number,
     tx?: MutationTx,
     destinationResolution?: 'exact',
   ): Promise<{ node: VfsNodeRecord; finalPath: string }> {
@@ -383,6 +385,7 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
             sourceSegments,
             destinationSegments,
             destinationParents,
+            maxSyncMoveNodes,
             inner,
             destinationResolution,
           ),
@@ -411,9 +414,14 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       `WITH RECURSIVE subtree AS (
            SELECT id, parent_id, name FROM vfs_node WHERE parent_id = ${ph.bind(sourceNode.id)}
            UNION ALL SELECT n.id, n.parent_id, n.name FROM vfs_node n JOIN subtree s ON n.parent_id = s.id
-         ) SELECT id, parent_id, name FROM subtree`,
+         ) SELECT id, parent_id, name FROM subtree LIMIT ${ph.bind(maxSyncMoveNodes)}`,
       ph.params,
     );
+    // 이동 대상 root 자신을 더해 상한과 비교한다. resolveDestinationPlacement가 source row lock을
+    // 잡았으므로 조회~변경 사이에 subtree 구성이 바뀌지 않는다. 변경·change feed 기록 전에 거부한다.
+    if (descendants.length + 1 > maxSyncMoveNodes) {
+      throw new VfsMoveLimitExceededError(maxSyncMoveNodes);
+    }
     await trackChangeFeedBefore(
       tx,
       descendants.map((descendant) => descendant.id),

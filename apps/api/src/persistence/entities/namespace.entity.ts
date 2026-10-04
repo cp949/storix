@@ -47,6 +47,9 @@ export class NamespaceEntity {
   @Column({ name: 'max_sync_copy_nodes', type: 'integer', nullable: true })
   maxSyncCopyNodes: number | null;
 
+  @Column({ name: 'max_sync_move_nodes', type: 'integer', nullable: true })
+  maxSyncMoveNodes: number | null;
+
   @Column({ name: 'max_sync_snapshot_nodes', type: 'integer', nullable: true })
   maxSyncSnapshotNodes: number | null;
 

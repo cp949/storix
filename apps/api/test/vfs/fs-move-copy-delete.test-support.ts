@@ -120,6 +120,36 @@ export function registerFsMoveCopyDeleteContract(ctx: FsHttpContext) {
       expect(response.body.code).toBe('VFS_INVALID_OPERATION');
     });
 
+    it('STORIX_MAX_SYNC_MOVE_NODES를 넘는 디렉터리 이동은 시작 전에 413을 반환하고 아무것도 옮기지 않는다', async () => {
+      const namespaceId = await ctx.createNamespace('mv-limit-ns');
+      await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/mkdir`)
+        .send({ path: '/big' })
+        .expect(201);
+      for (const name of ['1', '2', '3', '4', '5']) {
+        await request(ctx.httpServer)
+          .post(`/api/v2/namespaces/${namespaceId}/fs/touch`)
+          .send({ path: `/big/${name}.txt` })
+          .expect(201);
+      }
+      // big 자신 + file 5개 = 6개 Node > 스위트 상한(5)
+
+      const response = await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/mv`)
+        .send({ source: '/big', destination: '/moved' })
+        .expect(413);
+
+      expect(response.body.code).toBe('VFS_MOVE_LIMIT_EXCEEDED');
+      await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/moved' })
+        .expect(404);
+      await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/big/5.txt' })
+        .expect(200);
+    });
+
     it('존재하지 않는 source는 404 VFS_NODE_NOT_FOUND를 반환한다', async () => {
       const namespaceId = await ctx.createNamespace('mv-missing-ns');
 
