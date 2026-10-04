@@ -477,6 +477,9 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 - 포트·타임아웃·GC 주기·동기 처리 한도처럼 `parsePositiveInt`로 읽는 정수 변수는 앞자리 0이 없는 10진 숫자만 허용한다.
   - `1e3`, `0x10`, `+5`, `5.0`, 공백이 붙은 값, 안전 정수 범위를 넘는 값은 부팅을 거부한다.
   - 빈 값은 기본값을 쓴다.
+- `STORIX_STORAGE_USE_SSL`, `STORIX_STORAGE_PATH_STYLE`, `STORIX_STORAGE_PUBLIC_USE_SSL`, `STORIX_RESTORE_FORCE`는 `true`·`false`만 허용한다(대소문자 무관).
+  - `1`, `yes`, 공백이 붙은 값은 부팅(복구는 시작)을 거부한다. 오류 메시지에 변수 이름이 나온다.
+  - 빈 값은 기본값을 쓴다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다.
 - `STORIX_PUBLISH_HOST`: host Nginx만 접근시키려면 `127.0.0.1`로 설정한다.
 - `STORIX_PORT`:
