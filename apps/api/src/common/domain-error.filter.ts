@@ -19,7 +19,7 @@ import { InvalidApiKeyError } from '../auth/auth.errors.js';
 import type { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../persistence/audit-log.tokens.js';
 import { VfsRangeNotSatisfiableError } from '../vfs/vfs.errors.js';
-import { sanitizeAuditString } from '../audit/audit-log.interceptor.js';
+import { sanitizeAuditString } from '../audit/audit-string.js';
 import {
   AUTH_REJECT_AUDIT_LIMITER,
   AUTH_REJECT_AUDIT_MAX_PER_WINDOW,

@@ -4,11 +4,8 @@ import type { Reflector } from '@nestjs/core';
 import { jest } from '@jest/globals';
 import { of } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../../src/auth/public.decorator.js';
-import {
-  AuditLogInterceptor,
-  resolveCallerId,
-  sanitizeAuditString,
-} from '../../src/audit/audit-log.interceptor.js';
+import { AuditLogInterceptor, resolveCallerId } from '../../src/audit/audit-log.interceptor.js';
+import { sanitizeAuditString } from '../../src/audit/audit-string.js';
 import { AUDITED_KEY } from '../../src/audit/audited.decorator.js';
 import type { AuditLogEntry, AuditLogRepository } from '../../src/persistence/audit-log.repository.js';
 

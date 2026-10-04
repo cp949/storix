@@ -15,6 +15,7 @@ import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
 // 읽어 얼어붙는데, 정적 import는 bootstrapWithEnv()의 loadEnvFile()보다 먼저
 // (엔진이 이 파일의 최상위 코드를 실행하기도 전에) 평가된다. bootstrapWithEnv()를
 // 거쳐 .env가 반영된 뒤에야 엔티티가 평가되도록 순서를 강제한다.
+// 이 파일이 정적으로 import하는 모듈(DomainErrorFilter 등)도 엔티티를 import하면 안 된다.
 async function bootstrap() {
   const { AppModule } = await bootstrapWithEnv(() => import('./app.module.js'));
   const shutdownTimeoutMs = parseShutdownTimeoutMs(process.env.STORIX_SHUTDOWN_TIMEOUT_SECONDS);
