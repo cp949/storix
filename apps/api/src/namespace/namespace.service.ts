@@ -69,18 +69,8 @@ export class NamespaceService {
     maxTotalLogicalBytes: string | null = null,
     idPrefix?: string,
   ): Promise<CreateNamespaceResult> {
-    if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
-      throw new NamespaceEncryptionNotConfiguredError();
-    }
-
     // accessPolicy를 해시에 포함하지 않으면 같은 Idempotency-Key로 정책만 바꾼
     // 재요청이 IdempotencyKeyReusedError 없이 캐시 응답을 돌려준다.
-    try {
-      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
-    } catch {
-      throw new NamespaceQuotaLimitExceedsGlobalError();
-    }
-
     const requestHash = canonicalJsonHash({
       name,
       ...(idPrefix === undefined ? {} : { idPrefix }),
@@ -103,6 +93,17 @@ export class NamespaceService {
         status: existing.responseStatus,
         body: existing.responseBody as CreateNamespaceResult['body'],
       };
+    }
+
+    // 전역 설정(마스터 키·quota 상한) 검사는 영수증 재생 뒤에 한다.
+    // 설정이 바뀐 뒤에도 이미 완료된 요청의 재시도는 최초 응답을 받아야 한다.
+    if (encryptionPolicy === 'ENCRYPTED' && !this.masterKey) {
+      throw new NamespaceEncryptionNotConfiguredError();
+    }
+    try {
+      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
+    } catch {
+      throw new NamespaceQuotaLimitExceedsGlobalError();
     }
 
     try {

@@ -34,12 +34,6 @@ export class NamespaceQuotaService {
     maxTotalLogicalBytes: string | null,
   ): Promise<{ status: number; body: unknown }> {
     if (!isNamespaceId(namespaceId)) throw new NamespaceNotFoundError(namespaceId);
-    try {
-      assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
-    } catch {
-      throw new NamespaceQuotaLimitExceedsGlobalError();
-    }
-
     const root = await this.nodes.getRoot(namespaceId);
     if (!root) throw new NamespaceNotFoundError(namespaceId);
     const storageKey = createHash('sha256')
@@ -53,6 +47,13 @@ export class NamespaceQuotaService {
       if (existing) {
         if (existing.requestHash !== requestHash) throw new IdempotencyKeyReusedError(idempotencyKey);
         return { status: existing.responseStatus, body: existing.responseBody };
+      }
+
+      // 전역 상한 검사는 영수증 재생 뒤에 한다. 상한이 낮아진 뒤에도 완료된 요청의 재시도는 최초 응답을 받아야 한다.
+      try {
+        assertNamespaceQuotaWithinGlobalLimit(maxTotalLogicalBytes, this.globalLimits.maxTotalLogicalBytes);
+      } catch {
+        throw new NamespaceQuotaLimitExceedsGlobalError();
       }
 
       const namespaces = tx.manager.getRepository(NamespaceEntity);

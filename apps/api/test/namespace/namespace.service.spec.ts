@@ -266,6 +266,74 @@ describe('NamespaceService', () => {
     });
   });
 
+  describe('create 영수증 재생과 전역 설정 검사의 순서', () => {
+    it('전역 quota가 낮아진 뒤에도 저장된 201 영수증은 재생한다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        null,
+        makeConfig({ STORIX_MAX_TOTAL_LOGICAL_BYTES: '100' }),
+      );
+      const storedBody = { id: 'ns-1', name: 'acme' };
+      idempotencyRepo.findOneBy.mockResolvedValue({
+        key: 'key-1',
+        requestHash: canonicalJsonHash({
+          name: 'acme',
+          encryptionPolicy: 'NONE',
+          accessPolicy: 'PRIVATE',
+          maxTotalLogicalBytes: '101',
+        }),
+        responseStatus: 201,
+        responseBody: storedBody,
+      } as unknown as IdempotencyKeyEntity);
+
+      const result = await service.create('key-1', 'acme', 'NONE', 'PRIVATE', '101');
+
+      expect(result).toEqual({ status: 201, body: storedBody });
+      expect(provisioningRepo.createWithRoot).not.toHaveBeenCalled();
+    });
+
+    it('같은 key에 다른 body가 오면 전역 quota 초과보다 IdempotencyKeyReusedError가 먼저다', async () => {
+      service = new NamespaceService(
+        namespaceRepo as unknown as Repository<NamespaceEntity>,
+        idempotencyRepo as unknown as Repository<IdempotencyKeyEntity>,
+        provisioningRepo as unknown as NamespaceProvisioningRepository,
+        null,
+        makeConfig({ STORIX_MAX_TOTAL_LOGICAL_BYTES: '100' }),
+      );
+      idempotencyRepo.findOneBy.mockResolvedValue({
+        key: 'key-1',
+        requestHash: canonicalJsonHash({ name: 'acme', encryptionPolicy: 'NONE', accessPolicy: 'PRIVATE' }),
+        responseStatus: 201,
+        responseBody: {},
+      } as unknown as IdempotencyKeyEntity);
+
+      await expect(service.create('key-1', 'acme', 'NONE', 'PRIVATE', '101')).rejects.toThrow(
+        IdempotencyKeyReusedError,
+      );
+    });
+
+    it('마스터 키가 빠진 뒤에도 ENCRYPTED 생성의 저장된 201 영수증은 재생한다', async () => {
+      const storedBody = { id: 'ns-1', name: 'acme' };
+      idempotencyRepo.findOneBy.mockResolvedValue({
+        key: 'key-1',
+        requestHash: canonicalJsonHash({
+          name: 'acme',
+          encryptionPolicy: 'ENCRYPTED',
+          accessPolicy: 'PRIVATE',
+        }),
+        responseStatus: 201,
+        responseBody: storedBody,
+      } as unknown as IdempotencyKeyEntity);
+
+      const result = await service.create('key-1', 'acme', 'ENCRYPTED');
+
+      expect(result).toEqual({ status: 201, body: storedBody });
+      expect(provisioningRepo.createWithRoot).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findById', () => {
     it('UUID 형식이 아니면 NamespaceNotFoundError를 던진다', async () => {
       await expect(service.findById('not-a-uuid')).rejects.toThrow(NamespaceNotFoundError);
