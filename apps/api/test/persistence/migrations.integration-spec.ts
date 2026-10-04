@@ -19,6 +19,7 @@ import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/mig
 import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/1791700000010-AddFileExpiry.js';
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
+import { WidenUploadSessionRequestId1791700000021 } from '../../src/persistence/migrations/1791700000021-WidenUploadSessionRequestId.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -1246,6 +1247,56 @@ describe('Migration: InitSchema', () => {
       const columns = await runner.query(`SELECT is_nullable FROM information_schema.columns
         WHERE table_schema = current_schema() AND table_name = 'namespace' AND column_name = 'name'`);
       expect(columns).toEqual([{ is_nullable: 'YES' }]);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('업로드 세션 request_id 컬럼을 200자로 넓히고, 129자 이상 값이 있으면 down을 거부한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new WidenUploadSessionRequestId1791700000021();
+    const namespaceId = randomUUID();
+    const sessionId = randomUUID();
+    const lengths = async () =>
+      runner.query(`SELECT column_name, character_maximum_length FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'vfs_upload_session'
+          AND column_name IN ('request_id', 'creation_request_id') ORDER BY column_name`);
+    try {
+      expect(await lengths()).toEqual([
+        { column_name: 'creation_request_id', character_maximum_length: 200 },
+        { column_name: 'request_id', character_maximum_length: 200 },
+      ]);
+
+      await runner.query('INSERT INTO namespace (id, name) VALUES ($1, $2)', [
+        namespaceId,
+        'widen-request-id',
+      ]);
+      await runner.query(
+        `INSERT INTO vfs_upload_session (id, namespace_id, scope, creation_key, fingerprint, target_path,
+           size_bytes, mime_type, condition_type, part_size_bytes, part_count, state, expires_at,
+           max_expires_at, request_id, creation_request_id, created_at, updated_at)
+         VALUES ($1, $2, 's', $3, 'f', '/a', 0, 'text/plain', 'ABSENT', 1, 0, 'OPEN', now(), now(), $4, $4, now(), now())`,
+        [sessionId, namespaceId, randomUUID(), 'r'.repeat(200)],
+      );
+
+      await expect(migration.down(runner)).rejects.toMatchObject({ code: '22001' });
+      expect(await lengths()).toEqual([
+        { column_name: 'creation_request_id', character_maximum_length: 200 },
+        { column_name: 'request_id', character_maximum_length: 200 },
+      ]);
+
+      await runner.query('DELETE FROM vfs_upload_session WHERE id = $1', [sessionId]);
+      await runner.query('DELETE FROM namespace WHERE id = $1', [namespaceId]);
+      await migration.down(runner);
+      expect(await lengths()).toEqual([
+        { column_name: 'creation_request_id', character_maximum_length: 128 },
+        { column_name: 'request_id', character_maximum_length: 128 },
+      ]);
+      await migration.up(runner);
+      expect(await lengths()).toEqual([
+        { column_name: 'creation_request_id', character_maximum_length: 200 },
+        { column_name: 'request_id', character_maximum_length: 200 },
+      ]);
     } finally {
       await runner.release();
     }

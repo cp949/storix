@@ -128,6 +128,27 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     expect(completeReplay.headers['x-request-id']).toBe('completion-original');
   });
 
+  it('200자 X-Request-Id로 생성·완료해도 DB 컬럼 길이에 걸리지 않고 같은 ID를 돌려준다', async () => {
+    const creationId = 'c'.repeat(200);
+    const completionId = 'f'.repeat(200);
+    const created = await auth(api().post(base()))
+      .set('X-Mutation-Scope', 'finalize')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Request-Id', creationId)
+      .send({
+        path: '/final-long-request-id.bin',
+        sizeBytes: '0',
+        mimeType: 'application/octet-stream',
+        ifAbsent: true,
+      })
+      .expect(201);
+    expect(created.headers['x-request-id']).toBe(creationId);
+    const completed = await complete(created.body.sessionId as string)
+      .set('X-Request-Id', completionId)
+      .expect(201);
+    expect(completed.headers['x-request-id']).toBe(completionId);
+  });
+
   it('rejects a changed target at finalization and keeps the losing session retryable', async () => {
     const loser = await create('/final-conflict.bin', '4');
     const winner = await create('/final-conflict.bin', '4');

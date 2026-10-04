@@ -21,6 +21,21 @@ describe('normalizeMimeType', () => {
   it('형식이 유효하지 않으면 기본 MIME으로 대체한다', () => {
     expect(normalizeMimeType('not-a-mime-type')).toBe('application/octet-stream');
   });
+
+  it('파라미터를 뗀 값이 255자이면 그대로 반환한다', () => {
+    const mime = `application/${'x'.repeat(243)}`;
+    expect(mime).toHaveLength(255);
+    expect(normalizeMimeType(mime)).toBe(mime);
+  });
+
+  it('파라미터를 뗀 값이 256자이면 기본 MIME으로 대체한다', () => {
+    expect(normalizeMimeType(`application/${'x'.repeat(244)}`)).toBe('application/octet-stream');
+  });
+
+  it('파라미터가 길어도 뗀 값이 255자 이하이면 통과한다', () => {
+    const mime = `application/${'x'.repeat(243)}`;
+    expect(normalizeMimeType(`${mime}; charset=${'y'.repeat(300)}`)).toBe(mime);
+  });
 });
 
 describe('assertStrictMimeType', () => {

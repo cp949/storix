@@ -33,8 +33,8 @@ export class VfsUploadSessionEntity {
   @Column({ name: 'terminal_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true }) terminalAt: Date | null;
   @Column({ name: 'response_status', type: 'integer', nullable: true }) responseStatus: number | null;
   @Column({ name: 'response_body', type: 'text', nullable: true }) responseBody: string | null;
-  @Column({ name: 'request_id', type: 'varchar', length: 128, nullable: true }) requestId: string | null;
-  @Column({ name: 'creation_request_id', type: 'varchar', length: 128, nullable: true })
+  @Column({ name: 'request_id', type: 'varchar', length: 200, nullable: true }) requestId: string | null;
+  @Column({ name: 'creation_request_id', type: 'varchar', length: 200, nullable: true })
   creationRequestId: string | null;
   @Column({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE }) createdAt: Date;
   @Column({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE }) updatedAt: Date;

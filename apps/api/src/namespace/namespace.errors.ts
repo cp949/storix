@@ -22,8 +22,8 @@ export class IdempotencyKeyRequiredError extends DomainError {
   readonly code = 'IDEMPOTENCY_KEY_REQUIRED';
   readonly status = 400;
 
-  constructor() {
-    super('Idempotency-Key 헤더가 필요함');
+  constructor(message = 'Idempotency-Key 헤더가 필요함') {
+    super(message);
   }
 }
 

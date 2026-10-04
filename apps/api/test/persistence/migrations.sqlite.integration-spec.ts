@@ -412,6 +412,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddFolderFileCount1791700000018',
       'AddLiveNodeCount1791700000019',
       'AddQuotaExclusion1791700000020',
+      'WidenUploadSessionRequestId1791700000021',
     ]);
   });
 

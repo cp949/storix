@@ -225,7 +225,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Namespace'
         '400':
-          description: 잘못된 name·idPrefix·encryptionPolicy·accessPolicy 또는 생성 설정
+          description: 잘못된 name·idPrefix·encryptionPolicy·accessPolicy 또는 생성 설정, `Idempotency-Key` 누락 또는 255 byte 초과(`IDEMPOTENCY_KEY_REQUIRED`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2789,6 +2789,7 @@ components:
       required: true
       schema:
         type: string
+        maxLength: 255
     RangeHeader:
       name: Range
       in: header
