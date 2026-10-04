@@ -211,6 +211,7 @@ usage 잠금:
 - 매 실행 session 제거를 재시도한다. 기존 staging GC가 조각을 정리한 뒤 session을 제거할 수 있다.
 - 참조 중 Blob은 DATA_INCONSISTENT다.
 - grace가 지난 참조 0 Blob이 남으면 STORAGE_DELETE_FAILED다. 다음 검사에서 사라지면 해제한다.
+  - 같은 실행의 orphan-blobs 단계가 예산 소진으로 멈췄으면 남은 Blob이 삭제 실패인지 미처리인지 구분할 수 없다. 이 실행은 `blockedReason`을 설정하지도 지우지도 않는다. 예산 소진 없이 끝난 실행이 다시 판정한다.
 - grace 대기 Blob은 완료를 보류한다.
 - 미정착 tombstone은 UPLOAD_SETTLEMENT_UNKNOWN이다. session 대기보다 먼저 판정한다.
 - staging part·tombstone의 object 삭제가 계속 실패해도 `blockedReason`은 `null`이다.
