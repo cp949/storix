@@ -29,6 +29,22 @@ Blob의 불변성만으로 동시 GC 삭제를 막을 수는 없다.
 백업 중 쓰기·GC 중단 절차는 `docs/deployment/backup-restore.md` “백업”을 따른다.
 `backup:run`은 쓰기나 GC를 자동으로 중단하지 않는다.
 
+## 복구 순서: Postgres, Blob 복원, 백업에 없는 Blob 삭제
+
+`restore:run`은 다음 순서로 실행한다.
+
+1. Postgres를 복구한다.
+2. 백업의 `blobs/`를 스토리지에 put한다.
+3. `STORIX_RESTORE_FORCE=true`이면 백업에 없는 object를 삭제한다.
+
+Postgres 복구가 `pg_restore` 실패 등으로 중단되면 스토리지 object는 변경하지 않는다.
+복구 전에 object를 먼저 지우면 이 실패가 빈 버킷으로 남는다.
+같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행하면 `--clean`과 put 덮어쓰기로 이어서 복구된다.
+
+3단계는 put이 모두 끝난 뒤에 실행한다.
+put 도중 실패해도 기존 object가 남는다.
+3단계가 실패하면 복구도 실패로 끝낸다. Postgres와 백업 object는 이미 복원된 상태이고, 재실행하면 같은 결과가 된다.
+
 ## 백업 방식
 
 - **Postgres**

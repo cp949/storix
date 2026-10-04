@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- `STORIX_RESTORE_FORCE=true` 복구가 Postgres 복구보다 먼저 스토리지 object를 전부 지워, `pg_restore`가 실패하면 버킷이 빈 채로 남던 문제를 수정했다. 이제 Postgres 복구 → 백업 object put → 백업에 없는 object 삭제 순서다. Postgres 복구가 실패하면 object를 변경하지 않으므로 원인을 고치고 같은 백업으로 재실행하면 된다. 삭제 단계가 실패하면 복구는 실패로 끝나며 재실행하면 이어서 처리한다. SQLite 드라이버도 같은 순서를 따른다(GitHub 이슈 #24).
 - `HEAD`를 `fs` content·download, `public` content·download, snapshot content에 보내면 서버가 Blob(ENCRYPTED는 복호화 stream 포함)을 끝까지 읽은 뒤 버리던 문제를 수정했다. 공개 경로에서는 무인증 요청으로 매번 storage 전송을 일으킬 수 있었다. 이제 Blob을 열지 않고 GET과 같은 응답 헤더만 보낸다. `Range`가 있으면 206과 `Content-Range`, 잘못된 범위는 416으로 GET과 같다. ENCRYPTED namespace의 HEAD는 마스터 키를 요구하지 않는다. HEAD는 `openapi.yaml`에 없는 동작이며 이 변경도 문서화하지 않는다(GitHub 이슈 #23).
 - SQLite 드라이버에서 `SQLITE_FULL`·`SQLITE_IOERR` 등으로 SQLite가 트랜잭션을 스스로 롤백하면 쿼리 게이트가 해제되지 않아 프로세스를 재시작할 때까지 모든 쿼리가 30초 대기 뒤 503 `DB_BUSY`로 실패하던 문제를 수정했다. 게이트가 트랜잭션·SAVEPOINT 깊이를 직접 세어 최상위 트랜잭션이 끝나면 해제한다. 중첩 트랜잭션이 자동 롤백된 뒤 바깥 콜백이 오류를 삼키고 쿼리를 이어 보내면 autocommit으로 실행하지 않고 내부 오류(`SqliteTransactionAbortedError`, 미분류 500)로 실패시킨다. `ROLLBACK` 재시도에도 트랜잭션이 남으면 게이트를 해제하지 않고 error 로그를 남긴다. 이 경우 프로세스 재시작이 필요하다. PostgreSQL에는 영향이 없다(GitHub 이슈 #22).
 - 감사 로그의 `detail`에 짝이 맞지 않는 UTF-16 surrogate가 들어가면 PostgreSQL `jsonb` INSERT가 실패해 해당 요청의 감사 행이 사라지던 문제를 수정했다. 입력의 lone surrogate는 `U+FFFD`로 기록하고, 4096 코드 유닛 경계가 surrogate pair 중간이면 그 글자를 버린다. 같은 정리를 `path`에도 적용한다.

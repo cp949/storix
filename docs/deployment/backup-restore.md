@@ -88,6 +88,8 @@ rsync -a ./backups/ user@offsite:/backups/storix/
    롤백: 불가능. 대상의 기존 Postgres 데이터와 스토리지 object를 백업 시점 상태로 교체한다.
    ```
 
+   - 실행 순서는 Postgres 복구, 백업 object put, (force일 때) 백업에 없는 object 삭제다.
+   - Postgres 복구가 실패하면 스토리지 object는 변경하지 않는다. 원인을 고친 뒤 같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행한다.
    - `blobs/` 외의 하위 디렉터리는 `RestoreUnsupportedBackupError`다.
    - 이 검사는 기존 데이터를 지우기 전에 수행한다.
    - 지원하지 않는 이전 백업 형식은 복구할 수 없다.
