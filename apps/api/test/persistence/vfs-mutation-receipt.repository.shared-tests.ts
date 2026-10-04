@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
@@ -317,5 +318,78 @@ export function runVfsMutationReceiptSharedTests(
     ]);
     expect(claims.map((claim) => claim.kind).sort()).toEqual(['busy', 'owner']);
     expect((await receiptRepository.claim(identity, future)).kind).toBe('busy');
+  });
+
+  describe('claim 중 행이 사라지는 경합', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    async function reservedIdentity(
+      leaseExpired: boolean,
+    ): Promise<{ namespaceId: string; scope: string; key: string }> {
+      const { dataSource, receiptRepository } = getContext();
+      const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+        randomUUID(),
+        `receipt-vanish-${randomUUID()}`,
+      );
+      const identity = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+      await receiptRepository.claim(identity, new Date());
+      if (leaseExpired) await expireLease(dataSource, identity);
+      return identity;
+    }
+
+    /** 재조회 직전에 행을 지워 release·prune·namespace 삭제와의 경합을 재현한다. */
+    function vanishOnFirstLookup(identity: { namespaceId: string; scope: string; key: string }) {
+      const { dataSource } = getContext();
+      const repository = dataSource.getRepository(VfsMutationReceiptEntity);
+      const original = repository.findOneBy.bind(repository);
+      let calls = 0;
+      return jest.spyOn(repository, 'findOneBy').mockImplementation(async (where) => {
+        calls += 1;
+        if (calls === 1) {
+          await repository.delete({
+            namespaceId: identity.namespaceId,
+            scope: identity.scope,
+            idempotencyKey: identity.key,
+          });
+        }
+        return original(where);
+      });
+    }
+
+    it('다른 owner의 release로 행이 사라지면 500 대신 새 owner가 된다', async () => {
+      const { receiptRepository } = getContext();
+      const identity = await reservedIdentity(false);
+      const lookup = vanishOnFirstLookup(identity);
+
+      await expect(receiptRepository.claim(identity, new Date())).resolves.toEqual({
+        kind: 'owner',
+        generation: 1,
+      });
+      expect(lookup).toHaveBeenCalledTimes(1);
+    });
+
+    it('takeover 직후 행이 사라져도 500 대신 새 owner가 된다', async () => {
+      const { receiptRepository } = getContext();
+      const identity = await reservedIdentity(true);
+      vanishOnFirstLookup(identity);
+
+      await expect(receiptRepository.claim(identity, new Date())).resolves.toEqual({
+        kind: 'owner',
+        generation: 1,
+      });
+    });
+
+    it('행이 계속 사라지면 3번 시도한 뒤 busy를 반환한다', async () => {
+      const { dataSource, receiptRepository } = getContext();
+      const identity = await reservedIdentity(false);
+      const repository = dataSource.getRepository(VfsMutationReceiptEntity);
+      const lookup = jest.spyOn(repository, 'findOneBy').mockResolvedValue(null);
+
+      await expect(receiptRepository.claim(identity, new Date())).resolves.toEqual({
+        kind: 'busy',
+        retryAfterSeconds: 1,
+      });
+      expect(lookup).toHaveBeenCalledTimes(3);
+    });
   });
 }

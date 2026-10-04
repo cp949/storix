@@ -25,6 +25,8 @@ export type ReceiptClaim =
   | { readonly kind: 'busy'; readonly retryAfterSeconds: number };
 
 const RECEIPT_DAYS = 30;
+// 재조회 사이에 다른 요청이 행을 지우는 경합에서 claim을 다시 시도하는 최대 횟수다.
+const MAX_CLAIM_ATTEMPTS = 3;
 
 export function mutationLeaseSeconds(): number {
   return parsePositiveInt(process.env.STORIX_MUTATION_LEASE_SECONDS, 60);
@@ -58,8 +60,22 @@ export class VfsMutationReceiptRepository {
     return this.dataSource.getRepository(VfsMutationReceiptEntity);
   }
 
+  /**
+   * claim을 얻거나 기존 상태를 돌려준다. INSERT·takeover·재조회가 한 트랜잭션이 아니라서
+   * 그 사이에 release·pruneExpired·namespace 삭제가 행을 지울 수 있다. 행이 사라지면
+   * 처음부터 다시 시도하고, 상한을 넘으면 다른 요청이 경합 중인 것과 같게 busy로 응답한다.
+   */
   @classifyPersistenceOperation
   async claim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim> {
+    for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt += 1) {
+      const claim = await this.tryClaim(identity, now);
+      if (claim) return claim;
+    }
+    return { kind: 'busy', retryAfterSeconds: 1 };
+  }
+
+  // 재조회 시점에 행이 없거나 만료된 COMPLETE 행을 지웠다면 null이다. 호출자가 다시 시도한다.
+  private async tryClaim(identity: ReceiptIdentity, now: Date): Promise<ReceiptClaim | null> {
     const sqlite = isSqliteDataSource(this.dataSource.options);
     const leaseSeconds = mutationLeaseSeconds();
     const toSqlTime = (date: Date): string =>
@@ -99,11 +115,12 @@ export class VfsMutationReceiptRepository {
       .setParameter('leaseSeconds', leaseSeconds)
       .execute();
     if (expiredClaim.affected === 1) {
-      const row = await this.repo.findOneByOrFail(keyOf(identity));
-      return { kind: 'owner', generation: row.generation };
+      const row = await this.repo.findOneBy(keyOf(identity));
+      return row ? { kind: 'owner', generation: row.generation } : null;
     }
 
-    const row = await this.repo.findOneByOrFail(keyOf(identity));
+    const row = await this.repo.findOneBy(keyOf(identity));
+    if (!row) return null;
     if (row.state === 'COMPLETE') {
       if (row.expiresAt <= now) {
         await this.repo
@@ -112,7 +129,7 @@ export class VfsMutationReceiptRepository {
           .where('namespace_id = :namespaceId AND scope = :scope AND idempotency_key = :key', identity)
           .andWhere("state = 'COMPLETE' AND expires_at <= :now", { now })
           .execute();
-        return this.claim(identity, now);
+        return null;
       }
       return { kind: 'complete', receipt: row };
     }
