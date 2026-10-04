@@ -25,6 +25,10 @@
    - identity 검증이나 namespace root 확인이 실패하면 경로 404를 그대로 반환하고 receipt는 남기지 않아 기존 오류 우선순위를 유지한다.
 2. 헤더 검증(`identityOf`), namespace root 확인, 요청 파싱. 파싱 오류는 던지지 않고 보류한다. mutation·snapshot은 이어서 fingerprint를 계산한다.
 3. `receipts.claim`: `owner` / `complete`(재생 또는 `MUTATION_KEY_REUSED`) / `busy`(409 `MUTATION_IN_PROGRESS` + `Retry-After`) 중 하나. 보류한 snapshot ID 오류와 파싱 오류는 `owner`일 때만 저장하므로 `complete`·`busy`의 응답이 요청 오류보다 우선한다.
+   - claim은 INSERT, takeover, 재조회를 한 트랜잭션으로 묶지 않는다. 그 사이에 `release`·`pruneExpired`·namespace 삭제가 행을 지울 수 있다.
+   - 재조회에서 행이 없으면 INSERT부터 다시 시도한다. 만료된 `COMPLETE` 행을 지운 뒤에도 같은 방식으로 다시 시도한다.
+   - 시도는 최대 3번이다. 모두 행이 사라지면 `busy`(`Retry-After: 1`)를 반환한다.
+   - namespace가 삭제된 경우 재시도 INSERT의 FK 위반이 기존 `NAMESPACE_NOT_FOUND` 규칙으로 처리된다.
 4. content는 claim 뒤 `Content-Length`를 검사하고 본문을 해시한 다음 fingerprint를 계산한다. `complete`이거나 파싱 오류가 있으면 업로드 없이 해시만 하고, 그 외에는 업로드하면서 해시한다.
 5. `owner`이고 snapshot ID 오류 또는 파싱 오류가 있으면 작업 트랜잭션 없이 바로 `storeErrorReceipt`로 저장한다.
 6. `owner`이고 파싱에 성공했으면 `withMutation` 트랜잭션에서 변경을 수행한다. 성공하면 같은 트랜잭션에서 `receipts.complete`를 호출한다.
