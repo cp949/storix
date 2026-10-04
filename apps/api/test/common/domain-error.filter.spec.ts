@@ -1,4 +1,11 @@
-import { ArgumentsHost, Logger } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  HttpException,
+  Logger,
+  MethodNotAllowedException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DomainError } from '../../src/common/domain-error.js';
 import { StorageFailureError, StorageUnavailableError } from '../../src/common/storage-failure.errors.js';
@@ -493,6 +500,61 @@ describe('DomainErrorFilter', () => {
       message: 'Unexpected token b in JSON',
       requestId: 'req-1',
     });
+  });
+
+  it('NotFoundException은 status 이름인 NOT_FOUND로 응답한다', () => {
+    const { host, json, status } = createHost();
+
+    filter.catch(new NotFoundException('Cannot GET /x'), host);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ code: 'NOT_FOUND', message: 'Cannot GET /x', requestId: 'req-1' });
+  });
+
+  it('ServiceUnavailableException은 SERVICE_UNAVAILABLE로 응답하고 객체 body를 응답에 싣지 않는다', () => {
+    const { host, json, status } = createHost();
+    const terminusResult = {
+      status: 'error',
+      info: {},
+      error: { storage: { status: 'down', message: 'bucket not found: secret-bucket' } },
+      details: { storage: { status: 'down', message: 'bucket not found: secret-bucket' } },
+    };
+
+    filter.catch(new ServiceUnavailableException(terminusResult), host);
+
+    expect(status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Service Unavailable Exception',
+      requestId: 'req-1',
+    });
+  });
+
+  it('MethodNotAllowedException은 METHOD_NOT_ALLOWED로 응답한다', () => {
+    const { host, json } = createHost();
+
+    filter.catch(new MethodNotAllowedException(), host);
+
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'METHOD_NOT_ALLOWED' }));
+  });
+
+  it('HttpStatus에 없는 status의 HttpException은 BAD_REQUEST로 응답한다', () => {
+    const { host, json, status } = createHost();
+
+    filter.catch(new HttpException('이상한 상태', 499), host);
+
+    expect(status).toHaveBeenCalledWith(499);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_REQUEST' }));
+  });
+
+  it('HttpException이 아닌 status 오류는 status와 무관하게 BAD_REQUEST를 유지한다(body-parser 413 계약)', () => {
+    const { host, json, status } = createHost();
+    const tooLarge = Object.assign(new Error('request entity too large'), { status: 413 });
+
+    filter.catch(tooLarge, host);
+
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_REQUEST' }));
   });
 
   it('500 에러가 발생하면 주입된 ErrorReporter.report를 호출한다', () => {

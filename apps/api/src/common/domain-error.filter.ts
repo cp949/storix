@@ -1,4 +1,14 @@
-import { ArgumentsHost, Catch, ExceptionFilter, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { inspect } from 'node:util';
 import { DomainError } from './domain-error.js';
@@ -33,12 +43,21 @@ export function resolveErrorStatus(exception: unknown): number {
   return typeof status === 'number' ? status : 500;
 }
 
+// code 산출 규칙(우선순위 순):
+// 1. DomainError 등 string code를 가진 예외는 그 code를 쓴다.
+// 2. Nest HttpException(없는 라우트 404, terminus 503 등)은 HttpStatus 이름을 쓴다(NOT_FOUND, SERVICE_UNAVAILABLE).
+// 3. 그 밖의 status 오류(body-parser의 400·413 등)는 BAD_REQUEST다. 공개 계약(openapi)에 적혀 있어 바꾸지 않는다.
 export function resolveErrorCode(exception: unknown, status: number): string {
   const code = (exception as DomainErrorShape)?.code;
   if (typeof code === 'string') {
     return code;
   }
-  return status === 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST';
+  if (status === 500) return 'INTERNAL_ERROR';
+  if (exception instanceof HttpException) {
+    // 숫자 enum의 역조회라 HttpStatus에 없는 status는 undefined다.
+    return HttpStatus[status] ?? 'BAD_REQUEST';
+  }
+  return 'BAD_REQUEST';
 }
 
 export function resolveErrorPath(exception: unknown): string | undefined {

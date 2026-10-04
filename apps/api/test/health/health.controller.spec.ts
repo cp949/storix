@@ -7,6 +7,7 @@ import request from 'supertest';
 import { HealthController } from '../../src/health/health.controller.js';
 import { StorageHealthIndicator } from '../../src/health/storage-health.indicator.js';
 import { IS_PUBLIC_KEY } from '../../src/auth/public.decorator.js';
+import { DomainErrorFilter } from '../../src/common/domain-error.filter.js';
 
 describe('HealthController', () => {
   let app: INestApplication;
@@ -34,6 +35,7 @@ describe('HealthController', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalFilters(new DomainErrorFilter());
     await app.init();
   });
 
@@ -63,6 +65,23 @@ describe('HealthController', () => {
     });
 
     await request(app.getHttpServer()).get('/health/ready').expect(503);
+  });
+
+  it('GET /health/ready 503은 표준 오류 형태로 응답하고 indicator 상세를 노출하지 않는다', async () => {
+    storageCheck.mockResolvedValue({
+      storage: { status: 'down', message: 'bucket not found: secret-bucket' },
+    });
+
+    const response = await request(app.getHttpServer()).get('/health/ready').expect(503);
+
+    expect(response.body).toEqual({ code: 'SERVICE_UNAVAILABLE', message: 'Service Unavailable Exception' });
+    expect(JSON.stringify(response.body)).not.toContain('secret-bucket');
+  });
+
+  it('없는 라우트는 404 NOT_FOUND로 응답한다', async () => {
+    const response = await request(app.getHttpServer()).get('/health/nope').expect(404);
+
+    expect(response.body).toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('헬스체크는 인증 없이 접근 가능하도록 @Public()이 적용되어 있다', () => {
