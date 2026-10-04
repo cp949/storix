@@ -190,6 +190,64 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
 
       expect(result).toMatchObject({ kind: 'replaced', node: { size: '3' } });
     });
+
+    it('If-Match가 있는데 대상이 없으면 VfsVersionConflictError를 던지고 아무것도 만들지 않는다', async () => {
+      const namespace = await createNamespace('put-missing-if-match-ns');
+      const root = await getRepo().getRoot(namespace.id);
+
+      await expect(
+        getRepo().putFileContent(namespace.id, root!.id, ['gone.txt'], false, makeBlobData(), 3, false),
+      ).rejects.toThrow(VfsVersionConflictError);
+
+      await expect(getRepo().resolvePath(namespace.id, root!.id, ['gone.txt'])).resolves.toBeNull();
+    });
+
+    it('If-Match가 있는데 대상이 없으면 parents=true여도 상위 디렉터리를 만들지 않는다', async () => {
+      const namespace = await createNamespace('put-missing-if-match-parents-ns');
+      const root = await getRepo().getRoot(namespace.id);
+
+      await expect(
+        getRepo().putFileContent(namespace.id, root!.id, ['newdir', 'gone.txt'], true, makeBlobData(), 3, false),
+      ).rejects.toThrow(VfsVersionConflictError);
+
+      await expect(getRepo().resolvePath(namespace.id, root!.id, ['newdir'])).resolves.toBeNull();
+    });
+
+    it('force=true여도 If-Match가 현재 version과 다르면 VfsVersionConflictError를 던진다', async () => {
+      const namespace = await createNamespace('put-force-mismatch-ns');
+      const root = await getRepo().getRoot(namespace.id);
+      const file = await createFile(namespace.id, root!.id, 'a.txt');
+
+      await expect(
+        getRepo().putFileContent(
+          namespace.id,
+          root!.id,
+          ['a.txt'],
+          false,
+          makeBlobData(),
+          file.version + 1,
+          true,
+        ),
+      ).rejects.toThrow(VfsVersionConflictError);
+    });
+
+    it('force=true이고 If-Match가 현재 version과 같으면 덮어쓴다', async () => {
+      const namespace = await createNamespace('put-force-match-ns');
+      const root = await getRepo().getRoot(namespace.id);
+      const file = await createFile(namespace.id, root!.id, 'a.txt');
+
+      const result = await getRepo().putFileContent(
+        namespace.id,
+        root!.id,
+        ['a.txt'],
+        false,
+        makeBlobData({ size: '4' }),
+        file.version,
+        true,
+      );
+
+      expect(result).toMatchObject({ kind: 'replaced', node: { size: '4' } });
+    });
   });
 
   describe('moveNode', () => {

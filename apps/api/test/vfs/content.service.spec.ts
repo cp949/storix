@@ -13,7 +13,7 @@ import {
 import { ContentService } from '../../src/vfs/content.service.js';
 import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
 import { PathResolver } from '../../src/vfs/path-resolver.js';
-import { VfsIsDirectoryError, VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
+import { VfsIsDirectoryError, VfsNodeNotFoundError, VfsVersionConflictError } from '../../src/vfs/vfs.errors.js';
 import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
 
 const NAMESPACE_ID = '11111111-1111-1111-1111-111111111111';
@@ -247,6 +247,24 @@ describe('ContentService', () => {
         false,
       );
     });
+
+    it.each(['*', 'W/"3"', 'r1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '3,4', 'abc', '3.5', '0x10', '1e3', '-1'])(
+      '정수가 아닌 If-Match(%s)는 업로드와 저장 없이 VfsVersionConflictError를 던진다',
+      async (ifMatch) => {
+        repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+        repo.resolvePath.mockResolvedValue(null);
+
+        await expect(
+          service.putContent(NAMESPACE_ID, '/a.txt', Readable.from(Buffer.from('hi')), {
+            ...noOptions,
+            ifMatch,
+          }),
+        ).rejects.toThrow(VfsVersionConflictError);
+
+        expect(blobStorage.put).not.toHaveBeenCalled();
+        expect(repo.putFileContent).not.toHaveBeenCalled();
+      },
+    );
 
     it('If-Match 헤더가 빈 문자열이면 version 체크 없이 null로 전달한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });

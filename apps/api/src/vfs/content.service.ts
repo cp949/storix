@@ -29,6 +29,7 @@ import {
   VfsNamespaceNotFoundError,
   VfsNodeNotFoundError,
   VfsPresignedEncryptedUnsupportedError,
+  VfsVersionConflictError,
 } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
 
@@ -66,7 +67,12 @@ export interface PresignedDownloadPayload {
   readonly expiresAt: string;
 }
 
-function parseIfMatch(raw: string | undefined): number | null {
+// 정수 version이 아닌 If-Match 값(`*`, `W/"3"`, `r1.…`, 복수 값 등)을 나타낸다.
+// 어떤 version과도 같을 수 없으므로 상태와 무관하게 version 충돌로 거절한다.
+const INVALID_IF_MATCH = 'invalid';
+
+// 헤더가 없거나 값이 비어 있으면 null이다(version 조건 없음).
+function parseIfMatch(raw: string | undefined): number | null | typeof INVALID_IF_MATCH {
   if (!raw) {
     return null;
   }
@@ -74,8 +80,8 @@ function parseIfMatch(raw: string | undefined): number | null {
   if (trimmed === '') {
     return null;
   }
-  const value = Number(trimmed);
-  return Number.isInteger(value) ? value : null;
+  const value = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  return Number.isSafeInteger(value) ? value : INVALID_IF_MATCH;
 }
 
 @Injectable()
@@ -173,6 +179,12 @@ export class ContentService {
       throw new VfsFileTooLargeError(maxFileSizeBytes);
     }
 
+    // 형식이 틀린 If-Match는 대상·본문과 무관하게 결과가 정해져 있으므로 업로드 전에 거절한다.
+    const ifMatchVersion = parseIfMatch(options.ifMatch);
+    if (ifMatchVersion === INVALID_IF_MATCH) {
+      throw new VfsVersionConflictError(canonical);
+    }
+
     const mimeType = normalizeMimeType(options.contentType);
     const storageKey = this.keyGenerator.generate();
     const uploaded = await this.contentIngress.upload(
@@ -195,7 +207,7 @@ export class ContentService {
         sha256: uploaded.sha256,
         encryptionIv: uploaded.encryptionIv,
       },
-      parseIfMatch(options.ifMatch),
+      ifMatchVersion,
       options.force,
     );
 

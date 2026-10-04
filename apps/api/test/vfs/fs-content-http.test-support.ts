@@ -351,6 +351,64 @@ export function registerFsContentHttpContract(ctx: FsHttpContext) {
       expect(response.body.size).toBe(Buffer.byteLength('forced overwrite'));
     });
 
+    it('If-Match가 있는데 대상이 없으면 409 VFS_VERSION_CONFLICT를 반환하고 파일을 만들지 않는다', async () => {
+      const namespaceId = await ctx.createNamespace('put-missing-if-match-ns');
+
+      const response = await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/gone.txt' })
+        .set('If-Match', '3')
+        .send('resurrected')
+        .expect(409);
+
+      expect(response.body.code).toBe('VFS_VERSION_CONFLICT');
+      await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/gone.txt' })
+        .expect(404);
+    });
+
+    it('force=true여도 If-Match가 현재 version과 다르면 409 VFS_VERSION_CONFLICT를 반환하고 내용을 바꾸지 않는다', async () => {
+      const namespaceId = await ctx.createNamespace('put-force-mismatch-ns');
+      const created = await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .send('v1')
+        .expect(201);
+
+      const response = await request(ctx.httpServer)
+        .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt', force: 'true' })
+        .set('If-Match', String(created.body.version + 1))
+        .send('forced overwrite')
+        .expect(409);
+
+      expect(response.body.code).toBe('VFS_VERSION_CONFLICT');
+      const read = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/content`)
+        .query({ path: '/a.txt' })
+        .expect(200);
+      expect(read.text).toBe('v1');
+    });
+
+    it('정수가 아닌 If-Match는 대상이 없어도 409 VFS_VERSION_CONFLICT를 반환한다', async () => {
+      const namespaceId = await ctx.createNamespace('put-invalid-if-match-ns');
+
+      for (const value of ['*', 'W/"3"']) {
+        const response = await request(ctx.httpServer)
+          .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
+          .query({ path: '/new.txt' })
+          .set('If-Match', value)
+          .send('x')
+          .expect(409);
+        expect(response.body.code).toBe('VFS_VERSION_CONFLICT');
+      }
+      await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/stat`)
+        .query({ path: '/new.txt' })
+        .expect(404);
+    });
+
     it('Content-Type이 없으면 application/octet-stream으로 저장한다', async () => {
       const namespaceId = await ctx.createNamespace('put-default-mime-ns');
 

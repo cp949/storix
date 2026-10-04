@@ -196,7 +196,9 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       if (existing.version >= MAX_VFS_VERSION) {
         throw new VfsRevisionExhaustedError();
       }
-      if (!force && (ifMatchVersion === null || ifMatchVersion !== existing.version)) {
+      // If-Match가 있으면 force와 무관하게 현재 version과 같아야 한다. 없으면 force일 때만 덮어쓴다.
+      const versionMatches = ifMatchVersion !== null ? ifMatchVersion === existing.version : force;
+      if (!versionMatches) {
         throw new VfsVersionConflictError(joinSegments(segments));
       }
 
@@ -220,6 +222,11 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       await this.blobRepository.decrementReferenceCount(manager, previousBlobId, 1);
 
       return { kind: 'replaced', node: toRecord(saved) };
+    }
+
+    // 대상이 없는데 If-Match가 있으면 호출자가 본 파일이 이미 사라진 것이다. 생성하지 않는다.
+    if (ifMatchVersion !== null) {
+      throw new VfsVersionConflictError(joinSegments(segments));
     }
 
     const createdBlob = await blobRepo.save(blobRepo.create({ namespaceId, ...newBlob, referenceCount: 1 }));
