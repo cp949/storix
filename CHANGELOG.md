@@ -18,9 +18,13 @@
 ### Changed
 
 - 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.
+- 정수 환경변수(포트, 초, 개수, GC 주기 등 `parsePositiveInt`로 읽는 변수)를 앞자리 0이 없는 10진 숫자만 받는다. 이전에 통과하던 `1e3`, `0x10`, `+5`, `5.0`, 공백이 붙은 값, 2^53 이상의 값은 부팅을 거부한다. `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 2147483647 ms, `STORIX_DB_PORT`·`STORIX_STORAGE_PORT`·`STORIX_STORAGE_PUBLIC_PORT`는 65535를 넘으면 부팅을 거부한다. 3000000000 ms를 설정하면 `setTimeout` 상한 때문에 1ms 뒤에 타임아웃이 나던 문제가 이 거부로 바뀐다.
+- `STORIX_DB_DRIVER`가 `postgres`·`sqlite`가 아니면 부팅을 거부한다. 이전에는 `SQLite`·`sqlite3` 같은 값이 조용히 `postgres`로 처리됐다. 빈 값과 미설정은 `postgres`다.
 
 ### Fixed
 
+- 감사 로그의 `detail`에 짝이 맞지 않는 UTF-16 surrogate가 들어가면 PostgreSQL `jsonb` INSERT가 실패해 해당 요청의 감사 행이 사라지던 문제를 수정했다. 입력의 lone surrogate는 `U+FFFD`로 기록하고, 4096 코드 유닛 경계가 surrogate pair 중간이면 그 글자를 버린다. 같은 정리를 `path`에도 적용한다.
+- 기본 compose가 `gc`에 `STORIX_GC_MAX_ROWS_PER_STAGE`·`STORIX_NAMESPACE_DELETED_RETENTION_DAYS`를, `app`에 `STORIX_MAX_SYNC_SNAPSHOT_NODES`·`STORIX_MAX_SNAPSHOT_BYTES`·`STORIX_MAX_RETAINED_SNAPSHOT_NODES`·`STORIX_MAX_RETAINED_SNAPSHOT_BYTES`·`STORIX_MUTATION_LEASE_SECONDS`·`STORIX_MUTATION_MAX_UPLOAD_SECONDS`·`STORIX_VFS_EXPIRY_MIN_SECONDS`·`STORIX_VFS_EXPIRY_MAX_SECONDS`를 전달하지 않아 `.env`의 값이 무시되고 코드 기본값으로 동작하던 문제를 수정했다. 기본값은 코드와 같다. `STORIX_SENTRY_DSN`·`STORIX_STORAGE_PUBLIC_*`(gc·backup·restore)·`STORIX_VFS_*_CONFIG_PATH`는 전달 여부를 정하지 않았다(GitHub 이슈 #20).
 - PostgreSQL에서 `X-Request-Id`·`Content-Type`·`Idempotency-Key`의 길이가 DB 컬럼을 넘으면 500이 나고 SQLite는 성공하던 문제를 수정했다. 업로드 세션 `request_id`·`creation_request_id` 컬럼을 `varchar(200)`으로 넓혀(PostgreSQL 마이그레이션, SQLite는 건너뜀) 129~200자 `X-Request-Id`로 업로드 세션 생성·완료가 되도록 했다. `Content-Type`은 `;` 뒤를 뗀 값이 255자를 넘으면 `application/octet-stream`으로 저장한다. `POST /namespaces`는 255 byte를 넘는 `Idempotency-Key`를 400 `IDEMPOTENCY_KEY_REQUIRED`로 거절한다. SQLite에서 256 byte 이상 키로 namespace를 만들던 요청은 이제 400이다. openapi `IdempotencyKeyHeader`에 `maxLength: 255`를 추가했다. 결정은 api ADR-0041이다.
 - 조건부 업로드(`POST /fs/content/conditional`)에서 commit 결과가 불명확한 오류(commit은 성공했으나 응답이 유실된 경우)가 나면 업로드한 object를 삭제해 공개 파일의 GET이 실패하던 문제를 수정했다. commit 결과가 불명확하거나 Blob row 참조 확인에 실패하면 object를 보존하고 orphan GC에 맡긴다.
 - PostgreSQL에서 `ls`·`find`·snapshot 목록의 cursor와 `find`의 `name`이 유효하지 않으면 500이 나던 문제를 수정했다. 이제 400이다. 영향을 받은 입력은 UUID가 아닌 `id`나 NUL이 든 `name`을 담은 `ls`·`find` cursor, 존재하지 않는 날짜(`2026-02-30`)와 `0000`년을 담은 snapshot 목록 cursor, 중복되거나 NUL이 든 `find` `name`이다. cursor는 `VFS_INVALID_CURSOR`, `name`은 `VFS_INVALID_QUERY`다. SQLite도 같은 입력을 400으로 거절한다.
