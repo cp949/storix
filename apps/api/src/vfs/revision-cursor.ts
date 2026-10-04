@@ -35,6 +35,8 @@ export function decodeRevisionCursor(raw: string): RevisionCursor {
       typeof record.directoryRevision !== 'string' ||
       typeof record.name !== 'string' ||
       record.name.length === 0 ||
+      // name은 PostgreSQL text에 바인딩되므로 NUL(22021)을 막는다.
+      record.name.includes('\0') ||
       typeof record.id !== 'string' ||
       !isUuid(record.id)
     ) {

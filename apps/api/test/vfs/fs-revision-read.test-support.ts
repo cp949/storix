@@ -127,5 +127,27 @@ export function registerFsRevisionReadContract(ctx: FsHttpContext) {
         ).body.code,
       ).toBe('VFS_INVALID_CURSOR');
     });
+
+    it('name에 NUL이 든 위조 rc1 cursor는 400 VFS_INVALID_CURSOR다', async () => {
+      const namespaceId = await ctx.createNamespace('revision-cursor-nul-http-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      for (const path of ['/dir', '/dir/a', '/dir/b']) {
+        await request(ctx.httpServer).post(`${base}/mkdir`).send({ path }).expect(201);
+      }
+      const first = await request(ctx.httpServer)
+        .get(`${base}/ls`)
+        .query({ path: '/dir', consistency: 'revision', limit: 1 })
+        .expect(200);
+      // 서버가 만든 cursor에서 name만 바꿔 directoryId·directoryRevision 검사를 통과하게 한다.
+      const position = JSON.parse(
+        Buffer.from((first.body.nextCursor as string).slice(4), 'base64url').toString('utf8'),
+      ) as Record<string, string>;
+      const forged = `rc1.${Buffer.from(JSON.stringify({ ...position, name: 'a\u0000b' }), 'utf8').toString('base64url')}`;
+      const response = await request(ctx.httpServer)
+        .get(`${base}/ls`)
+        .query({ path: '/dir', consistency: 'revision', cursor: forged })
+        .expect(400);
+      expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+    });
   });
 }

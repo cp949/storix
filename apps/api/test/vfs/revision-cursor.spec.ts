@@ -23,6 +23,7 @@ describe('revision listing cursor', () => {
     `rc1.${Buffer.from(JSON.stringify({ ...cursor, extra: true })).toString('base64url')}`,
     `rc1.${Buffer.from(JSON.stringify({ ...cursor, directoryId: id })).toString('base64url')}`,
     `rc1.${Buffer.from(JSON.stringify({ ...cursor, name: '' })).toString('base64url')}`,
+    `rc1.${Buffer.from(JSON.stringify({ ...cursor, name: 'a\u0000b' })).toString('base64url')}`,
   ])('rejects malformed cursor %s', (raw) => {
     expect(() => decodeRevisionCursor(raw)).toThrow(VfsInvalidCursorError);
   });
