@@ -8,6 +8,11 @@ import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors
 import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
 import { InvalidApiKeyError } from '../../src/auth/auth.errors.js';
 import type { AuditLogRepository } from '../../src/persistence/audit-log.repository.js';
+import {
+  AUTH_REJECT_AUDIT_MAX_PER_WINDOW,
+  AUTH_REJECT_AUDIT_WINDOW_MS,
+  AuthRejectAuditLimiter,
+} from '../../src/audit/auth-reject-audit-limiter.js';
 import type { VfsPreconditionCurrentDto } from '../../src/vfs/dto/node-response.dto.js';
 
 function createHost(requestId = 'req-1') {
@@ -296,6 +301,119 @@ describe('DomainErrorFilter', () => {
         path,
       }),
     );
+  });
+
+  it('401 감사 path는 4096 코드 유닛으로 자르고 operation은 128자로 자른다', async () => {
+    const audit = { record: jest.fn<AuditLogRepository['record']>().mockResolvedValue(undefined) };
+    const path = `/${'x'.repeat(10_000)}`;
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status: jest.fn(() => ({ json: jest.fn() })) }),
+        getRequest: () => ({ requestId: 'req-huge-path', method: 'GET', path, headers: {} }),
+      }),
+    } as unknown as ArgumentsHost;
+    new DomainErrorFilter(undefined, audit as unknown as AuditLogRepository).catch(
+      new InvalidApiKeyError(),
+      host,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ path: path.slice(0, 4096), operation: `GET ${path}`.slice(0, 128) }),
+    );
+  });
+
+  describe('401 감사 기록 상한', () => {
+    function createRejectFixture() {
+      let now = 1_000;
+      const audit = { record: jest.fn<AuditLogRepository['record']>().mockResolvedValue(undefined) };
+      const limiter = new AuthRejectAuditLimiter(() => now);
+      const filter = new DomainErrorFilter(undefined, audit as unknown as AuditLogRepository, limiter);
+      const reject = async (requestId: string) => {
+        const json = jest.fn();
+        const status = jest.fn(() => ({ json }));
+        const host = {
+          switchToHttp: () => ({
+            getResponse: () => ({ status }),
+            getRequest: () => ({ requestId, method: 'GET', path: '/probe', headers: {} }),
+          }),
+        } as unknown as ArgumentsHost;
+        filter.catch(new InvalidApiKeyError(), host);
+        await new Promise((resolve) => setImmediate(resolve));
+        return { status, json };
+      };
+      return { audit, reject, advance: (ms: number) => void (now += ms) };
+    }
+
+    it('윈도 상한을 넘은 401은 감사 행을 만들지 않아도 401 응답은 그대로 낸다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { audit, reject } = createRejectFixture();
+      for (let i = 0; i < AUTH_REJECT_AUDIT_MAX_PER_WINDOW; i += 1) await reject(`req-${i}`);
+      audit.record.mockClear();
+
+      const { status, json } = await reject('req-over');
+      await reject('req-over-2');
+
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'UNAUTHORIZED', requestId: 'req-over' }),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('윈도당 첫 생략에서만 경고 로그를 한 번 남긴다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { reject } = createRejectFixture();
+      for (let i = 0; i < AUTH_REJECT_AUDIT_MAX_PER_WINDOW + 3; i += 1) await reject(`req-${i}`);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+    });
+
+    it('다음 윈도의 첫 401이 직전 윈도 생략 건수를 요약 행으로 함께 기록한다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { audit, reject, advance } = createRejectFixture();
+      for (let i = 0; i < AUTH_REJECT_AUDIT_MAX_PER_WINDOW + 4; i += 1) await reject(`req-${i}`);
+      audit.record.mockClear();
+      advance(AUTH_REJECT_AUDIT_WINDOW_MS);
+
+      await reject('req-next');
+
+      expect(audit.record).toHaveBeenCalledTimes(2);
+      expect(audit.record).toHaveBeenCalledWith({
+        requestId: 'req-next',
+        namespaceId: null,
+        snapshotId: null,
+        trashId: null,
+        operation: 'AUTH_REJECT_SUPPRESSED',
+        path: null,
+        detail: { suppressed: 4, windowSeconds: 60 },
+        caller: null,
+        status: 401,
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'req-next', operation: 'GET /probe', path: '/probe' }),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('요약 행 저장이 실패해도 개별 행 기록과 401 응답은 이어진다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const { audit, reject, advance } = createRejectFixture();
+      for (let i = 0; i < AUTH_REJECT_AUDIT_MAX_PER_WINDOW + 1; i += 1) await reject(`req-${i}`);
+      audit.record.mockClear();
+      audit.record.mockRejectedValueOnce(new Error('db down'));
+      advance(AUTH_REJECT_AUDIT_WINDOW_MS);
+
+      const { status } = await reject('req-next');
+
+      expect(audit.record).toHaveBeenCalledTimes(2);
+      expect(status).toHaveBeenCalledWith(401);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   it('exception에 code가 있어도 500 응답에서는 INTERNAL_ERROR로 대체한다', () => {

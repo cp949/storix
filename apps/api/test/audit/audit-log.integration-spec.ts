@@ -28,6 +28,11 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
 import { AuditModule } from '../../src/audit/audit.module.js';
+import {
+  AUTH_REJECT_AUDIT_MAX_PER_WINDOW,
+  AUTH_REJECT_AUDIT_WINDOW_MS,
+  AuthRejectAuditLimiter,
+} from '../../src/audit/auth-reject-audit-limiter.js';
 
 @Controller('audit-auth-probe')
 class AuditAuthProbeController {
@@ -489,6 +494,94 @@ describe('감사 로그 end-to-end', () => {
         });
         expect(JSON.stringify(row)).not.toContain('raw-secret-key');
       }
+    } finally {
+      await securedApp?.close();
+      if (previous === undefined) delete process.env.STORIX_API_KEY;
+      else process.env.STORIX_API_KEY = previous;
+    }
+  });
+
+  it('401이 윈도 상한을 넘으면 초과분은 기록하지 않고 다음 윈도에서 요약 행으로 남긴다', async () => {
+    let now = 1_000;
+    const moduleRef = await Test.createTestingModule({ imports: [AuditAuthProbeModule] }).compile();
+    const floodApp = moduleRef.createNestApplication();
+    const requestContext = new RequestContextMiddleware();
+    floodApp.use((req: Request, res: Response, next: NextFunction) => requestContext.use(req, res, next));
+    floodApp.useGlobalFilters(
+      new DomainErrorFilter(
+        undefined,
+        new AuditLogRepository(migrationDataSource),
+        new AuthRejectAuditLimiter(() => now),
+      ),
+    );
+    await floodApp.init();
+    const server = floodApp.getHttpServer();
+    try {
+      const floodId = randomUUID();
+      const path = `/audit-auth-probe/protected/${floodId}`;
+      const total = AUTH_REJECT_AUDIT_MAX_PER_WINDOW + 5;
+      for (let i = 0; i < total; i += 1) {
+        await request(server).get(path).set('X-Request-Id', `flood-${floodId}-${i}`).expect(401);
+      }
+      const nextId = `flood-next-${floodId}`;
+      now += AUTH_REJECT_AUDIT_WINDOW_MS;
+      await request(server).get(path).set('X-Request-Id', nextId).expect(401);
+
+      const summary = await findAuditLogByRequestId(nextId);
+      const individual = await migrationDataSource.query(
+        'SELECT request_id FROM audit_log WHERE path = $1 AND operation <> $2',
+        [path, 'AUTH_REJECT_SUPPRESSED'],
+      );
+      const summaries = await migrationDataSource.query(
+        'SELECT detail FROM audit_log WHERE request_id = $1 AND operation = $2',
+        [nextId, 'AUTH_REJECT_SUPPRESSED'],
+      );
+      expect(summary).toBeDefined();
+      expect(individual).toHaveLength(AUTH_REJECT_AUDIT_MAX_PER_WINDOW + 1);
+      expect(summaries).toEqual([{ detail: { suppressed: 5, windowSeconds: 60 } }]);
+    } finally {
+      await floodApp.close();
+    }
+  });
+
+  it('실제 컨트롤러의 필터들이 401 윈도 상한을 하나로 공유한다', async () => {
+    const previous = process.env.STORIX_API_KEY;
+    process.env.STORIX_API_KEY = 'audit-shared-limit-key';
+    let securedApp: INestApplication | undefined;
+    try {
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({ isGlobal: true }),
+          AuthModule,
+          AuditModule,
+          NamespaceModule,
+          VfsModule,
+        ],
+      }).compile();
+      securedApp = moduleRef.createNestApplication({ bodyParser: false });
+      configureBodyParsers(securedApp);
+      await securedApp.init();
+      const server = securedApp.getHttpServer();
+      const namespaceId = randomUUID();
+      const vfsPath = `/api/v2/namespaces/${namespaceId}/fs/snapshots`;
+      const namespacePath = `/api/v2/namespaces/${namespaceId}`;
+      const perController = AUTH_REJECT_AUDIT_MAX_PER_WINDOW - 20;
+      for (let i = 0; i < perController; i += 1) {
+        await request(server).get(vfsPath).expect(401);
+        await request(server).get(namespacePath).expect(401);
+      }
+      // 마지막 기록 요청이 DB에 반영될 때까지 기다린 뒤 개수를 센다.
+      await findAuditLogByRequestId(
+        (await request(server).get(vfsPath).expect(401)).headers['x-request-id'] as string,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const rows = await migrationDataSource.query(
+        'SELECT count(*)::int AS count FROM audit_log WHERE path IN ($1, $2) AND status = 401',
+        [vfsPath, namespacePath],
+      );
+      // 컨트롤러별 필터가 상한을 따로 쓰면 120건 안팎이 기록된다.
+      expect(rows[0].count).toBeLessThanOrEqual(AUTH_REJECT_AUDIT_MAX_PER_WINDOW);
     } finally {
       await securedApp?.close();
       if (previous === undefined) delete process.env.STORIX_API_KEY;

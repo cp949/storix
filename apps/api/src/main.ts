@@ -6,6 +6,7 @@ import { DomainErrorFilter } from './common/domain-error.filter.js';
 import { installGracefulShutdown, parseShutdownTimeoutMs } from './common/graceful-shutdown.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
+import { AUTH_REJECT_AUDIT_LIMITER } from './audit/auth-reject-audit-limiter.js';
 import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
 
 // AppModule은 정적 import하면 안 된다 — 엔티티의 드라이버 중립 컬럼 타입
@@ -19,7 +20,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   installGracefulShutdown(app, shutdownTimeoutMs);
   app.useGlobalFilters(
-    new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER), app.get(AUDIT_LOG_REPOSITORY)),
+    new DomainErrorFilter(
+      app.get<ErrorReporter>(ERROR_REPORTER),
+      app.get(AUDIT_LOG_REPOSITORY),
+      app.get(AUTH_REJECT_AUDIT_LIMITER),
+    ),
   );
   configureBodyParsers(app);
   await app.listen(process.env.STORIX_PORT ?? 3000);

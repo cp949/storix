@@ -9,6 +9,14 @@ import { InvalidApiKeyError } from '../auth/auth.errors.js';
 import type { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../persistence/audit-log.tokens.js';
 import { VfsRangeNotSatisfiableError } from '../vfs/vfs.errors.js';
+import { sanitizeAuditString } from '../audit/audit-log.interceptor.js';
+import {
+  AUTH_REJECT_AUDIT_LIMITER,
+  AUTH_REJECT_AUDIT_MAX_PER_WINDOW,
+  AUTH_REJECT_AUDIT_WINDOW_MS,
+  AuthRejectAuditLimiter,
+} from '../audit/auth-reject-audit-limiter.js';
+import type { AuditLogEntry } from '../persistence/audit-log.repository.js';
 
 interface DomainErrorShape {
   readonly code?: unknown;
@@ -87,6 +95,11 @@ export class DomainErrorFilter implements ExceptionFilter {
   constructor(
     @Optional() @Inject(ERROR_REPORTER) private readonly errorReporter?: ErrorReporter,
     @Optional() @Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogRepository?: AuditLogRepository,
+    // 필터는 전역 인스턴스와 컨트롤러별 DI 인스턴스로 여러 개 생기므로, 상한 상태는 앱 단위 provider를
+    // 공유해야 한다. provider가 없는 구성(단위 테스트 등)은 필터마다 별도 리미터를 쓴다.
+    @Optional()
+    @Inject(AUTH_REJECT_AUDIT_LIMITER)
+    private readonly authRejectLimiter: AuthRejectAuditLimiter = new AuthRejectAuditLimiter(),
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -95,22 +108,7 @@ export class DomainErrorFilter implements ExceptionFilter {
     const status = resolveErrorStatus(exception);
 
     if (exception instanceof InvalidApiKeyError && this.auditLogRepository) {
-      void this.auditLogRepository
-        .record({
-          requestId: request.requestId,
-          namespaceId: null,
-          snapshotId: null,
-          trashId: null,
-          // operation 컬럼은 기존 varchar(128) 계약을 유지하고 전체 경로는 text path에 남긴다.
-          operation: `${request.method} ${request.path}`.slice(0, 128),
-          path: request.path,
-          detail: null,
-          caller: null,
-          status: 401,
-        })
-        .catch((error: unknown) => {
-          this.logger.error('감사 로그 기록 실패', error instanceof Error ? error.stack : String(error));
-        });
+      this.recordAuthReject(request);
     }
 
     if (status === 500) {
@@ -151,6 +149,50 @@ export class DomainErrorFilter implements ExceptionFilter {
       path: resolveErrorPath(exception),
       ...resolveErrorCurrent(exception),
       requestId: request.requestId,
+    });
+  }
+
+  // 401 감사 행을 윈도당 상한 안에서만 기록한다. 기록은 응답을 막지 않는 best-effort다.
+  private recordAuthReject(request: Request): void {
+    const decision = this.authRejectLimiter.admit();
+    if (decision.firstSuppressed) {
+      this.logger.warn(
+        `인증 거부 감사 기록이 윈도 상한(${AUTH_REJECT_AUDIT_MAX_PER_WINDOW}건/${AUTH_REJECT_AUDIT_WINDOW_MS / 1000}초)을 넘어 생략됨`,
+      );
+    }
+    if (decision.suppressedBefore > 0) {
+      this.recordAudit({
+        requestId: request.requestId,
+        namespaceId: null,
+        snapshotId: null,
+        trashId: null,
+        operation: 'AUTH_REJECT_SUPPRESSED',
+        path: null,
+        detail: { suppressed: decision.suppressedBefore, windowSeconds: AUTH_REJECT_AUDIT_WINDOW_MS / 1000 },
+        caller: null,
+        status: 401,
+      });
+    }
+    if (!decision.record) return;
+
+    const path = sanitizeAuditString(request.path);
+    this.recordAudit({
+      requestId: request.requestId,
+      namespaceId: null,
+      snapshotId: null,
+      trashId: null,
+      // operation 컬럼은 기존 varchar(128) 계약을 유지하고 경로는 text path에 남긴다.
+      operation: `${request.method} ${path}`.slice(0, 128),
+      path,
+      detail: null,
+      caller: null,
+      status: 401,
+    });
+  }
+
+  private recordAudit(entry: AuditLogEntry): void {
+    void this.auditLogRepository?.record(entry).catch((error: unknown) => {
+      this.logger.error('감사 로그 기록 실패', error instanceof Error ? error.stack : String(error));
     });
   }
 }
