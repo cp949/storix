@@ -14,9 +14,10 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
     STORIX_MAX_FILE_SIZE_BYTES: '1200',
     STORIX_MAX_SNAPSHOT_BYTES: '800',
     STORIX_MAX_TOTAL_LOGICAL_BYTES: '2000',
-    // 동기 삭제·복사가 한 번에 다루는 노드 수. 노드 여섯 개 이상의 트리가 상한을 넘는다.
+    // 동기 삭제·복사·이동이 한 번에 다루는 노드 수. 노드 여섯 개 이상의 트리가 상한을 넘는다.
     STORIX_MAX_SYNC_DELETE_NODES: '5',
     STORIX_MAX_SYNC_COPY_NODES: '5',
+    STORIX_MAX_SYNC_MOVE_NODES: '5',
     // 휴지통이 namespace마다 보존하는 노드 수. 파일 세 개까지 보존하고 네 번째 삭제가 상한을 넘는다.
     STORIX_MAX_RETAINED_TRASH_NODES: '3',
   },
