@@ -188,6 +188,31 @@ export function registerFsBasicOperationsContract(ctx: FsHttpContext) {
       expect(second.body.nextCursor).toBeNull();
     });
 
+    it.each([
+      ['UUID가 아닌 id', { name: 'a', id: 'not-uuid' }],
+      ['NUL이 든 name', { name: 'a\u0000b', id: '11111111-1111-4111-8111-111111111111' }],
+    ])('cursor가 %s를 담으면 SQL 실행 전에 400 VFS_INVALID_CURSOR를 반환한다', async (_label, position) => {
+      const namespaceId = await ctx.createNamespace('ls-invalid-position-ns');
+      const cursor = Buffer.from(JSON.stringify(position), 'utf8').toString('base64url');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/ls`)
+        .query({ path: '/', cursor })
+        .expect(400);
+
+      expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+    });
+
+    it('cursor를 중복해서 보내면 400 VFS_INVALID_CURSOR를 반환한다', async () => {
+      const namespaceId = await ctx.createNamespace('ls-duplicate-cursor-ns');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/ls?path=%2F&cursor=a&cursor=b`)
+        .expect(400);
+
+      expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+    });
+
     it('잘못된 형식의 cursor는 400 VFS_INVALID_CURSOR를 반환한다', async () => {
       const namespaceId = await ctx.createNamespace('ls-invalid-cursor-ns');
 
@@ -307,6 +332,66 @@ export function registerFsBasicOperationsContract(ctx: FsHttpContext) {
         .expect(200);
 
       expect(response.body.items.map((i: { name: string }) => i.name)).toEqual(['report-2026']);
+    });
+
+    it.each([
+      ['UUID가 아닌 id', { name: 'a', id: 'not-uuid' }],
+      ['NUL이 든 name', { name: 'a\u0000b', id: '11111111-1111-4111-8111-111111111111' }],
+    ])('cursor가 %s를 담으면 SQL 실행 전에 400 VFS_INVALID_CURSOR를 반환한다', async (_label, position) => {
+      const namespaceId = await ctx.createNamespace('find-invalid-position-ns');
+      const cursor = Buffer.from(JSON.stringify(position), 'utf8').toString('base64url');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/find`)
+        .query({ path: '/', cursor })
+        .expect(400);
+
+      expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+    });
+
+    it('cursor를 중복해서 보내면 400 VFS_INVALID_CURSOR를 반환한다', async () => {
+      const namespaceId = await ctx.createNamespace('find-duplicate-cursor-ns');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/find?path=%2F&cursor=a&cursor=b`)
+        .expect(400);
+
+      expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+    });
+
+    it.each([
+      ['contains', 'name=a&name=b&match=contains'],
+      ['exact', 'name=a&name=b&match=exact'],
+      ['match 생략', 'name=a&name=b'],
+    ])('name을 중복해서 보내면(%s) 400 VFS_INVALID_QUERY를 반환한다', async (_label, query) => {
+      const namespaceId = await ctx.createNamespace('find-duplicate-name-ns');
+
+      const response = await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/find?path=%2F&${query}`)
+        .expect(400);
+
+      expect(response.body.code).toBe('VFS_INVALID_QUERY');
+    });
+
+    it.each(['contains', 'exact', 'prefix', 'suffix'])(
+      'name에 NUL이 있으면(match=%s) SQL 실행 전에 400 VFS_INVALID_QUERY를 반환한다',
+      async (match) => {
+        const namespaceId = await ctx.createNamespace('find-nul-name-ns');
+
+        const response = await request(ctx.httpServer)
+          .get(`/api/v2/namespaces/${namespaceId}/fs/find?path=%2F&name=a%00b&match=${match}`)
+          .expect(400);
+
+        expect(response.body.code).toBe('VFS_INVALID_QUERY');
+      },
+    );
+
+    it('빈 name은 이름 필터 없이 200을 반환한다', async () => {
+      const namespaceId = await ctx.createNamespace('find-empty-name-ns');
+
+      await request(ctx.httpServer)
+        .get(`/api/v2/namespaces/${namespaceId}/fs/find?path=%2F&name=`)
+        .expect(200);
     });
 
     it('시작 경로가 FILE이면 409 VFS_NOT_DIRECTORY를 반환한다', async () => {

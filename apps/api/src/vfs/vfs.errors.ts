@@ -106,6 +106,15 @@ export class VfsInvalidCursorError extends DomainError {
   }
 }
 
+export class VfsInvalidQueryError extends DomainError {
+  readonly code = 'VFS_INVALID_QUERY';
+  readonly status = 400;
+
+  constructor(readonly parameter: string) {
+    super(`유효하지 않은 쿼리 파라미터: ${parameter}`);
+  }
+}
+
 export class VfsInvalidChangeCursorError extends DomainError {
   readonly code = 'VFS_INVALID_CURSOR';
   readonly status = 400;

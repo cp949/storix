@@ -25,6 +25,7 @@ import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
 import { VfsInvalidExpiryError } from './vfs.errors.js';
+import { optionalCursorParam, optionalNameFilterParam } from './query-params.js';
 
 @Controller('api/v2/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -235,11 +236,11 @@ export class FsController {
   ls(
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,
-    @Query('cursor') cursor: string | undefined,
+    @Query('cursor') cursor: unknown,
     @Query('limit') limit: string | undefined,
     @Query('consistency') consistency: string | undefined,
   ) {
-    return this.vfsService.ls(namespaceId, path ?? '', cursor, limit, consistency);
+    return this.vfsService.ls(namespaceId, path ?? '', optionalCursorParam(cursor), limit, consistency);
   }
 
   @Get('revision')
@@ -261,12 +262,18 @@ export class FsController {
   find(
     @Param('namespaceId') namespaceId: string,
     @Query('path') path: string | undefined,
-    @Query('name') name: string | undefined,
+    @Query('name') name: unknown,
     @Query('match') match: string | undefined,
     @Query('type') type: string | undefined,
-    @Query('cursor') cursor: string | undefined,
+    @Query('cursor') cursor: unknown,
     @Query('limit') limit: string | undefined,
   ) {
-    return this.vfsService.find(namespaceId, path ?? '', { name, match, type, cursor, limit });
+    return this.vfsService.find(namespaceId, path ?? '', {
+      name: optionalNameFilterParam(name),
+      match,
+      type,
+      cursor: optionalCursorParam(cursor),
+      limit,
+    });
   }
 }

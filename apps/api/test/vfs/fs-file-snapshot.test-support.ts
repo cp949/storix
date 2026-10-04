@@ -151,6 +151,17 @@ export function registerFsFileSnapshotContract(ctx: FsHttpContext) {
         .query({ rootNodeId: randomUUID(), cursor: 'sl1.bogus' })
         .expect(400)
         .expect(({ body }) => expect(body.code).toBe('VFS_INVALID_CURSOR'));
+      for (const createdAtKey of ['2026-02-30T01:02:03.123456Z', '0000-01-01T00:00:00.123456Z']) {
+        const rootNodeId = randomUUID();
+        const cursor = `sl1.${Buffer.from(
+          JSON.stringify({ namespaceId: ns, rootNodeId, createdAtKey, snapshotId: randomUUID() }),
+        ).toString('base64url')}`;
+        await request(ctx.httpServer)
+          .get(`${base}/snapshots`)
+          .query({ rootNodeId, cursor })
+          .expect(400)
+          .expect(({ body }) => expect(body.code).toBe('VFS_INVALID_CURSOR'));
+      }
       await request(ctx.httpServer)
         .get(`${base}/snapshots`)
         .query({ rootNodeId: 'bad' })

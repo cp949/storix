@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../common/domain-error.js';
+import { isValidTimestampKey } from '../common/timestamp-key.js';
 import { isUuid } from '../common/uuid.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -29,19 +30,12 @@ interface TrashCursor extends TrashListBoundary {
   readonly order: 'deletedAtDescTrashIdAsc';
 }
 
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/;
-
 function valid(cursor: TrashCursor): boolean {
-  const timestamp = cursor.deletedAtKey;
-  const millis = timestamp.slice(0, 23);
   return (
     isNamespaceId(cursor.namespaceId) &&
     isUuid(cursor.trashId) &&
     cursor.order === 'deletedAtDescTrashIdAsc' &&
-    TIMESTAMP.test(timestamp) &&
-    timestamp.slice(0, 4) !== '0000' &&
-    !Number.isNaN(Date.parse(`${millis}Z`)) &&
-    new Date(`${millis}Z`).toISOString() === `${millis}Z`
+    isValidTimestampKey(cursor.deletedAtKey)
   );
 }
 

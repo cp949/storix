@@ -25,4 +25,21 @@ describe('keyset-cursor', () => {
 
     expect(decodeCursor(malformed)).toBeNull();
   });
+
+  const encodeRaw = (value: unknown) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  const id = '11111111-1111-1111-1111-111111111111';
+
+  it('id가 UUID 형식이 아닌 cursor는 null을 반환한다', () => {
+    expect(decodeCursor(encodeRaw({ name: 'a', id: 'not-uuid' }))).toBeNull();
+    expect(decodeCursor(encodeRaw({ name: 'a', id: '' }))).toBeNull();
+  });
+
+  it('name에 NUL이 있는 cursor는 null을 반환한다', () => {
+    expect(decodeCursor(encodeRaw({ name: 'a\u0000b', id }))).toBeNull();
+  });
+
+  it('대문자 UUID id는 허용한다', () => {
+    const upper = id.replace(/1/g, 'A');
+    expect(decodeCursor(encodeRaw({ name: 'a', id: upper }))).toEqual({ name: 'a', id: upper });
+  });
 });

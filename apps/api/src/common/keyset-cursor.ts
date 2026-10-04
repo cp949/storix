@@ -1,15 +1,15 @@
+import { isUuid } from './uuid.js';
+
 export interface KeysetCursor {
   readonly name: string;
   readonly id: string;
 }
 
+// name은 PostgreSQL text에 바인딩되므로 NUL(22021)을 막고, id는 uuid 비교에 쓰이므로 UUID 형식만 받는다.
 function isKeysetCursor(value: unknown): value is KeysetCursor {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as Record<string, unknown>).name === 'string' &&
-    typeof (value as Record<string, unknown>).id === 'string'
-  );
+  if (value === null || typeof value !== 'object') return false;
+  const { name, id } = value as Record<string, unknown>;
+  return typeof name === 'string' && !name.includes('\0') && typeof id === 'string' && isUuid(id);
 }
 
 export function encodeCursor(cursor: KeysetCursor): string {

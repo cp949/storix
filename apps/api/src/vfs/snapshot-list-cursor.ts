@@ -1,3 +1,4 @@
+import { isValidTimestampKey } from '../common/timestamp-key.js';
 import { isUuid } from '../common/uuid.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { VfsInvalidCursorError } from './vfs.errors.js';
@@ -14,8 +15,7 @@ function valid(value: SnapshotListCursor): boolean {
     isNamespaceId(value.namespaceId) &&
     isUuid(value.rootNodeId) &&
     isUuid(value.snapshotId) &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/.test(value.createdAtKey) &&
-    !Number.isNaN(Date.parse(value.createdAtKey))
+    isValidTimestampKey(value.createdAtKey)
   );
 }
 

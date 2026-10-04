@@ -29,4 +29,18 @@ describe('snapshot list cursor', () => {
       decodeSnapshotListCursor(raw, cursor.namespaceId, '44444444-4444-4444-8444-444444444444'),
     ).toThrow();
   });
+  it.each([
+    ['존재하지 않는 날짜', '2026-02-30T01:02:03.123456Z'],
+    ['0000년', '0000-01-01T00:00:00.123456Z'],
+    ['13월', '2026-13-01T00:00:00.123Z'],
+    ['25시', '2026-09-26T25:00:00.123Z'],
+  ])('달력상 유효하지 않은 createdAtKey를 거절한다: %s', (_label, createdAtKey) => {
+    const raw = `sl1.${Buffer.from(JSON.stringify({ ...cursor, createdAtKey })).toString('base64url')}`;
+    expect(() => decodeSnapshotListCursor(raw, cursor.namespaceId, cursor.rootNodeId)).toThrow(
+      expect.objectContaining({ code: 'VFS_INVALID_CURSOR' }),
+    );
+    expect(() => encodeSnapshotListCursor({ ...cursor, createdAtKey })).toThrow(
+      expect.objectContaining({ code: 'VFS_INVALID_CURSOR' }),
+    );
+  });
 });
