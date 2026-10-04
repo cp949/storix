@@ -15,7 +15,7 @@ import { assertPathSegments } from '../vfs/path-resolver.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import type { MutationTx, SnapshotSourceRow, VfsNodeRecord } from './vfs-node.repository.types.js';
-import { joinSegments, toRecord } from './vfs-node.repository.helpers.js';
+import { chunked, joinSegments, NODE_BULK_CHUNK_SIZE, toRecord } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryTreeMutations } from './vfs-node.repository.tree-mutations.js';
 import { trackChangeFeedBefore } from './vfs-change-feed-journal.js';
 import { VfsTrashRepository } from './vfs-trash.repository.js';
@@ -236,6 +236,14 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     return this.moveToTrash(tx, segments, await this.captureSnapshotRows(tx, segments, 1));
   }
 
+  // rows는 부모가 자식보다 앞에 오는 순서다. parent FK는 문장 끝에서 검사되므로 자식 쪽 청크부터
+  // 지우도록 뒤에서부터 나눈다. 한 청크 안의 부모와 자식은 같은 문장에서 함께 지워진다.
+  private async deleteNodes(tx: MutationTx, rows: readonly SnapshotSourceRow[]): Promise<void> {
+    const repo = tx.manager.getRepository(VfsNodeEntity);
+    const ids = rows.map((row) => row.id).reverse();
+    for (const chunk of chunked(ids, NODE_BULK_CHUNK_SIZE)) await repo.delete(chunk);
+  }
+
   private async moveToTrash(
     tx: MutationTx,
     segments: string[],
@@ -259,7 +267,7 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     const sorted = [...blobCounts].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
     this.recordLiveNodeDelta(tx, -BigInt(rows.length));
     if (!namespace.trashEnabled) {
-      await tx.manager.getRepository(VfsNodeEntity).delete(rows.map((row) => row.id));
+      await this.deleteNodes(tx, rows);
       this.recordLiveByteDelta(tx, -removedBytes);
       for (const [blobId, count] of sorted)
         await this.blobRepository.decrementReferenceCount(tx.manager, blobId, count);
@@ -271,7 +279,7 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
       if (!(await this.blobRepository.incrementLiveReferenceCount(tx.manager, tx.namespaceId, blobId, count)))
         throw new Error('Trash source Blob is not live');
     }
-    await tx.manager.getRepository(VfsNodeEntity).delete(rows.map((row) => row.id));
+    await this.deleteNodes(tx, rows);
     this.recordLiveByteDelta(tx, -removedBytes);
     for (const [blobId, count] of sorted)
       await this.blobRepository.decrementReferenceCount(tx.manager, blobId, count);

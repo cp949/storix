@@ -9,6 +9,17 @@ import type {
   NamedDescendant,
 } from './vfs-node.repository.types.js';
 
+// vfs_node 1행은 INSERT에 바인드 변수 9개를 쓴다. SQLite 상한(32766)과 PostgreSQL 상한(65535)을
+// 노드 수에 상관없이 넘지 않도록 대량 INSERT·DELETE는 이 크기로 나눈다.
+export const NODE_BULK_CHUNK_SIZE = 500;
+
+export function chunked<T>(items: readonly T[], size: number): T[][] {
+  if (!Number.isSafeInteger(size) || size < 1) throw new Error('Invalid chunk size');
+  const chunks: T[][] = [];
+  for (let offset = 0; offset < items.length; offset += size) chunks.push(items.slice(offset, offset + size));
+  return chunks;
+}
+
 export function assertSubtreeDestinationPaths(
   sourceId: string,
   finalSegments: string[],

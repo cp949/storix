@@ -5,7 +5,13 @@ import { VfsCopyLimitExceededError } from '../vfs/vfs.errors.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 import type { VfsNodeRecord, MutationTx, CopySourceRow } from './vfs-node.repository.types.js';
-import { assertSubtreeDestinationPaths, toRecord, joinSegments } from './vfs-node.repository.helpers.js';
+import {
+  assertSubtreeDestinationPaths,
+  chunked,
+  joinSegments,
+  NODE_BULK_CHUNK_SIZE,
+  toRecord,
+} from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryFileMutations } from './vfs-node.repository.file-mutations.js';
 
 export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutations {
@@ -175,7 +181,10 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     }
 
     if (childRows.length > 0) {
-      await nodeRepo.insert(nodeRepo.create(childRows));
+      // childRows는 부모가 자식보다 앞에 오므로 나눠 넣어도 FK 순서가 유지된다.
+      for (const chunk of chunked(childRows, NODE_BULK_CHUNK_SIZE)) {
+        await nodeRepo.insert(nodeRepo.create(chunk));
+      }
       for (const child of childRows) this.markChanged(tx, child.id, false);
     }
     this.recordLiveNodeDelta(tx, BigInt(childRows.length + 1));
