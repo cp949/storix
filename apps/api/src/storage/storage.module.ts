@@ -23,7 +23,11 @@ function buildClientConfig(config: ConfigService, endpoint: string): S3ClientCon
       accessKeyId: config.getOrThrow<string>('STORIX_STORAGE_ACCESS_KEY'),
       secretAccessKey: config.getOrThrow<string>('STORIX_STORAGE_SECRET_KEY'),
     },
-    forcePathStyle: parseBoolean(config.get<string>('STORIX_STORAGE_PATH_STYLE'), true),
+    forcePathStyle: parseBoolean(
+      config.get<string>('STORIX_STORAGE_PATH_STYLE'),
+      true,
+      'STORIX_STORAGE_PATH_STYLE',
+    ),
     // 업로드 stream은 재생할 수 없고, 저장 장애는 호출자가 분류해 응답한다. SDK 자동 재시도를 끈다.
     maxAttempts: 1,
     // 기본값(WHEN_SUPPORTED)은 요청에 CRC32 체크섬과 aws-chunked 인코딩을 붙인다.
@@ -37,7 +41,7 @@ export function buildS3ClientConfig(config: ConfigService): S3ClientConfig {
   const endpoint = toEndpoint(
     config.getOrThrow<string>('STORIX_STORAGE_ENDPOINT'),
     parsePositiveInt(config.get<string>('STORIX_STORAGE_PORT'), 9000, MAX_TCP_PORT),
-    parseBoolean(config.get<string>('STORIX_STORAGE_USE_SSL'), false),
+    parseBoolean(config.get<string>('STORIX_STORAGE_USE_SSL'), false, 'STORIX_STORAGE_USE_SSL'),
   );
   return buildClientConfig(config, endpoint);
 }
@@ -55,7 +59,7 @@ export function buildS3PublicClientConfig(config: ConfigService): S3ClientConfig
   const endpoint = toEndpoint(
     host,
     parsePositiveInt(config.get<string>('STORIX_STORAGE_PUBLIC_PORT'), 9000, MAX_TCP_PORT),
-    parseBoolean(config.get<string>('STORIX_STORAGE_PUBLIC_USE_SSL'), false),
+    parseBoolean(config.get<string>('STORIX_STORAGE_PUBLIC_USE_SSL'), false, 'STORIX_STORAGE_PUBLIC_USE_SSL'),
   );
   return buildClientConfig(config, endpoint);
 }

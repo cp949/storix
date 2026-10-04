@@ -92,21 +92,38 @@ describe('parseListenPort', () => {
 
 describe('parseBoolean', () => {
   it('값이 없으면 fallback을 반환한다', () => {
-    expect(parseBoolean(undefined, false)).toBe(false);
+    expect(parseBoolean(undefined, false, 'X')).toBe(false);
+    expect(parseBoolean(undefined, true, 'X')).toBe(true);
   });
 
   it('빈 문자열이면 fallback을 반환한다', () => {
-    expect(parseBoolean('', true)).toBe(true);
+    expect(parseBoolean('', true, 'X')).toBe(true);
+    expect(parseBoolean('', false, 'X')).toBe(false);
   });
 
   it('대소문자 구분 없이 true를 인식한다', () => {
-    expect(parseBoolean('TRUE', false)).toBe(true);
-    expect(parseBoolean('True', false)).toBe(true);
+    expect(parseBoolean('true', false, 'X')).toBe(true);
+    expect(parseBoolean('TRUE', false, 'X')).toBe(true);
+    expect(parseBoolean('True', false, 'X')).toBe(true);
   });
 
-  it('true가 아닌 값은 false로 처리한다', () => {
-    expect(parseBoolean('false', true)).toBe(false);
-    expect(parseBoolean('1', true)).toBe(false);
+  it('대소문자 구분 없이 false를 인식한다', () => {
+    expect(parseBoolean('false', true, 'X')).toBe(false);
+    expect(parseBoolean('FALSE', true, 'X')).toBe(false);
+    expect(parseBoolean('False', true, 'X')).toBe(false);
+  });
+
+  // true/false 외의 값을 조용히 false로 처리하면 STORIX_STORAGE_USE_SSL=1이 평문 연결이 되는 등
+  // 운영자 의도와 반대로 동작한다.
+  it.each(['1', '0', 'yes', 'no', 'on', 'off', 'ture', ' true', 'true ', ' '])(
+    'true·false가 아닌 %j는 거부한다',
+    (value) => {
+      expect(() => parseBoolean(value, false, 'STORIX_X')).toThrow('잘못된 불리언 환경변수 값');
+    },
+  );
+
+  it('오류 메시지에 변수 이름과 값을 담는다', () => {
+    expect(() => parseBoolean('yes', false, 'STORIX_STORAGE_USE_SSL')).toThrow('STORIX_STORAGE_USE_SSL=yes');
   });
 });
 

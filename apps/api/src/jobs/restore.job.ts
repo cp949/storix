@@ -36,7 +36,7 @@ export class RestoreJob {
         'STORIX_RESTORE_SOURCE_DIR가 비어 있음 — 복구할 백업 디렉터리를 지정하십시오(예: /backups/2026-09-08T12-00-00-000Z)',
       );
     }
-    this.force = parseBoolean(config.get<string>('STORIX_RESTORE_FORCE'), false);
+    this.force = parseBoolean(config.get<string>('STORIX_RESTORE_FORCE'), false, 'STORIX_RESTORE_FORCE');
   }
 
   async run(): Promise<RestoreResult> {

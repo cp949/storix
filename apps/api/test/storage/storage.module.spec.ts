@@ -53,6 +53,13 @@ describe('buildS3ClientConfig', () => {
     ).toBe(false);
   });
 
+  it.each(['STORIX_STORAGE_USE_SSL', 'STORIX_STORAGE_PATH_STYLE'])(
+    '%s가 true·false가 아니면 설정 해석을 거부한다',
+    (name) => {
+      expect(() => buildS3ClientConfig(stubConfig({ ...REQUIRED, [name]: 'yes' }))).toThrow(`${name}=yes`);
+    },
+  );
+
   it('STORIX_STORAGE_REGION이 없으면 us-east-1을 사용한다', () => {
     expect(buildS3ClientConfig(stubConfig(REQUIRED)).region).toBe('us-east-1');
   });
@@ -73,6 +80,18 @@ describe('buildS3ClientConfig', () => {
 });
 
 describe('buildS3PublicClientConfig', () => {
+  it('STORIX_STORAGE_PUBLIC_USE_SSL이 true·false가 아니면 설정 해석을 거부한다', () => {
+    expect(() =>
+      buildS3PublicClientConfig(
+        stubConfig({
+          ...REQUIRED,
+          STORIX_STORAGE_PUBLIC_ENDPOINT: 'storage.example.com',
+          STORIX_STORAGE_PUBLIC_USE_SSL: '1',
+        }),
+      ),
+    ).toThrow('STORIX_STORAGE_PUBLIC_USE_SSL=1');
+  });
+
   it('STORIX_STORAGE_PUBLIC_ENDPOINT가 없으면 null을 반환한다', () => {
     expect(buildS3PublicClientConfig(stubConfig(REQUIRED))).toBeNull();
   });

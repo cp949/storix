@@ -19,7 +19,7 @@ describe('RestoreJob 백업 구조 검사', () => {
   let backupRepository: { hasExistingNamespaces: jest.Mock<() => Promise<boolean>> };
   let dumpTool: DbDumpTool & { restore: jest.Mock<DbDumpTool['restore']> };
 
-  function createJob(force = false): RestoreJob {
+  function createJob(force: boolean | string = false): RestoreJob {
     const values: Record<string, string> = {
       STORIX_RESTORE_SOURCE_DIR: sourceDir,
       STORIX_RESTORE_FORCE: String(force),
@@ -84,6 +84,13 @@ describe('RestoreJob 백업 구조 검사', () => {
   it('dump 파일만 있는 백업(object 0건)은 성공한다', async () => {
     await expect(createJob().run()).resolves.toMatchObject({ restoredObjectCount: 0 });
   });
+
+  it.each(['1', 'yes', 'ture'])(
+    'STORIX_RESTORE_FORCE=%s는 true·false가 아니므로 생성을 거부한다',
+    (value) => {
+      expect(() => createJob(value)).toThrow(`STORIX_RESTORE_FORCE=${value}`);
+    },
+  );
 
   describe('force 복구 순서', () => {
     function listsExisting(...keys: string[]): void {

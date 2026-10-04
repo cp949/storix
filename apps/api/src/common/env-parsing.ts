@@ -61,12 +61,27 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-export function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+/**
+ * 불리언 환경변수를 읽는다. 값이 없거나 빈 문자열이면 `fallback`이다.
+ *
+ * `true`·`false`만 받고 대소문자는 구분하지 않는다. `1`, `yes`, 공백이 붙은 값 등 그 밖의 값은
+ * `name`을 담은 `잘못된 불리언 환경변수 값` 메시지의 일반 `Error`로 거부한다.
+ * true가 아닌 값을 조용히 false로 처리하면 `STORIX_STORAGE_USE_SSL=1`이 평문 연결이 되는 등
+ * 운영자 의도와 반대로 동작한다.
+ */
+export function parseBoolean(value: string | undefined, fallback: boolean, name: string): boolean {
   if (value === undefined || value === '') {
     return fallback;
   }
 
-  return value.toLowerCase() === 'true';
+  const normalized = value.toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+  throw new Error(`잘못된 불리언 환경변수 값: ${name}=${value} (true 또는 false)`);
 }
 
 export function parseOptionalString(value: string | undefined): string | undefined {
