@@ -68,12 +68,11 @@ SQLite는 길이를 강제하지 않는다.
   - `Idempotency-Key` 255 byte: 201.
   - `Idempotency-Key` 256 byte: 400 `IDEMPOTENCY_KEY_REQUIRED`.
 - 같은 헤더의 255 byte 초과 오류 코드가 경로마다 다르다.
-  - `POST /namespaces`: `IDEMPOTENCY_KEY_REQUIRED`.
+  - `POST /namespaces`, `PATCH /admin/namespaces/{id}/quota`, `PATCH /admin/namespaces/{id}/trash`: `IDEMPOTENCY_KEY_REQUIRED`.
   - `PATCH /namespaces/{id}/settings`: `NAMESPACE_INVALID_SETTINGS_REQUEST`.
   - `POST /admin/namespaces/{id}/delete`: `NAMESPACE_INVALID_DELETE_REQUEST`.
   - 코드 통일은 호환성을 깨므로 이 ADR에서 하지 않는다.
-- `PATCH /namespaces/{id}/quota`와 `PATCH /namespaces/{id}/trash`는 255 byte 검사가 없다.
-  키를 SHA-256으로 해시해 저장하므로 컬럼 초과는 없다.
-  공유 `IdempotencyKeyHeader`의 `maxLength: 255`는 이 두 경로에서 서버보다 엄격한 문서다.
-  정렬 여부는 별도 이슈에서 정한다.
+- `PATCH /admin/namespaces/{id}/quota`와 `PATCH /admin/namespaces/{id}/trash`는 255 byte를 넘는 `Idempotency-Key`를 400 `IDEMPOTENCY_KEY_REQUIRED`로 거절한다(GitHub 이슈 #19).
+  - 키를 SHA-256으로 해시해 저장하므로 컬럼 초과는 없었다. 공유 `IdempotencyKeyHeader`의 `maxLength: 255`와 서버를 맞추려고 검사를 추가했다.
+  - 이전에 성공하던 256 byte 이상 키는 400이 된다.
 - 이후 컬럼 길이가 있는 새 입력을 추가할 때는 위 1~3 중 하나를 고르고 SQLite 통과만으로 안전하다고 판단하지 않는다(TRP-005).

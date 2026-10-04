@@ -30,6 +30,7 @@
 - PostgreSQL에서 `ls`·`find`·snapshot 목록의 cursor와 `find`의 `name`이 유효하지 않으면 500이 나던 문제를 수정했다. 이제 400이다. 영향을 받은 입력은 UUID가 아닌 `id`나 NUL이 든 `name`을 담은 `ls`·`find` cursor, 존재하지 않는 날짜(`2026-02-30`)와 `0000`년을 담은 snapshot 목록 cursor, 중복되거나 NUL이 든 `find` `name`이다. cursor는 `VFS_INVALID_CURSOR`, `name`은 `VFS_INVALID_QUERY`다. SQLite도 같은 입력을 400으로 거절한다.
 - PostgreSQL에서 `GET /api/v2/namespaces`의 `nl1.` cursor에 NUL이 든 `name`을 담으면 500이 나던 문제를 수정했다. 이제 400 `VFS_INVALID_CURSOR`다. `name`이 namespace name 문법(`^[a-z0-9_-]{1,128}$`)이 아니면 같은 400이다. 서버가 만든 cursor는 항상 이 문법을 만족하므로 정상 순회는 바뀌지 않는다. SQLite도 같은 입력을 400으로 거절한다.
 - PostgreSQL에서 `GET /fs/ls?consistency=revision`의 `rc1.` cursor에 NUL이 든 `name`을 담으면 500이 나던 문제를 수정했다. 이제 400 `VFS_INVALID_CURSOR`다. 서버가 만든 cursor의 `name`은 저장된 노드 이름이라 NUL이 없으므로 정상 순회는 바뀌지 않는다. SQLite도 같은 입력을 400으로 거절한다.
+- `PATCH /admin/namespaces/{id}/quota`와 `PATCH /admin/namespaces/{id}/trash`가 255 byte를 넘는 `Idempotency-Key`를 받아들이던 것을 openapi `maxLength: 255`에 맞춰 400 `IDEMPOTENCY_KEY_REQUIRED`로 거절한다. 이전에 성공하던 256 byte 이상 키는 400이 된다. 두 경로는 키를 해시해 저장하므로 서버 오류는 없었다. `PATCH /namespaces/{id}/settings`와 `POST /admin/namespaces/{id}/delete`의 오류 코드는 그대로다.
 
 ### Security
 
