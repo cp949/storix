@@ -32,6 +32,12 @@ describe('namespace 목록 cursor', () => {
       'name 길이 초과',
       `nl1.${Buffer.from(JSON.stringify({ name: 'a'.repeat(129), id: ID })).toString('base64url')}`,
     ],
+    ['name에 NUL', `nl1.${Buffer.from(JSON.stringify({ name: 'a\u0000b', id: ID })).toString('base64url')}`],
+    ['name에 대문자', `nl1.${Buffer.from(JSON.stringify({ name: 'Upper', id: ID })).toString('base64url')}`],
+    [
+      'name에 lone surrogate',
+      `nl1.${Buffer.from(JSON.stringify({ name: 'a\ud800', id: ID })).toString('base64url')}`,
+    ],
     [
       '비정규 표기(키 순서)',
       `nl1.${Buffer.from(JSON.stringify({ id: ID, name: 'a' })).toString('base64url')}`,
@@ -43,6 +49,7 @@ describe('namespace 목록 cursor', () => {
   it('인코딩 입력이 잘못되면 거부한다', () => {
     expect(() => encodeNamespaceListCursor({ name: '', id: ID })).toThrow(VfsInvalidCursorError);
     expect(() => encodeNamespaceListCursor({ name: 'a', id: 'x' })).toThrow(VfsInvalidCursorError);
+    expect(() => encodeNamespaceListCursor({ name: 'a\u0000b', id: ID })).toThrow(VfsInvalidCursorError);
   });
 
   it('입력 길이를 제한한다', () => {

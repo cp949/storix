@@ -8,8 +8,8 @@ import {
   NamespaceInvalidTotalLogicalBytesError,
 } from '../namespace.errors.js';
 import { NAMESPACE_ID_PREFIX_PATTERN } from '../../common/namespace-id.js';
+import { NAMESPACE_NAME_PATTERN } from '../../common/namespace-name.js';
 
-const NAMESPACE_NAME_PATTERN = /^[a-z0-9_-]{1,128}$/;
 const VALID_ENCRYPTION_POLICIES: readonly EncryptionPolicy[] = ['NONE', 'ENCRYPTED'];
 const VALID_ACCESS_POLICIES: readonly AccessPolicy[] = ['PRIVATE', 'PUBLIC'];
 

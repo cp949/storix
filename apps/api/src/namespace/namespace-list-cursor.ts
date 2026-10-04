@@ -3,6 +3,7 @@
  * 서명하지 않는다. 위치만 담으므로 변조해도 다른 namespace의 정보를 읽을 수 없고 목록 범위만 바뀐다.
  */
 import { isNamespaceId } from '../common/namespace-id.js';
+import { isNamespaceName } from '../common/namespace-name.js';
 import { VfsInvalidCursorError } from '../vfs/vfs.errors.js';
 
 /** cursor가 가리키는 마지막 항목의 위치. */
@@ -12,12 +13,11 @@ export interface NamespaceListCursor {
 }
 
 const MAX_RAW_LENGTH = 512;
-const MAX_NAME_LENGTH = 128;
 
+// name은 PostgreSQL text에 바인딩되므로 서버가 저장할 수 있는 표기만 받는다. NUL(22021)도 이 패턴이 막는다.
 function valid(value: NamespaceListCursor): boolean {
   return (
-    (value.name === null ||
-      (typeof value.name === 'string' && value.name.length >= 1 && value.name.length <= MAX_NAME_LENGTH)) &&
+    (value.name === null || (typeof value.name === 'string' && isNamespaceName(value.name))) &&
     isNamespaceId(value.id)
   );
 }

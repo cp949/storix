@@ -101,6 +101,15 @@ export function registerNamespaceListPageTests(options: {
       }
     });
 
+    it('서버가 만들 수 없는 name을 담은 위조 cursor는 400 VFS_INVALID_CURSOR다', async () => {
+      const id = unnamedIds[0]!;
+      for (const name of ['a\u0000b', 'Upper', 'a b']) {
+        const cursor = `nl1.${Buffer.from(JSON.stringify({ name, id }), 'utf8').toString('base64url')}`;
+        const response = await get(`?limit=2&cursor=${encodeURIComponent(cursor)}`).expect(400);
+        expect(response.body.code).toBe('VFS_INVALID_CURSOR');
+      }
+    });
+
     it('순회 중 이미 지나간 행의 삭제·cursor 뒤의 생성은 중복 없이 반영한다', async () => {
       const first = (await get('?limit=2').expect(200)).body as ListPage;
       await options.createNamespace(`${prefix}zz-new`, 'key-zz-new');
