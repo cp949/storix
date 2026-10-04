@@ -1,4 +1,8 @@
-import { optionalCursorParam, optionalNameFilterParam } from '../../src/vfs/query-params.js';
+import {
+  optionalConsistencyParam,
+  optionalCursorParam,
+  optionalNameFilterParam,
+} from '../../src/vfs/query-params.js';
 
 describe('query-params', () => {
   describe('optionalCursorParam', () => {
@@ -33,6 +37,22 @@ describe('query-params', () => {
       '문자열이 아니거나 NUL을 포함하면 VFS_INVALID_QUERY로 거절한다: %j',
       (value) => {
         expect(() => optionalNameFilterParam(value)).toThrow(
+          expect.objectContaining({ code: 'VFS_INVALID_QUERY', status: 400 }),
+        );
+      },
+    );
+  });
+
+  describe('optionalConsistencyParam', () => {
+    it('생략은 undefined, revision은 그대로 돌려준다', () => {
+      expect(optionalConsistencyParam(undefined)).toBeUndefined();
+      expect(optionalConsistencyParam('revision')).toBe('revision');
+    });
+
+    it.each([[''], ['snapshot'], ['Revision'], [' revision'], [['revision', 'revision']], [{ a: 'b' }], [1]])(
+      'revision이 아닌 값은 VFS_INVALID_QUERY로 거절한다: %j',
+      (value) => {
+        expect(() => optionalConsistencyParam(value)).toThrow(
           expect.objectContaining({ code: 'VFS_INVALID_QUERY', status: 400 }),
         );
       },

@@ -62,8 +62,8 @@ TREE 상대경로의 정규화·이름 검사는 절대경로와 같다.
 
 ## 목록·검색 쿼리 입력
 
-`ls`와 `find`의 `cursor`와 `find`의 `name`은 경로가 아니므로 경로 규칙을 적용하지 않는다.
-둘 다 SQL 실행 전에 검사한다. PostgreSQL이 타입·인코딩 오류(22xxx)로 500을 내는 입력이 대상이다.
+`ls`와 `find`의 `cursor`, `ls`의 `consistency`, `find`의 `name`은 경로가 아니므로 경로 규칙을 적용하지 않는다.
+모두 SQL 실행 전에 검사한다. `cursor`·`name`은 PostgreSQL이 타입·인코딩 오류(22xxx)로 500을 내는 입력이 대상이고, `consistency`는 허용 값(`revision`)만 통과시킨다.
 
 | 입력                               | 거부 조건                                        | 응답                     |
 | ---------------------------------- | ------------------------------------------------ | ------------------------ |
@@ -72,6 +72,7 @@ TREE 상대경로의 정규화·이름 검사는 절대경로와 같다.
 | plain keyset cursor의 `name`       | NUL을 포함함                                     | 400 `VFS_INVALID_CURSOR` |
 | snapshot 목록 `sl1.` cursor의 시각 | 존재하지 않는 날짜 또는 `0000`년                 | 400 `VFS_INVALID_CURSOR` |
 | `find`의 `name`                    | 문자열이 아님(같은 파라미터를 여러 번 보낸 경우) | 400 `VFS_INVALID_QUERY`  |
+| `ls`의 `consistency`               | `revision`이 아님(빈 문자열, 중복 포함)          | 400 `VFS_INVALID_QUERY`  |
 | `find`의 `name`                    | NUL을 포함함                                     | 400 `VFS_INVALID_QUERY`  |
 
 - 시각은 밀리초까지 `Date` 왕복 결과가 같아야 한다. trash `tr1.` cursor와 같은 규칙이다.

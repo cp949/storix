@@ -25,7 +25,7 @@ import { VfsService } from './vfs.service.js';
 import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
 import { VfsInvalidExpiryError } from './vfs.errors.js';
-import { optionalCursorParam, optionalNameFilterParam } from './query-params.js';
+import { optionalConsistencyParam, optionalCursorParam, optionalNameFilterParam } from './query-params.js';
 
 @Controller('api/v2/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -238,9 +238,15 @@ export class FsController {
     @Query('path') path: string | undefined,
     @Query('cursor') cursor: unknown,
     @Query('limit') limit: string | undefined,
-    @Query('consistency') consistency: string | undefined,
+    @Query('consistency') consistency: unknown,
   ) {
-    return this.vfsService.ls(namespaceId, path ?? '', optionalCursorParam(cursor), limit, consistency);
+    return this.vfsService.ls(
+      namespaceId,
+      path ?? '',
+      optionalCursorParam(cursor),
+      limit,
+      optionalConsistencyParam(consistency),
+    );
   }
 
   @Get('revision')

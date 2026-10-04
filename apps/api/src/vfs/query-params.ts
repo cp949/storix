@@ -23,3 +23,12 @@ export function optionalNameFilterParam(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.includes('\0')) throw new VfsInvalidQueryError('name');
   return value;
 }
+
+/**
+ * `ls`의 `consistency` 값을 검사한다. 생략하거나 `revision`만 허용하고, 빈 문자열·대소문자 변형·
+ * 알 수 없는 값·중복 파라미터(배열)는 `VFS_INVALID_QUERY`다. cursor 오류가 아니므로 `VFS_INVALID_CURSOR`를 쓰지 않는다.
+ */
+export function optionalConsistencyParam(value: unknown): 'revision' | undefined {
+  if (value === undefined || value === 'revision') return value;
+  throw new VfsInvalidQueryError('consistency');
+}

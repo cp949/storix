@@ -168,7 +168,7 @@ export class VfsService {
     rawPath: string,
     cursorParam: string | undefined,
     limitParam: string | undefined,
-    consistency?: string,
+    consistency?: 'revision',
   ): Promise<PageResult | RevisionPageResult> {
     const root = await requireRoot(this.repo, namespaceId);
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
@@ -204,7 +204,6 @@ export class VfsService {
             : null,
       };
     }
-    if (consistency !== undefined) throw new VfsInvalidCursorError(consistency);
     const target = await this.resolveTarget(namespaceId, root, segments);
 
     if (!target) {

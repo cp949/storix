@@ -98,6 +98,19 @@ export function registerFsRevisionReadContract(ctx: FsHttpContext) {
       ).toBe('VFS_PRECONDITION_FAILED');
     });
 
+    it('rejects an unsupported consistency value with VFS_INVALID_QUERY', async () => {
+      const namespaceId = await ctx.createNamespace('revision-consistency-http-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      for (const query of [
+        'consistency=snapshot',
+        'consistency=',
+        'consistency=revision&consistency=revision',
+      ]) {
+        const response = await request(ctx.httpServer).get(`${base}/ls?path=%2F&${query}`).expect(400);
+        expect(response.body.code).toBe('VFS_INVALID_QUERY');
+      }
+    });
+
     it('rejects a malformed cursor and one from a deleted and recreated directory', async () => {
       const namespaceId = await ctx.createNamespace('revision-recreated-http-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;
