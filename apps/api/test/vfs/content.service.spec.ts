@@ -69,7 +69,7 @@ describe('ContentService', () => {
     >;
   };
   let blobStorage: {
-    put: jest.Mock<() => Promise<void>>;
+    put: jest.Mock<(key: string, stream: Readable, contentType?: string) => Promise<void>>;
     get: jest.Mock<() => Promise<Readable>>;
     delete: jest.Mock<() => Promise<void>>;
     list: jest.Mock;
@@ -102,7 +102,9 @@ describe('ContentService', () => {
       readContentFile: jest.fn(),
     };
     blobStorage = {
-      put: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      put: jest
+        .fn<(key: string, stream: Readable, contentType?: string) => Promise<void>>()
+        .mockResolvedValue(undefined),
       get: jest.fn(),
       delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       list: jest.fn(),
