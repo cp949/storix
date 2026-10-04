@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- `GET /health/ready`의 스토리지 검사(`HeadBucket`)에 3초 timeout을 추가했다. 이전에는 스토리지가 연결만 받고 응답하지 않으면 요청이 끝나지 않고 쌓여 공유 소켓 풀을 점유했다. 이제 3초 뒤 요청을 취소하고 503으로 응답하며, 원인(`storage check timed out after 3000ms`)은 서버 로그에 남는다. 컨테이너 healthcheck(timeout 5초) 안에 응답한다. 업로드·다운로드용 S3 클라이언트의 timeout은 바뀌지 않는다.
 - 디렉터리 `cp`·`rm`의 노드 수가 DB 바인드 변수 상한을 넘으면 500이던 문제를 수정했다. `STORIX_MAX_SYNC_COPY_NODES`·`STORIX_MAX_SYNC_DELETE_NODES`를 기본값(1000)보다 올린 운영자가 대상이다. `vfs_node` 1행의 INSERT가 바인드 변수 9개를 써서, SQLite는 3,641개 이상(상한 32,766)과 PostgreSQL은 7,282개 이상(상한 65,535) 노드를 복사할 때 실패했다. 삭제는 SQLite 32,767개, PostgreSQL 65,536개 이상에서 실패했다. 이제 INSERT·DELETE를 500개씩 나눠 실행한다. 삭제는 자식이 먼저 지워지도록 뒤에서부터 나눈다. 응답과 상한 환경변수의 의미는 바뀌지 않는다.
 - SQLite에서 FILE snapshot 목록(`GET /api/v2/namespaces/{namespaceId}/fs/snapshots?rootNodeId=…`)의 `createdAt`이 호스트 시간대가 UTC가 아닐 때 시간대 offset만큼 어긋나던 문제를 수정했다. 시간대 없는 DB 문자열을 로컬 시간대로 해석하던 것을 UTC로 해석한다. 저장된 값은 바뀌지 않으므로 기존 데이터도 업그레이드 뒤 올바른 값으로 응답한다. PostgreSQL과 단건 조회는 영향이 없었다.
 - `Idempotency-Key`를 쓰는 mutation(`POST /fs/mutations`, `POST /fs/content/conditional`, snapshot 생성·복원·삭제)에서 같은 key로 재시도하는 요청이 간헐적으로 500이던 문제를 수정했다. 이전 요청의 실패 처리(`release`)나 만료 receipt 삭제(`pruneExpired`)가 claim 도중 receipt 행을 지우면 재조회가 `EntityNotFoundError`로 끝났다. 이제 행이 사라지면 claim을 처음부터 최대 3번 시도하고, 계속 사라지면 409 `MUTATION_IN_PROGRESS`(`Retry-After: 1`)로 응답한다. 응답 코드와 계약은 바뀌지 않는다.
