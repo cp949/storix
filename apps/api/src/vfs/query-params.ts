@@ -1,3 +1,7 @@
+/**
+ * `ls`·`find` 컨트롤러가 SQL 실행 전에 쿼리 파라미터를 검사하는 함수 모음.
+ * 규칙은 docs/design/05-vfs-path-contract.md "목록·검색 쿼리 입력".
+ */
 import { VfsInvalidCursorError, VfsInvalidQueryError } from './vfs.errors.js';
 
 /**

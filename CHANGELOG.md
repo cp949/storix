@@ -13,10 +13,15 @@
 - 배포 시나리오 `docs/deployment/scenarios/single-host-private/`를 추가했다. NAS 없이 한 호스트에서 WAS·Storix·VersityGW를 모두 Docker로 운영하는 구성이다. `storix-front` network에는 WAS와 Storix `app`만 두고 VersityGW·DB는 internal network에 분리한다. `app`의 host 포트 게시를 제거하고 `NET_RAW`를 제거한다. 코드와 공개 계약은 바뀌지 않는다.
 - 비밀값을 파일(`<변수>_FILE`)과 통신형 어댑터(`<변수>_REF`, `STORIX_SECRET_ADAPTERS`)로 받는다. 대상은 API key, 마스터 키, DB·스토리지 자격증명, Sentry DSN이다. 값은 기동 시 한 번 읽는다. 결정은 api ADR-0040이고 규칙은 `docs/design/15-secret-sources.md`다.
 - `single-host-private` 시나리오에 compose secret override(`compose.secrets.yml`, `compose.secrets-postgres.yml`)를 추가했다. VersityGW는 이 override의 파일 전달 대상이 아니다. `STORIX_STORAGE_*`는 환경변수로 남는다.
+- 400 오류 코드 `VFS_INVALID_QUERY`를 추가했다. `GET /fs/find`의 `name`이 유효하지 않을 때 쓴다.
 
 ### Changed
 
 - 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.
+
+### Fixed
+
+- PostgreSQL에서 `ls`·`find`·snapshot 목록의 cursor와 `find`의 `name`이 유효하지 않으면 500이 나던 문제를 수정했다. 이제 400이다. 영향을 받은 입력은 UUID가 아닌 `id`나 NUL이 든 `name`을 담은 `ls`·`find` cursor, 존재하지 않는 날짜(`2026-02-30`)와 `0000`년을 담은 snapshot 목록 cursor, 중복되거나 NUL이 든 `find` `name`이다. cursor는 `VFS_INVALID_CURSOR`, `name`은 `VFS_INVALID_QUERY`다. SQLite도 같은 입력을 400으로 거절한다.
 
 ### Security
 

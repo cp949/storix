@@ -1,3 +1,7 @@
+/**
+ * 목록 cursor가 담는 시각 정렬 키의 검사. `tr1.`(휴지통)과 `sl1.`(snapshot 목록) cursor가 함께 쓴다.
+ * 규칙은 docs/design/05-vfs-path-contract.md "목록·검색 쿼리 입력".
+ */
 const TIMESTAMP_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/;
 
 /**

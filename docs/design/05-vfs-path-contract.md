@@ -60,6 +60,25 @@ TREE 상대경로의 정규화·이름 검사는 절대경로와 같다.
 - `parents` 또는 `destinationParents` 옵션을 제공하는 작업은 `true`일 때만 부모를 만든다.
 - 해당 옵션이 없는 조건부 작업은 호출자가 부모를 먼저 만든다.
 
+## 목록·검색 쿼리 입력
+
+`ls`와 `find`의 `cursor`와 `find`의 `name`은 경로가 아니므로 경로 규칙을 적용하지 않는다.
+둘 다 SQL 실행 전에 검사한다. PostgreSQL이 타입·인코딩 오류(22xxx)로 500을 내는 입력이 대상이다.
+
+| 입력                               | 거부 조건                                        | 응답                     |
+| ---------------------------------- | ------------------------------------------------ | ------------------------ |
+| `ls`·`find`의 `cursor`             | 문자열이 아님(같은 파라미터를 여러 번 보낸 경우) | 400 `VFS_INVALID_CURSOR` |
+| plain keyset cursor의 `id`         | UUID 형식이 아님                                 | 400 `VFS_INVALID_CURSOR` |
+| plain keyset cursor의 `name`       | NUL을 포함함                                     | 400 `VFS_INVALID_CURSOR` |
+| snapshot 목록 `sl1.` cursor의 시각 | 존재하지 않는 날짜 또는 `0000`년                 | 400 `VFS_INVALID_CURSOR` |
+| `find`의 `name`                    | 문자열이 아님(같은 파라미터를 여러 번 보낸 경우) | 400 `VFS_INVALID_QUERY`  |
+| `find`의 `name`                    | NUL을 포함함                                     | 400 `VFS_INVALID_QUERY`  |
+
+- 시각은 밀리초까지 `Date` 왕복 결과가 같아야 한다. trash `tr1.` cursor와 같은 규칙이다.
+- `find`의 `name`은 NUL 외에는 제한하지 않는다. `contains`·`prefix`·`suffix`는 이름의 일부를 찾으므로 이름 금지 문자를 적용하지 않는다.
+- 빈 `name`은 이름 필터 없음이다.
+- plain keyset cursor의 정규 표기와 추가 필드는 검사하지 않는다. `tr1.`·`sl1.`·`nl1.`과 다르다.
+
 ## 검증 경계와 불변식
 
 - `PathResolver.resolve()`가 절대경로의 공통 진입점이다.
