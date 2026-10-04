@@ -579,6 +579,19 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - `snapshot-restore-quota-rejection`:
     - 복원 413 `VFS_QUOTA_EXCEEDED`.
     - 대상 경로·snapshot·사용량 무변경.
+  - `snapshot-create-quota-rejection`:
+    - 사용량이 상한을 넘는 snapshot 생성 413 `VFS_QUOTA_EXCEEDED`.
+    - 기존 snapshot·파일·사용량 무변경.
+  - `trash-restore-quota-rejection`:
+    - 휴지통을 quota에서 제외한 namespace에서 상한을 넘는 복구 413 `VFS_QUOTA_EXCEEDED`.
+    - 휴지통 항목·경로·검사 대상 사용량 무변경.
+  - `folder-file-limit-rejection`:
+    - 폴더 파일 수 상한 초과 touch·저장·mv·cp·mutations move·휴지통 복구 413 `VFS_FOLDER_FILE_LIMIT_EXCEEDED`.
+    - 대상 경로 미생성, 디렉터리 생성과 기존 파일 교체는 허용.
+  - `namespace-node-limit-rejection`:
+    - live 노드 수 상한 초과 저장·mkdir·touch·cp·mutations mkdir 413 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`.
+    - 대상 경로 미생성, 기존 파일 교체는 허용.
+  - 위 4개 계약은 SQLite와 Postgres에서 통과했다.
 - 계약은 TREE snapshot·삭제·복사 노드 상한, 휴지통 사용량, 보존 snapshot 상한을 다루지 않는다.
 
 ### RQ-018 안정적인 오류 분류
