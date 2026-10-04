@@ -383,6 +383,10 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - 같은 키·같은 요청은 재평가 후 413.
   - 본문이 다른 상한 안 요청은 409가 아니라 201.
   - 처리 뒤 재전송은 최초 응답을 재생.
+- SQLite·PostgreSQL 계약 검증에서 `namespace-idempotency-key-length`가 통과했다.
+  - namespace 생성은 255 byte `Idempotency-Key`로 201이고 같은 키·같은 요청은 재생한다.
+  - 256 byte 키는 400 `IDEMPOTENCY_KEY_REQUIRED`이고 namespace를 만들지 않는다.
+  - 수정 전 구현에서는 PostgreSQL이 500, SQLite는 계약이 실패했다.
 - 계약은 진행 중 key(`MUTATION_IN_PROGRESS`)를 포함하지 않는다.
 
 ### RQ-012 스냅샷 생성
@@ -637,6 +641,11 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - `find`의 `name`이 중복되거나 NUL을 포함하면 `match` 값(생략 포함)과 관계없이 400 `VFS_INVALID_QUERY`.
   - 거부된 뒤 `name`·`match` 검색은 그대로 동작하고 빈 `name`은 필터 없음이다.
   - 수정 전 구현에서는 PostgreSQL이 500이었다.
+- SQLite·PostgreSQL 계약 검증에서 길이 상한 계약 3개가 통과했다.
+  - `upload-session-request-id-length`(`resumable-upload` 프로필): 200자 `X-Request-Id`로 업로드 세션 생성·완료가 201이고 같은 ID를 돌려준다. 201자는 서버가 만든 ID로 대체된다.
+  - `content-type-length`: 파라미터를 뗀 `Content-Type`이 255자면 그대로, 256자면 `application/octet-stream`으로 저장한다. 조건부·무조건 저장 모두 201이다.
+  - `namespace-idempotency-key-length`: RQ-011 판정 근거에 적었다.
+  - 수정 전 구현에서는 PostgreSQL이 세 계약 모두 500 또는 계약 실패였고, SQLite는 `content-type-length`와 `namespace-idempotency-key-length`가 실패했다.
 
 **자동 검증 근거:**
 
