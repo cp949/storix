@@ -36,6 +36,8 @@
 기본 `docker-compose.yml`은 `environment:`에 적은 변수만 컨테이너에 넘긴다. 루트 `.env`는 compose 보간에만 쓰인다.
 
 - `X_FILE`은 시나리오 override가 `environment:`에 직접 적는다.
+- `STORIX_SENTRY_DSN`은 `app`, `gc`, `backup`, `restore`에 `${STORIX_SENTRY_DSN:-}`로 전달한다. `migrate`는 읽지 않아 전달하지 않는다.
+  - 기본값이 빈 문자열이라 `STORIX_SENTRY_DSN_FILE`을 쓰는 override는 `STORIX_SENTRY_DSN`을 `""`로 비우지 않아도 된다.
 - `X_REF`, `STORIX_SECRET_ADAPTERS`, `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 기본 compose가 넘기지 않는다.
   - 루트 `.env`에 적어도 컨테이너에 전달되지 않고, 오류 없이 무시된다.
   - 통신형은 사용자 이미지와 override의 `environment:`에서 지정한다.

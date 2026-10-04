@@ -431,9 +431,9 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_STORAGE_BUCKET`                   | 필수   | —                     | app·잡  | 버킷 이름                                                                      |
 | `STORIX_STORAGE_PATH_STYLE`               | 선택   | `true`                | app·잡  | path-style 주소 사용                                                           |
 | `STORIX_STORAGE_REGION`                   | 선택   | `us-east-1`           | app·잡  | 서명에 쓰는 리전                                                               |
-| `STORIX_STORAGE_PUBLIC_ENDPOINT`          | 선택   | —                     | app·잡  | presigned download URL의 외부 접근 주소                                        |
-| `STORIX_STORAGE_PUBLIC_PORT`              | 선택   | `9000`                | app·잡  | 외부 접근 포트                                                                 |
-| `STORIX_STORAGE_PUBLIC_USE_SSL`           | 선택   | `false`               | app·잡  | 외부 접근 TLS 여부                                                             |
+| `STORIX_STORAGE_PUBLIC_ENDPOINT`          | 선택   | —                     | app     | presigned download URL의 외부 접근 주소                                        |
+| `STORIX_STORAGE_PUBLIC_PORT`              | 선택   | `9000`                | app     | 외부 접근 포트                                                                 |
+| `STORIX_STORAGE_PUBLIC_USE_SSL`           | 선택   | `false`               | app     | 외부 접근 TLS 여부                                                             |
 | `STORIX_VERSITYGW_DATA_PATH`              | 선택   | —                     | compose | `docker-compose.versitygw.yml` 전용                                            |
 | `STORIX_NGINX_PUBLIC_PORT`                | 선택   | `8443`                | compose | `docs/deployment/compose.nginx-demo.yml` 전용 호스트 포트                      |
 | `STORIX_SCENARIO_VERSITYGW_PORT`          | 선택   | `7070`                | compose | `co-located-nginx-mtls` 시나리오에서 host Nginx가 접근할 loopback 포트         |
@@ -485,6 +485,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - override는 ceiling 이하로 허용한다.
 - `STORIX_VFS_CAPABILITIES_CONFIG_PATH`:
   - 비우면 선택 기능 전부 비활성.
+  - 값은 컨테이너 안 파일 경로다. 기본 compose는 이 변수를 전달하지 않고 파일을 넣을 volume도 없다. override의 `environment:`와 `volumes:`에서 함께 지정한다(예: `docs/deployment/scenarios/demo-all-in-one/compose.resumable.yml`). 루트 `.env`에 적은 값은 호스트 직접 실행에서만 읽는다.
   - 허용 필드:
     - `globalAllowedCapabilities`: 문자열 목록.
     - `namespaceAllowedCapabilities`: namespace ID를 키로 하는 문자열 목록 객체.
@@ -498,6 +499,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - 만료 cursor는 410과 전체 재동기화가 필요하다.
 - `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`:
   - `resumable-upload`를 전역 또는 namespace에서 허용하면 필수다.
+  - 전달 방식은 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`와 같다. override에서 경로와 volume을 함께 지정한다.
   - 엄격한 schema·기본값·활성 순서는 아래 참고.
 - `STORIX_ADMIN_API_KEY`: 비우면 관리자 API는 모두 401.
 - `STORIX_DB_DRIVER`:
@@ -517,7 +519,9 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 - `STORIX_STORAGE_BUCKET`: VersityGW override가 기동 시 생성한다.
 - `STORIX_STORAGE_PATH_STYLE`: AWS S3는 `docker-compose.s3.yml`이 `false`로 고정.
 - `STORIX_STORAGE_REGION`: 백엔드가 리전을 지정해 운영되면(VersityGW `--region`, AWS S3 버킷 리전) 같은 값을 넣는다.
-- `STORIX_STORAGE_PUBLIC_ENDPOINT`: 비우면 그 API만 실패한다.
+- `STORIX_STORAGE_PUBLIC_ENDPOINT`:
+  - 비우면 그 API만 실패한다.
+  - gc·backup·restore는 presigned URL을 발급하지 않는다. 기본 compose는 `STORIX_STORAGE_PUBLIC_*`를 이 서비스들에 전달하지 않는다.
 - `STORIX_VERSITYGW_DATA_PATH`: `/`로 시작하는 절대 경로면 bind mount, 비우면 named volume.
 - `STORIX_MAX_FILE_SIZE_BYTES`: 기본값 이상, S3 multipart 구조상한 이하로 설정한다.
 - `STORIX_MAX_RETAINED_TRASH_NODES`:

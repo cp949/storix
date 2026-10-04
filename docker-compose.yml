@@ -70,6 +70,7 @@ services:
       STORIX_VFS_CHANGE_RETENTION_DAYS: ${STORIX_VFS_CHANGE_RETENTION_DAYS:-30}
       STORIX_NAMESPACE_DELETED_RETENTION_DAYS: ${STORIX_NAMESPACE_DELETED_RETENTION_DAYS:-30}
       STORIX_GC_MAX_ROWS_PER_STAGE: ${STORIX_GC_MAX_ROWS_PER_STAGE:-200000}
+      STORIX_SENTRY_DSN: ${STORIX_SENTRY_DSN:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -81,6 +82,7 @@ services:
     environment:
       <<: [*db-env, *storage-env]
       STORIX_BACKUP_DIR: ${STORIX_BACKUP_DIR:-/backups}
+      STORIX_SENTRY_DSN: ${STORIX_SENTRY_DSN:-}
     volumes:
       - ./backups:/backups
     depends_on:
@@ -98,6 +100,7 @@ services:
       # 문자열) 검출은 RestoreJob 생성자가 실제 복구 실행 시점에만 담당한다.
       STORIX_RESTORE_SOURCE_DIR: ${STORIX_RESTORE_SOURCE_DIR:-}
       STORIX_RESTORE_FORCE: "${STORIX_RESTORE_FORCE:-false}"
+      STORIX_SENTRY_DSN: ${STORIX_SENTRY_DSN:-}
     volumes:
       - ./backups:/backups
     depends_on:
@@ -147,6 +150,7 @@ services:
       STORIX_ADMIN_API_KEY: ${STORIX_ADMIN_API_KEY:-}
       STORIX_ADMIN_API_KEY_PREVIOUS: ${STORIX_ADMIN_API_KEY_PREVIOUS:-}
       STORIX_ENCRYPTION_MASTER_KEY: ${STORIX_ENCRYPTION_MASTER_KEY:-}
+      STORIX_SENTRY_DSN: ${STORIX_SENTRY_DSN:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

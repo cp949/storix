@@ -125,32 +125,14 @@ const UNFORWARDED_ALLOWANCES: UnforwardedAllowance[] = [
   {
     variable: 'STORIX_VFS_CAPABILITIES_CONFIG_PATH',
     services: ['app'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
+    reason:
+      '의도: 컨테이너 안 파일 경로라 기본 compose는 넘기지 않는다. override에서 경로와 volume을 함께 지정한다. README 환경변수 절',
   },
   {
     variable: 'STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH',
     services: ['app'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
-  },
-  {
-    variable: 'STORIX_SENTRY_DSN',
-    services: ['app', 'gc', 'backup', 'restore'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
-  },
-  {
-    variable: 'STORIX_STORAGE_PUBLIC_ENDPOINT',
-    services: ['gc', 'backup', 'restore'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
-  },
-  {
-    variable: 'STORIX_STORAGE_PUBLIC_PORT',
-    services: ['gc', 'backup', 'restore'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
-  },
-  {
-    variable: 'STORIX_STORAGE_PUBLIC_USE_SSL',
-    services: ['gc', 'backup', 'restore'],
-    reason: '전달 여부 미결. GitHub 이슈 #20',
+    reason:
+      '의도: 컨테이너 안 파일 경로라 기본 compose는 넘기지 않는다. override에서 경로와 volume을 함께 지정한다. README 환경변수 절',
   },
 ];
 
