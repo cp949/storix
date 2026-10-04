@@ -20,7 +20,7 @@ import {
 } from '../persistence/vfs-snapshot.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
-import type { ContentPayload } from './content.service.js';
+import type { ContentHeadPayload, ContentPayload } from './content.service.js';
 import { toNodeResponse, toPreconditionCurrent } from './dto/node-response.dto.js';
 import { VfsNodeEntity } from '../persistence/entities/vfs-node.entity.js';
 import { parseSnapshotCreateRequest, parseSnapshotRestoreRequest } from './dto/snapshot-request.dto.js';
@@ -255,12 +255,27 @@ export class VfsSnapshotService {
     };
   }
 
+  // headOnly면 Blob을 열지 않고 헤더 정보만 반환한다(HEAD 요청).
   async getContent(
     namespaceId: string,
     snapshotId: string,
     relativePath: string | undefined,
     rangeHeader: string | undefined,
-  ): Promise<ContentPayload> {
+  ): Promise<ContentPayload>;
+  async getContent(
+    namespaceId: string,
+    snapshotId: string,
+    relativePath: string | undefined,
+    rangeHeader: string | undefined,
+    headOnly: boolean,
+  ): Promise<ContentPayload | ContentHeadPayload>;
+  async getContent(
+    namespaceId: string,
+    snapshotId: string,
+    relativePath: string | undefined,
+    rangeHeader: string | undefined,
+    headOnly = false,
+  ): Promise<ContentPayload | ContentHeadPayload> {
     const root = await requireRoot(this.nodes, namespaceId);
     const id = canonicalSnapshotId(snapshotId);
     const opened: { stream?: Readable; error?: Error } = {};
@@ -286,6 +301,24 @@ export class VfsSnapshotService {
         if (!blob || !namespace) throw new VfsNodeNotFoundError(id);
         const totalSize = Number(entry.size);
         const range = rangeHeader ? parseRange(rangeHeader, totalSize) : undefined;
+        const head: ContentHeadPayload = {
+          name: (snapshot.kind === 'FILE' ? snapshot.sourcePath : path).split('/').at(-1) ?? '',
+          mimeType: entry.mimeType ?? 'application/octet-stream',
+          status: range ? 206 : 200,
+          contentLength: range ? range.end - range.start + 1 : totalSize,
+          ...(range ? { contentRange: `bytes ${range.start}-${range.end}/${totalSize}` } : {}),
+          ...(range
+            ? {
+                partialIdentity: {
+                  snapshotId: id,
+                  fileId: snapshot.kind === 'FILE' ? snapshot.rootNodeId : entry.sourceNodeId,
+                  revision: snapshot.kind === 'FILE' ? snapshot.sourceRevision : entry.sourceRevision,
+                },
+              }
+            : {}),
+        };
+        // HEAD는 본문을 보내지 않으므로 Blob 읽기와 복호화를 건너뛴다.
+        if (headOnly) return head;
         const stream =
           namespace.encryptionPolicy === 'ENCRYPTED'
             ? await getEncrypted(
@@ -306,23 +339,7 @@ export class VfsSnapshotService {
         // HTTP handoff 뒤에도 close까지 유지하여 listener 교체 사이의 오류 유실을 막는다.
         stream.once('close', () => stream.off('error', onError));
         if (stream.errored) opened.error ??= stream.errored;
-        return {
-          name: (snapshot.kind === 'FILE' ? snapshot.sourcePath : path).split('/').at(-1) ?? '',
-          mimeType: entry.mimeType ?? 'application/octet-stream',
-          status: range ? 206 : 200,
-          contentLength: range ? range.end - range.start + 1 : totalSize,
-          ...(range ? { contentRange: `bytes ${range.start}-${range.end}/${totalSize}` } : {}),
-          ...(range
-            ? {
-                partialIdentity: {
-                  snapshotId: id,
-                  fileId: snapshot.kind === 'FILE' ? snapshot.rootNodeId : entry.sourceNodeId,
-                  revision: snapshot.kind === 'FILE' ? snapshot.sourceRevision : entry.sourceRevision,
-                },
-              }
-            : {}),
-          stream,
-        };
+        return { ...head, stream };
       });
       if (opened.error) throw opened.error;
       return result.value;

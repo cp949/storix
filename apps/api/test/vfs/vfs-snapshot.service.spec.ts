@@ -567,6 +567,49 @@ describe('VfsSnapshotService content stream lifecycle', () => {
     },
   } as unknown as MutationTx;
 
+  it('headOnly면 Blob stream을 열지 않고 GET과 같은 헤더 정보를 반환한다', async () => {
+    const get = jest.fn<BlobStorage['get']>();
+    const storage = { get } as unknown as BlobStorage;
+    withMutation.mockImplementationOnce(async (_ns, _root, work) => ({
+      value: await work(tx),
+      affectedRevisions: [],
+    }));
+    const service = new VfsSnapshotService(
+      nodes,
+      snapshots,
+      {} as VfsMutationReceiptRepository,
+      storage,
+      null,
+    );
+
+    const head = await service.getContent(namespaceId, snapshotId, undefined, undefined, true);
+
+    expect(head).toMatchObject({ name: 'a', status: 200, contentLength: 1 });
+    expect('stream' in head).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('headOnly Range는 206 헤더 정보를 반환하고 Blob stream을 열지 않는다', async () => {
+    const get = jest.fn<BlobStorage['get']>();
+    const storage = { get } as unknown as BlobStorage;
+    withMutation.mockImplementationOnce(async (_ns, _root, work) => ({
+      value: await work(tx),
+      affectedRevisions: [],
+    }));
+    const service = new VfsSnapshotService(
+      nodes,
+      snapshots,
+      {} as VfsMutationReceiptRepository,
+      storage,
+      null,
+    );
+
+    const head = await service.getContent(namespaceId, snapshotId, undefined, 'bytes=0-0', true);
+
+    expect(head).toMatchObject({ status: 206, contentLength: 1, contentRange: 'bytes 0-0/1' });
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it('DB commit이 실패하면 이미 열린 Blob stream을 파기한다', async () => {
     const stream = new Readable({ read() {} });
     const storage = { get: async () => stream } as unknown as BlobStorage;

@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { Public } from '../auth/public.decorator.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { sendContent } from './content-response.js';
+import { isHeadRequest, sendContent } from './content-response.js';
 import { ContentService } from './content.service.js';
 
 // PUBLIC namespace 전용 무인증 다운로드 표면. 라우트를 다운로드 2개로 한정해
@@ -23,7 +23,12 @@ export class PublicFsController {
     @Headers('range') range: string | undefined,
     @Res() res: Response,
   ) {
-    const payload = await this.contentService.getPublicContent(namespaceId, path ?? '', range);
+    const payload = await this.contentService.getPublicContent(
+      namespaceId,
+      path ?? '',
+      range,
+      isHeadRequest(res),
+    );
     await sendContent(res, payload, false);
   }
 
@@ -34,7 +39,12 @@ export class PublicFsController {
     @Headers('range') range: string | undefined,
     @Res() res: Response,
   ) {
-    const payload = await this.contentService.getPublicContent(namespaceId, path ?? '', range);
+    const payload = await this.contentService.getPublicContent(
+      namespaceId,
+      path ?? '',
+      range,
+      isHeadRequest(res),
+    );
     await sendContent(res, payload, true);
   }
 }

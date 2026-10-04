@@ -42,19 +42,23 @@ export interface PutContentOptions {
   readonly parents: boolean;
 }
 
-export interface ContentPayload {
+// HEAD 응답에 필요한 헤더 정보다. Blob을 열지 않고 만든다.
+export interface ContentHeadPayload {
   readonly name: string;
   readonly mimeType: string;
   readonly status: number;
   readonly contentLength: number;
   readonly contentRange?: string;
-  readonly stream: Readable;
   readonly identity?: { readonly fileId: string; readonly revision: string; readonly sha256: string };
   readonly partialIdentity?: {
     readonly fileId: string;
     readonly revision: string;
     readonly snapshotId?: string;
   };
+}
+
+export interface ContentPayload extends ContentHeadPayload {
+  readonly stream: Readable;
 }
 
 export interface PresignedDownloadPayload {
@@ -201,20 +205,45 @@ export class ContentService {
     };
   }
 
+  // headOnly면 Blob을 열지 않고 헤더 정보만 반환한다(HEAD 요청).
   async getContent(
     namespaceId: string,
     rawPath: string,
     rangeHeader: string | undefined,
-  ): Promise<ContentPayload> {
+  ): Promise<ContentPayload>;
+  async getContent(
+    namespaceId: string,
+    rawPath: string,
+    rangeHeader: string | undefined,
+    headOnly: boolean,
+  ): Promise<ContentPayload | ContentHeadPayload>;
+  async getContent(
+    namespaceId: string,
+    rawPath: string,
+    rangeHeader: string | undefined,
+    headOnly = false,
+  ): Promise<ContentPayload | ContentHeadPayload> {
     const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
-    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, true);
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, true, headOnly);
   }
 
   async getPublicContent(
     namespaceId: string,
     rawPath: string,
     rangeHeader: string | undefined,
-  ): Promise<ContentPayload> {
+  ): Promise<ContentPayload>;
+  async getPublicContent(
+    namespaceId: string,
+    rawPath: string,
+    rangeHeader: string | undefined,
+    headOnly: boolean,
+  ): Promise<ContentPayload | ContentHeadPayload>;
+  async getPublicContent(
+    namespaceId: string,
+    rawPath: string,
+    rangeHeader: string | undefined,
+    headOnly = false,
+  ): Promise<ContentPayload | ContentHeadPayload> {
     const { root, limits } = await requireRootWithLimits(this.repo, namespaceId);
 
     // 공개 표면에는 제시할 자격증명 개념이 없다. 401/403은 "존재하지만 비공개"를
@@ -229,7 +258,7 @@ export class ContentService {
       throw new VfsNamespaceNotFoundError(namespaceId);
     }
 
-    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, false);
+    return this.readContent(namespaceId, root, limits, rawPath, rangeHeader, false, headOnly);
   }
 
   private async readContent(
@@ -239,7 +268,8 @@ export class ContentService {
     rawPath: string,
     rangeHeader: string | undefined,
     authenticated: boolean,
-  ): Promise<ContentPayload> {
+    headOnly: boolean,
+  ): Promise<ContentPayload | ContentHeadPayload> {
     const { canonical, segments } = this.pathResolver.resolve(rawPath);
     const read = await this.repo.readContentFile(namespaceId, root.id, segments);
     const target = read?.node;
@@ -260,23 +290,34 @@ export class ContentService {
     const mimeType = target.mimeType ?? 'application/octet-stream';
 
     if (!rangeHeader) {
-      const stream =
-        limits.encryptionPolicy === 'ENCRYPTED'
-          ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey())
-          : await this.blobStorage.get(storageKey);
-      return {
+      const head: ContentHeadPayload = {
         name: target.name,
         mimeType,
         status: 200,
         contentLength: totalSize,
-        stream,
         ...(authenticated
           ? { identity: { fileId: target.id, revision: encodeRevision(target), sha256 } }
           : {}),
       };
+      // HEAD는 본문을 보내지 않으므로 Blob 읽기와 복호화를 건너뛴다.
+      if (headOnly) return head;
+      const stream =
+        limits.encryptionPolicy === 'ENCRYPTED'
+          ? await getEncrypted(this.blobStorage, storageKey, encryptionIv as Buffer, this.requireMasterKey())
+          : await this.blobStorage.get(storageKey);
+      return { ...head, stream };
     }
 
     const range = parseRange(rangeHeader, totalSize);
+    const head: ContentHeadPayload = {
+      name: target.name,
+      mimeType,
+      status: 206,
+      contentRange: `bytes ${range.start}-${range.end}/${totalSize}`,
+      contentLength: range.end - range.start + 1,
+      partialIdentity: { fileId: target.id, revision: encodeRevision(target) },
+    };
+    if (headOnly) return head;
     const stream =
       limits.encryptionPolicy === 'ENCRYPTED'
         ? await getEncrypted(
@@ -288,15 +329,7 @@ export class ContentService {
           )
         : await this.blobStorage.get(storageKey, range);
 
-    return {
-      name: target.name,
-      mimeType,
-      status: 206,
-      contentRange: `bytes ${range.start}-${range.end}/${totalSize}`,
-      contentLength: range.end - range.start + 1,
-      stream,
-      partialIdentity: { fileId: target.id, revision: encodeRevision(target) },
-    };
+    return { ...head, stream };
   }
 
   async getPresignedDownloadUrl(namespaceId: string, rawPath: string): Promise<PresignedDownloadPayload> {

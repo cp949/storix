@@ -471,6 +471,90 @@ describe('ContentService', () => {
     });
   });
 
+  describe('HEAD 조회(headOnly)', () => {
+    function readable(overrides: Partial<VfsNodeRecord> = {}, encryptionIv: Buffer | null = null) {
+      repo.readContentFile.mockResolvedValue({
+        node: makeNode({ size: '10', mimeType: 'text/plain', blobId: 'blob-1', ...overrides }),
+        blob: { storageKey: 'blobs/00/key', encryptionIv, sha256: 'hash' },
+      });
+    }
+
+    it('전체 조회는 Blob을 열지 않고 GET과 같은 헤더 정보를 반환한다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      readable();
+      blobStorage.get.mockResolvedValue(Readable.from(Buffer.from('0123456789')));
+
+      const head = await service.getContent(NAMESPACE_ID, '/a.txt', undefined, true);
+      const { stream, ...getHeaders } = await service.getContent(NAMESPACE_ID, '/a.txt', undefined);
+      stream.destroy();
+
+      expect(blobStorage.get).toHaveBeenCalledTimes(1); // GET 호출 1회뿐이다
+      expect(head).toEqual(getHeaders);
+      expect('stream' in head).toBe(false);
+    });
+
+    it('Range 조회는 Blob을 열지 않고 206 헤더 정보를 반환한다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      readable();
+
+      const head = await service.getContent(NAMESPACE_ID, '/a.txt', 'bytes=2-4', true);
+
+      expect(head).toMatchObject({ status: 206, contentLength: 3, contentRange: 'bytes 2-4/10' });
+      expect(blobStorage.get).not.toHaveBeenCalled();
+    });
+
+    it('잘못된 Range는 GET처럼 오류를 던진다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      readable();
+
+      await expect(service.getContent(NAMESPACE_ID, '/a.txt', 'bytes=20-30', true)).rejects.toThrow();
+      expect(blobStorage.get).not.toHaveBeenCalled();
+    });
+
+    it('ENCRYPTED namespace도 마스터 키 없이 Blob을 열지 않고 반환한다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { ...NONE_LIMITS, encryptionPolicy: 'ENCRYPTED' },
+      });
+      readable({}, randomBytes(16));
+
+      const head = await service.getContent(NAMESPACE_ID, '/a.txt', undefined, true);
+
+      expect(head).toMatchObject({ status: 200, contentLength: 10 });
+      expect(blobStorage.get).not.toHaveBeenCalled();
+    });
+
+    it('없는 파일과 디렉터리는 GET과 같은 오류를 던진다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      repo.readContentFile.mockResolvedValue(null);
+      await expect(service.getContent(NAMESPACE_ID, '/missing', undefined, true)).rejects.toThrow(
+        VfsNodeNotFoundError,
+      );
+
+      repo.readContentFile.mockResolvedValue({ node: makeNode({ type: 'DIRECTORY' }), blob: null });
+      await expect(service.getContent(NAMESPACE_ID, '/a', undefined, true)).rejects.toThrow(
+        VfsIsDirectoryError,
+      );
+    });
+
+    it('공개 조회도 Blob을 열지 않고, PRIVATE namespace는 GET과 같이 거부한다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({
+        root: makeRoot(),
+        limits: { ...NONE_LIMITS, accessPolicy: 'PUBLIC' },
+      });
+      readable();
+      const head = await service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined, true);
+      expect(head).toMatchObject({ status: 200, contentLength: 10 });
+      expect(head.identity).toBeUndefined();
+
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      await expect(service.getPublicContent(NAMESPACE_ID, '/a.txt', undefined, true)).rejects.toThrow(
+        VfsNamespaceNotFoundError,
+      );
+      expect(blobStorage.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPublicContent', () => {
     it('PUBLIC namespace의 파일 콘텐츠를 반환한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({

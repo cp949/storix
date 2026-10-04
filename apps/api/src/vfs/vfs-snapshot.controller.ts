@@ -13,7 +13,7 @@ import {
 import type { Request, Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { sendContent } from './content-response.js';
+import { isHeadRequest, sendContent } from './content-response.js';
 import { VfsSnapshotService } from './vfs-snapshot.service.js';
 import { VfsInvalidMutationRequestError } from './vfs.errors.js';
 
@@ -89,7 +89,11 @@ export class VfsSnapshotController {
     @Res() res: Response,
   ) {
     if (path !== undefined && typeof path !== 'string') throw new VfsInvalidMutationRequestError();
-    await sendContent(res, await this.snapshots.getContent(namespaceId, snapshotId, path, range), false);
+    await sendContent(
+      res,
+      await this.snapshots.getContent(namespaceId, snapshotId, path, range, isHeadRequest(res)),
+      false,
+    );
   }
 
   @Post(':snapshotId/restore')

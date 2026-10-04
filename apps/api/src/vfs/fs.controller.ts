@@ -15,7 +15,7 @@ import {
 import type { Request, Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { sendContent } from './content-response.js';
+import { isHeadRequest, sendContent } from './content-response.js';
 import { ContentService } from './content.service.js';
 import { parseCopyRequest } from './dto/copy-request.dto.js';
 import { parseMkdirRequest } from './dto/mkdir-request.dto.js';
@@ -212,7 +212,7 @@ export class FsController {
     @Headers('range') range: string | undefined,
     @Res() res: Response,
   ) {
-    const payload = await this.contentService.getContent(namespaceId, path ?? '', range);
+    const payload = await this.contentService.getContent(namespaceId, path ?? '', range, isHeadRequest(res));
     await sendContent(res, payload, false);
   }
 
@@ -223,7 +223,7 @@ export class FsController {
     @Headers('range') range: string | undefined,
     @Res() res: Response,
   ) {
-    const payload = await this.contentService.getContent(namespaceId, path ?? '', range);
+    const payload = await this.contentService.getContent(namespaceId, path ?? '', range, isHeadRequest(res));
     await sendContent(res, payload, true);
   }
 

@@ -1,11 +1,21 @@
 import { pipeline } from 'node:stream/promises';
 import type { Response } from 'express';
 import { buildContentDisposition } from './content-disposition.js';
-import type { ContentPayload } from './content.service.js';
+import type { ContentHeadPayload, ContentPayload } from './content.service.js';
 
 // 인증 경로(FsController)와 공개 경로(PublicFsController)가 동일한 응답 헤더와
 // 스트림 정리 규칙을 쓰도록 한 곳에 모은다.
-export async function sendContent(res: Response, payload: ContentPayload, download: boolean): Promise<void> {
+// GET 핸들러가 HEAD 요청도 받는다(router가 HEAD 전용 핸들러가 없으면 GET 핸들러로 보낸다).
+export function isHeadRequest(res: Response): boolean {
+  return res.req.method === 'HEAD';
+}
+
+// payload에 stream이 없으면(HEAD) 헤더만 쓰고 본문 없이 응답을 끝낸다.
+export async function sendContent(
+  res: Response,
+  payload: ContentPayload | ContentHeadPayload,
+  download: boolean,
+): Promise<void> {
   res.status(payload.status);
   res.setHeader('Content-Type', payload.mimeType);
   res.setHeader('Content-Length', String(payload.contentLength));
@@ -36,6 +46,10 @@ export async function sendContent(res: Response, payload: ContentPayload, downlo
   }
   if (download) {
     res.setHeader('Content-Disposition', buildContentDisposition(payload.name));
+  }
+  if (!('stream' in payload)) {
+    res.end();
+    return;
   }
   // 단순 pipe()는 source 오류를 destination으로 전파하지 않고(Node .pipe()의 알려진
   // 한계), 클라이언트가 다운로드 도중 연결을 끊어도 source를 정리하지 않는다.
