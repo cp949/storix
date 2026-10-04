@@ -54,6 +54,9 @@
   - commit ack가 유실된 transaction은 참조 조회보다 늦게 반영될 수 있다. 이때 즉시 삭제하면 공개 파일이 손실된다.
   - 확정된 4xx 롤백은 참조 확인 → object 삭제 시도 → 오류 receipt 저장 순서로 처리한다.
   - 그 밖의 오류는 object를 보존하고 오류 receipt 저장을 시도한다.
+- 레거시 `POST /fs/content`·`POST /fs/touch`는 receipt가 없지만 같은 object 정리 규칙을 쓴다(확정된 4xx 롤백이고 Blob row가 없을 때만 삭제 시도, 그 밖에는 보존).
+  - `POST /fs/content`는 이미 조회한 대상으로 version 충돌이 확정되면 본문을 올리기 전에 409를 반환한다. 트랜잭션 안의 검사가 권위 있는 판정이다.
+  - `POST /fs/touch`는 대상이 이미 있는 FILE이면 빈 object를 올리지 않는다. 사전 확인 뒤 대상이 생겨 기존 FILE 분기로 끝나면 올린 빈 object를 삭제한다.
 - 저장 body에 `requestId`가 들어 있고 헤더 `X-Request-Id`도 최초 값이다.
   - 재생 응답은 이 두 값을 그대로 돌려준다.
   - `Retry-After`는 저장하지 않는다(진행 중 응답은 receipt 대상이 아니다).
