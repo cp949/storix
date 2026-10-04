@@ -143,6 +143,7 @@ services:
       STORIX_MUTATION_MAX_UPLOAD_SECONDS: ${STORIX_MUTATION_MAX_UPLOAD_SECONDS:-86400}
       STORIX_VFS_EXPIRY_MIN_SECONDS: ${STORIX_VFS_EXPIRY_MIN_SECONDS:-60}
       STORIX_VFS_EXPIRY_MAX_SECONDS: ${STORIX_VFS_EXPIRY_MAX_SECONDS:-2592000}
+      STORIX_SHUTDOWN_TIMEOUT_SECONDS: ${STORIX_SHUTDOWN_TIMEOUT_SECONDS:-25}
       # `${VAR:?}` 필수 마커는 override 병합 전에 파일 전체에 평가된다.
       # 이 마커를 쓰면 STORIX_API_KEY_FILE만 주는 배포가 compose 단계에서 막히므로 `:-`를 쓴다.
       # 미설정은 app이 부팅 시점에 거부한다(auth.module). 값은 openssl rand -hex 32로 만든다.
@@ -155,6 +156,9 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # docker stop이 SIGKILL을 보내기 전 대기 시간이다. app이 진행 중 요청을 기다리는 상한
+    # (STORIX_SHUTDOWN_TIMEOUT_SECONDS, 기본 25초)보다 길어야 한다. 그 값을 올리면 함께 올린다.
+    stop_grace_period: 30s
     # curl은 이미지 축소를 위해 런타임에서 purge했으므로(apps/api/Dockerfile)
     # Node 내장 fetch로 검사한다. /health/ready는 DB·스토리지 연결까지 확인한다 —
     # /health/live(프로세스 생존만)보다 self-host 운영자에게 더 유용한 신호다.

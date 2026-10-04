@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { bootstrapWithEnv } from './common/bootstrap-with-env.js';
 import { configureBodyParsers } from './common/body-parser.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
+import { installGracefulShutdown, parseShutdownTimeoutMs } from './common/graceful-shutdown.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
 import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
@@ -14,7 +15,9 @@ import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
 // 거쳐 .env가 반영된 뒤에야 엔티티가 평가되도록 순서를 강제한다.
 async function bootstrap() {
   const { AppModule } = await bootstrapWithEnv(() => import('./app.module.js'));
+  const shutdownTimeoutMs = parseShutdownTimeoutMs(process.env.STORIX_SHUTDOWN_TIMEOUT_SECONDS);
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  installGracefulShutdown(app, shutdownTimeoutMs);
   app.useGlobalFilters(
     new DomainErrorFilter(app.get<ErrorReporter>(ERROR_REPORTER), app.get(AUDIT_LOG_REPOSITORY)),
   );

@@ -454,6 +454,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`              | app     | namespace별 보존 휴지통 node 수 상한                                           |
 | `STORIX_MUTATION_LEASE_SECONDS`           | 선택   | `60`                  | app     | 조건부 업로드 claim lease(초)                                                  |
 | `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`               | app     | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간)    |
+| `STORIX_SHUTDOWN_TIMEOUT_SECONDS`         | 선택   | `25`                  | app     | SIGTERM·SIGINT 뒤 진행 중 요청을 기다리는 최대 시간(초, 1~3600)                |
 | `STORIX_VFS_EXPIRY_MIN_SECONDS`           | 선택   | `60`                  | app     | 새 FILE 만료 입력의 최소 기간(초)                                              |
 | `STORIX_VFS_EXPIRY_MAX_SECONDS`           | 선택   | `2592000`             | app     | 새 FILE 만료 입력의 최대 기간(초)                                              |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS`     | 선택   | `300`                 | app     | presigned URL 만료(초)                                                         |
