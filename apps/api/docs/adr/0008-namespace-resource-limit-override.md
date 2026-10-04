@@ -1,4 +1,5 @@
 > 대체됨: api ADR-0037이 namespace 상한을 default와 ceiling으로 분리하고 counter 제한을 추가한다.
+> 이동 노드 수 상한 `STORIX_MAX_SYNC_MOVE_NODES`는 이 결정의 방식을 따라 api ADR-0042가 추가한다.
 
 # namespace별 리소스 상한은 전역값을 상한으로 하는 오버라이드 컬럼으로 구현한다
 

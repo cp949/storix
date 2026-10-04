@@ -20,6 +20,7 @@
 - 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.
 - 정수 환경변수(포트, 초, 개수, GC 주기 등 `parsePositiveInt`로 읽는 변수)를 앞자리 0이 없는 10진 숫자만 받는다. 이전에 통과하던 `1e3`, `0x10`, `+5`, `5.0`, 공백이 붙은 값, 2^53 이상의 값은 부팅을 거부한다. `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 2147483647 ms, `STORIX_DB_PORT`·`STORIX_STORAGE_PORT`·`STORIX_STORAGE_PUBLIC_PORT`는 65535를 넘으면 부팅을 거부한다. 3000000000 ms를 설정하면 `setTimeout` 상한 때문에 1ms 뒤에 타임아웃이 나던 문제가 이 거부로 바뀐다.
 - `STORIX_DB_DRIVER`가 `postgres`·`sqlite`가 아니면 부팅을 거부한다. 이전에는 `SQLite`·`sqlite3` 같은 값이 조용히 `postgres`로 처리됐다. 빈 값과 미설정은 `postgres`다.
+- 디렉터리 이동(`POST /fs/mv`, `POST /fs/mutations`의 `kind: move`)에 하위 트리 노드 수 상한을 추가했다. 이동 대상 자신을 포함한 subtree 노드 수가 `STORIX_MAX_SYNC_MOVE_NODES`(기본 10000)를 넘으면 변경 없이 413 `VFS_MOVE_LIMIT_EXCEEDED`로 거부한다. 이전에는 상한이 없어, SQLite 실측에서 하위 노드 20,000개를 옮기는 데 2.2~4.7초(깊이 10 트리)가 걸리고 그동안 같은 namespace의 mutation이 멈췄다. 이전에 성공하던 10,000개 초과 subtree 이동이 413으로 바뀐다. namespace별 override 컬럼 `namespace.max_sync_move_nodes`를 추가했고(마이그레이션 `AddNamespaceMoveLimit1791700000022`), 전역값을 넘을 수 없다. FILE 이동은 상한과 무관하다. 결정은 api ADR-0042다(GitHub 이슈 #26).
 
 ### Fixed
 

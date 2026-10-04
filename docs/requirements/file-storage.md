@@ -936,6 +936,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 - revision 불일치, 목적지 충돌, 경로 오류 또는 연산 실패 시 원본과 목적지 트리는 모두 변경되지 않는다.
 - 성공하면 subtree 전체가 이동되고 안정 ID는 유지되며 affected revision은 새 상태를 가리킨다.
 - 없는 부모는 `destinationParents: true`로 명시할 때만 함께 만든다.
+- 이동 대상 자신을 포함한 subtree 노드 수가 상한을 넘는 디렉터리 이동은 413 `VFS_MOVE_LIMIT_EXCEEDED`로 거부하고 원본과 목적지 트리를 변경하지 않는다.
 
 **판정 근거:**
 
@@ -954,6 +955,10 @@ Jupyter Notebook은 소비자 사례 중 하나다.
     - 없는 원본·부모 404.
     - 잘못된 경로 400.
     - 모두 무변경.
+  - `move-limit-rejection`:
+    - 노드 수 상한 초과 413 `VFS_MOVE_LIMIT_EXCEEDED`.
+    - 거부 뒤 원본·하위 노드 무변경, 목적지 부재.
+    - 상한 이내 트리와 FILE 이동은 성공.
   - `destination-parents`: 이동·복사의 명시적 부모 생성 계약.
 
 **관련 계약:**

@@ -93,7 +93,7 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
 - 서버를 다시 띄워야 하는 이유는 기동 설정 차이뿐이다. 전역 한도 같은 값은 프로세스 시작 시 한 번만 읽힌다(`docs/design/04-namespace-logical-quota.md` "계약").
 - 상태 격리는 namespace가 맡으므로 상태 오염은 재시작 이유가 아니다.
 - `default`는 서버 기본값을 그대로 쓴다.
-- `small-limits`는 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트와 동기 삭제·복사 노드 수 상한 5, 휴지통 보존 노드 수 상한 3을 준다.
+- `small-limits`는 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트와 동기 삭제·복사·이동 노드 수 상한 5, 휴지통 보존 노드 수 상한 3을 준다.
   - 한도 계약(`contracts/limits/`, `delete-limit-rejection`, `copy-limit-rejection`, `trash-retention-limit`)이 쓴다.
   - namespace별 상한 재정의(`namespace-quota-override`)는 전역 상한이 2000이라는 전제를 쓴다.
   - 값은 `src/runner/profiles.ts`가 정한다.

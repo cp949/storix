@@ -84,7 +84,7 @@ claim이 `owner`이고 status가 400–499인 `DomainError`를 저장한다.
 | 대상 부재 404           | `VFS_NODE_NOT_FOUND`(원본·부모·snapshot 내부 entry 부재), `VFS_SNAPSHOT_NOT_FOUND`(snapshot 부재 또는 잘못된 snapshot UUID 형식) |
 | 상태 충돌 409           | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_INVALID_OPERATION`, `VFS_REVISION_EXHAUSTED` 등         |
 | 조건 불일치 412         | `VFS_PRECONDITION_FAILED`(`current` 포함)                                                                                        |
-| 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                                            |
+| 결정적 상한 413         | `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`                 |
 | 조건 누락 428           | `VFS_PRECONDITION_REQUIRED`                                                                                                      |
 
 - 같은 key와 같은 fingerprint의 재시도는 그 사이 VFS 상태가 바뀌었어도 최초 status·body·`X-Request-Id`를 재생한다. 완료 시점부터 30일이 지나 만료된 receipt는 claim 시 삭제되고 새로 평가한다.
