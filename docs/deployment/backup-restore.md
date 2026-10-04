@@ -90,8 +90,11 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 
    - 실행 순서는 Postgres 복구, 백업 object put, (force일 때) 백업에 없는 object 삭제다.
    - Postgres 복구가 실패하면 스토리지 object는 변경하지 않는다. 원인을 고친 뒤 같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행한다.
+   - 이름이 `.partial`로 끝나는 디렉터리는 `RestoreIncompleteBackupError`다.
+   - `.partial` 검사는 DB 복구와 스토리지 접근 전에 수행한다.
+   - `.partial`을 수동으로 rename한 백업은 완료 여부를 판별하지 못한다. 이름을 바꾸기 전에 백업 로그의 `백업 완료` 줄을 확인한다.
    - `blobs/` 외의 하위 디렉터리는 `RestoreUnsupportedBackupError`다.
-   - 이 검사는 기존 데이터를 지우기 전에 수행한다.
+   - `blobs/` 구조 검사는 기존 데이터를 지우기 전에 수행한다.
    - 지원하지 않는 이전 백업 형식은 복구할 수 없다.
 
 3. 복구가 성공하면 필요한 migration을 실행한다.
