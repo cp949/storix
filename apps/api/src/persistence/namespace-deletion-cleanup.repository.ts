@@ -284,7 +284,10 @@ export class NamespaceDeletionCleanupRepository {
     };
   }
 
-  /** grace가 지난 미삭제 Blob과 아직 기다려야 하는 Blob을 구분한다. */
+  /**
+   * grace가 지난 미삭제 Blob과 아직 기다려야 하는 Blob을 구분한다.
+   * namespace의 Blob이 많아도 행을 메모리로 읽지 않도록 DB에서 집계한다.
+   */
   async inspectObjects(
     namespaceId: string,
     cutoff: Date,
@@ -293,14 +296,20 @@ export class NamespaceDeletionCleanupRepository {
     const value = isSqliteDataSource(this.dataSource.options)
       ? cutoff.toISOString().slice(0, 19).replace('T', ' ')
       : cutoff;
+    // zero_since가 NULL인 참조 0 행은 grace 경과로 보지 않고 대기로 센다.
+    // SUM은 PostgreSQL에서 bigint(문자열)로 돌아오므로 Number로 바꾼다.
     const rows = (await this.dataSource.query(
-      `SELECT reference_count AS refs, CASE WHEN zero_since < ${ph.bind(value)} THEN 1 ELSE 0 END AS overdue FROM blob WHERE namespace_id = ${ph.bind(namespaceId)}`,
+      `SELECT
+         COALESCE(SUM(CASE WHEN reference_count > 0 THEN 1 ELSE 0 END), 0) AS referenced,
+         COALESCE(SUM(CASE WHEN reference_count = 0 AND zero_since < ${ph.bind(value)} THEN 1 ELSE 0 END), 0) AS overdue,
+         COALESCE(SUM(CASE WHEN reference_count = 0 AND (zero_since IS NULL OR zero_since >= ${ph.bind(value)}) THEN 1 ELSE 0 END), 0) AS pending
+       FROM blob WHERE namespace_id = ${ph.bind(namespaceId)}`,
       ph.params,
-    )) as { refs: number; overdue: number }[];
+    )) as { referenced: string | number; overdue: string | number; pending: string | number }[];
     return {
-      referenced: rows.filter((row) => row.refs > 0).length,
-      overdue: rows.filter((row) => row.refs === 0 && row.overdue === 1).length,
-      pending: rows.filter((row) => row.refs === 0 && row.overdue === 0).length,
+      referenced: Number(rows[0].referenced),
+      overdue: Number(rows[0].overdue),
+      pending: Number(rows[0].pending),
     };
   }
 

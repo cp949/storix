@@ -406,6 +406,41 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     expect((await f.op()).blockedReason).toBe('STORAGE_DELETE_FAILED');
   });
 
+  it('inspectObjects는 참조 중·grace 경과·grace 대기 Blob 수를 구분해 센다', async () => {
+    const f = await fixture();
+    const make = (referenceCount: number, zeroSince: Date | null) => ({
+      namespaceId: f.ns.id,
+      storageKey: `blobs/ab/${randomUUID()}`,
+      size: '7',
+      mimeType: 'text/plain',
+      sha256: 'f'.repeat(64),
+      referenceCount,
+      zeroSince,
+    });
+    const old = new Date(Date.now() - 3_600_000);
+    const recent = new Date(Date.now() - 1_000);
+    await f.dataSource.manager.insert(BlobEntity, [
+      make(2, null),
+      make(0, old),
+      make(0, old),
+      make(0, recent),
+      make(0, recent),
+      make(0, recent),
+      make(0, null),
+    ]);
+
+    await expect(f.repository.inspectObjects(f.ns.id, new Date(Date.now() - 60_000))).resolves.toEqual({
+      referenced: 1,
+      overdue: 2,
+      pending: 4,
+    });
+    await expect(f.repository.inspectObjects(randomUUID(), new Date())).resolves.toEqual({
+      referenced: 0,
+      overdue: 0,
+      pending: 0,
+    });
+  });
+
   it('object 삭제 성공 후 Blob row 삭제가 실패하면 다음 실행이 재시도한다', async () => {
     const f = await fixture();
     const blob = await content(f);
