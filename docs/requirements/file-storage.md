@@ -441,6 +441,10 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - snapshot 5건을 limit 2로 순회해 누락·중복 없이 조회.
   - 이동과 삭제 후 같은 경로 재생성 뒤에도 소속 유지.
 - 계약은 목록 정렬 순서를 검증하지 않는다.
+- SQLite·PostgreSQL 계약 검증에서 `snapshot-list-cursor-validation`이 통과했다.
+  - 존재하지 않는 날짜(`2026-02-30`)와 `0000`년을 담은 cursor는 400 `VFS_INVALID_CURSOR`.
+  - 거부된 뒤 서버가 만든 cursor로 다음 페이지를 읽는다.
+  - 수정 전 구현에서는 PostgreSQL이 500이었다.
 
 ### RQ-014 스냅샷 바이트 조회
 
@@ -628,6 +632,11 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - `resumable-upload` 프로필.
 - 계약은 `DB_BUSY`·`INTERNAL_ERROR` 발생, DB 장애, `Retry-After`를 다루지 않는다(`Retry-After`는 있을 때만 준수하는 값이고 이 저장소 장애 응답에는 없었다).
 - 저장소를 멈춘 동안에도 `stat`·`mkdir`·snapshot 생성은 성공했으나 계약은 이를 단언하지 않는다.
+- SQLite·PostgreSQL 계약 검증에서 `find-input-validation`이 통과했다.
+  - `find`의 cursor 오류(UUID가 아닌 `id`, NUL이 든 `name`, 중복 `cursor`)는 400 `VFS_INVALID_CURSOR`.
+  - `find`의 `name`이 중복되거나 NUL을 포함하면 `match` 값(생략 포함)과 관계없이 400 `VFS_INVALID_QUERY`.
+  - 거부된 뒤 `name`·`match` 검색은 그대로 동작하고 빈 `name`은 필터 없음이다.
+  - 수정 전 구현에서는 PostgreSQL이 500이었다.
 
 **자동 검증 근거:**
 
@@ -767,6 +776,11 @@ Jupyter Notebook은 소비자 사례 중 하나다.
   - 디렉터리 변경 후 이전 cursor의 다음 페이지는 412 `VFS_PRECONDITION_FAILED`.
   - 서로 다른 상태의 페이지 연결 없음.
   - 형식이 잘못된 cursor는 400 `VFS_INVALID_CURSOR`.
+- SQLite·PostgreSQL 계약 검증에서 `ls-cursor-validation`이 통과했다.
+  - UUID가 아닌 `id`, 빈 `id`, NUL이 든 `name`을 담은 cursor는 400 `VFS_INVALID_CURSOR`.
+  - 같은 `cursor`를 여러 번 보낸 요청도 400 `VFS_INVALID_CURSOR`.
+  - 거부된 뒤 서버가 만든 cursor로 다음 페이지를 읽는다.
+  - 수정 전 구현에서는 PostgreSQL이 500, SQLite는 계약이 실패했다.
 
 **관련 계약:**
 
