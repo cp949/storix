@@ -1,5 +1,4 @@
 // 소비자 기대: namespace 생성의 Idempotency-Key는 255 byte까지 쓸 수 있고, 255 byte를 넘으면 5xx가 아니라 400으로 거절된다.
-// 대응 요구사항: RQ-011(변경 요청의 멱등성), RQ-018(안정적인 오류 분류).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';

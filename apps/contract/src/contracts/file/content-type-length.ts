@@ -1,5 +1,4 @@
 // 소비자 기대: 파라미터를 뗀 Content-Type이 255자까지는 그대로 저장되고, 255자를 넘으면 application/octet-stream으로 저장되며 어느 경우에도 5xx가 아니다.
-// 대응 요구사항: RQ-007(본문 없는 메타데이터 조회), RQ-009(원자적 저장), RQ-018(안정적인 오류 분류).
 import assert from 'node:assert/strict';
 import { defineContract } from '../../define-contract.ts';
 

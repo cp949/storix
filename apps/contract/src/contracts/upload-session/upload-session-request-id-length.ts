@@ -1,5 +1,4 @@
 // 소비자 기대: X-Request-Id는 200자까지 업로드 세션 생성·완료에서 그대로 쓰이고, 201자 이상은 서버가 만든 ID로 대체되며 어느 경우에도 5xx가 아니다.
-// 대응 요구사항: RQ-009(원자적 저장), RQ-018(안정적인 오류 분류), RQ-019(감사에 필요한 호출 정보).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';
