@@ -55,17 +55,19 @@ export class RestoreJob {
       throw new RestoreTargetNotEmptyError();
     }
 
-    if (this.force) {
-      // 복구 전 대상을 지우는 것과 대칭 — force 복구는 "대상이 백업과 정확히
-      // 같아진다"는 보장을 즉시 주기 위해 기존 object를 먼저 지운다.
-      // (지우지 않아도 언젠가 GC job의 orphan-object 경로가 정리하지만,
-      // force 복구의 의도는 즉시·확정적인 교체다.)
-      await this.clearExistingObjects();
-    }
-
+    // DB 복구가 먼저다. pg_restore가 실패(예: client·서버 major 불일치로 exit 1)했을 때
+    // 스토리지 object를 이미 지워 두면 버킷이 빈 채로 남기 때문이다. 실패하면 object를
+    // 건드리지 않은 채 던지고, 같은 백업으로 재실행하면 이어서 복구된다.
     await this.dumpTool.restore(dumpFilePath);
 
-    const restoredObjectCount = await this.restoreObjectsFromLocalDir(this.sourceDir);
+    const { restoredObjectCount, backupKeys } = await this.restoreObjectsFromLocalDir(this.sourceDir);
+
+    if (this.force) {
+      // force 복구는 "대상이 백업과 정확히 같아진다"는 보장을 주기 위해 백업에 없는
+      // object를 지운다. 복원이 끝난 뒤에 지우므로 put 도중 실패해도 기존 object는
+      // 남고, 이 단계가 실패해도 재실행하면 같은 결과로 이어진다.
+      await this.deleteObjectsNotInBackup(backupKeys);
+    }
 
     this.logger.log(`복구 완료: ${this.sourceDir} (object ${restoredObjectCount}건)`);
     return { sourceDir: this.sourceDir, restoredObjectCount };
@@ -81,30 +83,34 @@ export class RestoreJob {
     }
   }
 
-  private async clearExistingObjects(): Promise<void> {
+  private async deleteObjectsNotInBackup(backupKeys: ReadonlySet<string>): Promise<void> {
     for await (const item of this.storage.list()) {
-      await this.storage.delete(item.key);
+      if (!backupKeys.has(item.key)) {
+        await this.storage.delete(item.key);
+      }
     }
   }
 
-  private async restoreObjectsFromLocalDir(sourceDir: string): Promise<number> {
+  private async restoreObjectsFromLocalDir(
+    sourceDir: string,
+  ): Promise<{ restoredObjectCount: number; backupKeys: ReadonlySet<string> }> {
     const blobDir = path.join(sourceDir, 'blobs');
     if (!(await this.pathExists(blobDir))) {
       // 백업 시점에 스토리지 object가 하나도 없었다면 BackupJob이 'blobs/'
       // 디렉터리 자체를 만들지 않는다(mirrorObjectsToLocalDir의 mkdir이
       // list() 루프 본문 안에서만 실행되므로). 이 경우는 정상적인
       // "object 0건짜리 백업"이지 오류가 아니다.
-      return 0;
+      return { restoredObjectCount: 0, backupKeys: new Set() };
     }
 
     const filePaths = await this.listFilesRecursively(blobDir);
-    let count = 0;
+    const backupKeys = new Set<string>();
     for (const filePath of filePaths) {
       const key = path.relative(blobDir, filePath).split(path.sep).join('/');
       await this.storage.put(key, createReadStream(filePath));
-      count += 1;
+      backupKeys.add(key);
     }
-    return count;
+    return { restoredObjectCount: backupKeys.size, backupKeys };
   }
 
   private async pathExists(target: string): Promise<boolean> {

@@ -84,4 +84,104 @@ describe('RestoreJob 백업 구조 검사', () => {
   it('dump 파일만 있는 백업(object 0건)은 성공한다', async () => {
     await expect(createJob().run()).resolves.toMatchObject({ restoredObjectCount: 0 });
   });
+
+  describe('force 복구 순서', () => {
+    function listsExisting(...keys: string[]): void {
+      storage.list.mockImplementation(() =>
+        (async function* () {
+          for (const key of keys) {
+            yield { key };
+          }
+        })(),
+      );
+    }
+
+    async function writeBackupBlob(key: string): Promise<void> {
+      const filePath = path.join(sourceDir, 'blobs', ...key.split('/'));
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, 'x');
+    }
+
+    beforeEach(() => {
+      backupRepository.hasExistingNamespaces.mockResolvedValue(true);
+    });
+
+    it('DB 복구가 실패하면 스토리지 object를 조회·삭제·복원하지 않고 같은 오류를 던진다', async () => {
+      await writeBackupBlob('ab/one');
+      listsExisting('live/a', 'live/b');
+      dumpTool.restore.mockRejectedValue(new Error('pg_restore 종료 코드 1'));
+
+      await expect(createJob(true).run()).rejects.toThrow('pg_restore 종료 코드 1');
+
+      expect(storage.list).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
+    });
+
+    it('DB 복구 → object put → 백업에 없는 object 삭제 순서로 실행한다', async () => {
+      await writeBackupBlob('ab/one');
+      listsExisting('ab/one', 'stray/x');
+      const calls: string[] = [];
+      dumpTool.restore.mockImplementation(async () => {
+        calls.push('restore');
+      });
+      storage.put.mockImplementation(async (key) => {
+        calls.push(`put:${key}`);
+      });
+      storage.delete.mockImplementation(async (key) => {
+        calls.push(`delete:${key}`);
+      });
+
+      await createJob(true).run();
+
+      expect(calls).toEqual(['restore', 'put:ab/one', 'delete:stray/x']);
+    });
+
+    it('백업에 있는 key는 지우지 않고 없는 key만 지운다', async () => {
+      await writeBackupBlob('ab/one');
+      await writeBackupBlob('cd/two');
+      listsExisting('ab/one', 'cd/two', 'ef/stray', 'gh/stray');
+
+      await expect(createJob(true).run()).resolves.toMatchObject({ restoredObjectCount: 2 });
+
+      expect(storage.delete.mock.calls.map(([key]) => key)).toEqual(['ef/stray', 'gh/stray']);
+    });
+
+    it('object put가 실패하면 기존 object를 삭제하지 않는다', async () => {
+      await writeBackupBlob('ab/one');
+      listsExisting('stray/x');
+      storage.put.mockRejectedValue(new Error('put 실패'));
+
+      await expect(createJob(true).run()).rejects.toThrow('put 실패');
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('백업에 없는 object 삭제가 실패하면 복구를 실패로 끝낸다', async () => {
+      await writeBackupBlob('ab/one');
+      listsExisting('stray/x');
+      storage.delete.mockRejectedValue(new Error('delete 실패'));
+
+      await expect(createJob(true).run()).rejects.toThrow('delete 실패');
+    });
+
+    it('blobs/가 없는 0건 백업은 force에서 기존 object를 전부 삭제한다', async () => {
+      listsExisting('live/a', 'live/b');
+
+      await expect(createJob(true).run()).resolves.toMatchObject({ restoredObjectCount: 0 });
+
+      expect(storage.delete.mock.calls.map(([key]) => key)).toEqual(['live/a', 'live/b']);
+    });
+
+    it('force가 아니면 기존 object를 지우지 않는다', async () => {
+      await writeBackupBlob('ab/one');
+      backupRepository.hasExistingNamespaces.mockResolvedValue(false);
+      listsExisting('live/a');
+
+      await createJob(false).run();
+
+      expect(storage.list).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+  });
 });
