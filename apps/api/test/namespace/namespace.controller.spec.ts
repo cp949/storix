@@ -68,9 +68,11 @@ describe('NamespaceController', () => {
       expect(namespaceService.create).not.toHaveBeenCalled();
     });
 
-    it('키가 없으면 기본 메시지로 거절한다', async () => {
+    it('키가 없으면 생성 경로의 255 byte 안내로 거절한다', async () => {
       const error = await controller.create(undefined, body, res).catch((e: unknown) => e);
-      expect((error as IdempotencyKeyRequiredError).message).toBe('Idempotency-Key 헤더가 필요함');
+      expect((error as IdempotencyKeyRequiredError).message).toBe(
+        'Idempotency-Key 헤더가 필요하며 255 byte 이하여야 함',
+      );
     });
   });
 });

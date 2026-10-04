@@ -11,7 +11,7 @@ export function normalizeMimeType(raw: string | undefined): string {
   }
 
   const primary = raw.split(';')[0]?.trim().toLowerCase() ?? '';
-  // 형식 오류와 같이 관대하게 대체한다(ADR-0028). 길이 초과도 저장 컬럼을 넘지 않게 대체한다.
+  // 형식 오류와 같이 관대하게 대체한다(api ADR-0028). 길이 초과도 저장 컬럼을 넘지 않게 대체한다.
   return primary.length <= MAX_MIME_LENGTH && MIME_PATTERN.test(primary) ? primary : DEFAULT_MIME_TYPE;
 }
 

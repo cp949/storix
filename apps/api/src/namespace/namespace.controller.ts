@@ -33,12 +33,13 @@ export class NamespaceController {
     @Body() body: unknown,
     @Res({ passthrough: true }) res: Response,
   ) {
+    const keyErrorMessage = 'Idempotency-Key 헤더가 필요하며 255 byte 이하여야 함';
     if (!idempotencyKey) {
-      throw new IdempotencyKeyRequiredError();
+      throw new IdempotencyKeyRequiredError(keyErrorMessage);
     }
     // idempotency_key.key가 varchar(255)다. Node는 헤더 값을 latin1로 읽어 문자 수가 곧 byte 수다.
     if (idempotencyKey.length > 255) {
-      throw new IdempotencyKeyRequiredError('Idempotency-Key 헤더가 필요하며 255 byte 이하여야 함');
+      throw new IdempotencyKeyRequiredError(keyErrorMessage);
     }
 
     const { name, idPrefix, encryptionPolicy, accessPolicy, maxTotalLogicalBytes } =
