@@ -74,6 +74,20 @@ Compose 명령에는 실제 배포의 `-f` 조합을 붙인다.
 
 6. migration과 readiness가 성공하면 쓰기와 GC를 재개한다.
 
+## app 종료 동작
+
+`docker compose stop`과 3단계의 `up -d --build`는 `app` 컨테이너에 SIGTERM을 보낸다.
+결정은 [api ADR-0043](../../apps/api/docs/adr/0043-graceful-shutdown.md)이다.
+
+- `app`은 새 연결을 받지 않고 진행 중 요청이 끝나길 기다린다. 그 뒤 DB 연결을 닫고 종료 코드 0으로 끝난다.
+- 대기 상한은 `STORIX_SHUTDOWN_TIMEOUT_SECONDS`(기본 25초)다.
+- 상한을 넘기면 남은 연결을 끊고 종료 코드 1로 끝난다. 끊긴 요청은 응답을 받지 못한다.
+- 종료 중 신호가 다시 오면 기다리지 않고 종료 코드 1로 끝난다.
+- compose `app`의 `stop_grace_period`는 30초다. `STORIX_SHUTDOWN_TIMEOUT_SECONDS`를 올리면 함께 올린다.
+- 업로드 요청은 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 24시간)까지 걸릴 수 있어 상한을 넘기면 끊긴다. 1단계에서 쓰기를 중단하면 업로드가 끝난 뒤 갱신한다.
+- 강제 종료로 남은 업로드 세션과 orphan 객체는 GC가 정리한다.
+- `gc`·`backup`·`restore` 잡은 이 동작의 대상이 아니다. 이 잡들은 `pnpm run`으로 실행되고, `pnpm run`은 SIGTERM을 자식 node에 전달하지 않는다(pnpm 10.28.0 실측). 잡 실행 중에는 갱신하지 않는다.
+
 ## 실패 시 대응
 
 자동 스키마 revert는 지원하지 않는다(api ADR-0017).
