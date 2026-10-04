@@ -47,9 +47,11 @@
   - 이 오류의 응답은 500이다.
   - 새 owner의 claim은 지우지 않는다.
 - 롤백과 저장 사이에 프로세스가 종료되면 claim이 `RESERVED`로 남는다. 응답이 나간 적이 없으므로, lease가 만료된 뒤 같은 key의 요청이 claim을 인수(`generation + 1`)해 다시 평가한다.
-- content 업로드에서 반영이 실패하면(트랜잭션 롤백 또는 claim lost) 업로드한 object 삭제를 시도하고 삭제 실패는 무시한다.
-  - 이 object를 가리키는 Blob row는 없다.
-  - 순서는 롤백 → object 삭제 → 오류 receipt 저장이다.
+- content 업로드에서 반영이 실패하면(트랜잭션 롤백, claim lost, commit 결과 불명) 업로드한 object를 가리키는 Blob row가 있는지 확인한다.
+  - 업로드마다 새 storage key를 만들므로 Blob row는 이 요청이 commit된 경우에만 있다.
+  - Blob row가 없을 때만 object 삭제를 시도하고 삭제 실패는 무시한다.
+  - Blob row가 있거나 확인에 실패하면 삭제하지 않고 orphan GC에 맡긴다. commit ack가 유실된 요청의 공개 파일을 지우지 않기 위해서다.
+  - 순서는 롤백 → 참조 확인 → object 삭제 → 오류 receipt 저장이다.
 - 저장 body에 `requestId`가 들어 있고 헤더 `X-Request-Id`도 최초 값이다.
   - 재생 응답은 이 두 값을 그대로 돌려준다.
   - `Retry-After`는 저장하지 않는다(진행 중 응답은 receipt 대상이 아니다).
