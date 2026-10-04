@@ -29,6 +29,7 @@
 - 조건부 업로드(`POST /fs/content/conditional`)에서 commit 결과가 불명확한 오류(commit은 성공했으나 응답이 유실된 경우)가 나면 업로드한 object를 삭제해 공개 파일의 GET이 실패하던 문제를 수정했다. commit 결과가 불명확하거나 Blob row 참조 확인에 실패하면 object를 보존하고 orphan GC에 맡긴다.
 - PostgreSQL에서 `ls`·`find`·snapshot 목록의 cursor와 `find`의 `name`이 유효하지 않으면 500이 나던 문제를 수정했다. 이제 400이다. 영향을 받은 입력은 UUID가 아닌 `id`나 NUL이 든 `name`을 담은 `ls`·`find` cursor, 존재하지 않는 날짜(`2026-02-30`)와 `0000`년을 담은 snapshot 목록 cursor, 중복되거나 NUL이 든 `find` `name`이다. cursor는 `VFS_INVALID_CURSOR`, `name`은 `VFS_INVALID_QUERY`다. SQLite도 같은 입력을 400으로 거절한다.
 - PostgreSQL에서 `GET /api/v2/namespaces`의 `nl1.` cursor에 NUL이 든 `name`을 담으면 500이 나던 문제를 수정했다. 이제 400 `VFS_INVALID_CURSOR`다. `name`이 namespace name 문법(`^[a-z0-9_-]{1,128}$`)이 아니면 같은 400이다. 서버가 만든 cursor는 항상 이 문법을 만족하므로 정상 순회는 바뀌지 않는다. SQLite도 같은 입력을 400으로 거절한다.
+- PostgreSQL에서 `GET /fs/ls?consistency=revision`의 `rc1.` cursor에 NUL이 든 `name`을 담으면 500이 나던 문제를 수정했다. 이제 400 `VFS_INVALID_CURSOR`다. 서버가 만든 cursor의 `name`은 저장된 노드 이름이라 NUL이 없으므로 정상 순회는 바뀌지 않는다. SQLite도 같은 입력을 400으로 거절한다.
 
 ### Security
 
