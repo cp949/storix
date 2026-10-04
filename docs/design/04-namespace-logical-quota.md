@@ -44,6 +44,7 @@ Receipt와 관리자 변경:
 - quota 변경 후에도 완료 receipt는 그대로 재생되므로 다른 조건으로 시도할 때 새 `Idempotency-Key`를 사용한다.
 - 관리 변경 API는 `STORIX_ADMIN_API_KEY` 전용 guard와 필수 idempotency key를 사용한다.
 - 요청 키는 namespace 범위로 파생 저장되며 canonical request hash가 다르면 충돌한다.
+- 검사 순서는 namespace 존재 확인 → 저장된 응답 재생 또는 key 재사용 충돌 → 전역 상한·마스터 키 검사다. 설정이 바뀐 뒤에도 완료된 요청의 재시도는 최초 응답을 받는다.
 - 변경은 같은 root lock transaction에서 quota 설정과 receipt를 함께 기록한다.
 
 ## 영속화와 운영
