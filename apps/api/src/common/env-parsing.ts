@@ -33,6 +33,25 @@ export function parsePositiveInt(value: string | undefined, fallback: number, ma
   return parsed;
 }
 
+/** `STORIX_PORT`가 없을 때 쓰는 listen 포트다. */
+export const DEFAULT_LISTEN_PORT = 3000;
+
+/**
+ * listen 포트 환경변수를 읽는다.
+ * 값이 없거나 빈 문자열이면 `DEFAULT_LISTEN_PORT`다.
+ *
+ * `0`은 OS가 빈 포트를 배정하는 값이라 허용한다(통합 테스트가 쓴다). 그 밖에는 1~65535의 10진 정수 표기만 받는다.
+ * `listen()`에 문자열을 그대로 넘기면 `3000abc`는 UNIX socket 경로로, `0x1F90`은 8080으로 해석되므로
+ * 문자열을 넘기지 않고 이 함수의 숫자 결과만 넘긴다.
+ */
+export function parseListenPort(value: string | undefined): number {
+  if (value === '0') {
+    return 0;
+  }
+
+  return parsePositiveInt(value, DEFAULT_LISTEN_PORT, MAX_TCP_PORT);
+}
+
 export function requireEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value === '') {

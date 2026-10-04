@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { bootstrapWithEnv } from './common/bootstrap-with-env.js';
 import { configureBodyParsers } from './common/body-parser.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
+import { parseListenPort } from './common/env-parsing.js';
 import { installGracefulShutdown, parseShutdownTimeoutMs } from './common/graceful-shutdown.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
@@ -17,6 +18,7 @@ import { AUDIT_LOG_REPOSITORY } from './persistence/audit-log.tokens.js';
 async function bootstrap() {
   const { AppModule } = await bootstrapWithEnv(() => import('./app.module.js'));
   const shutdownTimeoutMs = parseShutdownTimeoutMs(process.env.STORIX_SHUTDOWN_TIMEOUT_SECONDS);
+  const port = parseListenPort(process.env.STORIX_PORT);
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   installGracefulShutdown(app, shutdownTimeoutMs);
   app.useGlobalFilters(
@@ -27,7 +29,7 @@ async function bootstrap() {
     ),
   );
   configureBodyParsers(app);
-  await app.listen(process.env.STORIX_PORT ?? 3000);
+  await app.listen(port);
 }
 
 // catch()가 없으면 부팅 실패(EncryptionBootGuard의 fail-closed 포함)가 미처리

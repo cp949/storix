@@ -2,6 +2,7 @@ import {
   MAX_TCP_PORT,
   MAX_TIMER_MS,
   parseBoolean,
+  parseListenPort,
   parseOptionalString,
   parsePositiveInt,
   requireEnv,
@@ -52,6 +53,40 @@ describe('parsePositiveInt', () => {
 
   it('타이머 상한은 setTimeout이 받는 32비트 부호 있는 정수의 최댓값이다', () => {
     expect(MAX_TIMER_MS).toBe(2 ** 31 - 1);
+  });
+});
+
+describe('parseListenPort', () => {
+  it('값이 없거나 빈 문자열이면 기본 포트 3000을 반환한다', () => {
+    expect(parseListenPort(undefined)).toBe(3000);
+    expect(parseListenPort('')).toBe(3000);
+  });
+
+  it.each([
+    ['0', 0],
+    ['3000', 3000],
+    ['8080', 8080],
+    ['65535', 65535],
+  ])('유효한 포트 %j는 %d로 변환한다', (value, expected) => {
+    expect(parseListenPort(value)).toBe(expected);
+  });
+
+  // listen()은 문자열을 받으면 포트가 아니라 UNIX socket 경로나 Number() 해석으로 처리한다.
+  it.each([
+    '3000abc',
+    '0x1F90',
+    '1e3',
+    ' 3000',
+    '3000 ',
+    '+3000',
+    '-1',
+    '03000',
+    '3000.0',
+    '65536',
+    'abc',
+    ' ',
+  ])('포트로 해석할 수 없거나 범위를 벗어난 %j는 거부한다', (value) => {
+    expect(() => parseListenPort(value)).toThrow('잘못된 정수 환경변수 값');
   });
 });
 

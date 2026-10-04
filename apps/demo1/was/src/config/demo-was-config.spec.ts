@@ -68,6 +68,14 @@ describe('loadDemoWasConfig', () => {
     });
   });
 
+  it.each(['4000abc', '0x1F90', '1e3', '65536'])('DEMO_WAS_PORT가 %j면 설정 로딩을 거부한다', (value) => {
+    process.env.DEMO_WAS_STORIX_BASE_URL = 'http://localhost:3000';
+    process.env.DEMO_WAS_STORIX_API_KEY = 'test-key';
+    process.env.DEMO_WAS_PORT = value;
+
+    expect(() => loadDemoWasConfig()).toThrow('잘못된 정수 환경변수 값');
+  });
+
   it('고정 private namespace UUID를 읽는다', () => {
     process.env.DEMO_WAS_STORIX_BASE_URL = 'http://localhost:3000';
     process.env.DEMO_WAS_STORIX_API_KEY = 'test-key';

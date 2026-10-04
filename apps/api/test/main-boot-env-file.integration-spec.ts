@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { buildApp, runMigrations, runProcess, stripSecretEnv } from './boot-env-file-harness.js';
@@ -56,5 +56,38 @@ describe('main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', () =>
 
     expect(output).not.toContain('DataTypeNotSupportedError');
     expect(output).toContain('Nest application successfully started');
+  }, 30000);
+
+  it('STORIX_PORT가 정수 표기가 아니면 부팅을 거부하고 같은 이름의 socket 파일을 만들지 않는다', async () => {
+    const sqlitePath = path.join(workDir, 'storix.sqlite');
+    runMigrations(sqlitePath);
+
+    writeFileSync(
+      path.join(workDir, '.env'),
+      [
+        'STORIX_DB_DRIVER=sqlite',
+        `STORIX_DB_SQLITE_PATH=${sqlitePath}`,
+        'STORIX_API_KEY=test-key-0123456789',
+        'STORIX_STORAGE_ENDPOINT=127.0.0.1',
+        'STORIX_STORAGE_ACCESS_KEY=test-access',
+        'STORIX_STORAGE_SECRET_KEY=test-secret',
+        'STORIX_STORAGE_BUCKET=test-bucket',
+        'STORIX_PORT=3000abc',
+        '',
+      ].join('\n'),
+    );
+
+    const { output, exitCode } = await runProcess({
+      cwd: workDir,
+      distFile: 'main.js',
+      env: { ...stripSecretEnv(process.env), STORIX_DB_DRIVER: undefined },
+      timeoutMs: 20000,
+      untilOutputIncludes: 'Nest application successfully started',
+    });
+
+    expect(output).not.toContain('Nest application successfully started');
+    expect(output).toContain('잘못된 정수 환경변수 값: 3000abc');
+    expect(exitCode).toBe(1);
+    expect(existsSync(path.join(workDir, '3000abc'))).toBe(false);
   }, 30000);
 });
