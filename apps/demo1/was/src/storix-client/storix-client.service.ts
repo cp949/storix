@@ -16,13 +16,21 @@ import type {
   UploadSessionStatus,
   UploadSessionCompleteResult,
 } from './storix-client.types.js';
-import { StorixClientNotBootstrappedError } from './storix-client.errors.js';
+import { StorixApiError, StorixClientNotBootstrappedError } from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
 import { derivePublicPath } from './public-path.js';
 
 interface NamespaceCreateResponse {
   readonly id: string;
 }
+
+interface NamespaceListPage {
+  readonly items: ReadonlyArray<{ id: string; name: string | null; accessPolicy: 'PRIVATE' | 'PUBLIC' }>;
+  readonly nextCursor: string | null;
+}
+
+// 이름이 이미 있다는 Storix의 도메인 오류 코드.
+const NAMESPACE_ALREADY_EXISTS = 'NAMESPACE_ALREADY_EXISTS';
 
 @Injectable()
 export class StorixClient implements StorixClientPort {
@@ -262,18 +270,57 @@ export class StorixClient implements StorixClientPort {
     });
   }
 
+  /**
+   * namespace를 생성하고 id를 돌려준다. 고정 Idempotency-Key의 receipt는 Storix가 30일 뒤 지우므로,
+   * 그 뒤 재기동하면 이름 충돌 409가 나온다. 이때는 이름과 accessPolicy가 같은 기존 namespace를 찾아 쓴다.
+   */
   private async createNamespace(
     name: string,
     accessPolicy: 'PRIVATE' | 'PUBLIC',
     idempotencyKey: string,
   ): Promise<string> {
-    const response = await this.http.requestJson<NamespaceCreateResponse>({
-      method: 'POST',
-      path: '/api/v2/namespaces',
-      headers: { 'idempotency-key': idempotencyKey },
-      json: { name, encryptionPolicy: 'NONE', accessPolicy },
-    });
-    return response.id;
+    try {
+      const response = await this.http.requestJson<NamespaceCreateResponse>({
+        method: 'POST',
+        path: '/api/v2/namespaces',
+        headers: { 'idempotency-key': idempotencyKey },
+        json: { name, encryptionPolicy: 'NONE', accessPolicy },
+      });
+      return response.id;
+    } catch (error) {
+      if (
+        !(error instanceof StorixApiError) ||
+        error.status !== 409 ||
+        error.code !== NAMESPACE_ALREADY_EXISTS
+      ) {
+        throw error;
+      }
+      const existingId = await this.findNamespaceId(name, accessPolicy);
+      if (existingId === undefined) throw error;
+      return existingId;
+    }
+  }
+
+  /**
+   * ACTIVE namespace 목록을 끝까지 순회해 이름과 accessPolicy가 모두 같은 항목의 id를 찾는다.
+   * Storix에 이름 조회 API가 없어 전체를 훑는다. 데모가 namespace 수가 적은 인스턴스에 붙는다는 전제다.
+   */
+  private async findNamespaceId(
+    name: string,
+    accessPolicy: 'PRIVATE' | 'PUBLIC',
+  ): Promise<string | undefined> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.http.requestJson<NamespaceListPage>({
+        method: 'GET',
+        path: '/api/v2/namespaces',
+        query: { limit: '1000', cursor },
+      });
+      const found = page.items.find((item) => item.name === name && item.accessPolicy === accessPolicy);
+      if (found) return found.id;
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    return undefined;
   }
 }
 

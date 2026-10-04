@@ -92,6 +92,82 @@ describe('StorixClient — namespace 부트스트랩', () => {
       accessPolicy: 'PUBLIC',
     });
   });
+
+  describe('고정 키 receipt가 만료돼 이름 충돌 409가 나는 경우', () => {
+    const conflict = { code: 'NAMESPACE_ALREADY_EXISTS', message: '이미 존재함', requestId: 'req-1' };
+    const entry = (id: string, name: string, accessPolicy: 'PRIVATE' | 'PUBLIC') => ({
+      id,
+      name,
+      accessPolicy,
+    });
+
+    it('이름·accessPolicy가 일치하는 기존 namespace의 id를 쓴다', async () => {
+      const spy = mockFetchOnce(409, conflict);
+      mockFetchOnce(200, {
+        items: [entry('ns-other', 'a', 'PRIVATE'), entry('ns-public-existing', 'demo-public', 'PUBLIC')],
+        nextCursor: null,
+      });
+
+      await expect(client.ensurePublicNamespace()).resolves.toBe('ns-public-existing');
+
+      const [listUrl, listInit] = spy.mock.calls[1] as [URL, RequestInit];
+      expect(listUrl.pathname).toBe('/api/v2/namespaces');
+      expect(listUrl.searchParams.get('limit')).toBe('1000');
+      expect(listUrl.searchParams.has('cursor')).toBe(false);
+      expect(listInit.method).toBe('GET');
+    });
+
+    it('PRIVATE namespace도 같은 방식으로 찾는다', async () => {
+      mockFetchOnce(409, conflict);
+      mockFetchOnce(200, { items: [entry('ns-private-existing', 'demo', 'PRIVATE')], nextCursor: null });
+
+      await expect(client.ensureDemoNamespace()).resolves.toBe('ns-private-existing');
+    });
+
+    it('nextCursor를 따라 여러 페이지를 순회하고 찾으면 중단한다', async () => {
+      const spy = mockFetchOnce(409, conflict);
+      mockFetchOnce(200, { items: [entry('ns-1', 'a', 'PRIVATE')], nextCursor: 'cursor-1' });
+      mockFetchOnce(200, { items: [entry('ns-found', 'demo-public', 'PUBLIC')], nextCursor: 'cursor-2' });
+
+      await expect(client.ensurePublicNamespace()).resolves.toBe('ns-found');
+
+      expect(spy).toHaveBeenCalledTimes(3);
+      const [secondUrl] = spy.mock.calls[2] as [URL];
+      expect(secondUrl.searchParams.get('cursor')).toBe('cursor-1');
+    });
+
+    it('이름은 같지만 accessPolicy가 다르면 원래 409를 던진다', async () => {
+      mockFetchOnce(409, conflict);
+      mockFetchOnce(200, { items: [entry('ns-private', 'demo-public', 'PRIVATE')], nextCursor: null });
+
+      await expect(client.ensurePublicNamespace()).rejects.toMatchObject({
+        status: 409,
+        code: 'NAMESPACE_ALREADY_EXISTS',
+      });
+    });
+
+    it('일치하는 항목이 끝까지 없으면 원래 409를 던진다', async () => {
+      mockFetchOnce(409, conflict);
+      mockFetchOnce(200, { items: [entry('ns-1', 'a', 'PUBLIC')], nextCursor: 'cursor-1' });
+      mockFetchOnce(200, { items: [], nextCursor: null });
+
+      await expect(client.ensurePublicNamespace()).rejects.toMatchObject({
+        status: 409,
+        code: 'NAMESPACE_ALREADY_EXISTS',
+      });
+    });
+
+    it.each([
+      [409, 'IDEMPOTENCY_KEY_REUSED'],
+      [401, 'UNAUTHORIZED'],
+      [500, 'INTERNAL_ERROR'],
+    ])('status %i·code %s이면 list를 호출하지 않고 전파한다', async (status, code) => {
+      const spy = mockFetchOnce(status, { code, message: '실패', requestId: 'req-2' });
+
+      await expect(client.ensurePublicNamespace()).rejects.toMatchObject({ status, code });
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('StorixClient — VFS 조작', () => {
