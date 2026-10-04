@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- namespace 삭제 정리에서 `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 200,000) 소진으로 orphan-blobs 단계가 멈춘 실행이 grace가 지난 남은 Blob을 `STORAGE_DELETE_FAILED`로 표시하던 문제를 수정했다. 스토리지 장애 없이 Blob이 많은 namespace(예: 30만 개)를 삭제하면 첫 GC 뒤 관리자 조회에 삭제 실패가 보였고 다음 실행에서 해제됐다. 이제 예산 소진 실행은 판정을 보류하고 `blockedReason`을 바꾸지 않는다. 실제 삭제 실패는 예산 소진 없이 끝난 실행에서 기존처럼 표시된다.
 - `STORIX_PORT`와 demo1 WAS의 `DEMO_WAS_PORT`가 정수가 아닌 값을 받아도 부팅하던 문제를 수정했다. `STORIX_PORT=3000abc`는 현재 디렉터리에 같은 이름의 UNIX socket 파일을 만들고 listen했고, `0x1F90`은 8080으로 listen했다. 이제 1~65535의 10진 정수(api의 `STORIX_PORT`는 `0` 포함)가 아니면 부팅을 거부한다. `0x1F90`·`1e3`·`5.0` 같은 표기를 쓰던 배포는 10진 정수로 바꿔야 한다. 컨테이너는 `STORIX_PORT: "3000"`으로 고정되어 영향이 없다.
 - `POST /api/v2/namespaces`와 `PATCH /admin/namespaces/{id}/quota`가 같은 `Idempotency-Key`의 완료 요청을 재시도할 때, 전역 quota 상한(`STORIX_MAX_TOTAL_LOGICAL_BYTES`)이나 마스터 키(`STORIX_ENCRYPTION_MASTER_KEY`) 설정이 바뀌어 있으면 저장된 응답 대신 오류를 반환하던 문제를 수정했다. 이제 저장된 응답 재생과 key 재사용 충돌 판정이 이 검사보다 먼저다. `PATCH /admin/namespaces/{id}/quota`에서 없는 namespace에 전역 상한을 넘는 값을 보내면 400 `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL` 대신 404 `NAMESPACE_NOT_FOUND`를 반환한다(`PATCH .../settings`와 같은 순서).
 - `GET /health/ready`의 스토리지 검사(`HeadBucket`)에 3초 timeout을 추가했다. 이전에는 스토리지가 연결만 받고 응답하지 않으면 요청이 끝나지 않고 쌓여 공유 소켓 풀을 점유했다. 이제 3초 뒤 요청을 취소하고 503으로 응답하며, 원인(`storage check timed out after 3000ms`)은 서버 로그에 남는다. 컨테이너 healthcheck(timeout 5초) 안에 응답한다. 업로드·다운로드용 S3 클라이언트의 timeout은 바뀌지 않는다.

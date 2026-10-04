@@ -352,6 +352,60 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     expect(await f.op()).toMatchObject({ phase: 'COMPLETED', blockedReason: null });
   });
 
+  /** orphan-blobs 단계의 한 page(500행)를 넘는 grace 경과 Blob을 만든다. 예산이 1이라 한 page 뒤 소진된다. */
+  async function addOverdueBlobs(f: Awaited<ReturnType<typeof fixture>>, count: number) {
+    const zeroSince = new Date(Date.now() - 10_000);
+    for (let offset = 0; offset < count; offset += 100) {
+      await f.dataSource.manager.insert(
+        BlobEntity,
+        Array.from({ length: Math.min(100, count - offset) }, () => ({
+          namespaceId: f.ns.id,
+          storageKey: `blobs/ab/${randomUUID()}`,
+          size: '7',
+          mimeType: 'text/plain',
+          sha256: 'f'.repeat(64),
+          referenceCount: 0,
+          zeroSince,
+        })),
+      );
+    }
+  }
+
+  it('orphan-blobs 단계가 예산 소진으로 멈춰도 남은 Blob을 STORAGE_DELETE_FAILED로 표시하지 않는다', async () => {
+    const f = await fixture();
+    const blob = await content(f);
+    await f.accept();
+    await f.cleanup.advance(new Date());
+    await f.setZeroSinceSecondsAgo(blob.id, 10);
+    await addOverdueBlobs(f, 600);
+
+    const first = await f.job.run();
+
+    expect(first.budgetExhaustedStages).toContain('orphan-blobs');
+    expect(await f.dataSource.manager.countBy(BlobEntity, { namespaceId: f.ns.id })).toBeGreaterThan(0);
+    expect(await f.op()).toMatchObject({ phase: 'OBJECTS', blockedReason: null });
+    for (let run = 0; run < 5 && (await f.op()).phase !== 'COMPLETED'; run++) {
+      await f.job.run();
+      expect((await f.op()).blockedReason).toBeNull();
+    }
+    expect(await f.op()).toMatchObject({ phase: 'COMPLETED', blockedReason: null });
+  });
+
+  it('orphan-blobs 단계가 예산 소진으로 멈춘 실행은 이전의 STORAGE_DELETE_FAILED를 지우지 않는다', async () => {
+    const f = await fixture();
+    const blob = await content(f);
+    await f.accept();
+    await f.cleanup.advance(new Date());
+    await f.setZeroSinceSecondsAgo(blob.id, 10);
+    await addOverdueBlobs(f, 600);
+    await f.repository.setBlocked(f.ns.id, 'STORAGE_DELETE_FAILED');
+
+    const first = await f.job.run();
+
+    expect(first.budgetExhaustedStages).toContain('orphan-blobs');
+    expect((await f.op()).blockedReason).toBe('STORAGE_DELETE_FAILED');
+  });
+
   it('object 삭제 성공 후 Blob row 삭제가 실패하면 다음 실행이 재시도한다', async () => {
     const f = await fixture();
     const blob = await content(f);

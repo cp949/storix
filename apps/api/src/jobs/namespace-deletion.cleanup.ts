@@ -117,12 +117,19 @@ export class NamespaceDeletionCleanup {
     );
   }
 
-  /** 기존 GC의 object 삭제 뒤 grace·tombstone·session·counter를 확인한다. */
+  /**
+   * 기존 GC의 object 삭제 뒤 grace·tombstone·session·counter를 확인한다.
+   *
+   * `orphanBlobsExhausted`는 이번 실행의 orphan-blobs 단계가 예산 소진으로 멈췄다는 뜻이다.
+   * 이때 grace가 지난 Blob은 삭제에 실패한 것이 아니라 아직 처리하지 못한 것일 수 있다.
+   * 실패로 단정하지 않고 `blockedReason`을 설정하지도 지우지도 않는다. 다음 실행이 다시 판정한다.
+   */
   async settle(
     cutoff: Date,
     now: Date,
     after: string | null = null,
     limit = 100,
+    orphanBlobsExhausted = false,
   ): Promise<NamespaceDeletionPage> {
     return this.visit(
       async (op) => {
@@ -132,7 +139,8 @@ export class NamespaceDeletionCleanup {
         const objects = await this.repository.inspectObjects(op.namespaceId, cutoff);
         if (objects.referenced) throw new DataInconsistencyError('참조 중 Blob이 남았다');
         if (objects.overdue) {
-          await this.repository.setBlocked(op.namespaceId, 'STORAGE_DELETE_FAILED');
+          if (!orphanBlobsExhausted)
+            await this.repository.setBlocked(op.namespaceId, 'STORAGE_DELETE_FAILED');
           return unchanged;
         }
         if (objects.pending) {

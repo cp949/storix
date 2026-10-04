@@ -244,6 +244,53 @@ describe('GcJob', () => {
       expect(blobs.deletedRows).toEqual(['retry']);
     });
 
+    describe('namespace 삭제 settle에 orphan-blobs 소진 여부를 전달한다', () => {
+      function runWith(orphanCount: number) {
+        const rows = Array.from({ length: orphanCount }, (_, i) =>
+          row(`s${String(i).padStart(4, '0')}`, '2026-01-01 00:00:00'),
+        );
+        const page = { advanced: 0, completed: 0, failed: 0, examined: 0, next: null };
+        const settle = jest.fn<NamespaceDeletionCleanup['settle']>().mockResolvedValue(page);
+        const cleanup = {
+          advance: jest.fn<NamespaceDeletionCleanup['advance']>().mockResolvedValue(page),
+          settle,
+        } as unknown as NamespaceDeletionCleanup;
+        const config = {
+          get: (key: string) => (key === 'STORIX_GC_MAX_ROWS_PER_STAGE' ? '500' : '3600'),
+        } as unknown as ConfigService;
+        const job = new GcJob(
+          new PagedStorage().asBlobStorage(),
+          new BlobRepositoryDouble(new Set(), rows).asBlobRepository(),
+          config,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          cleanup,
+        );
+        return { job, settle };
+      }
+
+      it('orphan-blobs 단계가 예산 소진으로 멈추면 true를 전달한다', async () => {
+        const { job, settle } = runWith(800);
+
+        const result = await job.run();
+
+        expect(result.budgetExhaustedStages).toContain('orphan-blobs');
+        expect(settle.mock.calls[0][4]).toBe(true);
+      });
+
+      it('orphan-blobs 단계가 끝까지 돌면 false를 전달한다', async () => {
+        const { job, settle } = runWith(10);
+
+        const result = await job.run();
+
+        expect(result.budgetExhaustedStages).not.toContain('orphan-blobs');
+        expect(settle.mock.calls[0][4]).toBe(false);
+      });
+    });
+
     it('예산이 소진되면 cursor를 저장하고 다음 실행이 그 위치에서 이어간다', async () => {
       const rows = Array.from({ length: 800 }, (_, i) =>
         row(`c${String(i).padStart(4, '0')}`, '2026-01-01 00:00:00'),

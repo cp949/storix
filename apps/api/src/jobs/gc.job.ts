@@ -123,7 +123,13 @@ export class GcJob {
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff, exhausted);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff, exhausted);
     const settled = await this.visitNamespaceDeletions('namespace-deletion-settle', exhausted, (after) =>
-      this.namespaceDeletion!.settle(cutoff, now, after, NAMESPACE_DELETION_PAGE_SIZE),
+      this.namespaceDeletion!.settle(
+        cutoff,
+        now,
+        after,
+        NAMESPACE_DELETION_PAGE_SIZE,
+        exhausted.includes(ORPHAN_BLOBS_CURSOR),
+      ),
     );
     const purgedNamespaces = await this.purgeDeletedNamespaces(exhausted);
     const prunedMutationReceipts = await this.pruneReceipts(exhausted);
