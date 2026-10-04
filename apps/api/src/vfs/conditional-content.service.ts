@@ -285,7 +285,10 @@ export class ConditionalContentService {
           .findKnownStorageKeys([storageKey])
           .then((known) => known.has(storageKey))
           .catch(() => true);
-        if (!referenced) await this.storage.delete(storageKey).catch(() => undefined);
+        // 5xx와 비도메인 오류는 commit 완료 여부를 판정할 수 없어 보존한다.
+        // 삭제 규칙은 docs/design/02-receipt-error-replay.md "content 업로드"를 따른다.
+        if (!referenced && error instanceof DomainError && error.status < 500)
+          await this.storage.delete(storageKey).catch(() => undefined);
         return await storeErrorReceipt(this.receipts, owner, error, requestId);
       }
     } catch (error) {

@@ -303,18 +303,19 @@ describe('ConditionalContentService 오류 receipt', () => {
     expect(release).not.toHaveBeenCalled();
   });
 
-  it('업로드 뒤 일반 Error는 object 삭제 후 claim을 해제하고 다시 던진다', async () => {
+  it('업로드 뒤 commit 결과를 알 수 없는 일반 Error는 object를 보존한다', async () => {
     putConditionalContent.mockRejectedValueOnce(new Error('database unavailable'));
 
     await expect(upload('/valid', 'true', undefined)).rejects.toThrow('database unavailable');
-    expect(deleteObject).toHaveBeenCalledWith('object-key');
+    expect(deleteObject).not.toHaveBeenCalled();
+    expect(findKnownStorageKeys).toHaveBeenCalledWith(['object-key']);
     expect(completeAfterRollback).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('commit 결과가 불명확한 오류에서 Blob row가 참조 중이면 object를 보존한다', async () => {
     withMutation.mockRejectedValueOnce(new Error('connection lost after commit'));
-    findKnownStorageKeys.mockResolvedValueOnce(new Set(['object-key']));
+    findKnownStorageKeys.mockResolvedValueOnce(new Set());
 
     await expect(upload('/valid', 'true', undefined)).rejects.toThrow('connection lost after commit');
 

@@ -192,7 +192,7 @@ describe('conditional content 삭제 중 claim 소실 (SQLite)', () => {
         status: 'DELETING',
         liveFileByteCount: 0,
       });
-      expect(deleteObject).toHaveBeenCalledWith('blocked-object');
+      expect(deleteObject).not.toHaveBeenCalled();
     } finally {
       resume.resolve();
       await outcome;
