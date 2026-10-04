@@ -58,6 +58,20 @@ pnpm --filter @cp949/storix-demo1-web dev
 `http://localhost:5173/` 접속. `apps/api`까지 로컬로 준비해야 해서 1번보다
 준비물이 많다 — Storix API 서버를 이미 운영 중이 아니면 1번을 권장한다.
 
+### 기동 시 namespace 확보
+
+WAS는 기동할 때마다 `demo`(PRIVATE)와 `demo-public`(PUBLIC) namespace를 확보한다.
+`DEMO_WAS_NAMESPACE_ID`를 설정하면 private는 생성하지 않는다.
+
+1. 고정 `Idempotency-Key`(`demo-was:namespace:private`·`demo-was:namespace:public`)로
+   `POST /api/v2/namespaces`를 호출한다. Storix는 이 키의 결과를 30일간 재생한다.
+2. 30일이 지나 receipt가 지워진 뒤 이름이 이미 있으면 `409 NAMESPACE_ALREADY_EXISTS`가
+   온다. WAS는 `GET /api/v2/namespaces?limit=1000`을 끝까지 순회해 이름과
+   `accessPolicy`가 같은 namespace의 id를 쓴다. 일치하는 항목이 없으면 부팅이 실패한다.
+
+이름 조회 API가 없어 목록 전체를 순회한다. 데모는 namespace 수가 적은 Storix 인스턴스에
+붙는다는 전제다.
+
 ### 재개 업로드용 private namespace 준비
 
 all-in-one 스택(compose)에서는 아래 수동 절차 대신
