@@ -54,6 +54,10 @@ describe('job 진입점 모듈 부팅 통합', () => {
     'STORIX_STORAGE_PATH_STYLE',
     'STORIX_STORAGE_REGION',
     'STORIX_ORPHAN_GRACE_PERIOD',
+    'STORIX_GC_MIN_INTERVAL',
+    'STORIX_VFS_CHANGE_RETENTION_DAYS',
+    'STORIX_NAMESPACE_DELETED_RETENTION_DAYS',
+    'STORIX_GC_MAX_ROWS_PER_STAGE',
     'STORIX_BACKUP_DIR',
     'STORIX_RESTORE_SOURCE_DIR',
     'STORIX_RESTORE_FORCE',
@@ -110,8 +114,16 @@ describe('job 진입점 모듈 부팅 통합', () => {
   });
 
   it('gc 서비스 env var만으로 GcJobModule이 부팅되고 BackupJob/RestoreJob은 생성되지 않는다', async () => {
+    // docker-compose.yml의 gc 서비스가 기본값으로 넘기는 값과 같다.
     const context = await bootWith(
-      { ...sharedComposeEnv(), STORIX_ORPHAN_GRACE_PERIOD: '86400' },
+      {
+        ...sharedComposeEnv(),
+        STORIX_ORPHAN_GRACE_PERIOD: '86400',
+        STORIX_GC_MIN_INTERVAL: '3600',
+        STORIX_VFS_CHANGE_RETENTION_DAYS: '30',
+        STORIX_NAMESPACE_DELETED_RETENTION_DAYS: '30',
+        STORIX_GC_MAX_ROWS_PER_STAGE: '200000',
+      },
       GcAppModuleFixture,
     );
 

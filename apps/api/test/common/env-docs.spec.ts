@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { parse } from 'yaml';
 
 // 코드가 읽지 않고 compose 보간에만 쓰이는 변수. .env.example과 README 표에는
 // 있어야 하지만 apps/api/src에는 등장하지 않는다.
@@ -80,6 +81,133 @@ function readmeEnvTableKeys(path: string): Set<string> {
   return keys;
 }
 
+type ComposeService = 'app' | 'migrate' | 'gc' | 'backup' | 'restore';
+
+// README 변수표 "읽는 곳" 값이 가리키는 compose 서비스. README의 범례(`모두`, `app·잡`)와 같다.
+// `compose`(코드가 읽지 않는 보간 값)는 컨테이너 전달 대상이 아니라서 없다.
+const SERVICES_BY_READER: Record<string, ComposeService[]> = {
+  모두: ['app', 'migrate', 'gc', 'backup', 'restore'],
+  'app·잡': ['app', 'gc', 'backup', 'restore'],
+  app: ['app'],
+  gc: ['gc'],
+  backup: ['backup'],
+  restore: ['restore'],
+};
+
+interface ReadmeEnvRow {
+  name: string;
+  reader: string;
+}
+
+interface UnforwardedAllowance {
+  variable: string;
+  services: ComposeService[];
+  /** 전달하지 않는 이유. 의도라면 근거 문서, 미결이면 후속 issue 번호다. */
+  reason: string;
+}
+
+// README가 읽는다고 적었지만 compose가 전달하지 않는 변수의 허용 목록이다.
+// 항목은 이유를 함께 적고, 전달하게 되면 이 목록에서 지운다(낡은 항목은 아래 테스트가 잡는다).
+const UNFORWARDED_ALLOWANCES: UnforwardedAllowance[] = [
+  {
+    variable: 'STORIX_SECRET_ADAPTERS',
+    services: ['app', 'migrate', 'gc', 'backup', 'restore'],
+    reason:
+      '의도: 기본 compose는 통신형 비밀값 설정을 넘기지 않는다. docs/design/15-secret-sources.md "compose 전달 범위"',
+  },
+  {
+    variable: 'STORIX_SECRET_RESOLVE_TIMEOUT_MS',
+    services: ['app', 'migrate', 'gc', 'backup', 'restore'],
+    reason:
+      '의도: 기본 compose는 통신형 비밀값 설정을 넘기지 않는다. docs/design/15-secret-sources.md "compose 전달 범위"',
+  },
+  {
+    variable: 'STORIX_VFS_CAPABILITIES_CONFIG_PATH',
+    services: ['app'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+  {
+    variable: 'STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH',
+    services: ['app'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+  {
+    variable: 'STORIX_SENTRY_DSN',
+    services: ['app', 'gc', 'backup', 'restore'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+  {
+    variable: 'STORIX_STORAGE_PUBLIC_ENDPOINT',
+    services: ['gc', 'backup', 'restore'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+  {
+    variable: 'STORIX_STORAGE_PUBLIC_PORT',
+    services: ['gc', 'backup', 'restore'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+  {
+    variable: 'STORIX_STORAGE_PUBLIC_USE_SSL',
+    services: ['gc', 'backup', 'restore'],
+    reason: '전달 여부 미결. GitHub 이슈 #20',
+  },
+];
+
+// README `## 환경변수` 절 표의 행에서 변수명과 "읽는 곳"(4번째 열)을 뽑는다.
+function readmeEnvRows(readme: string): ReadmeEnvRow[] {
+  const start = readme.indexOf('\n## 환경변수');
+  if (start < 0) {
+    throw new Error('README.md에 "## 환경변수" 절이 없음');
+  }
+  const rest = readme.slice(start + 1);
+  const end = rest.indexOf('\n## ', 1);
+  const section = end < 0 ? rest : rest.slice(0, end);
+  const rows: ReadmeEnvRow[] = [];
+  for (const line of section.split('\n')) {
+    const name = /^\| `(STORIX_[A-Z0-9_]+)`/.exec(line)?.[1];
+    if (name === undefined) continue;
+    rows.push({ name, reader: line.split('|')[4]?.trim() ?? '' });
+  }
+  return rows;
+}
+
+// compose 파일의 서비스별 `environment` 키 집합. YAML 앵커·merge key(`<<`)를 펼쳐서 읽는다.
+function composeEnvKeys(composeText: string): Record<string, Set<string>> {
+  const parsed = parse(composeText, { merge: true }) as {
+    services: Record<string, { environment?: Record<string, unknown> }>;
+  };
+  return Object.fromEntries(
+    Object.entries(parsed.services).map(([service, definition]) => [
+      service,
+      new Set(Object.keys(definition.environment ?? {})),
+    ]),
+  );
+}
+
+// README가 서비스가 읽는다고 적었는데 compose `environment`에 없는 `서비스:변수`를 허용 목록을 빼고 돌려준다.
+// 허용 목록이 낡은 항목(README가 요구하지 않거나 이미 전달 중)은 `stale`로 돌려준다.
+function findComposeForwardingGaps(
+  rows: ReadmeEnvRow[],
+  composeEnv: Record<string, Set<string>>,
+  allowances: UnforwardedAllowance[],
+): { missing: string[]; stale: string[] } {
+  const required = new Set<string>();
+  for (const { name, reader } of rows) {
+    for (const service of SERVICES_BY_READER[reader] ?? []) {
+      required.add(`${service}:${name}`);
+    }
+  }
+  const allowed = new Set(allowances.flatMap((a) => a.services.map((service) => `${service}:${a.variable}`)));
+  const forwarded = (key: string): boolean => {
+    const [service, name] = key.split(':');
+    return composeEnv[service]?.has(name) ?? false;
+  };
+
+  const missing = [...required].filter((key) => !forwarded(key) && !allowed.has(key)).sort();
+  const stale = [...allowed].filter((key) => !required.has(key) || forwarded(key)).sort();
+  return { missing, stale };
+}
+
 function sortedDiff(a: Set<string>, b: Set<string>): string[] {
   return [...a].filter((name) => !b.has(name)).sort();
 }
@@ -136,5 +264,123 @@ describe('환경변수 문서 동기화', () => {
 
   it('README 환경변수 표에만 있는 키는 compose 전용 허용 목록과 일치한다', () => {
     expect(sortedDiff(readmeKeys, codeVars)).toEqual([...COMPOSE_ONLY_VARS].sort());
+  });
+});
+
+describe('compose 전달 범위 검사 함수', () => {
+  const rows: ReadmeEnvRow[] = [
+    { name: 'STORIX_A', reader: 'gc' },
+    { name: 'STORIX_B', reader: 'app·잡' },
+    { name: 'STORIX_C', reader: 'compose' },
+  ];
+  const noneAllowed: UnforwardedAllowance[] = [];
+
+  it('README가 gc에서 읽는다고 적은 변수가 gc environment에 없으면 누락으로 잡는다', () => {
+    const composeEnv = {
+      app: new Set(['STORIX_B']),
+      gc: new Set(['STORIX_B']),
+      backup: new Set(['STORIX_B']),
+      restore: new Set(['STORIX_B']),
+    };
+
+    expect(findComposeForwardingGaps(rows, composeEnv, noneAllowed).missing).toEqual(['gc:STORIX_A']);
+  });
+
+  it('app·잡은 app·gc·backup·restore 모두에서 요구한다', () => {
+    const composeEnv = {
+      app: new Set(['STORIX_B']),
+      gc: new Set(['STORIX_A']),
+      backup: new Set<string>(),
+      restore: new Set<string>(),
+    };
+
+    expect(findComposeForwardingGaps(rows, composeEnv, noneAllowed).missing).toEqual([
+      'backup:STORIX_B',
+      'gc:STORIX_B',
+      'restore:STORIX_B',
+    ]);
+  });
+
+  it('compose 전용 변수는 요구하지 않는다', () => {
+    const composeEnv = {
+      app: new Set(['STORIX_B']),
+      gc: new Set(['STORIX_A', 'STORIX_B']),
+      backup: new Set(['STORIX_B']),
+      restore: new Set(['STORIX_B']),
+    };
+
+    expect(findComposeForwardingGaps(rows, composeEnv, noneAllowed)).toEqual({ missing: [], stale: [] });
+  });
+
+  it('허용 목록에 있는 서비스·변수는 누락으로 보지 않는다', () => {
+    const composeEnv = {
+      app: new Set(['STORIX_B']),
+      gc: new Set(['STORIX_B']),
+      backup: new Set(['STORIX_B']),
+      restore: new Set(['STORIX_B']),
+    };
+    const allowances = [{ variable: 'STORIX_A', services: ['gc' as const], reason: '테스트' }];
+
+    expect(findComposeForwardingGaps(rows, composeEnv, allowances)).toEqual({ missing: [], stale: [] });
+  });
+
+  it('이미 전달 중이거나 README가 요구하지 않는 허용 항목은 낡은 항목으로 잡는다', () => {
+    const composeEnv = {
+      app: new Set(['STORIX_B']),
+      gc: new Set(['STORIX_A', 'STORIX_B']),
+      backup: new Set(['STORIX_B']),
+      restore: new Set(['STORIX_B']),
+    };
+    const allowances = [
+      { variable: 'STORIX_A', services: ['gc' as const], reason: '이미 전달 중' },
+      { variable: 'STORIX_A', services: ['app' as const], reason: 'README가 app에서 읽는다고 적지 않음' },
+    ];
+
+    expect(findComposeForwardingGaps(rows, composeEnv, allowances).stale).toEqual([
+      'app:STORIX_A',
+      'gc:STORIX_A',
+    ]);
+  });
+
+  it('YAML 앵커와 merge key를 펼쳐서 서비스별 environment 키를 읽는다', () => {
+    const compose = [
+      'x-shared: &shared',
+      '  STORIX_SHARED: a',
+      'services:',
+      '  gc:',
+      '    environment:',
+      '      <<: [*shared]',
+      '      STORIX_OWN: b',
+      '  migrate: {}',
+    ].join('\n');
+
+    const keys = composeEnvKeys(compose);
+
+    expect([...keys.gc].sort()).toEqual(['STORIX_OWN', 'STORIX_SHARED']);
+    expect([...keys.migrate]).toEqual([]);
+  });
+});
+
+// README 변수표의 "읽는 곳"이 가리키는 서비스의 compose `environment`에 변수가 없으면 `.env`에 적은 값이
+// 컨테이너에 도달하지 않고 코드 기본값으로 동작한다. GitHub 이슈 #15.
+describe('compose 전달 범위', () => {
+  const repoRoot = findRepoRoot(process.cwd());
+  const rows = readmeEnvRows(readFileSync(join(repoRoot, 'README.md'), 'utf8'));
+  const composeEnv = composeEnvKeys(readFileSync(join(repoRoot, 'docker-compose.yml'), 'utf8'));
+  const gaps = findComposeForwardingGaps(rows, composeEnv, UNFORWARDED_ALLOWANCES);
+
+  it('README 표를 읽어 행을 하나 이상 얻는다(파싱 자체가 동작하는지 확인)', () => {
+    expect(rows.length).toBeGreaterThan(40);
+    expect(Object.keys(composeEnv)).toEqual(
+      expect.arrayContaining(['app', 'migrate', 'gc', 'backup', 'restore']),
+    );
+  });
+
+  it('README가 서비스가 읽는다고 적은 변수는 허용 목록을 뺀 전부가 compose environment에 있다', () => {
+    expect(gaps.missing).toEqual([]);
+  });
+
+  it('허용 목록에는 낡은 항목이 없다', () => {
+    expect(gaps.stale).toEqual([]);
   });
 });
