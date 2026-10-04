@@ -1244,7 +1244,9 @@ paths:
         - name: force
           in: query
           required: false
-          description: '`If-Match` 없이도 기존 콘텐츠를 덮어쓸지 여부.'
+          description: |
+            `If-Match` 없이도 기존 콘텐츠를 덮어쓸지 여부. `If-Match`가 있으면 이 값과
+            무관하게 `If-Match` version을 비교한다.
           schema:
             type: boolean
             default: false
@@ -1253,7 +1255,9 @@ paths:
           required: false
           description: |
             낙관적 동시성 제어용 `version`(`VfsNode.version`). 값이 있는데 현재
-            version과 다르면 409(`VFS_VERSION_CONFLICT`).
+            version과 다르면 409(`VFS_VERSION_CONFLICT`). 대상 파일이 없거나
+            `force=true`여도 비교하며, 정수가 아닌 값(`*`, weak validator 등)도 409다.
+            값이 비어 있으면 헤더가 없는 것으로 본다.
           schema:
             type: string
       requestBody:
