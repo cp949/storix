@@ -808,7 +808,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: 동기 삭제·복사 상한 초과(receipt로 재생) 또는 JSON 본문 16 KiB 초과(재생 불가)
+          description: 동기 삭제·복사 상한 초과, `mkdir`·`move`·`copy` 결과가 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`), 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`) 또는 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘는 경우(receipt로 재생), 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -855,6 +855,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: namespace live Node 수 상한 초과(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`). `parents=true`로 함께 만드는 상위 디렉터리도 Node 수에 포함한다. 변경은 적용되지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/touch:
@@ -891,6 +897,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          description: 새 파일이 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`, `parents=true`로 함께 만드는 상위 디렉터리 포함) 또는 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`)을 초과함. 이미 존재하는 파일에는 발생하지 않는다. 변경은 적용되지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/mv:
@@ -921,6 +933,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          description: FILE을 다른 폴더로 옮길 때 대상 폴더의 직접 하위 FILE 수 상한 초과(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`). `destinationParents=true`로 함께 만드는 상위 디렉터리가 namespace live Node 수 상한을 넘으면 `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`다. 디렉터리 이동과 같은 폴더 안의 이름 변경에는 FILE 수 상한이 적용되지 않는다. 변경은 적용되지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v2/namespaces/{namespaceId}/fs/cp:
@@ -956,7 +974,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '413':
-          description: 복사 대상 Node 수가 namespace/전역 상한을 초과함(`VFS_COPY_LIMIT_EXCEEDED`)
+          description: 복사 대상 Node 수가 namespace/전역 상한을 초과함(`VFS_COPY_LIMIT_EXCEEDED`). 복사 결과가 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`), 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`) 또는 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘어도 413이다. 변경은 적용되지 않는다.
           content:
             application/json:
               schema:
@@ -1189,7 +1207,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: 파일 크기 상한 초과(선언 길이 또는 스트리밍 중 초과). receipt가 없어 재생하지 않는다.
+          description: 파일 크기 상한 초과(선언 길이 또는 스트리밍 중 초과)는 receipt가 없어 재생하지 않는다. 새 파일이 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`) 또는 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`)을 넘거나 저장 결과가 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘으면 413이며, 이 오류는 receipt로 재생한다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1277,7 +1295,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '413':
-          description: 파일 크기가 상한을 초과함(`VFS_FILE_TOO_LARGE`). 상한은 배포/namespace별 설정값.
+          description: 파일 크기가 상한을 초과함(`VFS_FILE_TOO_LARGE`, 상한은 배포/namespace별 설정값). 새 파일이 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`, `parents=true`로 함께 만드는 상위 디렉터리 포함) 또는 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`)을 넘거나, 저장 결과가 namespace 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘어도 413이다. 변경은 적용되지 않는다.
           content:
             application/json:
               schema:
@@ -1663,7 +1681,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: namespace 논리 quota 초과(VFS_QUOTA_EXCEEDED)
+          description: namespace 논리 quota 초과(VFS_QUOTA_EXCEEDED), 새 파일이 namespace live Node 수 상한(VFS_NAMESPACE_NODE_LIMIT_EXCEEDED) 또는 대상 폴더의 직접 하위 FILE 수 상한(VFS_FOLDER_FILE_LIMIT_EXCEEDED)을 넘음
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2238,6 +2256,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
+        '413':
+          description: 복구 결과가 namespace live Node 수 상한(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`) 또는 대상 폴더의 직접 하위 FILE 수 상한(`VFS_FOLDER_FILE_LIMIT_EXCEEDED`)을 넘음. quota에서 휴지통을 제외한 namespace에서는 복구 결과가 논리 quota(`VFS_QUOTA_EXCEEDED`)를 넘어도 413이다. 변경은 적용되지 않으며 오류는 receipt로 재생한다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v2/namespaces/{namespaceId}/fs/trash/{trashId}/purge:
     post:
       operationId: purgeTrash
@@ -2422,7 +2445,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: VFS_SNAPSHOT_LIMIT_EXCEEDED(receipt로 재생) 또는 JSON 본문 16 KiB 초과(재생 불가)
+          description: VFS_SNAPSHOT_LIMIT_EXCEEDED, 또는 snapshot을 quota에서 제외하지 않은 namespace에서 보존 바이트를 더한 결과가 논리 quota를 넘는 VFS_QUOTA_EXCEEDED(receipt로 재생), 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2653,7 +2676,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: JSON 본문 16 KiB 초과(재생 불가)
+          description: 복원 결과가 namespace live Node 수 상한(VFS_NAMESPACE_NODE_LIMIT_EXCEEDED), 대상 폴더의 직접 하위 FILE 수 상한(VFS_FOLDER_FILE_LIMIT_EXCEEDED) 또는 namespace 논리 quota(VFS_QUOTA_EXCEEDED)를 넘음(receipt로 재생), 또는 JSON 본문 16 KiB 초과(재생 불가)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
