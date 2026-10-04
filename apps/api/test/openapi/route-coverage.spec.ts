@@ -598,3 +598,42 @@ it('Range 요청 설명은 단일 범위 문법과 경계·거부·해시 정책
   expect(description).toMatch(/206.*X-Storix-Sha256.*제공하지/s);
   expect(description).toMatch(/If-Range.*미지원/);
 });
+
+it('노드·폴더·quota 상한 413 코드를 던질 수 있는 operation은 413 응답에 해당 코드를 적는다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as {
+    info: { description: string };
+    paths: Record<string, Record<string, { responses: Record<string, { description?: string }> }>>;
+  };
+  const node = 'VFS_NAMESPACE_NODE_LIMIT_EXCEEDED';
+  const folder = 'VFS_FOLDER_FILE_LIMIT_EXCEEDED';
+  const quota = 'VFS_QUOTA_EXCEEDED';
+
+  // 오류 표가 세 코드를 413으로 정의한다.
+  const errorRow = spec.info.description.split('\n').find((line) => line.includes(`\`${node}\``));
+  expect(errorRow).toBeDefined();
+  expect(errorRow).toContain('| 413 |');
+  for (const code of [node, folder, quota]) expect(errorRow).toContain(`\`${code}\``);
+
+  // 코드는 mutation 트랜잭션의 카운터 반영 단계(applyNodeCounters·applyLogicalByteQuota)가 던진다.
+  // operation마다 던질 수 있는 코드를 코드 읽기로 확정한 목록이다. 새 mutation을 추가하면 여기에 더한다.
+  const base = '/api/v2/namespaces/{namespaceId}/fs';
+  const expected: Array<[string, string[]]> = [
+    ['/mkdir', [node]],
+    ['/touch', [node, folder]],
+    ['/mv', [node, folder]],
+    ['/cp', ['VFS_COPY_LIMIT_EXCEEDED', node, folder, quota]],
+    ['/content', ['VFS_FILE_TOO_LARGE', node, folder, quota]],
+    ['/content/conditional', [node, folder, quota]],
+    ['/mutations', [node, folder, quota]],
+    ['/upload-sessions/{sessionId}/complete', [node, folder, quota]],
+    ['/trash/{trashId}/restore', [node, folder, quota]],
+    ['/snapshots', ['VFS_SNAPSHOT_LIMIT_EXCEEDED', quota]],
+    ['/snapshots/{snapshotId}/restore', [node, folder, quota]],
+  ];
+  for (const [suffix, codes] of expected) {
+    const description = spec.paths[`${base}${suffix}`].post.responses['413']?.description;
+    expect({ suffix, description }).toEqual({ suffix, description: expect.any(String) });
+    for (const code of codes)
+      expect({ suffix, code, found: description!.includes(code) }).toEqual({ suffix, code, found: true });
+  }
+});
