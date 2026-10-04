@@ -15,7 +15,7 @@ import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { Public } from '../auth/public.decorator.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { IdempotencyKeyRequiredError } from './namespace.errors.js';
+import { requireIdempotencyKey } from './idempotency-key.js';
 import { NamespaceTrashPolicyService } from './namespace-trash-policy.service.js';
 import { parseUpdateNamespaceTrashPolicyRequest } from './dto/update-namespace-trash-policy.dto.js';
 
@@ -35,9 +35,9 @@ export class NamespaceTrashPolicyController {
     @Body() body: unknown,
     @Res({ passthrough: true }) response: Response,
   ) {
-    if (!idempotencyKey) throw new IdempotencyKeyRequiredError();
+    const key = requireIdempotencyKey(idempotencyKey);
     const request = parseUpdateNamespaceTrashPolicyRequest(body);
-    return this.policies.update(namespaceId, idempotencyKey, request.enabled).then((result) => {
+    return this.policies.update(namespaceId, key, request.enabled).then((result) => {
       response.status(result.status);
       return result.body;
     });

@@ -400,7 +400,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Namespace' }
         '400':
-          description: 형식 오류·추가 필드 `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, 전역 상한 초과 `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, Idempotency-Key 누락 `IDEMPOTENCY_KEY_REQUIRED`
+          description: 형식 오류·추가 필드 `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, 전역 상한 초과 `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, Idempotency-Key 누락·255 byte 초과 `IDEMPOTENCY_KEY_REQUIRED`
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -447,7 +447,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Namespace' }
         '400':
-          description: 요청 형식 오류 `NAMESPACE_INVALID_TRASH_POLICY` 또는 Idempotency-Key 누락 `IDEMPOTENCY_KEY_REQUIRED`
+          description: 요청 형식 오류 `NAMESPACE_INVALID_TRASH_POLICY` 또는 Idempotency-Key 누락·255 byte 초과 `IDEMPOTENCY_KEY_REQUIRED`
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

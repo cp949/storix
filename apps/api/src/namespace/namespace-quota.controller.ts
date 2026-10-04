@@ -15,7 +15,7 @@ import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { Public } from '../auth/public.decorator.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
-import { IdempotencyKeyRequiredError } from './namespace.errors.js';
+import { requireIdempotencyKey } from './idempotency-key.js';
 import { NamespaceQuotaService } from './namespace-quota.service.js';
 import { parseUpdateNamespaceQuotaRequest } from './dto/update-namespace-quota.dto.js';
 
@@ -35,9 +35,9 @@ export class NamespaceQuotaController {
     @Body() body: unknown,
     @Res({ passthrough: true }) response: Response,
   ) {
-    if (!idempotencyKey) throw new IdempotencyKeyRequiredError();
+    const key = requireIdempotencyKey(idempotencyKey);
     const request = parseUpdateNamespaceQuotaRequest(body);
-    return this.quotas.update(namespaceId, idempotencyKey, request.maxTotalLogicalBytes).then((result) => {
+    return this.quotas.update(namespaceId, key, request.maxTotalLogicalBytes).then((result) => {
       response.status(result.status);
       return result.body;
     });

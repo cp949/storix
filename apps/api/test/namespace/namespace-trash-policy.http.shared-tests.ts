@@ -39,6 +39,27 @@ export function registerNamespaceTrashPolicyHttpTests(options: {
       expect(disabled.body.quota.trash.enabled).toBe(false);
     });
 
+    it('Idempotency-Key는 255 byte까지 받고 256 byte는 400 IDEMPOTENCY_KEY_REQUIRED다', async () => {
+      const namespaceId = await options.createNamespace(
+        'trash-policy-key-length',
+        'trash-policy-key-length-create',
+      );
+      const path = `/api/v2/admin/namespaces/${namespaceId}/trash`;
+      await request(options.app().getHttpServer())
+        .patch(path)
+        .set('Authorization', `Bearer ${options.adminKey}`)
+        .set('Idempotency-Key', 'k'.repeat(255))
+        .send({ enabled: true })
+        .expect(200);
+      const rejected = await request(options.app().getHttpServer())
+        .patch(path)
+        .set('Authorization', `Bearer ${options.adminKey}`)
+        .set('Idempotency-Key', 'k'.repeat(256))
+        .send({ enabled: false })
+        .expect(400);
+      expect(rejected.body.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+    });
+
     it('잘못된 body는 400, 없는 namespace는 404, 다른 body의 key 재사용은 422다', async () => {
       const namespaceId = await options.createNamespace('trash-policy-errors', 'trash-policy-errors-create');
       const path = `/api/v2/admin/namespaces/${namespaceId}/trash`;
