@@ -1,4 +1,6 @@
 import { Readable } from 'node:stream';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { startS3Container, StartedS3Container } from './s3-container.test-support.js';
 import { createTestBucket, createTestS3Client } from './s3-client.test-support.js';
@@ -161,15 +163,26 @@ describe('S3BlobStorage', () => {
 
   it('대용량 stream 업로드 중 버퍼 메모리가 파일 크기와 무관하게 파트 크기 안팎에 머문다', async () => {
     const chunk = Buffer.alloc(1024 * 1024, 1);
+    // --expose-gc 없이 뜬 프로세스에서도 강제 GC를 쓰도록 플래그를 켠 뒤 새 context에서 gc를 꺼낸다.
+    setFlagsFromString('--expose-gc');
+    const gc = runInNewContext('gc') as () => void;
+    // 샘플마다 GC를 먼저 돌려 회수 전 garbage가 아니라 살아 있는 버퍼만 잰다.
+    // GC를 돌리지 않으면 측정값이 baseline 시점의 GC 위상과 힙 크기에 따라 0~115MiB로 흔들린다.
+    // 힙이 큰 프로세스(전체 통합 실행)에서는 GC가 드물어 garbage 진폭이 상한을 넘을 수 있다(#10, TRP-004).
+    // 매 chunk마다 돌리면 큰 힙에서 느리므로 파트 크기(16MiB)에 해당하는 chunk 수마다 돌린다.
+    const SAMPLE_EVERY_CHUNKS = 16;
     // 업로드 경로(SDK 모듈 로딩·JIT·소켓)를 먼저 데워 콜드스타트 메모리를 측정에서 뺀다.
     const upload = async (key: string, total: number): Promise<{ rss: number; arrayBuffers: number }> => {
+      gc();
       const before = process.memoryUsage();
       let peakRss = before.rss;
       let peakArrayBuffers = before.arrayBuffers;
       const source = Readable.from(
         (async function* () {
-          for (let sent = 0; sent < total; sent += chunk.length) {
+          for (let sent = 0, n = 1; sent < total; sent += chunk.length, n += 1) {
             yield chunk;
+            if (n % SAMPLE_EVERY_CHUNKS !== 0) continue;
+            gc();
             const usage = process.memoryUsage();
             peakRss = Math.max(peakRss, usage.rss);
             peakArrayBuffers = Math.max(peakArrayBuffers, usage.arrayBuffers);
@@ -184,11 +197,11 @@ describe('S3BlobStorage', () => {
     const total = 320 * 1024 * 1024;
     const growth = await upload('blobs/ab/test-memory', total);
 
-    // Part 버퍼는 Buffer(ArrayBuffer)라 arrayBuffers로 재는 편이 RSS(GC·할당기 지연 포함)보다 안정적이다.
-    // 실측 피크는 64MiB(PART_SIZE 4배, 회수 전 버퍼 포함)로 반복 실행에서 같았다. 상한 96MiB는 이 값에
-    // 여유를 두면서 queueSize를 늘린 부분 버퍼링 회귀와 통버퍼링(320MiB)을 모두 잡는다.
+    // Part 버퍼는 Buffer(ArrayBuffer)라 arrayBuffers로 재는 편이 RSS(할당기 지연 포함)보다 안정적이다.
+    // GC 후 증가량은 13~18MiB(PART_SIZE 수준)였다. 힙 크기를 키워도 같았다.
+    // 상한 96MiB는 queueSize를 늘린 부분 버퍼링 회귀와 통버퍼링(320MiB)을 잡는다.
     expect(growth.arrayBuffers).toBeLessThan(96 * 1024 * 1024);
-    // RSS는 GC 지연 때문에 흔들리므로 통버퍼링만 잡는 느슨한 상한을 유지한다.
+    // RSS는 할당기 지연 때문에 흔들리므로 통버퍼링만 잡는 느슨한 상한을 유지한다.
     expect(growth.rss).toBeLessThan(total / 2);
   }, 120000);
 
