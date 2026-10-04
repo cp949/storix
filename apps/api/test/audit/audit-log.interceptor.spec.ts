@@ -4,7 +4,11 @@ import type { Reflector } from '@nestjs/core';
 import { jest } from '@jest/globals';
 import { of } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../../src/auth/public.decorator.js';
-import { AuditLogInterceptor, resolveCallerId } from '../../src/audit/audit-log.interceptor.js';
+import {
+  AuditLogInterceptor,
+  resolveCallerId,
+  sanitizeAuditString,
+} from '../../src/audit/audit-log.interceptor.js';
 import { AUDITED_KEY } from '../../src/audit/audited.decorator.js';
 import type { AuditLogEntry, AuditLogRepository } from '../../src/persistence/audit-log.repository.js';
 
@@ -54,6 +58,56 @@ describe('resolveCallerId', () => {
 
   it('배열로 전달되면 첫 번째 값만 본다', () => {
     expect(resolveCallerId(['first', 'second'])).toBe('first');
+  });
+});
+
+// PostgreSQL jsonb는 lone surrogate를 거부하므로(`Unicode low surrogate must follow a high surrogate`)
+// 정리 결과에는 짝이 맞지 않는 surrogate가 없어야 한다. GitHub 이슈 #14.
+describe('sanitizeAuditString', () => {
+  const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+  it('제어 문자를 제거한다', () => {
+    expect(sanitizeAuditString('a\u0000b\nc')).toBe('abc');
+  });
+
+  it('온전한 surrogate pair는 그대로 둔다', () => {
+    expect(sanitizeAuditString('a😀b')).toBe('a😀b');
+  });
+
+  it('입력의 lone high surrogate를 U+FFFD로 바꾼다', () => {
+    expect(sanitizeAuditString('x\ud83dy')).toBe('x�y');
+  });
+
+  it('입력의 lone low surrogate를 U+FFFD로 바꾼다', () => {
+    expect(sanitizeAuditString('x\ude00y')).toBe('x�y');
+  });
+
+  it('high surrogate가 연속되면 pair를 이루지 못한 앞쪽만 바꾼다', () => {
+    expect(sanitizeAuditString('\ud83d😀')).toBe('�😀');
+  });
+
+  it('문자열 끝의 lone high surrogate도 바꾼다', () => {
+    expect(sanitizeAuditString('x\ud83d')).toBe('x�');
+  });
+
+  it('4096 코드 유닛에서 자를 때 pair 중간이면 그 글자를 통째로 버린다', () => {
+    const result = sanitizeAuditString('x'.repeat(4095) + '😀');
+
+    expect(result).toBe('x'.repeat(4095));
+    expect(result).not.toMatch(LONE_SURROGATE);
+  });
+
+  it('4096 코드 유닛에서 pair가 온전히 끝나면 유지한다', () => {
+    const result = sanitizeAuditString('x'.repeat(4094) + '😀');
+
+    expect(result).toBe('x'.repeat(4094) + '😀');
+    expect(result).toHaveLength(4096);
+  });
+
+  it('제어 문자를 제거한 뒤의 길이를 기준으로 자른다', () => {
+    const result = sanitizeAuditString('\u0000'.repeat(10) + 'x'.repeat(4096));
+
+    expect(result).toBe('x'.repeat(4096));
   });
 });
 

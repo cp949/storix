@@ -219,6 +219,39 @@ describe('감사 로그 end-to-end', () => {
     });
   });
 
+  // PostgreSQL jsonb가 lone surrogate를 거부해 INSERT가 실패하던 결함(GitHub 이슈 #14)을 고정한다.
+  // namespace 이름 검증은 400으로 끝나지만 감사 기록은 close 시점에 원본 body로 시도하므로 대상에 포함된다.
+  it('body의 name에 lone surrogate가 있어도 감사 행이 남고 U+FFFD로 기록된다', async () => {
+    const response = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-lone-${randomUUID()}`)
+      .type('json')
+      .send('{"name":"\\ud83d"}');
+
+    const row = await findAuditLogByRequestId(response.headers['x-request-id'] as string);
+
+    expect(row).toMatchObject({
+      operation: 'NamespaceController.create',
+      status: response.status,
+      detail: { name: '�' },
+    });
+  });
+
+  it('4096 코드 유닛 경계가 surrogate pair 중간이어도 감사 행이 남고 pair를 버린다', async () => {
+    const response = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-boundary-${randomUUID()}`)
+      .send({ name: 'x'.repeat(4095) + '😀' });
+
+    const row = await findAuditLogByRequestId(response.headers['x-request-id'] as string);
+
+    expect(row).toMatchObject({
+      operation: 'NamespaceController.create',
+      status: response.status,
+      detail: { name: 'x'.repeat(4095) },
+    });
+  });
+
   it('snapshot 생성과 개별 ID 조회는 ID를 기록하고 목록에는 단일 ID를 기록하지 않는다', async () => {
     const name = `audit-snapshot-${randomUUID()}`;
     const ns = await request(httpServer)
