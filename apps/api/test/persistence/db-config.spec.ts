@@ -70,6 +70,16 @@ describe('loadDbConfig', () => {
     expect(config.driver === 'postgres' && config.port).toBe(5432);
   });
 
+  it('STORIX_DB_PORT가 65535를 넘으면 예외를 던진다', () => {
+    process.env.STORIX_DB_HOST = 'db.internal';
+    process.env.STORIX_DB_PORT = '65536';
+    process.env.STORIX_DB_USERNAME = 'storix';
+    process.env.STORIX_DB_PASSWORD = 'secret';
+    process.env.STORIX_DB_NAME = 'storix_db';
+
+    expect(() => loadDbConfig('postgres')).toThrow('잘못된 정수 환경변수 값');
+  });
+
   it('postgres인데 STORIX_DB_HOST가 없으면 예외를 던진다', () => {
     process.env.STORIX_DB_USERNAME = 'storix';
     process.env.STORIX_DB_PASSWORD = 'secret';

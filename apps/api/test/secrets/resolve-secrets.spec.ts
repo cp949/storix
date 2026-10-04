@@ -54,6 +54,18 @@ describe('resolveSecrets 어댑터 계약', () => {
     expect(importModule).not.toHaveBeenCalled();
   });
 
+  // setTimeout은 2^31-1 ms를 넘으면 1ms 뒤에 발화하므로 상한을 넘는 설정은 부팅 시 거부한다. GitHub 이슈 #15.
+  it('타임아웃이 setTimeout 상한을 넘으면 어댑터를 불러오기 전에 실패한다', async () => {
+    const importModule = jest.fn<ImportModule>(fakeModule);
+    const env: NodeJS.ProcessEnv = {
+      STORIX_SECRET_ADAPTERS: 'storix-secret-fake',
+      STORIX_SECRET_RESOLVE_TIMEOUT_MS: '3000000000',
+    };
+
+    await expect(resolveSecrets(env, importModule)).rejects.toThrow('잘못된 정수 환경변수 값');
+    expect(importModule).not.toHaveBeenCalled();
+  });
+
   it('해석 중 콘솔과 표준 출력에 아무것도 쓰지 않는다', async () => {
     const spies = [
       jest.spyOn(console, 'log'),

@@ -2,7 +2,7 @@ import type { S3ClientConfig } from '@aws-sdk/client-s3';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { parseBoolean, parseOptionalString, parsePositiveInt } from '../common/env-parsing.js';
+import { MAX_TCP_PORT, parseBoolean, parseOptionalString, parsePositiveInt } from '../common/env-parsing.js';
 import { BLOB_STORAGE, STORAGE_BUCKET, STORAGE_CLIENT, STORAGE_PUBLIC_CLIENT } from './storage.constants.js';
 import { S3BlobStorage } from './s3-blob-storage.js';
 import { StorageKeyGenerator } from './storage-key-generator.js';
@@ -36,7 +36,7 @@ function buildClientConfig(config: ConfigService, endpoint: string): S3ClientCon
 export function buildS3ClientConfig(config: ConfigService): S3ClientConfig {
   const endpoint = toEndpoint(
     config.getOrThrow<string>('STORIX_STORAGE_ENDPOINT'),
-    parsePositiveInt(config.get<string>('STORIX_STORAGE_PORT'), 9000),
+    parsePositiveInt(config.get<string>('STORIX_STORAGE_PORT'), 9000, MAX_TCP_PORT),
     parseBoolean(config.get<string>('STORIX_STORAGE_USE_SSL'), false),
   );
   return buildClientConfig(config, endpoint);
@@ -54,7 +54,7 @@ export function buildS3PublicClientConfig(config: ConfigService): S3ClientConfig
   }
   const endpoint = toEndpoint(
     host,
-    parsePositiveInt(config.get<string>('STORIX_STORAGE_PUBLIC_PORT'), 9000),
+    parsePositiveInt(config.get<string>('STORIX_STORAGE_PUBLIC_PORT'), 9000, MAX_TCP_PORT),
     parseBoolean(config.get<string>('STORIX_STORAGE_PUBLIC_USE_SSL'), false),
   );
   return buildClientConfig(config, endpoint);

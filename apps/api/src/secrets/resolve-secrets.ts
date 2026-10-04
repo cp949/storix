@@ -2,7 +2,7 @@
  * 기동 시 비밀값을 해석하는 진입 함수다.
  * 진입점은 루트 모듈을 import하기 전에 호출한다. 호출 위치는 `bootstrapWithEnv()`와 `persistence/data-source.ts`다.
  */
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { MAX_TIMER_MS, parsePositiveInt } from '../common/env-parsing.js';
 import { resolveSecretValues } from './resolve-secret-values.js';
 import { loadSecretAdapters, parseAdapterSpecifiers, type ImportModule } from './secret-adapter-loader.js';
 
@@ -24,7 +24,11 @@ export async function resolveSecrets(
   importModule?: ImportModule,
 ): Promise<void> {
   // 잘못된 설정은 어댑터를 불러오기 전에 거부한다.
-  const timeoutMs = parsePositiveInt(env[SECRET_RESOLVE_TIMEOUT_ENV], DEFAULT_SECRET_RESOLVE_TIMEOUT_MS);
+  const timeoutMs = parsePositiveInt(
+    env[SECRET_RESOLVE_TIMEOUT_ENV],
+    DEFAULT_SECRET_RESOLVE_TIMEOUT_MS,
+    MAX_TIMER_MS,
+  );
   const sources = await loadSecretAdapters(parseAdapterSpecifiers(env[SECRET_ADAPTERS_ENV]), importModule);
   await resolveSecretValues(env, { sources, timeoutMs });
 }

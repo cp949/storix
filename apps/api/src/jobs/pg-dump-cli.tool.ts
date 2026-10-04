@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { MAX_TCP_PORT, parsePositiveInt } from '../common/env-parsing.js';
 import { DbDumpTool } from './db-dump.tool.js';
 
 export interface PgConnectionOptions {
@@ -68,7 +68,7 @@ export class PgDumpCliTool implements DbDumpTool {
   constructor(config: ConfigService) {
     this.conn = {
       host: config.getOrThrow<string>('STORIX_DB_HOST'),
-      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432),
+      port: parsePositiveInt(config.get<string>('STORIX_DB_PORT'), 5432, MAX_TCP_PORT),
       username: config.getOrThrow<string>('STORIX_DB_USERNAME'),
       password: config.getOrThrow<string>('STORIX_DB_PASSWORD'),
       database: config.getOrThrow<string>('STORIX_DB_NAME'),

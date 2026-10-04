@@ -1,5 +1,5 @@
 import { getDbDriver, type DbDriver } from '../common/db-driver.js';
-import { parsePositiveInt, requireEnv } from '../common/env-parsing.js';
+import { MAX_TCP_PORT, parsePositiveInt, requireEnv } from '../common/env-parsing.js';
 
 export type DbConfig =
   | { readonly driver: 'sqlite'; readonly sqlitePath: string }
@@ -23,7 +23,7 @@ export function loadDbConfig(driver: DbDriver = getDbDriver()): DbConfig {
   return {
     driver: 'postgres',
     host: requireEnv('STORIX_DB_HOST'),
-    port: parsePositiveInt(process.env.STORIX_DB_PORT, 5432),
+    port: parsePositiveInt(process.env.STORIX_DB_PORT, 5432, MAX_TCP_PORT),
     username: requireEnv('STORIX_DB_USERNAME'),
     password: requireEnv('STORIX_DB_PASSWORD'),
     database: requireEnv('STORIX_DB_NAME'),

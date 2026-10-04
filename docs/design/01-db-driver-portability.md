@@ -21,12 +21,13 @@
 
 ## 2. 드라이버 선택
 
-| 환경변수                                             | 의미                                                   |
-| ---------------------------------------------------- | ------------------------------------------------------ |
-| `STORIX_DB_DRIVER`                                   | `sqlite` 외의 값은 기본 드라이버 `postgres`로 취급한다 |
-| `STORIX_DB_SQLITE_PATH`                              | `sqlite`일 때 필수인 DB 파일 경로                      |
-| `STORIX_DB_HOST`·`PORT`·`USERNAME`·`PASSWORD`·`NAME` | `postgres`일 때만 의미가 있다                          |
+| 환경변수                                             | 의미                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| `STORIX_DB_DRIVER`                                   | `postgres`(기본) 또는 `sqlite`. 미설정·빈 값은 `postgres`다 |
+| `STORIX_DB_SQLITE_PATH`                              | `sqlite`일 때 필수인 DB 파일 경로                           |
+| `STORIX_DB_HOST`·`PORT`·`USERNAME`·`PASSWORD`·`NAME` | `postgres`일 때만 의미가 있다                               |
 
+- `getDbDriver()`는 `postgres`·`sqlite` 외의 값을 오타로 보고 일반 `Error`로 거부한다. 대소문자와 공백은 바꾸지 않는다.
 - 드라이버 판정은 `common/db-driver.ts`의 `getDbDriver()`(환경변수)와 `isSqliteDataSource()`(연결 옵션 `type === 'better-sqlite3'`)가 한다. 코드 분기는 이 둘 중 하나로만 한다.
 - `loadDbConfig()`는 호출할 때마다 `process.env`를 다시 읽는다. `data-source.ts`(CLI·마이그레이션)와 `persistence.module.ts`(런타임)가 같은 함수를 써서 두 연결이 어긋나지 않게 한다.
 - **엔티티 컬럼 타입은 모듈 로드 시점에 한 번 확정된다.** 컬럼 타입 상수는 `import` 시점의 `STORIX_DB_DRIVER`를 읽는다.

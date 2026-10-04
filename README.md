@@ -416,7 +416,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`  | 조건부 | —                     | app     | 재개 업로드 정책 JSON 경로                                                     |
 | `STORIX_ADMIN_API_KEY`                    | 선택   | —                     | app     | `/api/v2/admin/*` 전용 관리자 Bearer key                                       |
 | `STORIX_ADMIN_API_KEY_PREVIOUS`           | 선택   | —                     | app     | 관리자 키 교체 기간에만 허용하는 이전 Bearer key                               |
-| `STORIX_DB_DRIVER`                        | 선택   | `postgres`            | 모두    | `postgres` 또는 `sqlite`                                                       |
+| `STORIX_DB_DRIVER`                        | 선택   | `postgres`            | 모두    | `postgres` 또는 `sqlite`. 그 외 값은 부팅을 거부                               |
 | `STORIX_DB_SQLITE_PATH`                   | 조건부 | —                     | 모두    | `STORIX_DB_DRIVER=sqlite`일 때 필수                                            |
 | `STORIX_DB_HOST`                          | 필수   | —                     | 모두    | Postgres 호스트                                                                |
 | `STORIX_DB_PORT`                          | 선택   | `5432`                | 모두    | Postgres 포트                                                                  |
@@ -472,6 +472,10 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 
 ### 환경변수 적용 규칙
 
+- 포트·타임아웃·GC 주기·동기 처리 한도처럼 `parsePositiveInt`로 읽는 정수 변수는 앞자리 0이 없는 10진 숫자만 허용한다.
+  - `1e3`, `0x10`, `+5`, `5.0`, 공백이 붙은 값, 안전 정수 범위를 넘는 값은 부팅을 거부한다.
+  - 빈 값은 기본값을 쓴다.
+- `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다.
 - `STORIX_PUBLISH_HOST`: host Nginx만 접근시키려면 `127.0.0.1`로 설정한다.
 - `STORIX_PORT`:
   - 컨테이너 안은 3000으로 고정한다.
@@ -504,10 +508,10 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - 상세 제약은 `README.sqlite.md`를 따른다.
 - `STORIX_DB_SQLITE_PATH`: sqlite 파일 경로.
 - `STORIX_DB_HOST`: `docker-compose.postgres.yml`이 컨테이너 쪽을 `postgres`로 재정의.
-- `STORIX_DB_PORT`: postgres override에서는 호스트 노출 포트로도 쓰인다.
+- `STORIX_DB_PORT`: 1~65535. postgres override에서는 호스트 노출 포트로도 쓰인다.
 - `STORIX_DB_USERNAME`: postgres override의 초기화 계정으로도 쓰인다.
 - `STORIX_STORAGE_ENDPOINT`: 백엔드 override가 컨테이너 쪽을 재정의.
-- `STORIX_STORAGE_PORT`: versitygw override는 `7070`으로 재정의.
+- `STORIX_STORAGE_PORT`: 1~65535. versitygw override는 `7070`으로 재정의.
 - `STORIX_STORAGE_ACCESS_KEY`: versitygw override에서는 컨테이너 root 자격증명으로도 쓰인다.
 - `STORIX_STORAGE_SECRET_KEY`: VersityGW 컨테이너 root 자격증명으로도 사용한다.
 - `STORIX_STORAGE_BUCKET`: VersityGW override가 기동 시 생성한다.
@@ -578,7 +582,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 
 - 어댑터 패키지를 설치한 사용자 이미지가 필요하다. 기본 이미지에는 어댑터가 없다.
 - `STORIX_SECRET_ADAPTERS`에 어댑터 패키지 이름을 지정한다.
-- 해석 1건의 타임아웃은 `STORIX_SECRET_RESOLVE_TIMEOUT_MS`다.
+- 해석 1건의 타임아웃은 `STORIX_SECRET_RESOLVE_TIMEOUT_MS`다. 1~2147483647 ms를 허용하고 넘으면 부팅을 거부한다.
 - 기본 `docker-compose.yml`은 `<비밀 변수>_REF`와 이 두 변수를 컨테이너에 넘기지 않는다. 루트 `.env`에 적어도 무시된다. override의 `environment:`에 직접 적는다.
 
 compose에서 파일로 전달하는 절차는 [단일 호스트 private 배포](docs/deployment/scenarios/single-host-private/README.md)의 "비밀값 파일 전달"을 따른다.

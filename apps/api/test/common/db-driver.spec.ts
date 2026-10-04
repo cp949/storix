@@ -16,9 +16,27 @@ describe('getDbDriver', () => {
     expect(getDbDriver('sqlite')).toBe('sqlite');
   });
 
-  it('override가 sqlite가 아니면 postgres를 반환한다', () => {
+  it('override로 postgres를 주면 postgres를 반환한다', () => {
     expect(getDbDriver('postgres')).toBe('postgres');
-    expect(getDbDriver('sqllite')).toBe('postgres');
+  });
+
+  // 오타가 조용히 postgres로 처리되어 간접 오류(STORIX_DB_HOST 누락 등)만 보이던 문제를 고정한다. GitHub 이슈 #15.
+  it.each(['sqllite', 'SQLite', 'sqlite3', 'sqlite ', ' postgres', 'postgresql', 'POSTGRES'])(
+    '지원하지 않는 값 %j는 거부한다',
+    (value) => {
+      expect(() => getDbDriver(value)).toThrow('STORIX_DB_DRIVER');
+    },
+  );
+
+  it('환경변수의 지원하지 않는 값도 거부한다', () => {
+    process.env[KEY] = 'sqlite3';
+    expect(() => getDbDriver()).toThrow('STORIX_DB_DRIVER');
+  });
+
+  it('빈 문자열은 값이 없는 것으로 보고 postgres를 반환한다', () => {
+    expect(getDbDriver('')).toBe('postgres');
+    process.env[KEY] = '';
+    expect(getDbDriver()).toBe('postgres');
   });
 
   it('override가 없으면 process.env.STORIX_DB_DRIVER를 읽는다', () => {
