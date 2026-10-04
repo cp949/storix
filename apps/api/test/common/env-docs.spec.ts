@@ -92,6 +92,7 @@ const SERVICES_BY_READER: Record<string, ComposeService[]> = {
   gc: ['gc'],
   backup: ['backup'],
   restore: ['restore'],
+  compose: [],
 };
 
 interface ReadmeEnvRow {
@@ -190,10 +191,16 @@ function findComposeForwardingGaps(
   rows: ReadmeEnvRow[],
   composeEnv: Record<string, Set<string>>,
   allowances: UnforwardedAllowance[],
-): { missing: string[]; stale: string[] } {
+): { missing: string[]; stale: string[]; unknownReaders: string[] } {
   const required = new Set<string>();
+  const unknownReaders = new Set<string>();
   for (const { name, reader } of rows) {
-    for (const service of SERVICES_BY_READER[reader] ?? []) {
+    const services = SERVICES_BY_READER[reader];
+    if (services === undefined) {
+      unknownReaders.add(reader);
+      continue;
+    }
+    for (const service of services) {
       required.add(`${service}:${name}`);
     }
   }
@@ -205,7 +212,7 @@ function findComposeForwardingGaps(
 
   const missing = [...required].filter((key) => !forwarded(key) && !allowed.has(key)).sort();
   const stale = [...allowed].filter((key) => !required.has(key) || forwarded(key)).sort();
-  return { missing, stale };
+  return { missing, stale, unknownReaders: [...unknownReaders].sort() };
 }
 
 function sortedDiff(a: Set<string>, b: Set<string>): string[] {
@@ -309,7 +316,17 @@ describe('compose 전달 범위 검사 함수', () => {
       restore: new Set(['STORIX_B']),
     };
 
-    expect(findComposeForwardingGaps(rows, composeEnv, noneAllowed)).toEqual({ missing: [], stale: [] });
+    expect(findComposeForwardingGaps(rows, composeEnv, noneAllowed)).toEqual({
+      missing: [],
+      stale: [],
+      unknownReaders: [],
+    });
+  });
+
+  it('등록하지 않은 읽는 곳 값은 누락 없이 통과시키지 않는다', () => {
+    expect(
+      findComposeForwardingGaps([{ name: 'STORIX_A', reader: '미등록' }], {}, noneAllowed).unknownReaders,
+    ).toEqual(['미등록']);
   });
 
   it('허용 목록에 있는 서비스·변수는 누락으로 보지 않는다', () => {
@@ -321,7 +338,11 @@ describe('compose 전달 범위 검사 함수', () => {
     };
     const allowances = [{ variable: 'STORIX_A', services: ['gc' as const], reason: '테스트' }];
 
-    expect(findComposeForwardingGaps(rows, composeEnv, allowances)).toEqual({ missing: [], stale: [] });
+    expect(findComposeForwardingGaps(rows, composeEnv, allowances)).toEqual({
+      missing: [],
+      stale: [],
+      unknownReaders: [],
+    });
   });
 
   it('이미 전달 중이거나 README가 요구하지 않는 허용 항목은 낡은 항목으로 잡는다', () => {
@@ -340,6 +361,7 @@ describe('compose 전달 범위 검사 함수', () => {
       'app:STORIX_A',
       'gc:STORIX_A',
     ]);
+    expect(findComposeForwardingGaps(rows, composeEnv, allowances).unknownReaders).toEqual([]);
   });
 
   it('YAML 앵커와 merge key를 펼쳐서 서비스별 environment 키를 읽는다', () => {
@@ -382,5 +404,9 @@ describe('compose 전달 범위', () => {
 
   it('허용 목록에는 낡은 항목이 없다', () => {
     expect(gaps.stale).toEqual([]);
+  });
+
+  it('읽는 곳 열에 등록하지 않은 값이 없다', () => {
+    expect(gaps.unknownReaders).toEqual([]);
   });
 });
