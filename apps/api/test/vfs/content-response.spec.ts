@@ -1,3 +1,4 @@
+/** GET·HEAD의 공통 응답 함수가 헤더와 본문을 처리하는 방식을 Express로 검증한다. HEAD 동작은 CHANGELOG.md [Unreleased] Fixed에 기록되어 있다. */
 import { Readable } from 'node:stream';
 import express from 'express';
 import request from 'supertest';
@@ -12,7 +13,9 @@ const head: ContentHeadPayload = {
   identity: { fileId: 'file-1', revision: 'r1', sha256: 'hash' },
 };
 
+// HEAD에는 stream 없는 메타데이터를 넘기고 GET에는 실제 stream을 넘긴다.
 describe('sendContent HEAD 응답', () => {
+  /** 같은 경로의 GET·HEAD를 비교할 Express 앱을 만든다. */
   function appWith(payload: () => ContentPayload | ContentHeadPayload) {
     const app = express();
     app.get('/is-head', (_req, res) => {

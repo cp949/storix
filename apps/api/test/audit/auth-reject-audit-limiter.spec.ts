@@ -1,9 +1,11 @@
+/** 401 감사 기록의 고정 윈도 상한과 이월 요약을 가짜 시계로 검증한다. 규칙은 api ADR-0010이다. */
 import {
   AUTH_REJECT_AUDIT_MAX_PER_WINDOW,
   AUTH_REJECT_AUDIT_WINDOW_MS,
   AuthRejectAuditLimiter,
 } from '../../src/audit/auth-reject-audit-limiter.js';
 
+/** 윈도 경계를 직접 옮길 수 있는 리미터와 가짜 시계를 만든다. */
 function createLimiter() {
   let now = 1_000;
   const limiter = new AuthRejectAuditLimiter(() => now);
@@ -15,6 +17,7 @@ function createLimiter() {
   };
 }
 
+// 경계 시점과 생략 건수의 이월을 실제 시간 대기 없이 고정한다.
 describe('AuthRejectAuditLimiter', () => {
   it('윈도 상한까지는 모두 개별 행으로 기록하고 생략 정보가 없다', () => {
     const { limiter } = createLimiter();

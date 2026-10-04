@@ -51,6 +51,6 @@ SQLite 파일 DB에서 실측한 소요 시간(2026-10-05, Postgres는 측정하
 
 ## 결과
 
-- 이전에 성공하던 10,000개 초과 subtree 이동이 413으로 바뀐다. 이 값을 넘는 정당한 이동은 `STORIX_MAX_SYNC_MOVE_NODES`를 올리거나 namespace override로 푼다.
+- 이전에 성공하던 10,000개 초과 subtree 이동이 413으로 바뀐다. 이 값을 넘는 정당한 이동은 전역 상한 `STORIX_MAX_SYNC_MOVE_NODES`를 올려야 한다. namespace override가 더 낮으면 그 값도 올려야 한다.
 - 오류 코드 `VFS_MOVE_LIMIT_EXCEEDED`가 추가된다. 조건부 mutation receipt는 이 413을 다른 결정적 상한 오류와 같이 재생한다.
 - `namespace` 테이블에 마이그레이션 `AddNamespaceMoveLimit1791700000022`가 추가된다.

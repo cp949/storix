@@ -1,3 +1,4 @@
+/** 종료 신호와 타이머에 따른 앱 종료 순서를 가짜 프로세스로 검증한다. 규칙은 api ADR-0043이다. */
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'node:events';
 import {
@@ -6,8 +7,7 @@ import {
   type ShutdownApp,
 } from '../../src/common/graceful-shutdown.js';
 
-// 실제 프로세스·소켓 없이 종료 순서만 고정한다. 신호는 EventEmitter로, 종료는 jest.fn으로 대신한다.
-// 실제 `dist/main.js` 종료 동작은 graceful-shutdown.integration-spec.ts가 검증한다.
+/** 실제 프로세스 대신 EventEmitter와 jest.fn으로 종료 순서를 검증하는 하니스를 만든다. */
 function createHarness(timeoutMs = 25000) {
   const signals = new EventEmitter();
   const exit = jest.fn<(code: number) => void>();
@@ -37,12 +37,13 @@ function createHarness(timeoutMs = 25000) {
   };
 }
 
-// 마이크로태스크를 비워 close().then 콜백이 실행되게 한다.
+/** 마이크로태스크를 비워 close().then 콜백이 실행되게 한다. */
 async function flushPromises(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
 }
 
+// 실제 `dist/main.js` 종료 동작은 graceful-shutdown.integration-spec.ts가 검증한다.
 describe('installGracefulShutdown', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -145,6 +146,7 @@ describe('installGracefulShutdown', () => {
   });
 });
 
+// 환경변수 파싱은 부팅 단계에서 잘못된 종료 상한을 거부해야 한다.
 describe('parseShutdownTimeoutMs', () => {
   it('값이 없거나 빈 문자열이면 25초를 돌려준다', () => {
     expect(parseShutdownTimeoutMs(undefined)).toBe(25000);

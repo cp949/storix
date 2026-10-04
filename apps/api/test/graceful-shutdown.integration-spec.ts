@@ -1,3 +1,4 @@
+/** 실제 서버 프로세스의 종료 신호·요청 대기·시간 초과 동작을 SQLite 환경에서 검증한다. 규칙은 api ADR-0043이다. */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
@@ -19,6 +20,7 @@ interface Server {
   output(): string;
 }
 
+/** 자식 서버가 사용할 임시 TCP 포트를 찾는다. */
 async function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = net.createServer();
@@ -30,6 +32,7 @@ async function findFreePort(): Promise<number> {
   });
 }
 
+/** SQLite 서버를 자식 프로세스로 띄우고 포트가 열릴 때까지 기다린다. */
 async function startServer(sqlitePath: string, extraEnv: NodeJS.ProcessEnv = {}): Promise<Server> {
   const port = await findFreePort();
   const child = spawn('node', [path.join(apiRoot, 'dist', 'main.js')], {
@@ -83,6 +86,7 @@ interface OpenRequest {
   failed: Promise<Error>;
 }
 
+/** 본문 절반을 보내 요청을 진행 중인 상태로 유지한다. */
 async function openRequest(port: number): Promise<OpenRequest> {
   const body = '{"padding":"xxxxxxxxxxxxxxxxxxxx"}';
   const half = body.length / 2;
@@ -120,6 +124,7 @@ async function openRequest(port: number): Promise<OpenRequest> {
   };
 }
 
+/** TCP 연결이 거부되는지 확인한다. */
 async function isPortRefused(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.connect({ host: '127.0.0.1', port });
@@ -131,6 +136,7 @@ async function isPortRefused(port: number): Promise<boolean> {
   });
 }
 
+/** 서버가 포트를 열 때까지 기다린다. */
 async function waitUntilPortOpen(port: number, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -142,6 +148,7 @@ async function waitUntilPortOpen(port: number, timeoutMs = 5000): Promise<void> 
   throw new Error('부팅 로그 뒤에도 포트가 열리지 않는다');
 }
 
+/** 종료 신호 뒤 서버가 새 연결을 거부할 때까지 기다린다. */
 async function waitUntilPortRefused(port: number, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

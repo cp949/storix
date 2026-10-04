@@ -1,5 +1,5 @@
 // 소비자 기대: 한 번에 이동할 수 있는 노드 수를 넘는 디렉터리 이동은 한도 유형을 알 수 있는 오류로 거부되고, 원본과 하위 노드가 그대로 남는다.
-// 대응 요구사항: RQ-025(파일·디렉터리 이동), RQ-018(안정적인 오류 분류). 상한은 `small-limits` 프로필이 5로 정한다.
+// 상한은 `small-limits` 프로필이 5로 정한다.
 import assert from 'node:assert/strict';
 import { defineContract } from '../../define-contract.ts';
 

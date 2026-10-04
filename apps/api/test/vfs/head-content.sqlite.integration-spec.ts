@@ -1,3 +1,4 @@
+/** 다섯 콘텐츠 경로의 HEAD가 Blob을 열지 않는지 SQLite와 S3 어댑터로 검증한다. HEAD 동작은 CHANGELOG.md [Unreleased] Fixed에 기록되어 있다. */
 import { jest } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -21,7 +22,7 @@ import { snapshotPost } from './vfs-snapshot-tree.test-support.js';
 
 const BODY = 'head-request-body';
 
-// HEAD가 본문을 읽지 않는지 실제 SQLite + S3 어댑터에서 확인한다. 라우트 5개가 같은 sendContent를 쓴다.
+// HEAD와 GET의 헤더를 비교하고, HEAD의 Blob 읽기 여부를 검증한다.
 describe('HEAD 요청은 Blob을 읽지 않는다 (SQLite + S3)', () => {
   let container: StartedS3Container | undefined;
   let directory: string | undefined;
@@ -29,8 +30,10 @@ describe('HEAD 요청은 Blob을 읽지 않는다 (SQLite + S3)', () => {
   let getSpy: jest.SpiedFunction<BlobStorage['get']>;
   const previous = { ...process.env };
 
+  /** 현재 테스트 앱의 HTTP 요청 객체를 만든다. */
   const http = () => request(app.getHttpServer());
 
+  /** HTTP 요청으로 격리된 namespace를 만든다. */
   async function createNamespace(extra: Record<string, unknown> = {}): Promise<string> {
     const response = await http()
       .post('/api/v2/namespaces')
@@ -40,6 +43,7 @@ describe('HEAD 요청은 Blob을 읽지 않는다 (SQLite + S3)', () => {
     return response.body.id as string;
   }
 
+  /** 비교에 사용할 파일을 HTTP로 업로드한다. */
   async function upload(namespaceId: string, path: string): Promise<void> {
     await http()
       .post(`/api/v2/namespaces/${namespaceId}/fs/content`)
@@ -49,7 +53,7 @@ describe('HEAD 요청은 Blob을 읽지 않는다 (SQLite + S3)', () => {
       .expect(201);
   }
 
-  // GET과 HEAD를 같은 URL에 보내 헤더가 같고 HEAD는 본문이 없으며 HEAD가 storage.get을 부르지 않았는지 확인한다.
+  /** GET과 HEAD의 헤더·본문을 비교하고 HEAD의 storage.get 호출 여부를 확인한다. */
   async function expectHeadMatchesGet(url: string, headers: Record<string, string> = {}, status = 200) {
     const get = await http().get(url).set(headers).buffer(true).expect(status);
     const callsAfterGet = getSpy.mock.calls.length;
