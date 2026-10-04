@@ -4,6 +4,7 @@ import { isSqliteDataSource } from '../common/db-driver.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import { parseSqlTimestamp } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepository } from './vfs-node.repository.js';
+import { VfsTrashLimitExceededError } from '../vfs/vfs.errors.js';
 
 /** 만료 삭제의 재개 위치. `(expires_at, id)` 순서에서 마지막으로 읽은 후보다. */
 export interface FileExpiryCursor {
@@ -67,9 +68,16 @@ export class VfsFileExpiryRepository {
         }
       } catch (error) {
         // 실패한 항목은 다음 GC 실행에서 다시 조회된다.
-        this.logger.warn(
-          `파일 만료 삭제 실패 namespace=${row.namespaceId} node=${row.id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        if (error instanceof VfsTrashLimitExceededError) {
+          // 휴지통 항목이 purge되거나 비워질 때까지 파일이 live로 남는다. 일반 실패와 구분해 원인을 드러낸다.
+          this.logger.warn(
+            `휴지통 보존 상한으로 파일 만료 삭제를 건너뜀 namespace=${row.namespaceId} node=${row.id}: ${error.message}`,
+          );
+        } else {
+          this.logger.warn(
+            `파일 만료 삭제 실패 namespace=${row.namespaceId} node=${row.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     }
     const last = rows[rows.length - 1];

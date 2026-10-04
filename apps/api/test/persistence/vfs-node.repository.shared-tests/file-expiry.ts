@@ -1,6 +1,9 @@
+import { jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
+import { VfsFileExpiryRepository } from '../../../src/persistence/vfs-file-expiry.repository.js';
 import { readDbNow } from '../../../src/persistence/vfs-node.repository.helpers.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
 import {
@@ -340,6 +343,43 @@ export function runFileExpiryTests(helpers: VfsNodeRepositoryTestHelpers): void 
         .findOneByOrFail({ namespaceId: namespace.id, name: 'temp.bin' });
       expect(restored.id).toBe(created.value.resource.id);
       expect(restored.expiresAt).toBeNull();
+    });
+
+    describe('휴지통 보존 상한', () => {
+      const originalLimit = process.env.STORIX_MAX_RETAINED_TRASH_NODES;
+      afterEach(() => {
+        jest.restoreAllMocks();
+        if (originalLimit === undefined) delete process.env.STORIX_MAX_RETAINED_TRASH_NODES;
+        else process.env.STORIX_MAX_RETAINED_TRASH_NODES = originalLimit;
+      });
+
+      it('상한에 닿으면 만료 FILE을 live로 남기고 원인을 로그에 남기며, 휴지통을 비우면 다음 실행에서 삭제한다', async () => {
+        process.env.STORIX_MAX_RETAINED_TRASH_NODES = '1';
+        const namespace = await createNamespace(`expiry-trash-limit-${randomUUID()}`);
+        await getDs().getRepository(NamespaceEntity).update({ id: namespace.id }, { trashEnabled: true });
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().touchFile(namespace.id, root.id, ['filler.bin'], false, makeBlobData());
+        const trashId = (await getRepo().removeNode(namespace.id, root.id, ['filler.bin'], false, 10))!;
+        const expiring = await createExpiring(namespace.id, root.id, 'temp.bin');
+        const nodes = getDs().getRepository(VfsNodeEntity);
+        await nodes.update({ id: expiring.id }, { expiresAt: new Date(Date.now() - 1000) });
+        const expiry = new VfsFileExpiryRepository(getDs(), getRepo());
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+        await expiry.expireDue(500);
+
+        expect(await nodes.findOneBy({ id: expiring.id })).not.toBeNull();
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            `휴지통 보존 상한으로 파일 만료 삭제를 건너뜀 namespace=${namespace.id} node=${expiring.id}`,
+          ),
+        );
+
+        await getRepo().purgeTrashItem(namespace.id, trashId);
+        await expiry.expireDue(500);
+
+        expect(await nodes.findOneBy({ id: expiring.id })).toBeNull();
+      });
     });
 
     it('snapshot 복원으로 새로 만든 FILE은 원본의 만료를 상속하지 않는다', async () => {
