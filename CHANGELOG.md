@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- `HEAD`를 `fs` content·download, `public` content·download, snapshot content에 보내면 서버가 Blob(ENCRYPTED는 복호화 stream 포함)을 끝까지 읽은 뒤 버리던 문제를 수정했다. 공개 경로에서는 무인증 요청으로 매번 storage 전송을 일으킬 수 있었다. 이제 Blob을 열지 않고 GET과 같은 응답 헤더만 보낸다. `Range`가 있으면 206과 `Content-Range`, 잘못된 범위는 416으로 GET과 같다. ENCRYPTED namespace의 HEAD는 마스터 키를 요구하지 않는다. HEAD는 `openapi.yaml`에 없는 동작이며 이 변경도 문서화하지 않는다(GitHub 이슈 #23).
 - SQLite 드라이버에서 `SQLITE_FULL`·`SQLITE_IOERR` 등으로 SQLite가 트랜잭션을 스스로 롤백하면 쿼리 게이트가 해제되지 않아 프로세스를 재시작할 때까지 모든 쿼리가 30초 대기 뒤 503 `DB_BUSY`로 실패하던 문제를 수정했다. 게이트가 트랜잭션·SAVEPOINT 깊이를 직접 세어 최상위 트랜잭션이 끝나면 해제한다. 중첩 트랜잭션이 자동 롤백된 뒤 바깥 콜백이 오류를 삼키고 쿼리를 이어 보내면 autocommit으로 실행하지 않고 내부 오류(`SqliteTransactionAbortedError`, 미분류 500)로 실패시킨다. `ROLLBACK` 재시도에도 트랜잭션이 남으면 게이트를 해제하지 않고 error 로그를 남긴다. 이 경우 프로세스 재시작이 필요하다. PostgreSQL에는 영향이 없다(GitHub 이슈 #22).
 - 감사 로그의 `detail`에 짝이 맞지 않는 UTF-16 surrogate가 들어가면 PostgreSQL `jsonb` INSERT가 실패해 해당 요청의 감사 행이 사라지던 문제를 수정했다. 입력의 lone surrogate는 `U+FFFD`로 기록하고, 4096 코드 유닛 경계가 surrogate pair 중간이면 그 글자를 버린다. 같은 정리를 `path`에도 적용한다.
 - 기본 compose가 `gc`에 `STORIX_GC_MAX_ROWS_PER_STAGE`·`STORIX_NAMESPACE_DELETED_RETENTION_DAYS`를, `app`에 `STORIX_MAX_SYNC_SNAPSHOT_NODES`·`STORIX_MAX_SNAPSHOT_BYTES`·`STORIX_MAX_RETAINED_SNAPSHOT_NODES`·`STORIX_MAX_RETAINED_SNAPSHOT_BYTES`·`STORIX_MUTATION_LEASE_SECONDS`·`STORIX_MUTATION_MAX_UPLOAD_SECONDS`·`STORIX_VFS_EXPIRY_MIN_SECONDS`·`STORIX_VFS_EXPIRY_MAX_SECONDS`를 전달하지 않아 `.env`의 값이 무시되고 코드 기본값으로 동작하던 문제를 수정했다. 기본값은 코드와 같다.
