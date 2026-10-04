@@ -11,6 +11,7 @@ import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { StorageKeyGenerator } from '../storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
+import { BlobRepository } from '../persistence/blob.repository.js';
 import {
   NamespaceResourceLimits,
   VfsContentBlobRef,
@@ -32,6 +33,7 @@ import {
   VfsVersionConflictError,
 } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
+import { deleteUnreferencedUpload } from './unreferenced-upload-cleanup.js';
 
 const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
 
@@ -84,6 +86,13 @@ function parseIfMatch(raw: string | undefined): number | null | typeof INVALID_I
   return Number.isSafeInteger(value) ? value : INVALID_IF_MATCH;
 }
 
+// putFileContent 트랜잭션의 version 판정과 같은 규칙이다. If-Match가 있으면 force와 무관하게 현재 version과
+// 같아야 하고(대상이 없으면 불일치), 없으면 기존 FILE은 force일 때만 덮어쓴다.
+function willConflict(target: VfsNodeRecord | null, ifMatchVersion: number | null, force: boolean): boolean {
+  if (ifMatchVersion !== null) return target?.type === 'FILE' ? ifMatchVersion !== target.version : true;
+  return target?.type === 'FILE' && !force;
+}
+
 @Injectable()
 export class ContentService {
   private readonly maxFileSizeBytes: number;
@@ -97,6 +106,7 @@ export class ContentService {
     @Inject(BLOB_STORAGE) private readonly blobStorage: BlobStorage,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     private readonly contentIngress: ContentIngressService,
+    private readonly blobs: BlobRepository,
     config: ConfigService,
   ) {
     const fileSizeLimits = resolveFileSizeLimits(
@@ -128,6 +138,22 @@ export class ContentService {
       throw new VfsIsDirectoryError(canonical);
     }
 
+    // 기존 FILE이면 빈 object를 올리지 않고 version만 올린다. 사전 확인과 트랜잭션 사이에
+    // 대상이 사라지면 absent가 오므로 아래 생성 경로로 이어진다.
+    const existing = await this.repo.resolvePath(namespaceId, root.id, segments);
+    if (existing?.type === 'DIRECTORY') {
+      throw new VfsIsDirectoryError(canonical);
+    }
+    if (existing?.type === 'FILE') {
+      const outcome = await this.repo.touchFile(namespaceId, root.id, segments, parents, null);
+      if (outcome.kind !== 'absent') {
+        return {
+          status: outcome.kind === 'created' ? 201 : 200,
+          body: toNodeResponse(outcome.node, canonical),
+        };
+      }
+    }
+
     const storageKey = this.keyGenerator.generate();
     const encryptionIv = await this.putBlobBytes(
       storageKey,
@@ -136,18 +162,25 @@ export class ContentService {
       limits.encryptionPolicy,
     );
 
-    const outcome = await this.repo.touchFile(namespaceId, root.id, segments, parents, {
-      storageKey,
-      size: '0',
-      mimeType: 'application/octet-stream',
-      sha256: EMPTY_SHA256,
-      encryptionIv,
-    });
+    try {
+      const outcome = await this.repo.touchFile(namespaceId, root.id, segments, parents, {
+        storageKey,
+        size: '0',
+        mimeType: 'application/octet-stream',
+        sha256: EMPTY_SHA256,
+        encryptionIv,
+      });
+      // 사전 확인 뒤 대상이 생겨 기존 FILE 분기로 끝나면 올린 빈 object는 아무 Blob row도 참조하지 않는다.
+      if (outcome.kind === 'replaced') await this.blobStorage.delete(storageKey).catch(() => undefined);
 
-    return {
-      status: outcome.kind === 'created' ? 201 : 200,
-      body: toNodeResponse(outcome.node, canonical),
-    };
+      return {
+        status: outcome.kind === 'created' ? 201 : 200,
+        body: toNodeResponse(outcome.node, canonical),
+      };
+    } catch (error) {
+      await deleteUnreferencedUpload(this.blobs, this.blobStorage, storageKey, error);
+      throw error;
+    }
   }
 
   async putContent(
@@ -185,6 +218,12 @@ export class ContentService {
       throw new VfsVersionConflictError(canonical);
     }
 
+    // 이미 조회한 대상으로 version 충돌이 확정되는 경우는 본문을 올리기 전에 거절한다.
+    // 트랜잭션 안의 검사가 권위 있는 판정이고, 이 사전 판정은 업로드 낭비를 줄이는 최적화다.
+    if (willConflict(existingTarget, ifMatchVersion, options.force)) {
+      throw new VfsVersionConflictError(canonical);
+    }
+
     const mimeType = normalizeMimeType(options.contentType);
     const storageKey = this.keyGenerator.generate();
     const uploaded = await this.contentIngress.upload(
@@ -195,26 +234,31 @@ export class ContentService {
       limits.encryptionPolicy === 'ENCRYPTED',
     );
 
-    const outcome = await this.repo.putFileContent(
-      namespaceId,
-      root.id,
-      segments,
-      options.parents,
-      {
-        storageKey,
-        size: String(uploaded.size),
-        mimeType,
-        sha256: uploaded.sha256,
-        encryptionIv: uploaded.encryptionIv,
-      },
-      ifMatchVersion,
-      options.force,
-    );
+    try {
+      const outcome = await this.repo.putFileContent(
+        namespaceId,
+        root.id,
+        segments,
+        options.parents,
+        {
+          storageKey,
+          size: String(uploaded.size),
+          mimeType,
+          sha256: uploaded.sha256,
+          encryptionIv: uploaded.encryptionIv,
+        },
+        ifMatchVersion,
+        options.force,
+      );
 
-    return {
-      status: outcome.kind === 'created' ? 201 : 200,
-      body: toNodeResponse(outcome.node, canonical),
-    };
+      return {
+        status: outcome.kind === 'created' ? 201 : 200,
+        body: toNodeResponse(outcome.node, canonical),
+      };
+    } catch (error) {
+      await deleteUnreferencedUpload(this.blobs, this.blobStorage, storageKey, error);
+      throw error;
+    }
   }
 
   // headOnly면 Blob을 열지 않고 헤더 정보만 반환한다(HEAD 요청).

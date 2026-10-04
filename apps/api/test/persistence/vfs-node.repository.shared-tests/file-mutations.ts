@@ -63,6 +63,40 @@ export function runFileMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       expect(result.node.version).toBe(file.version + 1);
     });
 
+    it('blob 없이 호출하면 기존 file의 content는 유지한 채 version만 올린다', async () => {
+      const namespace = await createNamespace('touch-null-blob-existing-ns');
+      const root = await getRepo().getRoot(namespace.id);
+      const file = await createFile(namespace.id, root!.id, 'a.txt');
+
+      const result = await getRepo().touchFile(namespace.id, root!.id, ['a.txt'], false, null);
+
+      expect(result.kind).toBe('replaced');
+      if (result.kind !== 'replaced') return;
+      expect(result.node.blobId).toBe(file.blobId);
+      expect(result.node.version).toBe(file.version + 1);
+    });
+
+    it('blob 없이 호출했는데 대상이 없으면 absent를 반환하고 아무것도 만들지 않는다', async () => {
+      const namespace = await createNamespace('touch-null-blob-absent-ns');
+      const root = await getRepo().getRoot(namespace.id);
+
+      const result = await getRepo().touchFile(namespace.id, root!.id, ['a.txt'], false, null);
+
+      expect(result).toEqual({ kind: 'absent' });
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['a.txt'])).toBeNull();
+      expect(await getDs().getRepository(BlobEntity).countBy({ namespaceId: namespace.id })).toBe(0);
+    });
+
+    it('blob 없이 호출해도 대상이 directory면 VfsIsDirectoryError를 던진다', async () => {
+      const namespace = await createNamespace('touch-null-blob-dir-ns');
+      const root = await getRepo().getRoot(namespace.id);
+      await getRepo().ensureDirectory(namespace.id, root!.id, ['adir'], false);
+
+      await expect(getRepo().touchFile(namespace.id, root!.id, ['adir'], false, null)).rejects.toThrow(
+        VfsIsDirectoryError,
+      );
+    });
+
     it('대상이 directory면 VfsIsDirectoryError를 던진다', async () => {
       const namespace = await createNamespace('touch-dir-ns');
       const root = await getRepo().getRoot(namespace.id);

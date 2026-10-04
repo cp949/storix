@@ -19,6 +19,7 @@ import type {
   VfsNodeRecord,
   BlobData,
   PutFileOutcome,
+  TouchFileOutcome,
   MutationTx,
   NamedDescendant,
 } from './vfs-node.repository.types.js';
@@ -93,7 +94,6 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     return { node: toRecord(current as VfsNodeEntity), created };
   }
 
-  @classifyPersistenceOperation
   async touchFile(
     namespaceId: string,
     rootId: string,
@@ -101,7 +101,25 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     parents: boolean,
     emptyBlob: BlobData,
     tx?: MutationTx,
-  ): Promise<PutFileOutcome> {
+  ): Promise<PutFileOutcome>;
+  // emptyBlob이 null이면 기존 FILE만 touch한다. 대상이 없으면 아무것도 만들지 않고 absent를 돌려준다.
+  async touchFile(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+    parents: boolean,
+    emptyBlob: BlobData | null,
+    tx?: MutationTx,
+  ): Promise<TouchFileOutcome>;
+  @classifyPersistenceOperation
+  async touchFile(
+    namespaceId: string,
+    rootId: string,
+    segments: string[],
+    parents: boolean,
+    emptyBlob: BlobData | null,
+    tx?: MutationTx,
+  ): Promise<TouchFileOutcome> {
     if (!tx) {
       return (
         await this.withMutation(namespaceId, rootId, (inner) =>
@@ -132,6 +150,8 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       this.markChanged(tx, touched.id, false);
       return { kind: 'replaced', node: toRecord(touched) };
     }
+
+    if (emptyBlob === null) return { kind: 'absent' };
 
     const blob = await blobRepo.save(blobRepo.create({ namespaceId, ...emptyBlob, referenceCount: 1 }));
     const created = await nodeRepo.save(

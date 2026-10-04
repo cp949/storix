@@ -30,6 +30,7 @@ import {
   VfsPreconditionRequiredError,
 } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
+import { deleteUnreferencedUpload } from './unreferenced-upload-cleanup.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -279,16 +280,7 @@ export class ConditionalContentService {
           headers: { 'x-request-id': requestId },
         };
       } catch (error) {
-        // commit 결과가 불명확한 DB 장애(ack 유실)에서 참조된 객체를 지우면 공개 파일이 손실된다.
-        // 참조 여부를 확인하지 못해도 보존하고 orphan GC에 맡긴다.
-        const referenced = await this.blobs
-          .findKnownStorageKeys([storageKey])
-          .then((known) => known.has(storageKey))
-          .catch(() => true);
-        // 5xx와 비도메인 오류는 commit 완료 여부를 판정할 수 없어 보존한다.
-        // 삭제 규칙은 docs/design/02-receipt-error-replay.md "content 업로드"를 따른다.
-        if (!referenced && error instanceof DomainError && error.status < 500)
-          await this.storage.delete(storageKey).catch(() => undefined);
+        await deleteUnreferencedUpload(this.blobs, this.storage, storageKey, error);
         return await storeErrorReceipt(this.receipts, owner, error, requestId);
       }
     } catch (error) {

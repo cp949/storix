@@ -61,6 +61,9 @@ export type PutFileOutcome =
   | { readonly kind: 'created'; readonly node: VfsNodeRecord }
   | { readonly kind: 'replaced'; readonly node: VfsNodeRecord };
 
+/** blob 없이 호출한 touch의 결과다. 대상이 없으면 `absent`다. */
+export type TouchFileOutcome = PutFileOutcome | { readonly kind: 'absent' };
+
 export interface MutationTx {
   readonly manager: EntityManager;
   readonly namespaceId: string;

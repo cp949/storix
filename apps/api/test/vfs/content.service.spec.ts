@@ -3,6 +3,7 @@ import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
+import type { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { StorageKeyGenerator } from '../../src/storage/storage-key-generator.js';
 import { VfsFileTooLargeError } from '../../src/storage/storage.errors.js';
 import {
@@ -19,6 +20,7 @@ import {
   VfsVersionConflictError,
 } from '../../src/vfs/vfs.errors.js';
 import { VfsNamespaceNotFoundError } from '../../src/vfs/vfs.errors.js';
+import { StorageUnavailableError } from '../../src/common/storage-failure.errors.js';
 
 const NAMESPACE_ID = '11111111-1111-1111-1111-111111111111';
 const NONE_LIMITS = {
@@ -56,7 +58,7 @@ describe('ContentService', () => {
       () => Promise<{ root: VfsNodeRecord; limits: NamespaceResourceLimits } | null>
     >;
     resolvePath: jest.Mock<() => Promise<VfsNodeRecord | null>>;
-    touchFile: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
+    touchFile: jest.Mock<() => Promise<{ kind: string; node?: VfsNodeRecord }>>;
     putFileContent: jest.Mock<() => Promise<{ kind: string; node: VfsNodeRecord }>>;
     getBlobStorageInfo: jest.Mock<() => Promise<{ storageKey: string; encryptionIv: Buffer | null } | null>>;
     readContentFile: jest.Mock<
@@ -72,6 +74,7 @@ describe('ContentService', () => {
     delete: jest.Mock<() => Promise<void>>;
     list: jest.Mock;
   };
+  let blobs: { findKnownStorageKeys: jest.Mock<(keys: readonly string[]) => Promise<Set<string>>> };
   let config: { get: jest.Mock<(key: string) => string | undefined> };
   let masterKey: Buffer | null;
   let service: ContentService;
@@ -84,6 +87,7 @@ describe('ContentService', () => {
       blobStorage as unknown as BlobStorage,
       masterKey,
       new ContentIngressService(blobStorage as unknown as BlobStorage, masterKey),
+      blobs as unknown as BlobRepository,
       config as unknown as ConfigService,
     );
   }
@@ -100,8 +104,13 @@ describe('ContentService', () => {
     blobStorage = {
       put: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       get: jest.fn(),
-      delete: jest.fn(),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       list: jest.fn(),
+    };
+    blobs = {
+      findKnownStorageKeys: jest
+        .fn<(keys: readonly string[]) => Promise<Set<string>>>()
+        .mockResolvedValue(new Set()),
     };
     config = {
       // 기존 getOrThrow 스텁이 모든 키에 '1000'을 돌려주던 것과 같은 조건을 유지한다.
@@ -119,6 +128,18 @@ describe('ContentService', () => {
 
       await expect(service.touch(NAMESPACE_ID, '/', false)).rejects.toThrow(VfsIsDirectoryError);
       expect(blobStorage.put).not.toHaveBeenCalled();
+    });
+
+    it('대상이 directory면 업로드 없이 VfsIsDirectoryError를 던진다', async () => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+      repo.resolvePath.mockResolvedValue(
+        makeNode({ type: 'DIRECTORY', blobId: null, size: null, mimeType: null }),
+      );
+
+      await expect(service.touch(NAMESPACE_ID, '/a', false)).rejects.toThrow(VfsIsDirectoryError);
+
+      expect(blobStorage.put).not.toHaveBeenCalled();
+      expect(repo.touchFile).not.toHaveBeenCalled();
     });
 
     it('0-byte Blob을 업로드하고 repository에 위임한다', async () => {
@@ -234,7 +255,7 @@ describe('ContentService', () => {
 
     it('If-Match 헤더를 정수 version으로 변환해 전달한다', async () => {
       repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
-      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE' }));
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE', version: 3 }));
       repo.putFileContent.mockResolvedValue({ kind: 'replaced', node: makeNode() });
 
       await service.putContent(NAMESPACE_ID, '/a.txt', Readable.from(Buffer.from('hi')), {
@@ -279,6 +300,7 @@ describe('ContentService', () => {
       await service.putContent(NAMESPACE_ID, '/a.txt', Readable.from(Buffer.from('hi')), {
         ...noOptions,
         ifMatch: '""',
+        force: true,
       });
 
       expect(repo.putFileContent).toHaveBeenCalledWith(
@@ -288,7 +310,7 @@ describe('ContentService', () => {
         false,
         expect.anything(),
         null,
-        false,
+        true,
       );
     });
 
@@ -371,6 +393,172 @@ describe('ContentService', () => {
       const written = Buffer.concat(writtenChunks);
       expect(written).not.toEqual(Buffer.from('hello'));
       expect(written.length).toBe(5);
+    });
+  });
+
+  describe('putContent 사전 거절과 업로드 객체 정리', () => {
+    const noOptions = {
+      contentType: undefined,
+      contentLength: undefined,
+      ifMatch: undefined,
+      force: false,
+      parents: false,
+    };
+    const body = () => Readable.from(Buffer.from('hello'));
+
+    beforeEach(() => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+    });
+
+    it('기존 FILE에 If-Match도 force도 없으면 업로드 전에 VfsVersionConflictError를 던진다', async () => {
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE', version: 2 }));
+
+      await expect(service.putContent(NAMESPACE_ID, '/a.txt', body(), noOptions)).rejects.toThrow(
+        VfsVersionConflictError,
+      );
+
+      expect(blobStorage.put).not.toHaveBeenCalled();
+      expect(repo.putFileContent).not.toHaveBeenCalled();
+    });
+
+    it('If-Match가 현재 version과 다르면 force여도 업로드 전에 VfsVersionConflictError를 던진다', async () => {
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE', version: 2 }));
+
+      await expect(
+        service.putContent(NAMESPACE_ID, '/a.txt', body(), { ...noOptions, ifMatch: '1', force: true }),
+      ).rejects.toThrow(VfsVersionConflictError);
+
+      expect(blobStorage.put).not.toHaveBeenCalled();
+    });
+
+    it('대상이 없는데 If-Match가 있으면 업로드 전에 VfsVersionConflictError를 던진다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+
+      await expect(
+        service.putContent(NAMESPACE_ID, '/a.txt', body(), { ...noOptions, ifMatch: '1' }),
+      ).rejects.toThrow(VfsVersionConflictError);
+
+      expect(blobStorage.put).not.toHaveBeenCalled();
+    });
+
+    it('If-Match가 현재 version과 같으면 사전 거절 없이 저장한다', async () => {
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE', version: 2 }));
+      repo.putFileContent.mockResolvedValue({ kind: 'replaced', node: makeNode() });
+
+      await service.putContent(NAMESPACE_ID, '/a.txt', body(), { ...noOptions, ifMatch: '2' });
+
+      expect(repo.putFileContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('repository가 4xx로 실패하고 Blob row가 없으면 업로드한 object를 삭제한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.putFileContent.mockRejectedValue(new VfsVersionConflictError('/a.txt'));
+
+      await expect(service.putContent(NAMESPACE_ID, '/a.txt', body(), noOptions)).rejects.toThrow(
+        VfsVersionConflictError,
+      );
+
+      const storageKey = blobStorage.put.mock.calls[0]?.[0] as unknown as string;
+      expect(blobStorage.delete).toHaveBeenCalledWith(storageKey);
+    });
+
+    it('repository가 5xx로 실패하면 업로드한 object를 보존한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.putFileContent.mockRejectedValue(new StorageUnavailableError());
+
+      await expect(service.putContent(NAMESPACE_ID, '/a.txt', body(), noOptions)).rejects.toThrow(
+        StorageUnavailableError,
+      );
+
+      expect(blobStorage.delete).not.toHaveBeenCalled();
+    });
+
+    it('repository가 DomainError가 아닌 오류로 실패하면 업로드한 object를 보존한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.putFileContent.mockRejectedValue(new Error('commit ack lost'));
+
+      await expect(service.putContent(NAMESPACE_ID, '/a.txt', body(), noOptions)).rejects.toThrow(
+        'commit ack lost',
+      );
+
+      expect(blobStorage.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('touch 기존 파일과 업로드 객체 정리', () => {
+    beforeEach(() => {
+      repo.getRootWithLimits.mockResolvedValue({ root: makeRoot(), limits: NONE_LIMITS });
+    });
+
+    it('기존 FILE이면 빈 object를 올리지 않고 blob 없이 touch한다', async () => {
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE' }));
+      repo.touchFile.mockResolvedValue({ kind: 'replaced', node: makeNode() });
+
+      const result = await service.touch(NAMESPACE_ID, '/a.txt', false);
+
+      expect(blobStorage.put).not.toHaveBeenCalled();
+      expect(repo.touchFile).toHaveBeenCalledWith(NAMESPACE_ID, 'root', ['a.txt'], false, null);
+      expect(result.status).toBe(200);
+    });
+
+    it('사전 확인 뒤 대상이 사라져 absent가 오면 빈 object를 올리고 다시 touch한다', async () => {
+      repo.resolvePath.mockResolvedValue(makeNode({ type: 'FILE' }));
+      repo.touchFile
+        .mockResolvedValueOnce({ kind: 'absent' })
+        .mockResolvedValueOnce({ kind: 'created', node: makeNode() });
+
+      const result = await service.touch(NAMESPACE_ID, '/a.txt', false);
+
+      expect(blobStorage.put).toHaveBeenCalledTimes(1);
+      expect(repo.touchFile).toHaveBeenCalledTimes(2);
+      expect(repo.touchFile).toHaveBeenLastCalledWith(
+        NAMESPACE_ID,
+        'root',
+        ['a.txt'],
+        false,
+        expect.objectContaining({ size: '0' }),
+      );
+      expect(result.status).toBe(201);
+    });
+
+    it('대상이 없으면 처음부터 빈 object를 올려 touch한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.touchFile.mockResolvedValue({ kind: 'created', node: makeNode() });
+
+      await service.touch(NAMESPACE_ID, '/a.txt', false);
+
+      expect(blobStorage.put).toHaveBeenCalledTimes(1);
+      expect(repo.touchFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('사전 확인 뒤 기존 파일이 replaced로 끝나면 올린 빈 object를 삭제한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.touchFile.mockResolvedValue({ kind: 'replaced', node: makeNode() });
+
+      const result = await service.touch(NAMESPACE_ID, '/a.txt', false);
+
+      const storageKey = blobStorage.put.mock.calls[0]?.[0] as unknown as string;
+      expect(blobStorage.delete).toHaveBeenCalledWith(storageKey);
+      expect(result.status).toBe(200);
+    });
+
+    it('repository가 4xx로 실패하고 Blob row가 없으면 올린 빈 object를 삭제한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.touchFile.mockRejectedValue(new VfsIsDirectoryError('/a'));
+
+      await expect(service.touch(NAMESPACE_ID, '/a', false)).rejects.toThrow(VfsIsDirectoryError);
+
+      const storageKey = blobStorage.put.mock.calls[0]?.[0] as unknown as string;
+      expect(blobStorage.delete).toHaveBeenCalledWith(storageKey);
+    });
+
+    it('repository가 5xx로 실패하면 올린 빈 object를 보존한다', async () => {
+      repo.resolvePath.mockResolvedValue(null);
+      repo.touchFile.mockRejectedValue(new StorageUnavailableError());
+
+      await expect(service.touch(NAMESPACE_ID, '/a', false)).rejects.toThrow(StorageUnavailableError);
+
+      expect(blobStorage.delete).not.toHaveBeenCalled();
     });
   });
 
