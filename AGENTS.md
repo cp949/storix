@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues live as GitHub issues in this repo. Use the `gh` CLI for all operations. Design specs and implementation plans are not issues (see `docs/agents/rubber-workflow.md`). See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in this repo. Use the `gh` CLI for all operations. Design specs and implementation plans are not issues (see `docs/agents/rubber-workflow.md`). Register only items worth tracking; criteria in `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

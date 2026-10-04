@@ -4,6 +4,26 @@ Issues for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
 Design specs and implementation plans are not issues. One-off task documents live in `_works/` (untracked), long-lived designs in `docs/design/`. See `docs/agents/rubber-workflow.md`. Do not register them with `gh issue create`.
 
+## 등록 기준
+
+issue는 미해결 항목을 추적하는 수단이다. 작업 이력은 커밋 메시지, `CHANGELOG.md`, `docs/`가 남긴다.
+issue로 남길 가치가 있는 것만 등록한다.
+
+등록한다:
+
+- 지금 구현하지 않고 보류하는 항목
+- 사용자나 다른 에이전트가 따로 추적해야 하는 항목
+- 외부 보고, 또는 재현 조건·원시 로그를 보존해야 하는 간헐 실패
+- 영향이 커서 별도 논의·승인 기록이 필요한 결함 (높음·중간 심각도)
+
+등록하지 않는다:
+
+- 같은 세션에서 구현해 dev에 병합할 낮은 심각도 결함. issue를 열자마자 닫게 되어 추적 기능이 없다.
+- 사소해서 버려도 되는 후속 작업
+- 설계·구현 계획 (위 규칙)
+
+등록하지 않은 수정의 결정 근거와 검증 범위는 커밋 본문에 요약한다. 수정 내용은 `CHANGELOG.md`에 적는다.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
