@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -26,6 +27,7 @@ describe('SqliteDumpTool', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -54,6 +56,34 @@ describe('SqliteDumpTool', () => {
       await expect(fs.access(`${dbPath}-wal`)).rejects.toThrow();
       await expect(fs.access(`${dbPath}-shm`)).rejects.toThrow();
       await expect(fs.access(`${dbPath}-journal`)).rejects.toThrow();
+    });
+
+    it('복사가 중간에 실패해도 기존 DB 파일을 그대로 두고 임시 파일을 남기지 않는다', async () => {
+      const inFile = path.join(tmpDir, 'backup.sqlite');
+      await fs.writeFile(inFile, 'new-dump-content');
+      await fs.writeFile(dbPath, 'existing-db-content');
+      // 대상 파일에 일부만 쓰고 끊기는 복사를 흉내 낸다.
+      jest.spyOn(fs, 'copyFile').mockImplementationOnce(async (_src, dest) => {
+        await fs.writeFile(dest, 'partial');
+        throw new Error('disk full');
+      });
+      const tool = new SqliteDumpTool(makeConfig({ STORIX_DB_SQLITE_PATH: dbPath }));
+
+      await expect(tool.restore(inFile)).rejects.toThrow('disk full');
+
+      await expect(fs.readFile(dbPath, 'utf8')).resolves.toBe('existing-db-content');
+      expect(await fs.readdir(tmpDir)).toEqual(expect.arrayContaining(['backup.sqlite', 'storix.sqlite']));
+      expect(await fs.readdir(tmpDir)).toHaveLength(2);
+    });
+
+    it('성공하면 임시 파일이 남지 않는다', async () => {
+      const inFile = path.join(tmpDir, 'backup.sqlite');
+      await fs.writeFile(inFile, 'dump-content');
+      const tool = new SqliteDumpTool(makeConfig({ STORIX_DB_SQLITE_PATH: dbPath }));
+
+      await tool.restore(inFile);
+
+      expect((await fs.readdir(tmpDir)).sort()).toEqual(['backup.sqlite', 'storix.sqlite']);
     });
   });
 });

@@ -147,6 +147,17 @@ describe('Backup/Restore SQLite 통합', () => {
     }
     expect(Buffer.concat(chunks).equals(content)).toBe(true);
 
+    // 복구는 같은 경로에 파일을 새로 놓으므로 복구 전에 연 연결은 이전 파일을 계속 본다.
+    // 실제 배포에서는 복구 프로세스가 끝난 뒤 새 프로세스가 새로 연결한다.
+    await dataSource.destroy();
+    dataSource = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+    });
+    await dataSource.initialize();
+    backupRepository = new BackupRepository(dataSource);
     const restoredNamespaceRepo = dataSource.getRepository(NamespaceEntity);
     await expect(
       restoredNamespaceRepo.findOneBy({ name: 'sqlite-backup-fixture-ns' }),

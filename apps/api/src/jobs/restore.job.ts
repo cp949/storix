@@ -66,8 +66,9 @@ export class RestoreJob {
     // 끝난다. 파괴적 작업 전에 알려진 구조인지 확인한다.
     await this.assertSupportedLayout();
 
-    const hasExistingData = await this.backupRepository.hasExistingNamespaces();
-    if (hasExistingData && !this.force) {
+    // force는 대상 상태와 무관하게 덮어쓰므로 확인하지 않는다. 확인 쿼리는 대상 DB가 손상됐거나
+    // 아직 migrate되지 않았으면 던지므로, force에서도 실행하면 그런 대상을 복구할 수 없다.
+    if (!this.force && (await this.backupRepository.hasExistingNamespaces())) {
       throw new RestoreTargetNotEmptyError();
     }
 

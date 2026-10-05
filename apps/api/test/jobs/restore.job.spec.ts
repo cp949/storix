@@ -290,6 +290,24 @@ describe('RestoreJob 백업 구조 검사', () => {
       expect(storage.delete.mock.calls.map(([key]) => key)).toEqual(['blobs/stray/x', 'upload-staging/old']);
     });
 
+    it('force 복구는 대상 DB의 namespace 존재 여부를 확인하지 않는다', async () => {
+      // 대상 DB가 손상·미migrate여도 force 복구가 진행되려면 확인 쿼리를 아예 실행하지 않아야 한다.
+      backupRepository.hasExistingNamespaces.mockRejectedValue(new Error('SQLITE_CORRUPT'));
+
+      await expect(createJob(true).run()).resolves.toMatchObject({ restoredObjectCount: 0 });
+
+      expect(backupRepository.hasExistingNamespaces).not.toHaveBeenCalled();
+      expect(dumpTool.restore).toHaveBeenCalledTimes(1);
+    });
+
+    it('force가 아니면 namespace 존재 여부를 한 번 확인한다', async () => {
+      backupRepository.hasExistingNamespaces.mockResolvedValue(false);
+
+      await createJob(false).run();
+
+      expect(backupRepository.hasExistingNamespaces).toHaveBeenCalledTimes(1);
+    });
+
     it('force가 아니면 기존 object를 지우지 않는다', async () => {
       await writeBackupBlob('blobs/ab/one');
       backupRepository.hasExistingNamespaces.mockResolvedValue(false);
