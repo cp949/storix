@@ -203,3 +203,18 @@ pnpm --filter @cp949/storix-demo1-was test:integration --runTestsByPath src/vert
 설정이 없으면 suite가 누락된 환경변수를 명시하며 실패한다. capability가 비활성이면
 재개 업로드 시나리오가 사전 조건 오류로 실패한다. 이 suite는 실제 Storix 인스턴스와
 저장소를 사용하므로, 실행하지 않은 환경에서는 연동 성공으로 간주하지 않는다.
+
+## 오류 응답
+
+WAS 오류 응답 형태는 `{ code, message, requestId }`다.
+
+- Storix가 반환한 오류는 `status`·`code`·`message`를 그대로 전달한다.
+  - `message`에는 Storix의 설명이 들어가며 사용자 root 형태의 경로(`/documents/alice/...`)가 포함될 수 있다.
+  - demo1은 보안 최소화 시나리오라서 이를 숨기지 않는다. 오류 정보를 숨기는 쪽은 `demo2` 범위다.
+- Storix가 WAS의 API 키를 거부하면(upstream 401) 502 `STORIX_UPSTREAM_UNAUTHORIZED`로 응답한다.
+  - 사용자 인증 실패(401)와 구분하기 위해서다.
+  - 응답 `message`는 고정 문구다. upstream `code`와 `requestId`는 WAS 로그에만 남는다.
+- 요청 본문의 경로 필드(`source`·`destination`·`path`)는 문자열이어야 한다.
+  - 문자열이 아니거나 없거나 `null`이면 400 `DEMO_INVALID_REQUEST_BODY`다.
+  - 빈 문자열은 사용자 root를 뜻하며 허용한다.
+- JSON 파싱 실패(400)와 본문 과대(413)는 `HTTP_ERROR` code로 응답하고 `requestId`를 포함한다.
