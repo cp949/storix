@@ -207,3 +207,33 @@ TypeORM better-sqlite3 드라이버는 DataSource당 연결 하나와 QueryRunne
   - 깊이가 0인데 연결에 트랜잭션이 남아 있으면 `ROLLBACK`을 직접 한 번 재시도한다. 그래도 남으면 소유권을 풀지 않고 error 로그를 남긴다. 이 상태는 프로세스 재시작으로만 복구한다.
 - 불변식: 한 시점에 연결에서 실행 중인 쿼리 흐름은 하나다. 트랜잭션 안에서 외부 I/O를 기다리는 동안 다른 모든 요청이 대기하므로, 트랜잭션 콜백 안에 외부 I/O를 새로 넣지 않는다(현재는 스냅샷 본문 조회의 `storage.get`이 유일하다).
 - 게이트는 읽기 동시성을 제공하지 않는다. 클라이언트 취소는 처리하지 않는다.
+
+## 저장 장애 분류
+
+`classifyPersistenceFailure`(`apps/api/src/persistence/persistence-failure.ts`)가 DB 드라이버 오류를 응답 오류로 바꾼다.
+오류 code는 `STORAGE_UNAVAILABLE`(503)과 `STORAGE_FAILURE`(500) 두 가지다.
+`Retry-After`는 붙이지 않는다.
+
+| 분류                                 | 식별 값                                                                                                                                                                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 일시 오류(503 `STORAGE_UNAVAILABLE`) | PostgreSQL SQLSTATE `08000`·`08003`·`08006`·`40001`·`40P01`·`53300`·`55P03`·`57P01`·`57P02`·`57P03`·`57014`, `SQLITE_BUSY`·`SQLITE_LOCKED`·`SQLITE_NOMEM`, Node `ECONNREFUSED`·`ECONNRESET`·`ETIMEDOUT`, pg 고정 메시지 2종 |
+| 영구 오류(500 `STORAGE_FAILURE`)     | PostgreSQL `53100`·`XX001`, `SQLITE_FULL`·`SQLITE_CORRUPT`·`SQLITE_READONLY`·`SQLITE_IOERR`                                                                                                                                 |
+
+규칙:
+
+- better-sqlite3의 확장 결과 코드는 `BUSY`·`LOCKED`·`CORRUPT`·`IOERR` 계열만 기본 코드로 접는다.
+  - `SQLITE_READONLY_RECOVERY`처럼 기본 코드와 일시성이 다른 계열은 접지 않는다.
+- pg는 연결이 code 없이 끊기면 message만 있는 `Error`를 던진다.
+  - `Connection terminated unexpectedly`와 `Client has encountered a connection error and is not queryable`는 `Error` 인스턴스이고 message 전체가 같을 때만 일시 오류로 본다.
+  - 부분 일치와 대소문자 변형은 분류하지 않는다.
+  - 종료 중 연결의 `Connection terminated`는 분류하지 않는다.
+- `SQLITE_FULL`은 영구 오류다.
+  - 디스크를 비우면 복구되지만 503은 같은 `Idempotency-Key`로 자동 재시도할 수 있다는 약속이다.
+  - 디스크가 찬 동안 재시도하면 같은 쓰기가 계속 실패한다.
+  - 그래서 운영자 개입이 필요한 500으로 둔다.
+- `SQLITE_CANTOPEN`, `SQLITE_CONSTRAINT_*`, PostgreSQL `23505`는 분류하지 않는다.
+  - 제약 위반은 각 호출 지점의 충돌 처리(409 등)가 맡는다.
+- 분류는 DB 접근 경계에서만 한다.
+  - repository 공개 연산과 DB 호출만 하는 서비스 메서드에 `@classifyPersistenceOperation`을 붙인다.
+  - `DomainErrorFilter`에서 일괄 분류하지 않는다.
+  - 요청 스트림이 끊긴 `ECONNRESET`과 DB 연결 오류를 구분할 수 없기 때문이다.
