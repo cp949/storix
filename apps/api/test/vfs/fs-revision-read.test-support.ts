@@ -78,9 +78,9 @@ export function registerFsRevisionReadContract(ctx: FsHttpContext) {
           await request(ctx.httpServer)
             .get(`${base}/ls`)
             .query({ path: '/b', consistency: 'revision', cursor: first.body.nextCursor })
-            .expect(400)
+            .expect(412)
         ).body.code,
-      ).toBe('VFS_INVALID_CURSOR');
+      ).toBe('VFS_PRECONDITION_FAILED');
       await request(ctx.httpServer)
         .post(`${base}/content`)
         .query({ path: '/a/x/code.py' })
@@ -111,7 +111,7 @@ export function registerFsRevisionReadContract(ctx: FsHttpContext) {
       }
     });
 
-    it('rejects a malformed cursor and one from a deleted and recreated directory', async () => {
+    it('rejects a malformed cursor with 400 and one from a deleted and recreated directory with 412', async () => {
       const namespaceId = await ctx.createNamespace('revision-recreated-http-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;
       for (const path of ['/dir', '/dir/a', '/dir/b']) {
@@ -136,9 +136,9 @@ export function registerFsRevisionReadContract(ctx: FsHttpContext) {
           await request(ctx.httpServer)
             .get(`${base}/ls`)
             .query({ path: '/dir', consistency: 'revision', cursor: first.body.nextCursor })
-            .expect(400)
+            .expect(412)
         ).body.code,
-      ).toBe('VFS_INVALID_CURSOR');
+      ).toBe('VFS_PRECONDITION_FAILED');
     });
 
     it('name에 NUL이 든 위조 rc1 cursor는 400 VFS_INVALID_CURSOR다', async () => {

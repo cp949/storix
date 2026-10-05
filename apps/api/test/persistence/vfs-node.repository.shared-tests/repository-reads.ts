@@ -1,6 +1,6 @@
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 import { encodeRevision } from '../../../src/vfs/revision.js';
-import { VfsInvalidCursorError, VfsPreconditionFailedError } from '../../../src/vfs/vfs.errors.js';
+import { VfsPreconditionFailedError } from '../../../src/vfs/vfs.errors.js';
 import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
 
 export function runRepositoryReadsTests(helpers: VfsNodeRepositoryTestHelpers): void {
@@ -36,9 +36,38 @@ export function runRepositoryReadsTests(helpers: VfsNodeRepositoryTestHelpers): 
       await expect(
         getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1),
       ).rejects.toThrow(VfsPreconditionFailedError);
+      // 다른 디렉터리의 cursor는 교체된 디렉터리의 cursor와 서버가 구분할 수 없으므로 같은 412다.
       await expect(
         getRepo().listRevisionChildren(namespace.id, root.id, ['b'], '/b', cursor, 1),
-      ).rejects.toThrow(VfsInvalidCursorError);
+      ).rejects.toThrow(VfsPreconditionFailedError);
+    });
+
+    it('같은 경로의 디렉터리가 교체되면 옛 cursor는 400이 아니라 412이고 current는 새 디렉터리다', async () => {
+      const namespace = await createNamespace('revision-replaced-dir-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'x'], true);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'y'], false);
+      const first = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 1);
+      const cursor = {
+        directoryId: first.directory.id,
+        directoryRevision: encodeRevision(first.directory),
+        name: first.rows[0].name,
+        id: first.rows[0].id,
+      };
+      await getRepo().removeNode(namespace.id, root.id, ['a'], true, 10);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'x'], false);
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'y'], false);
+
+      const rejected = await getRepo()
+        .listRevisionChildren(namespace.id, root.id, ['a'], '/a', cursor, 1)
+        .catch((error: unknown) => error);
+      expect(rejected).toBeInstanceOf(VfsPreconditionFailedError);
+      const replaced = await getRepo().listRevisionChildren(namespace.id, root.id, ['a'], '/a', null, 1);
+      expect(replaced.directory.id).not.toBe(first.directory.id);
+      expect((rejected as VfsPreconditionFailedError).current).toMatchObject({
+        revision: encodeRevision(replaced.directory),
+      });
     });
 
     it('reads directory and child revisions from one transaction during a concurrent content change', async () => {

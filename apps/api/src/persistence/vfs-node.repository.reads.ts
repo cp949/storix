@@ -4,12 +4,7 @@ import { KeysetCursor } from '../common/keyset-cursor.js';
 import { encodeRevision } from '../vfs/revision.js';
 import { toPreconditionCurrent, VfsPreconditionCurrentDto } from '../vfs/dto/node-response.dto.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
-import {
-  VfsInvalidCursorError,
-  VfsNodeNotFoundError,
-  VfsNotDirectoryError,
-  VfsPreconditionFailedError,
-} from '../vfs/vfs.errors.js';
+import { VfsNodeNotFoundError, VfsNotDirectoryError, VfsPreconditionFailedError } from '../vfs/vfs.errors.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { VfsNodeEntity, VfsNodeType } from './entities/vfs-node.entity.js';
 import { RevisionCursor } from '../vfs/revision-cursor.js';
@@ -164,9 +159,8 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
       const directory = await this.resolvePathInManager(manager, namespaceId, rootId, segments);
       if (!directory) throw new VfsNodeNotFoundError(canonicalPath);
       if (directory.type !== 'DIRECTORY') throw new VfsNotDirectoryError(canonicalPath);
-      if (cursor?.directoryId !== undefined && cursor.directoryId !== directory.id) {
-        throw new VfsInvalidCursorError('directory mismatch');
-      }
+      // revision 토큰이 디렉터리 id를 포함하므로 같은 경로의 디렉터리가 교체되거나 다른 디렉터리의
+      // cursor를 받은 경우도 이 비교가 불일치로 잡는다. 서버는 두 경우를 구분할 수 없다.
       if (cursor && cursor.directoryRevision !== encodeRevision(directory)) {
         throw new VfsPreconditionFailedError(canonicalPath, this.currentOf(directory, canonicalPath));
       }
