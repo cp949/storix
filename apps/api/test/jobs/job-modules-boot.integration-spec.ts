@@ -53,6 +53,8 @@ describe('job 진입점 모듈 부팅 통합', () => {
     'STORIX_STORAGE_BUCKET',
     'STORIX_STORAGE_PATH_STYLE',
     'STORIX_STORAGE_REGION',
+    'STORIX_STORAGE_SOCKET_TIMEOUT_MS',
+    'STORIX_STORAGE_CONNECT_TIMEOUT_MS',
     'STORIX_ORPHAN_GRACE_PERIOD',
     'STORIX_GC_MIN_INTERVAL',
     'STORIX_VFS_CHANGE_RETENTION_DAYS',
@@ -81,6 +83,8 @@ describe('job 진입점 모듈 부팅 통합', () => {
       // compose가 `${VAR:-}`로 넘기는 값은 미설정이 아니라 빈 문자열로 도착한다.
       STORIX_STORAGE_PATH_STYLE: '',
       STORIX_STORAGE_REGION: '',
+      STORIX_STORAGE_SOCKET_TIMEOUT_MS: '',
+      STORIX_STORAGE_CONNECT_TIMEOUT_MS: '',
     };
   }
 

@@ -34,6 +34,18 @@ describe('classifyBlobFailure', () => {
     },
   );
 
+  it('SDK handler가 만든 TimeoutError는 code가 없어도 503이다', () => {
+    const timeout = Object.assign(new Error('the request socket timed out after 120000 ms'), {
+      name: 'TimeoutError',
+    });
+
+    expect(classifyBlobFailure(timeout)).toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
+  });
+
+  it('name만 TimeoutError를 흉내 낸 값은 Error가 아니면 분류하지 않는다', () => {
+    expect(classifyBlobFailure({ name: 'TimeoutError' })).toBeNull();
+  });
+
   it('message만 같은 오류, 일반 code 모방, DomainError 및 미확인 코드는 분류하지 않는다', () => {
     expect(classifyBlobFailure(new Error('ECONNRESET SlowDown'))).toBeNull();
     expect(classifyBlobFailure({ name: 'SlowDown' })).toBeNull();

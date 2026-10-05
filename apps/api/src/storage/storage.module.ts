@@ -7,6 +7,13 @@ import { BLOB_STORAGE, STORAGE_BUCKET, STORAGE_CLIENT, STORAGE_PUBLIC_CLIENT } f
 import { S3BlobStorage } from './s3-blob-storage.js';
 import { StorageKeyGenerator } from './storage-key-generator.js';
 
+// 응답이 멈춘 소켓이 무기한 남지 않게 하는 상한이다. socketTimeout은 소켓 무활동 시간이라 정상 전송은 끊지 않고,
+// 큰 object의 CompleteMultipartUpload처럼 서버가 응답 전에 오래 걸리는 호출을 오탐하지 않도록 넉넉히 잡는다.
+const DEFAULT_SOCKET_TIMEOUT_MS = 120_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+// Node 타이머는 2^31-1ms를 넘으면 1ms로 줄여 즉시 발화하므로 그 값까지만 받는다.
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 // IPv6 리터럴은 URL에서 대괄호가 필요하다.
 function toEndpoint(host: string, port: number, useSsl: boolean): string {
   const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
@@ -30,6 +37,19 @@ function buildClientConfig(config: ConfigService, endpoint: string): S3ClientCon
     ),
     // 업로드 stream은 재생할 수 없고, 저장 장애는 호출자가 분류해 응답한다. SDK 자동 재시도를 끈다.
     maxAttempts: 1,
+    // 요청 전체 시간(requestTimeout)은 대용량 전송을 끊고 본문 도중 정지도 못 잡아 쓰지 않는다.
+    requestHandler: {
+      socketTimeout: parsePositiveInt(
+        config.get<string>('STORIX_STORAGE_SOCKET_TIMEOUT_MS'),
+        DEFAULT_SOCKET_TIMEOUT_MS,
+        MAX_TIMEOUT_MS,
+      ),
+      connectionTimeout: parsePositiveInt(
+        config.get<string>('STORIX_STORAGE_CONNECT_TIMEOUT_MS'),
+        DEFAULT_CONNECT_TIMEOUT_MS,
+        MAX_TIMEOUT_MS,
+      ),
+    },
     // 기본값(WHEN_SUPPORTED)은 요청에 CRC32 체크섬과 aws-chunked 인코딩을 붙인다.
     // 일부 S3 호환 백엔드가 이를 거부하므로 서비스가 요구할 때만 계산한다.
     requestChecksumCalculation: 'WHEN_REQUIRED',

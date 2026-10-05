@@ -70,6 +70,48 @@ describe('buildS3ClientConfig', () => {
     ).toBe('ap-northeast-2');
   });
 
+  it('timeout 환경변수가 없으면 socketTimeout 120초, connectionTimeout 10초를 쓴다', () => {
+    expect(buildS3ClientConfig(stubConfig(REQUIRED)).requestHandler).toEqual({
+      socketTimeout: 120_000,
+      connectionTimeout: 10_000,
+    });
+  });
+
+  it('STORIX_STORAGE_SOCKET_TIMEOUT_MS·STORIX_STORAGE_CONNECT_TIMEOUT_MS를 그대로 반영한다', () => {
+    const config = buildS3ClientConfig(
+      stubConfig({
+        ...REQUIRED,
+        STORIX_STORAGE_SOCKET_TIMEOUT_MS: '30000',
+        STORIX_STORAGE_CONNECT_TIMEOUT_MS: '2500',
+      }),
+    );
+
+    expect(config.requestHandler).toEqual({ socketTimeout: 30_000, connectionTimeout: 2_500 });
+  });
+
+  it('timeout 환경변수가 빈 문자열이면 기본값을 쓴다', () => {
+    const config = buildS3ClientConfig(
+      stubConfig({
+        ...REQUIRED,
+        STORIX_STORAGE_SOCKET_TIMEOUT_MS: '',
+        STORIX_STORAGE_CONNECT_TIMEOUT_MS: '',
+      }),
+    );
+
+    expect(config.requestHandler).toEqual({ socketTimeout: 120_000, connectionTimeout: 10_000 });
+  });
+
+  // 0은 무제한이라 무기한 대기를 되살린다. 2147483647 초과는 Node 타이머가 1ms로 줄여 즉시 끊는다.
+  it.each(['STORIX_STORAGE_SOCKET_TIMEOUT_MS', 'STORIX_STORAGE_CONNECT_TIMEOUT_MS'])(
+    '%s가 0·음수·비정수·타이머 상한 초과면 설정 해석을 거부한다',
+    (name) => {
+      for (const value of ['0', '-1', '1.5', 'abc', '2147483648']) {
+        expect(() => buildS3ClientConfig(stubConfig({ ...REQUIRED, [name]: value }))).toThrow();
+      }
+      expect(() => buildS3ClientConfig(stubConfig({ ...REQUIRED, [name]: '2147483647' }))).not.toThrow();
+    },
+  );
+
   it('SDK 자동 재시도를 끄고 체크섬을 필요할 때만 계산한다', () => {
     const config = buildS3ClientConfig(stubConfig(REQUIRED));
 
@@ -115,6 +157,18 @@ describe('buildS3PublicClientConfig', () => {
     );
 
     expect(config?.endpoint).toBe('https://storage.example.com:443');
+  });
+
+  it('timeout은 내부 설정을 그대로 재사용한다', () => {
+    const config = buildS3PublicClientConfig(
+      stubConfig({
+        ...REQUIRED,
+        STORIX_STORAGE_PUBLIC_ENDPOINT: 'storage.example.com',
+        STORIX_STORAGE_SOCKET_TIMEOUT_MS: '30000',
+      }),
+    );
+
+    expect(config?.requestHandler).toEqual({ socketTimeout: 30_000, connectionTimeout: 10_000 });
   });
 
   it('path style·region·자격증명은 내부 설정을 그대로 재사용한다', () => {
