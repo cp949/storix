@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- 업로드 세션 생성(`POST /fs/upload-sessions`)이 같은 경로의 조건부 업로드·세션 완료와 다른 오류를 응답하던 문제를 수정했다. 경로 중간이 파일이면 404 대신 409 `VFS_NOT_DIRECTORY`, 처음 없는 조상 경로를 404의 `path`로, 디렉터리 대상의 revision 불일치는 409 `VFS_IS_DIRECTORY` 대신 412를 응답한다. OpenAPI 409 설명에 `VFS_NOT_DIRECTORY`·`VFS_IS_DIRECTORY`를 추가했다.
 - 휴지통 보존 정리(GC)에서 manifest·counter 불일치나 root 손상 같은 예상 밖 오류가 난 항목 하나가 GC 전체를 실패시켜 모든 namespace의 만료 휴지통 정리를 막던 문제를 수정했다. 이제 그 항목만 남기고 `error` 로그를 남긴 뒤 다음 항목을 정리한다. GC 결과에 `failedTrashItems`를 추가했다.
 - GC 실행 중 advisory lock 커넥션이 끊기면(PostgreSQL `idle_session_timeout`·failover) 완료한 GC가 실패(exit 1)로 보고되고 `last_completed_at`이 남지 않아 쿨다운이 적용되지 않던 문제를 수정했다. 이제 완료 시각은 별도 커넥션으로 기록하고, 끊긴 커넥션의 unlock 실패는 경고로만 남긴다. 실행 중 커넥션이 끊긴 사실도 경고로 남긴다.
 - 디렉터리를 자기 하위로 이동·복사할 때 목적지 중간 경로가 없거나 파일이면 409 `VFS_INVALID_OPERATION` 대신 404 `VFS_NODE_NOT_FOUND`·409 `VFS_NOT_DIRECTORY`가 응답되던 문제를 수정했다. 경로 계약대로 자기 subtree 지정을 먼저 거부한다. `destinationParents: true`여도 중간 디렉터리를 만들지 않는다.
