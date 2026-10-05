@@ -3,9 +3,7 @@ import { Test } from '@nestjs/testing';
 import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from './app.module.js';
-import { configureBodyParsers } from './common/body-parser.js';
-import { DomainErrorFilter } from './common/domain-error.filter.js';
-import { requestContextMiddleware } from './common/request-context.middleware.js';
+import { configureHttpPipeline } from './common/http-pipeline.js';
 import { StorixClient } from './storix-client/storix-client.service.js';
 import { StorixHttpClient } from './storix-client/storix-http.client.js';
 import type { UploadSessionCreated, UploadSessionStatus } from './storix-client/storix-client.types.js';
@@ -35,9 +33,7 @@ describe('Demo WAS ↔ 실제 Storix vertical slice', () => {
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication({ bodyParser: false });
-    configureBodyParsers(app);
-    app.use(requestContextMiddleware);
-    app.useGlobalFilters(new DomainErrorFilter());
+    configureHttpPipeline(app);
     await app.init();
   }, 120000);
 

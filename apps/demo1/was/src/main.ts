@@ -1,16 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
-import { configureBodyParsers } from './common/body-parser.js';
-import { DomainErrorFilter } from './common/domain-error.filter.js';
-import { requestContextMiddleware } from './common/request-context.middleware.js';
+import { configureHttpPipeline } from './common/http-pipeline.js';
 import { DEMO_WAS_CONFIG, DemoWasConfig } from './config/demo-was-config.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  configureBodyParsers(app);
-  app.use(requestContextMiddleware);
-  app.useGlobalFilters(new DomainErrorFilter());
+  configureHttpPipeline(app);
   const config = app.get<DemoWasConfig>(DEMO_WAS_CONFIG);
   await app.listen(config.port);
 }

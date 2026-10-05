@@ -4,6 +4,18 @@ import { ExternalPathResolutionError } from '../document-archive/document-archiv
 import { StorixApiError, StorixUpstreamUnauthorizedError } from '../storix-client/storix-client.errors.js';
 import { DomainError } from './domain-error.js';
 
+interface BodyParserError extends Error {
+  readonly status: number;
+  readonly type: string;
+}
+
+// body-parser(http-errors)는 4xx `status`와 `type`('entity.parse.failed', 'entity.too.large' 등)을 가진다.
+function isBodyParserError(exception: unknown): exception is BodyParserError {
+  if (!(exception instanceof Error)) return false;
+  const { status, type } = exception as Partial<BodyParserError>;
+  return typeof status === 'number' && status >= 400 && status < 500 && typeof type === 'string';
+}
+
 @Catch()
 @Injectable()
 export class DomainErrorFilter implements ExceptionFilter {
@@ -38,6 +50,16 @@ export class DomainErrorFilter implements ExceptionFilter {
       // NestJS 자체 예외(라우트 미매칭 NotFoundException 등)는 DomainError가 아니지만
       // 진짜 HTTP 상태를 갖고 있다 — 이걸 500으로 뭉개면 404 요청도 500이 된다.
       response.status(exception.getStatus()).json({
+        code: 'HTTP_ERROR',
+        message: exception.message,
+        requestId: request.requestId,
+      });
+      return;
+    }
+
+    if (isBodyParserError(exception)) {
+      // express.json이 던지는 오류(잘못된 JSON 400, 본문 과대 413 등)다. HttpException이 아니라서 구분하지 않으면 500이 된다.
+      response.status(exception.status).json({
         code: 'HTTP_ERROR',
         message: exception.message,
         requestId: request.requestId,
