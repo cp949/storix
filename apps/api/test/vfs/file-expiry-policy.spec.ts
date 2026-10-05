@@ -1,5 +1,6 @@
 import {
   assertExpirySeconds,
+  assertExpiryWithinBounds,
   parseExpiresInHeader,
   resolveFileExpiryBounds,
 } from '../../src/vfs/file-expiry-policy.js';
@@ -52,5 +53,19 @@ describe('파일 만료 정책', () => {
 
   it('헤더 "600"은 600초다', () => {
     expect(parseExpiresInHeader('600', bounds)).toBe(600);
+  });
+
+  it('bounds가 null이면 설정 범위 밖 값도 형식이 맞으면 반환하고 저장 가능 범위 밖은 거부한다', () => {
+    expect(parseExpiresInHeader('59', null)).toBe(59);
+    expect(parseExpiresInHeader('2147483647', null)).toBe(2147483647);
+    expect(() => parseExpiresInHeader('2147483648', null)).toThrow(VfsInvalidExpiryError);
+    expect(() => parseExpiresInHeader('060', null)).toThrow(VfsInvalidExpiryError);
+  });
+
+  it('assertExpiryWithinBounds는 설정 범위 경계값을 허용하고 밖은 거부한다', () => {
+    expect(() => assertExpiryWithinBounds(60, bounds)).not.toThrow();
+    expect(() => assertExpiryWithinBounds(2592000, bounds)).not.toThrow();
+    expect(() => assertExpiryWithinBounds(59, bounds)).toThrow(VfsInvalidExpiryError);
+    expect(() => assertExpiryWithinBounds(2592001, bounds)).toThrow(VfsInvalidExpiryError);
   });
 });

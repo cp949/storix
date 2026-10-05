@@ -51,12 +51,18 @@ export function parseExpirySeconds(value: unknown): number {
 // JSON 입력(resumable)과 헤더 파싱 결과가 공유하는 현재 정책 범위 검사.
 export function assertExpirySeconds(value: unknown, bounds: FileExpiryBounds): number {
   const seconds = parseExpirySeconds(value);
-  if (seconds < bounds.minSeconds || seconds > bounds.maxSeconds) throw new VfsInvalidExpiryError();
+  assertExpiryWithinBounds(seconds, bounds);
   return seconds;
 }
 
+// 설정 범위만 확인한다. 범위는 env로 바뀔 수 있어 receipt fingerprint와 분리해 판정한다.
+export function assertExpiryWithinBounds(seconds: number, bounds: FileExpiryBounds): void {
+  if (seconds < bounds.minSeconds || seconds > bounds.maxSeconds) throw new VfsInvalidExpiryError();
+}
+
 // X-Expires-In은 부호·공백·소수·지수·선행 0 없는 10진 정수만 받는다.
-export function parseExpiresInHeader(raw: string, bounds: FileExpiryBounds): number {
+// bounds가 null이면 형식과 저장 가능 범위만 확인하고 설정 범위는 호출자가 따로 판정한다.
+export function parseExpiresInHeader(raw: string, bounds: FileExpiryBounds | null): number {
   if (!/^[1-9][0-9]*$/.test(raw)) throw new VfsInvalidExpiryError();
-  return assertExpirySeconds(Number(raw), bounds);
+  return bounds === null ? parseExpirySeconds(Number(raw)) : assertExpirySeconds(Number(raw), bounds);
 }

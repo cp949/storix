@@ -4,7 +4,12 @@ import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
 import { parsePositiveInt } from '../common/env-parsing.js';
 import { resolveFileSizeLimits, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
-import { FileExpiryBounds, parseExpiresInHeader, resolveFileExpiryBounds } from './file-expiry-policy.js';
+import {
+  assertExpiryWithinBounds,
+  FileExpiryBounds,
+  parseExpiresInHeader,
+  resolveFileExpiryBounds,
+} from './file-expiry-policy.js';
 import {
   mutationLeaseSeconds,
   VfsMutationReceiptRepository,
@@ -127,12 +132,20 @@ export class ConditionalContentService {
     if (expectedSha256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSha256)) {
       throw new VfsInvalidChecksumError();
     }
-    // 만료 입력은 checksum처럼 본문 소비·receipt 생성 전에 검증한다.
+    // 만료 입력의 형식·조건 조합은 checksum처럼 본문 소비·receipt 생성 전에 검증한다.
     // 새 파일을 만드는 X-If-Absent: true 요청에서만 받는다.
+    // 설정 범위는 env로 바뀔 수 있어 같은 키 재시도의 재생을 막지 않도록 receipt 처리 뒤(parseError)에 판정한다.
     let expiresInSeconds: number | undefined;
+    let expiryRangeError: DomainError | null = null;
     if (expiresIn !== undefined) {
       if (ifAbsent !== 'true' || ifRevision !== undefined) throw new VfsInvalidExpiryError();
-      expiresInSeconds = parseExpiresInHeader(expiresIn, this.expiryBounds);
+      expiresInSeconds = parseExpiresInHeader(expiresIn, null);
+      try {
+        assertExpiryWithinBounds(expiresInSeconds, this.expiryBounds);
+      } catch (error) {
+        if (error instanceof DomainError) expiryRangeError = error;
+        else throw error;
+      }
     }
     const identity = identityOf(namespaceId, scope, key);
     const { root, limits } = await requireRootWithLimits(this.nodes, namespaceId);
@@ -159,6 +172,8 @@ export class ConditionalContentService {
       if (error instanceof DomainError) parseError = error;
       else throw error;
     }
+    // 범위 오류가 경로·조건 오류보다 먼저 보고되던 우선순위를 유지한다.
+    if (expiryRangeError) parseError = expiryRangeError;
 
     const conditionKey = conditionIdentity(condition, ifAbsent, ifRevision, expiresInSeconds);
     const claim = await this.receipts.claim(identity, new Date());

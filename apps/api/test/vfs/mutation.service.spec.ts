@@ -6,10 +6,12 @@ import { VfsNodeRepository, type MutationTx } from '../../src/persistence/vfs-no
 import { DomainErrorFilter } from '../../src/common/domain-error.filter.js';
 import { StorageUnavailableError } from '../../src/common/storage-failure.errors.js';
 import type { ArgumentsHost } from '@nestjs/common';
-import type { VfsPreconditionCurrentDto } from '../../src/vfs/dto/node-response.dto.js';
+import type { VfsNodeResponseDto, VfsPreconditionCurrentDto } from '../../src/vfs/dto/node-response.dto.js';
 import { errorResponse } from '../../src/vfs/mutation-receipt.js';
 import { MutationService } from '../../src/vfs/mutation.service.js';
+import { encodeRevision } from '../../src/vfs/revision.js';
 import { VfsNodeNotFoundError, VfsPreconditionFailedError } from '../../src/vfs/vfs.errors.js';
+import type { VfsMutationReceiptEntity } from '../../src/persistence/entities/vfs-mutation-receipt.entity.js';
 
 describe('MutationService 오류 receipt', () => {
   const namespaceId = randomUUID();
@@ -169,6 +171,124 @@ describe('MutationService 오류 receipt', () => {
     expect(completeAfterRollback).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledWith(expect.objectContaining({ namespaceId }), 4);
+  });
+});
+
+describe('MutationService 만료 범위와 재생', () => {
+  const namespaceId = randomUUID();
+  const rootId = randomUUID();
+  const tx = {} as MutationTx;
+  const claim = jest.fn<VfsMutationReceiptRepository['claim']>();
+  const complete = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const completeAfterRollback = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const release = jest.fn<(...args: unknown[]) => Promise<void>>();
+  const withMutation = jest.fn<VfsNodeRepository['withMutation']>();
+  const applyConditionalMutation = jest.fn<VfsNodeRepository['applyConditionalMutation']>();
+  const revision = encodeRevision({ id: '00000000-0000-4000-8000-000000000001', version: 3 });
+
+  // 범위는 STORIX_VFS_EXPIRY_*_SECONDS로 바뀔 수 있으므로 env를 달리한 인스턴스로 재시도를 흉내 낸다.
+  const serviceWithBounds = (min?: string, max?: string) =>
+    new MutationService(
+      {
+        getRoot: async () => ({ id: rootId }),
+        withMutation,
+        applyConditionalMutation,
+      } as unknown as VfsNodeRepository,
+      { claim, complete, completeAfterRollback, release } as unknown as VfsMutationReceiptRepository,
+      {
+        get: (name: string) =>
+          name === 'STORIX_VFS_EXPIRY_MIN_SECONDS'
+            ? min
+            : name === 'STORIX_VFS_EXPIRY_MAX_SECONDS'
+              ? max
+              : undefined,
+      } as unknown as ConfigService,
+    );
+
+  const copyBody = (expiresInSeconds: number) =>
+    JSON.stringify({
+      kind: 'copy',
+      source: '/a',
+      destination: '/b',
+      sourceRevision: revision,
+      destinationAbsent: true,
+      expiresInSeconds,
+    });
+
+  const run = (svc: MutationService, body: string) =>
+    svc.executeJson(namespaceId, 'scope', randomUUID(), 'POST', Buffer.from(body), 'req-1');
+
+  const completeReceipt = (
+    fingerprint: string,
+    result: { status: number; body: unknown; headers: unknown },
+  ) =>
+    ({
+      method: 'POST',
+      fingerprint,
+      responseStatus: result.status,
+      responseBody: JSON.stringify(result.body),
+      responseHeaders: JSON.stringify(result.headers),
+    }) as VfsMutationReceiptEntity;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    claim.mockResolvedValue({ kind: 'owner', generation: 4 });
+    complete.mockResolvedValue(undefined);
+    completeAfterRollback.mockResolvedValue(undefined);
+    release.mockResolvedValue(undefined);
+    withMutation.mockImplementation(async (_ns, _root, work, afterBump) => {
+      const value = await work(tx);
+      const result = { value, affectedRevisions: [] };
+      if (afterBump) await afterBump(tx, result);
+      return result;
+    });
+  });
+
+  it('완료된 copy는 범위를 좁힌 뒤 같은 키로 재시도해도 저장된 응답을 재생한다', async () => {
+    const copied: VfsNodeResponseDto = {
+      id: randomUUID(),
+      path: '/b',
+      name: 'b',
+      type: 'FILE',
+      size: 1,
+      mimeType: 'text/plain',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+      expiresAt: null,
+    };
+    applyConditionalMutation.mockResolvedValue({ status: 201, resource: copied });
+    const first = await run(serviceWithBounds(), copyBody(600));
+    expect(first.status).toBe(201);
+    const fingerprint = complete.mock.calls[0][3] as string;
+    claim.mockResolvedValue({ kind: 'complete', receipt: completeReceipt(fingerprint, first) });
+    applyConditionalMutation.mockClear();
+
+    const retried = await run(serviceWithBounds('3600'), copyBody(600));
+
+    expect(retried).toEqual(first);
+    expect(applyConditionalMutation).not.toHaveBeenCalled();
+  });
+
+  it('범위 밖이라 저장된 400은 범위를 넓힌 뒤 같은 키로 재시도해도 재생한다', async () => {
+    const first = await run(serviceWithBounds(), copyBody(59));
+    expect(first).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_EXPIRY' } });
+    const fingerprint = completeAfterRollback.mock.calls[0][2] as string;
+    claim.mockResolvedValue({ kind: 'complete', receipt: completeReceipt(fingerprint, first) });
+
+    expect(await run(serviceWithBounds('30'), copyBody(59))).toEqual(first);
+    expect(await run(serviceWithBounds('30'), copyBody(61))).toMatchObject({
+      status: 409,
+      body: { code: 'MUTATION_KEY_REUSED' },
+    });
+  });
+
+  it('범위 밖 값은 트랜잭션 없이 400 VFS_INVALID_EXPIRY를 오류 receipt로 저장한다', async () => {
+    const result = await run(serviceWithBounds(), copyBody(59));
+
+    expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_EXPIRY' } });
+    expect(withMutation).not.toHaveBeenCalled();
+    expect(completeAfterRollback).toHaveBeenCalledTimes(1);
   });
 });
 

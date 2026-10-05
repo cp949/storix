@@ -8,7 +8,11 @@ import {
   ReceiptResponse,
 } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
-import { parseConditionalMutation, ConditionalMutation } from './dto/conditional-mutation-request.dto.js';
+import {
+  assertMutationExpiryWithinBounds,
+  parseConditionalMutation,
+  ConditionalMutation,
+} from './dto/conditional-mutation-request.dto.js';
 import { type FileExpiryBounds, resolveFileExpiryBounds } from './file-expiry-policy.js';
 import { busyResponse, ErrorReceiptOwner, replayReceipt, storeErrorReceipt } from './mutation-receipt.js';
 import { requireRoot } from './require-root.js';
@@ -79,7 +83,9 @@ export class MutationService {
     let command: ConditionalMutation | null = null;
     let parseError: DomainError | null = null;
     try {
-      command = parseConditionalMutation(JSON.parse(bytes.toString('utf8')) as unknown, this.expiryBounds);
+      // 설정 범위는 fingerprint에 영향을 주지 않도록 구조 파싱 뒤에 따로 판정한다.
+      command = parseConditionalMutation(JSON.parse(bytes.toString('utf8')) as unknown, null);
+      assertMutationExpiryWithinBounds(command, this.expiryBounds);
     } catch (error) {
       if (error instanceof DomainError) parseError = error;
       else parseError = new VfsInvalidMutationRequestError();

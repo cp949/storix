@@ -132,26 +132,141 @@ describe('ConditionalContentService 오류 receipt', () => {
       expect(claim).not.toHaveBeenCalled();
     });
 
-    it('범위 밖 값은 receipt claim 전에 400 VFS_INVALID_EXPIRY다', async () => {
+    it.each(['', '0', '060', '+60', '1e3', '0x10', '60.0', ' 60', '2147483648'])(
+      '형식·저장 가능 범위가 틀린 값 %j는 본문을 읽기 전에 400 VFS_INVALID_EXPIRY다',
+      async (ttl) => {
+        const source = Readable.from([Buffer.from('body')]);
+        await expect(
+          service.put(
+            namespaceId,
+            'scope',
+            randomUUID(),
+            '/a.bin',
+            'true',
+            undefined,
+            source,
+            'application/octet-stream',
+            '0',
+            'req-1',
+            undefined,
+            ttl,
+          ),
+        ).rejects.toMatchObject({ code: 'VFS_INVALID_EXPIRY', status: 400 });
+        expect(source.readableEnded).toBe(false);
+        expect(claim).not.toHaveBeenCalled();
+      },
+    );
+
+    // 범위는 STORIX_VFS_EXPIRY_*_SECONDS로 바뀔 수 있어, 같은 키 재시도의 재생을 막지 않도록
+    // receipt 처리 뒤에 판정한다.
+    const serviceWithExpiryBounds = (min?: string, max?: string) =>
+      new ConditionalContentService(
+        new PathResolver(),
+        nodes,
+        receipts,
+        { generate: () => 'object-key' } as StorageKeyGenerator,
+        { put, delete: deleteObject } as unknown as BlobStorage,
+        new ContentIngressService({ put, delete: deleteObject } as unknown as BlobStorage, null),
+        { findKnownStorageKeys } as unknown as BlobRepository,
+        {
+          get: (name: string) =>
+            name === 'STORIX_VFS_EXPIRY_MIN_SECONDS'
+              ? min
+              : name === 'STORIX_VFS_EXPIRY_MAX_SECONDS'
+                ? max
+                : undefined,
+        } as unknown as ConfigService,
+      );
+
+    const putWithTtl = (svc: ConditionalContentService, key: string, ttl: string) =>
+      svc.put(
+        namespaceId,
+        'scope',
+        key,
+        '/a.bin',
+        'true',
+        undefined,
+        Readable.from([Buffer.from('body')]),
+        'application/octet-stream',
+        '4',
+        'req-ttl',
+        undefined,
+        ttl,
+      );
+
+    it('범위 밖 값은 본문을 소비하고 400 VFS_INVALID_EXPIRY를 오류 receipt로 저장한다', async () => {
       const source = Readable.from([Buffer.from('body')]);
-      await expect(
-        service.put(
-          namespaceId,
-          'scope',
-          randomUUID(),
-          '/a.bin',
-          'true',
-          undefined,
-          source,
-          'application/octet-stream',
-          '0',
-          'req-1',
-          undefined,
-          '59',
-        ),
-      ).rejects.toMatchObject({ code: 'VFS_INVALID_EXPIRY' });
-      expect(source.readableEnded).toBe(false);
-      expect(claim).not.toHaveBeenCalled();
+      const result = await service.put(
+        namespaceId,
+        'scope',
+        randomUUID(),
+        '/a.bin',
+        'true',
+        undefined,
+        source,
+        'application/octet-stream',
+        '4',
+        'req-1',
+        undefined,
+        '59',
+      );
+
+      expect(result).toMatchObject({ status: 400, body: { code: 'VFS_INVALID_EXPIRY', requestId: 'req-1' } });
+      expect(source.readableEnded).toBe(true);
+      expect(completeAfterRollback).toHaveBeenCalledTimes(1);
+      expect(withMutation).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('완료된 요청은 범위를 좁힌 뒤 같은 키로 재시도해도 저장된 응답을 재생한다', async () => {
+      const stored = {
+        status: 201,
+        body: { resource: { path: '/a.bin' } },
+        headers: { 'x-request-id': 'req-0' },
+      };
+      claim.mockResolvedValue({
+        kind: 'complete',
+        receipt: {
+          method: 'POST',
+          fingerprint: hashParts([
+            'POST',
+            'content/conditional',
+            '/a.bin',
+            '{"ifAbsent":true,"expiresInSeconds":600}',
+            'application/octet-stream',
+            createHash('sha256').update('body').digest('hex'),
+          ]),
+          responseStatus: stored.status,
+          responseBody: JSON.stringify(stored.body),
+          responseHeaders: JSON.stringify(stored.headers),
+        } as VfsMutationReceiptEntity,
+      });
+
+      const result = await putWithTtl(serviceWithExpiryBounds('3600'), randomUUID(), '600');
+
+      expect(result).toEqual(stored);
+      expect(completeAfterRollback).not.toHaveBeenCalled();
+    });
+
+    it('범위 밖이라 저장된 400은 범위를 넓힌 뒤 같은 키로 재시도해도 재생한다', async () => {
+      const first = await putWithTtl(service, randomUUID(), '59');
+      const firstFingerprint = completeAfterRollback.mock.calls.at(-1)?.[2] as string;
+      claim.mockResolvedValue({
+        kind: 'complete',
+        receipt: {
+          method: 'POST',
+          fingerprint: firstFingerprint,
+          responseStatus: first.status,
+          responseBody: JSON.stringify(first.body),
+          responseHeaders: JSON.stringify(first.headers),
+        } as VfsMutationReceiptEntity,
+      });
+
+      expect(await putWithTtl(serviceWithExpiryBounds('30'), randomUUID(), '59')).toEqual(first);
+      expect(await putWithTtl(serviceWithExpiryBounds('30'), randomUUID(), '61')).toMatchObject({
+        status: 409,
+        body: { code: 'MUTATION_KEY_REUSED' },
+      });
     });
   });
 

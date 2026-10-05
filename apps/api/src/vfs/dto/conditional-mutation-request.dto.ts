@@ -3,7 +3,9 @@ import { decodeRevision } from '../revision.js';
 import { assertStrictMimeType } from '../mime.js';
 import {
   assertExpirySeconds,
+  assertExpiryWithinBounds,
   DEFAULT_FILE_EXPIRY_BOUNDS,
+  parseExpirySeconds,
   type FileExpiryBounds,
 } from '../file-expiry-policy.js';
 import {
@@ -93,9 +95,21 @@ function requireTrue(record: Record<string, unknown>, field: string): void {
   }
 }
 
+// 만료 범위(설정)만 따로 검사한다. fingerprint가 env 범위에 의존하지 않도록
+// parseConditionalMutation(body, null)로 구조를 먼저 파싱한 뒤 호출한다.
+export function assertMutationExpiryWithinBounds(
+  command: ConditionalMutation,
+  expiryBounds: FileExpiryBounds,
+): void {
+  if (command.kind === 'copy' && command.expiresInSeconds !== undefined) {
+    assertExpiryWithinBounds(command.expiresInSeconds, expiryBounds);
+  }
+}
+
+// expiryBounds가 null이면 만료 입력의 형태만 확인하고 설정 범위는 검사하지 않는다.
 export function parseConditionalMutation(
   body: unknown,
-  expiryBounds: FileExpiryBounds = DEFAULT_FILE_EXPIRY_BOUNDS,
+  expiryBounds: FileExpiryBounds | null = DEFAULT_FILE_EXPIRY_BOUNDS,
 ): ConditionalMutation {
   const record = recordOf(body);
   switch (record.kind) {
@@ -161,7 +175,10 @@ export function parseConditionalMutation(
       let expiresInSeconds: number | undefined;
       if ('expiresInSeconds' in record) {
         if (record.kind === 'move') throw new VfsInvalidExpiryError();
-        expiresInSeconds = assertExpirySeconds(record.expiresInSeconds, expiryBounds);
+        expiresInSeconds =
+          expiryBounds === null
+            ? parseExpirySeconds(record.expiresInSeconds)
+            : assertExpirySeconds(record.expiresInSeconds, expiryBounds);
       }
       return {
         kind: record.kind,
