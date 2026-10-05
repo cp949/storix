@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- `POST /fs/mutations`, `POST /fs/snapshots`(생성·restore·delete), `POST /fs/trash/{trashId}/restore`·`purge`의 감사 로그에 `path`·`detail`이 null로 남던 문제를 수정했다. 이 라우트는 body를 원문 그대로 받아 감사 인터셉터가 필드를 읽지 못했다. 이제 JSON으로 읽어 기록한다. `detail`에는 `kind`(mutations·snapshot 변경 종류)와 `targetPath`(휴지통 복원 위치)도 기록한다(GitHub 이슈 #39).
 - 이전 버전에서 만든 PostgreSQL 백업을 복구한 뒤 `migrate` 재실행이 `relation … already exists`로 실패하던 문제를 수정했다. `pg_restore --clean`은 dump에 있는 테이블만 지워 백업 이후 버전의 테이블이 남았다. 이제 복구 전에 `public` 스키마에서 접속 사용자가 소유한 테이블을 모두 지운다. Storix 전용 DB를 전제로 한다. 운영 이미지는 이 단계에 `psql`을 쓴다(GitHub 이슈 #38).
 - 백업을 만든 DB 사용자와 다른 사용자로 PostgreSQL 복구를 실행하면 `pg_restore`가 소유자 변경에서 실패하고, 일부만 적재된 채 재실행도 막히던 문제를 수정했다. 이제 소유자·권한 없이 한 트랜잭션으로 적재한다. 적재가 실패하면 테이블이 없는 상태로 남고 같은 명령으로 재실행할 수 있다(GitHub 이슈 #38).
 - `GET /fs/ls`·`/fs/stat`·`/fs/exists`·`/fs/find`에서 `path`를 생략하면 namespace root 대신 400 `VFS_INVALID_PATH`가 응답되던 문제를 수정했다. OpenAPI 문서대로 생략 시 root를 대상으로 한다. 빈 값(`?path=`)은 계속 400이다(GitHub 이슈 #37).
