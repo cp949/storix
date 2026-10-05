@@ -66,6 +66,9 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       await this.applyRowLockIfSupported(
         manager.createQueryBuilder(VfsNodeEntity, 'n').where('n.id = :id', { id: parentId }),
       ).getOne();
+      // 이미 있던 조상은 변경 전 상태를 먼저 캡처한다. markAncestorChain이 표시를 먼저 하면 이 트랜잭션에서
+      // 만든 노드로 취급돼 change feed에 updated 대신 created로 남는다. lockParentChain도 같은 순서다.
+      await trackChangeFeedBefore(tx, [parentId]);
 
       let child = await nodeRepo.findOneBy({ namespaceId, parentId, name });
 

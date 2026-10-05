@@ -35,6 +35,7 @@
 
 ### Fixed
 
+- change feed가 켜진 namespace에서 `POST /fs/mkdir`, `POST /fs/mutations`의 `kind: mkdir`(`parents` 포함)이 이미 있던 조상 디렉터리(root 포함)를 `updated`가 아닌 `created`로 기록하던 문제를 고쳤다. 이제 기존 조상은 `updated`, 새로 만든 디렉터리만 `created`다. 다른 mutation은 영향이 없었다. 이미 기록된 이벤트는 바뀌지 않는다.
 - 디렉터리 이동(`POST /fs/mv`, `POST /fs/mutations`의 `kind: move`)이 하위 트리를 찾을 때 `namespace_id` 조건 없이 `vfs_node` 전체를 훑어, 다른 namespace의 행 수에 비례해 느리던 문제를 고쳤다. 같은 namespace 안의 노드만 조회한다. 결과 노드 집합과 상한 판정은 같다.
 - 업로드 본문 수신이 5분을 넘으면 Node 기본 `requestTimeout`(300초)으로 408이 되어 연결이 끊기던 문제를 고쳤다. HTTP 서버의 `requestTimeout`을 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 24시간)에 맞춘다. 이 값은 업로드가 아닌 라우트의 본문 수신에도 적용된다. `headersTimeout`(60초)은 그대로다.
 - `STORIX_MUTATION_MAX_UPLOAD_SECONDS`가 2147483를 넘거나 `STORIX_MUTATION_LEASE_SECONDS`가 6442450을 넘으면 `setTimeout` 한도를 넘어 타이머가 1ms 뒤에 발화하던 문제를 고쳤다. 부팅이 성공한 뒤 모든 업로드가 즉시 끊기거나 lease 갱신이 연속 실행됐다. 이제 두 값을 부팅 시점에 거부한다. `STORIX_MUTATION_LEASE_SECONDS`는 이전에는 요청 시점에만 검증해, 잘못된 값(`30s` 등)으로도 부팅이 성공하고 이후 모든 mutation이 500이었다. 이제 부팅 시점에 거부한다.

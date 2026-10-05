@@ -89,6 +89,36 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
     ]);
   });
 
+  it('mkdir은 이미 있던 조상(root 포함)을 updated로, 새 디렉터리만 created로 기록한다', async () => {
+    const c = await setup();
+    await c.repository.ensureDirectory(c.namespaceId, c.rootId, ['a', 'b'], true);
+    await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);
+
+    await c.repository.ensureDirectory(c.namespaceId, c.rootId, ['a', 'b', 'c'], false);
+
+    expect((await c.events()).map((event) => [event.kind, event.path])).toEqual([
+      ['updated', '/'],
+      ['updated', '/a'],
+      ['updated', '/a/b'],
+      ['created', '/a/b/c'],
+    ]);
+  });
+
+  it('mkdir -p는 같은 트랜잭션에서 만든 중간 디렉터리를 created로, 기존 조상만 updated로 기록한다', async () => {
+    const c = await setup();
+    await c.repository.ensureDirectory(c.namespaceId, c.rootId, ['a'], false);
+    await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);
+
+    await c.repository.ensureDirectory(c.namespaceId, c.rootId, ['a', 'x', 'y'], true);
+
+    expect((await c.events()).map((event) => [event.kind, event.path])).toEqual([
+      ['updated', '/'],
+      ['updated', '/a'],
+      ['created', '/a/x'],
+      ['created', '/a/x/y'],
+    ]);
+  });
+
   it('rollback은 sequence를 보존하고 일시 생성·삭제는 커밋된 조상 revision만 기록한다', async () => {
     const c = await setup();
     await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);
