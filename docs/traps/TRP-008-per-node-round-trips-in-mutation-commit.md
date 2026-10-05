@@ -18,6 +18,7 @@ SQLite에서도 한 줄로 이어진 깊은 체인에서는 깊이 1,500 mv·cp�
   - 깊이 1,500 체인 mv·cp: 변경 노드 i의 부모 체인이 길이 i라 쿼리 약 113만 개(`d(d+1)/2`)였다.
 - 쿼리 자체는 서버에서 0.024ms다(`EXPLAIN ANALYZE`). 시간은 왕복과 TypeORM·JS 오버헤드(SQLite 쿼리당 약 29µs)가 만든다.
 - `increment=true` 노드(mv·재귀 변경의 하위 노드)마다 UPDATE를 1회씩 실행하는 첫 루프도 같은 구조였다.
+- 커밋 단계 밖에서도 같은 구조가 있었다. `mkdir -p`·`parents=true` 생성이 새 디렉터리마다 `markAncestorChain`으로 조상 체인을 root까지 다시 조회해, 깊이 N에서 쿼리가 N²/2였다(SQLite 깊이 1,000 504,514개·14.6초, 깊이 2,000 2,009,018개·57.3초, GitHub 이슈 #42). 그동안 SQLite 프로세스의 다른 요청이 모두 멈춘다.
 
 ## 탐지/회피
 
@@ -26,10 +27,14 @@ SQLite에서도 한 줄로 이어진 깊은 체인에서는 깊이 1,500 mv·cp�
   - 노드 id를 `IN` 청크(`NODE_BULK_CHUNK_SIZE`, `captureChangeFeedNodes`는 250)로 한 번에 읽는다.
   - 부모 해석은 한 번 읽은 행을 `Map`에 두고 메모이즈한다. 변경 집합 밖 조상만 추가로 조회한다. `captureChangeFeedNodes`가 이 형태다.
   - 버전 증가는 `UPDATE … WHERE id IN (…) AND version < :max`로 청크 처리하고 `affected !== 청크 크기`면 `VfsRevisionExhaustedError`로 거부한다.
+  - 같은 트랜잭션에서 조상 체인을 여러 번 걷는 코드는 `tx.ancestorChainMarked`처럼 걸은 노드를 기억하고 만나면 멈춘다. `markAncestorChain`이 이 형태다.
 - 회귀 검증: `apps/api/test/persistence/vfs-node.repository.shared-tests/bulk-limits.ts`가 `countQueries` 헬퍼(DataSource `logger.logQuery`를 감싼다)로 쿼리 수를 단언한다.
   - 평평한 12,000개 cp: 300개 미만이다. 수정 후 실측은 114개다.
   - 깊이 1,500 체인 mv·cp: 100개 미만이다. 수정 후 실측은 mv 25개, cp 30개다.
   - 수정 전 SQLite에서 36,068개와 1,128,766개로 실패했다.
+  - 깊이 300 `mkdir -p`·parents put: 레벨당 8개 미만이다. 수정 후 실측은 레벨당 5개다(깊이 2,000 10,018개·0.46초). 수정 전 SQLite에서 46,361개와 46,670개로 실패했다.
 - 남는 위험:
   - 변경 집합 밖의 깊은 조상은 여전히 부모를 한 단계씩 조회한다. 깊이에 선형이고 노드 수에는 곱해지지 않는다.
+  - 경로 상한(4096바이트)이 허용하는 깊이 약 2,048의 `mkdir -p`는 SQLite에서 약 0.5초 동안 프로세스의 다른 요청을 멈춘다. 별도 깊이 상한은 두지 않았다.
+  - change feed checkpoint가 있을 때 깊은 경로의 put 등은 `captureChangeFeedNodes`의 노드별 조상 재조회가 남아 있을 수 있다. 이슈 #42의 범위 밖이다.
   - PostgreSQL에서 12,000개 cp가 수정 뒤에도 6.6초인 것은 `FK_vfs_node_parent` RI 계획이 작은 테이블 기준으로 캐시된 탓이다. 원인은 TRP-009다(GitHub 이슈 #35).

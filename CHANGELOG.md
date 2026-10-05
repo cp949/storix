@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- 깊은 경로의 `mkdir -p`(`POST /fs/mkdir`의 `parents`)와 `parents=true`로 중간 디렉터리를 만드는 put·cp·mv가 깊이에 이차로 느려지던 문제를 수정했다. 새 디렉터리마다 조상 체인을 root까지 다시 조회해, SQLite 실측에서 깊이 1,000이 504,514쿼리·14.6초, 깊이 2,000이 2,009,018쿼리·57.3초였고 그동안 같은 프로세스의 다른 요청이 멈췄다. 이제 깊이 2,000이 10,018쿼리·0.46초다. 응답과 revision 증가는 같다. PostgreSQL은 측정하지 않았다(GitHub 이슈 #42).
 - namespace 생성(`POST /api/v2/namespaces`) 감사 로그의 `namespace_id`가 항상 null이던 문제를 수정했다. 이제 응답의 namespace ID를 기록한다. 같은 Idempotency-Key로 재생된 성공 응답도 같다.
 - 만료 시각이 지났지만 GC가 아직 EXPIRED로 전환하지 않은 업로드 세션의 취소(`DELETE /fs/upload-sessions/{sessionId}`)가 200 CANCELLED로 성공하던 문제를 수정했다. 조각 저장·완료와 같이 닫힌 세션으로 보고 EXPIRED로 전환한 뒤 409 `VFS_UPLOAD_SESSION_CLOSED`로 응답한다.
 - 업로드 세션 생성(`POST /fs/upload-sessions`)이 같은 경로의 조건부 업로드·세션 완료와 다른 오류를 응답하던 문제를 수정했다. 경로 중간이 파일이면 404 대신 409 `VFS_NOT_DIRECTORY`, 처음 없는 조상 경로를 404의 `path`로, 디렉터리 대상의 revision 불일치는 409 `VFS_IS_DIRECTORY` 대신 412를 응답한다. OpenAPI 409 설명에 `VFS_NOT_DIRECTORY`·`VFS_IS_DIRECTORY`를 추가했다.
