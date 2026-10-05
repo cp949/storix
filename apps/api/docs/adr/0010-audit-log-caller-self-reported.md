@@ -73,6 +73,16 @@ NestJS가 Guard를 Interceptor보다 먼저 실행하기 때문이다.
 - 상한은 프로세스 단위다. 인스턴스가 여러 개이면 인스턴스 수만큼 늘어난다.
 - 상한을 넘은 시간대의 개별 요청 ID, 경로, 시각은 `audit_log`에 없다.
 
+### 응답 전에 연결이 끊긴 요청
+
+`status`는 응답의 `close` 시점에 정한다.
+
+- 응답을 끝까지 보내지 못했으면(`writableFinished`가 false) `status`는 499다(`common/response-status.ts`).
+- 응답 전에 클라이언트가 연결을 끊으면 `statusCode`가 아직 기본값 200이라 성공처럼 기록됐다. 499는 이를 막기 위한 값이다.
+- 다운로드 도중 끊긴 요청도 499다.
+- 실제 처리 결과(commit 여부)는 감사 로그에 없다. mutation receipt와 서비스 로그로 확인한다.
+- 같은 규칙을 메트릭 `storix_http_requests_total`의 `status` label과 구조화 로그에도 적용한다.
+
 ### 보존 정책
 
 `audit_log`를 삭제하거나 보존 기간을 적용하는 코드는 없다.
