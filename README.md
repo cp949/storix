@@ -414,7 +414,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`      | 선택   | `53687091200`         | app     | Namespace quota override가 없을 때 적용하는 기본값(50 GiB)                     |
 | `STORIX_MAX_TOTAL_LOGICAL_BYTES`          | 선택   | 기본값과 같음         | app     | namespace quota override의 전역 ceiling                                        |
 | `STORIX_VFS_CAPABILITIES_CONFIG_PATH`     | 선택   | —                     | app     | 시작 시 읽는 선택 VFS capability JSON 파일 경로                                |
-| `STORIX_VFS_CHANGE_RETENTION_DAYS`        | 선택   | `30`                  | gc      | 변경 feed 이벤트 보존 기간(양의 정수 일수)                                     |
+| `STORIX_VFS_CHANGE_RETENTION_DAYS`        | 선택   | `30`                  | gc      | 변경 feed 이벤트 보존 기간(1~365000 일수)                                      |
 | `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`  | 조건부 | —                     | app     | 재개 업로드 정책 JSON 경로                                                     |
 | `STORIX_ADMIN_API_KEY`                    | 선택   | —                     | app     | `/api/v2/admin/*` 전용 관리자 Bearer key                                       |
 | `STORIX_ADMIN_API_KEY_PREVIOUS`           | 선택   | —                     | app     | 관리자 키 교체 기간에만 허용하는 이전 Bearer key                               |
@@ -463,10 +463,10 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_VFS_EXPIRY_MIN_SECONDS`           | 선택   | `60`                  | app     | 새 FILE 만료 입력의 최소 기간(초)                                              |
 | `STORIX_VFS_EXPIRY_MAX_SECONDS`           | 선택   | `2592000`             | app     | 새 FILE 만료 입력의 최대 기간(초)                                              |
 | `STORIX_PRESIGNED_URL_EXPIRY_SECONDS`     | 선택   | `300`                 | app     | presigned URL 만료(초)                                                         |
-| `STORIX_ORPHAN_GRACE_PERIOD`              | 선택   | `86400`               | gc      | 참조 0 이후 회수까지 유예(초)                                                  |
+| `STORIX_ORPHAN_GRACE_PERIOD`              | 선택   | `86400`               | gc      | 참조 0 이후 회수까지 유예(1~31536000000 초)                                    |
 | `STORIX_GC_MIN_INTERVAL`                  | 선택   | `3600`                | gc      | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초)                        |
 | `STORIX_GC_MAX_ROWS_PER_STAGE`            | 선택   | `200000`              | gc      | 한 실행에서 단계마다 처리하는 행 수 예산                                       |
-| `STORIX_NAMESPACE_DELETED_RETENTION_DAYS` | 선택   | `30`                  | gc      | 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간(일) |
+| `STORIX_NAMESPACE_DELETED_RETENTION_DAYS` | 선택   | `30`                  | gc      | 삭제가 끝난(`DELETED`) namespace의 행을 gc가 물리 삭제하기까지의 보존 기간(1~365000일) |
 | `STORIX_API_KEY`                          | 필수   | —                     | app     | 서비스 간 인증 키                                                              |
 | `STORIX_API_KEY_PREVIOUS`                 | 선택   | —                     | app     | 키 로테이션 중 함께 유효한 이전 키                                             |
 | `STORIX_ENCRYPTION_MASTER_KEY`            | 조건부 | —                     | app     | ENCRYPTED namespace가 하나라도 있으면 필요한 키                                |
@@ -493,7 +493,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - 진행 중인 스토리지 요청마다 연결 하나를 쓴다. 장기 다운로드는 클라이언트가 다 받을 때까지 연결을 점유한다.
   - 상한에 닿으면 다음 요청이 연결을 기다리다 `STORIX_STORAGE_CONNECT_TIMEOUT_MS` 뒤 503으로 끝난다. `/health/ready`도 같은 연결을 쓰므로 함께 503이 될 수 있다.
   - 동시 다운로드·업로드가 50을 넘는 배포는 값을 늘린다. 스토리지 백엔드(VersityGW 등)의 동시 연결 한도는 별도로 확인한다.
-- `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다.
+- `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다. 두 변수와 `STORIX_ORPHAN_GRACE_PERIOD`는 약 1000년(365000일) 상한을 넘으면 시작을 거부한다. PostgreSQL은 그 이상에서 날짜 범위 오류가 나 GC 실행이 중간에 끝난다.
 - `STORIX_PUBLISH_HOST`: host Nginx만 접근시키려면 `127.0.0.1`로 설정한다.
 - `STORIX_PORT`:
   - 컨테이너 안은 3000으로 고정한다.

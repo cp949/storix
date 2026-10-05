@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`·`STORIX_VFS_CHANGE_RETENTION_DAYS`는 365000(일) 초과, `STORIX_ORPHAN_GRACE_PERIOD`는 31536000000(초) 초과 값을 시작 시점에 거부한다. 이전에는 시작이 통과하고 PostgreSQL에서 약 2.4M일부터 `timestamp out of range`, 2^31 이상에서 `integer out of range`가 나서 gc 실행이 그 단계에서 끝났다. 뒤 단계(receipt·업로드 세션·change feed·휴지통 정리)가 매 주기 실행되지 않았다. 유예 시간은 9007199254740991초에서 `Invalid Date`가 됐다. 이 범위를 넘는 값을 쓰던 배포는 값을 줄여야 한다(SQLite는 오류 없이 영구 보존처럼 동작했다).
 - `openapi.yaml`의 `PATCH /api/v2/admin/namespaces/{namespaceId}/quota`(`updateNamespaceQuota`)에 `security: AdminApiKeyAuth`를 추가했다. 이전에는 선언이 없어 전역 기본값 `ApiKeyAuth`(서비스 키)로 읽혔고, 생성된 클라이언트가 관리자 키 요구를 알 수 없었다. 서버는 처음부터 `STORIX_ADMIN_API_KEY`만 받았으므로 동작은 바뀌지 않는다.
 - `POST /fs/trash/{trashId}/restore`·`purge`가 JSON이 아닌 Content-Type의 본문을 조용히 무시하던 문제를 고쳤다. 이전에는 `text/plain` 등으로 `targetPath`를 보내도 무시되어 항목이 원래 경로로 복구됐다. 이제 본문이 있고 Content-Type이 `application/json`이 아니면 400 `VFS_INVALID_MUTATION_REQUEST`다. receipt를 남기지 않으므로 같은 `Idempotency-Key`로 JSON 본문을 다시 보내면 처리된다. 본문이 없는 요청과 JSON 본문 요청은 달라지지 않는다. 비JSON Content-Type으로 본문을 보내던 클라이언트는 `application/json`으로 바꿔야 한다.
 - 업로드 세션 ID를 대문자 UUID로 보내면 SQLite에서만 404 `VFS_UPLOAD_SESSION_NOT_FOUND`가 나던 문제를 고쳤다(`GET`·`DELETE /fs/upload-sessions/{id}`, `PUT …/parts/{index}`, `POST …/complete`). PostgreSQL은 `uuid` 비교라 대소문자와 무관하게 통과했다. 이제 두 드라이버 모두 대문자 ID를 같은 세션으로 처리한다. 응답의 `sessionId`는 소문자 그대로다.
