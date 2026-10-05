@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { jest } from '@jest/globals';
+import type { BlobRepository } from '../../src/persistence/blob.repository.js';
 import type { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
 import type { VfsUploadSessionRepository } from '../../src/persistence/vfs-upload-session.repository.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
@@ -8,6 +10,7 @@ import type { StorageKeyGenerator } from '../../src/storage/storage-key-generato
 import { PathResolver } from '../../src/vfs/path-resolver.js';
 import { UploadSessionFinalizeService } from '../../src/vfs/upload-session-finalize.service.js';
 import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
+import { VfsChecksumMismatchError } from '../../src/vfs/vfs.errors.js';
 
 describe('UploadSessionFinalizeService', () => {
   it('rejects missing parts before publishing a final object', async () => {
@@ -30,6 +33,7 @@ describe('UploadSessionFinalizeService', () => {
       storage,
       null,
       new ContentIngressService(storage, null),
+      { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
     );
     await expect(service.complete(namespaceId, sessionId, 'request')).rejects.toMatchObject({
       code: 'VFS_UPLOAD_PARTS_INCOMPLETE',
@@ -104,7 +108,6 @@ describe('UploadSessionFinalizeService', () => {
         session.responseBody = body;
         session.requestId = requestId;
       },
-      isFinalObjectReferenced: async () => false,
       releaseFinalize: async () => true,
     } as unknown as VfsUploadSessionRepository;
     const nodes = {
@@ -132,6 +135,7 @@ describe('UploadSessionFinalizeService', () => {
       storage,
       null,
       new ContentIngressService(storage, null),
+      { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
     );
     const first = await service.complete(namespaceId, sessionId, 'first-request');
     expect(final).toBe('abcdefgh');
@@ -178,7 +182,6 @@ describe('UploadSessionFinalizeService', () => {
       },
       fenceFinalize: async () => undefined,
       completeFinalize: async () => undefined,
-      isFinalObjectReferenced: async () => false,
       releaseFinalize: async () => true,
     } as unknown as VfsUploadSessionRepository;
     const storage = {
@@ -214,6 +217,7 @@ describe('UploadSessionFinalizeService', () => {
       storage,
       null,
       new ContentIngressService(storage, null),
+      { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
     );
     try {
       const pending = service.complete(namespaceId, sessionId, 'request');
@@ -228,5 +232,78 @@ describe('UploadSessionFinalizeService', () => {
       resume();
       jest.useRealTimers();
     }
+  });
+
+  describe('complete 실패 시 최종 object 정리', () => {
+    const finalKey = 'blobs/final';
+
+    // withMutation이 mutationError를 던지는 서비스를 만든다. lookup은 Blob 참조 조회 결과다.
+    function setup(mutationError: unknown, lookup: () => Promise<Set<string>>) {
+      const deleted: string[] = [];
+      const storage = {
+        // 본문을 끝까지 소비한다.
+        put: async (_key: string, source: Readable) => finished(source.resume()),
+        delete: async (key: string) => {
+          deleted.push(key);
+        },
+      } as unknown as BlobStorage;
+      const sessions = {
+        claimFinalize: async () => ({
+          kind: 'claimed',
+          token: randomUUID(),
+          parts: [],
+          session: {
+            mimeType: 'application/octet-stream',
+            sizeBytes: '0',
+            targetPath: '/empty',
+            conditionType: 'ABSENT',
+          },
+        }),
+        renewFinalize: async () => true,
+        releaseFinalize: async () => true,
+      } as unknown as VfsUploadSessionRepository;
+      const nodes = {
+        getRoot: async () => ({ id: 'root' }),
+        getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { encryptionPolicy: 'NONE' } }),
+        withMutation: async () => {
+          throw mutationError;
+        },
+      } as unknown as VfsNodeRepository;
+      const blobs = { findKnownStorageKeys: lookup } as unknown as BlobRepository;
+      const service = new UploadSessionFinalizeService(
+        new PathResolver(),
+        nodes,
+        sessions,
+        { generate: () => finalKey } as StorageKeyGenerator,
+        storage,
+        null,
+        new ContentIngressService(storage, null),
+        blobs,
+      );
+      return { service, deleted };
+    }
+
+    it('commit 결과가 불명확한 5xx 오류면 참조가 보이지 않아도 최종 object를 보존한다', async () => {
+      const error = new Error('Connection terminated unexpectedly');
+      const { service, deleted } = setup(error, async () => new Set());
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+      expect(deleted).not.toContain(finalKey);
+    });
+
+    it('롤백이 확정된 4xx 도메인 오류이고 참조가 없으면 최종 object를 삭제한다', async () => {
+      const error = new VfsChecksumMismatchError();
+      const { service, deleted } = setup(error, async () => new Set());
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+      expect(deleted).toContain(finalKey);
+    });
+
+    it('참조 조회가 실패하면 4xx 도메인 오류여도 최종 object를 보존한다', async () => {
+      const error = new VfsChecksumMismatchError();
+      const { service, deleted } = setup(error, async () => {
+        throw new Error('lookup unavailable');
+      });
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+      expect(deleted).not.toContain(finalKey);
+    });
   });
 });

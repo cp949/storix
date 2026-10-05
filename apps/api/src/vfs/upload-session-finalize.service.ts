@@ -6,6 +6,7 @@ import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { getEncrypted } from '../encryption/encrypted-content.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
+import { BlobRepository } from '../persistence/blob.repository.js';
 import type { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-part.entity.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
@@ -17,6 +18,7 @@ import { PathResolver } from './path-resolver.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { VfsChecksumMismatchError, VfsNamespaceNotFoundError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
+import { deleteUnreferencedUpload } from './unreferenced-upload-cleanup.js';
 
 class UploadFinalizeError extends DomainError {
   constructor(
@@ -40,6 +42,7 @@ export class UploadSessionFinalizeService {
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     private readonly contentIngress: ContentIngressService,
+    private readonly blobs: BlobRepository,
   ) {}
 
   async complete(namespaceId: string, sessionId: string, requestId: string): Promise<MutationHttpResult> {
@@ -166,8 +169,7 @@ export class UploadSessionFinalizeService {
       };
     } catch (error) {
       // commit 결과가 불명확한 DB 장애에서 참조된 객체를 지우면 공개 파일이 손실된다.
-      const referenced = await this.sessions.isFinalObjectReferenced(storageKey).catch(() => true);
-      if (!referenced) await this.storage.delete(storageKey).catch(() => undefined);
+      await deleteUnreferencedUpload(this.blobs, this.storage, storageKey, error);
       await this.sessions.releaseFinalize(namespaceId, sessionId, token).catch(() => undefined);
       throw error;
     }

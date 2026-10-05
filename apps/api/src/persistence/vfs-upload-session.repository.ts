@@ -7,7 +7,6 @@ import { isSqliteDataSource } from '../common/db-driver.js';
 import { classifyPersistenceOperation } from './persistence-failure.js';
 import { VfsUploadPartEntity, type VfsUploadPartState } from './entities/vfs-upload-part.entity.js';
 import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
-import { BlobEntity } from './entities/blob.entity.js';
 import { VfsUploadSessionEntity, type VfsUploadSessionState } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 
@@ -659,11 +658,6 @@ export class VfsUploadSessionRepository {
       })
       .execute();
     return result.affected === 1;
-  }
-
-  @classifyPersistenceOperation
-  async isFinalObjectReferenced(storageKey: string): Promise<boolean> {
-    return this.dataSource.getRepository(BlobEntity).exists({ where: { storageKey } });
   }
 
   @classifyPersistenceOperation
