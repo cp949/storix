@@ -244,14 +244,16 @@ export class UploadSessionService {
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const before = await this.sessions.findForStatus(namespaceId, sessionId);
     if (!before) throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    const now = new Date();
     if (before.session.state === 'OPEN') {
-      const claimed = await this.sessions.claimTerminalTransition(
-        namespaceId,
-        sessionId,
-        'CANCELLED',
-        new Date(),
-      );
-      if (claimed) return this.status(namespaceId, sessionId);
+      const { expiresAt, maxExpiresAt } = before.session;
+      if (expiresAt <= now || maxExpiresAt <= now) {
+        // GC가 아직 전환하지 않은 만료 세션도 조각 저장·완료와 같이 닫힌 세션으로 다룬다.
+        // GC와 같은 EXPIRED 전환을 여기서 하고 아래에서 409로 거부한다.
+        await this.sessions.claimTerminalTransition(namespaceId, sessionId, 'EXPIRED', now);
+      } else if (await this.sessions.claimTerminalTransition(namespaceId, sessionId, 'CANCELLED', now)) {
+        return this.status(namespaceId, sessionId);
+      }
     }
     const current = await this.status(namespaceId, sessionId);
     if (current.state === 'CANCELLED') return current;

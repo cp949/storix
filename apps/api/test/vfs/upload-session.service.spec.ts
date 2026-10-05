@@ -401,4 +401,21 @@ describe('UploadSessionService lifecycle', () => {
     expect((await service.cancel(namespaceId, id)).state).toBe('CANCELLED');
     expect((await service.cancel(namespaceId, id)).state).toBe('CANCELLED');
   });
+
+  it.each(['expiresAt', 'maxExpiresAt'] as const)(
+    'GC 전환 전이라도 %s가 지난 OPEN 세션의 취소는 EXPIRED로 전환하고 409로 거부한다',
+    async (field) => {
+      const { service, sessions } = setup();
+      const created = await service.create(namespaceId, 'scope', key, request, 'first');
+      const id = (created.body as { sessionId: string }).sessionId;
+      sessions.get(id)![field] = new Date(Date.now() - 1000);
+
+      await expect(service.cancel(namespaceId, id)).rejects.toMatchObject({
+        code: 'VFS_UPLOAD_SESSION_CLOSED',
+        status: 409,
+      });
+      expect(sessions.get(id)!.state).toBe('EXPIRED');
+      await expect(service.cancel(namespaceId, id)).rejects.toMatchObject({ status: 409 });
+    },
+  );
 });
