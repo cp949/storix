@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- 업로드 세션 ID를 대문자 UUID로 보내면 SQLite에서만 404 `VFS_UPLOAD_SESSION_NOT_FOUND`가 나던 문제를 고쳤다(`GET`·`DELETE /fs/upload-sessions/{id}`, `PUT …/parts/{index}`, `POST …/complete`). PostgreSQL은 `uuid` 비교라 대소문자와 무관하게 통과했다. 이제 두 드라이버 모두 대문자 ID를 같은 세션으로 처리한다. 응답의 `sessionId`는 소문자 그대로다.
 - change feed가 켜진 namespace에서 `POST /fs/mkdir`, `POST /fs/mutations`의 `kind: mkdir`(`parents` 포함)이 이미 있던 조상 디렉터리(root 포함)를 `updated`가 아닌 `created`로 기록하던 문제를 고쳤다. 이제 기존 조상은 `updated`, 새로 만든 디렉터리만 `created`다. 다른 mutation은 영향이 없었다. 이미 기록된 이벤트는 바뀌지 않는다.
 - 디렉터리 이동(`POST /fs/mv`, `POST /fs/mutations`의 `kind: move`)이 하위 트리를 찾을 때 `namespace_id` 조건 없이 `vfs_node` 전체를 훑어, 다른 namespace의 행 수에 비례해 느리던 문제를 고쳤다. 같은 namespace 안의 노드만 조회한다. 결과 노드 집합과 상한 판정은 같다.
 - 업로드 본문 수신이 5분을 넘으면 Node 기본 `requestTimeout`(300초)으로 408이 되어 연결이 끊기던 문제를 고쳤다. HTTP 서버의 `requestTimeout`을 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 24시간)에 맞춘다. 이 값은 업로드가 아닌 라우트의 본문 수신에도 적용된다. `headersTimeout`(60초)은 그대로다.
