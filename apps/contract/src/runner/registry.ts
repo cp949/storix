@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -85,11 +86,14 @@ export function groupByProfile(contracts: readonly Contract[]): Map<ProfileName,
   return groups;
 }
 
-/** Fisher-Yates로 섞은 복사본을 돌려준다. 입력은 바꾸지 않는다. */
-export function shuffle<T>(items: readonly T[], random: () => number = Math.random): T[] {
+/**
+ * Fisher-Yates로 섞은 복사본을 돌려준다. 입력은 바꾸지 않는다.
+ * `pickIndex(bound)`는 0 이상 bound 미만의 정수를 돌려준다. 기본값은 `crypto.randomInt`다.
+ */
+export function shuffle<T>(items: readonly T[], pickIndex: (bound: number) => number = randomInt): T[] {
   const result = [...items];
   for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
+    const j = pickIndex(i + 1);
     [result[i], result[j]] = [result[j]!, result[i]!];
   }
   return result;

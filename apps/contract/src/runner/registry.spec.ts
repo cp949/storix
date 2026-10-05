@@ -124,4 +124,9 @@ describe('계약 레지스트리', () => {
     );
     assert.deepEqual(items, [1, 2, 3, 4]);
   });
+
+  it('기본 난수원으로 섞어도 원소를 잃지 않는다', () => {
+    const items = [1, 2, 3, 4, 5, 6];
+    assert.deepEqual([...shuffle(items)].sort(), items);
+  });
 });
