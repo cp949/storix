@@ -10,7 +10,7 @@
 copy는 `STORIX_MAX_SYNC_COPY_NODES`, rm은 `STORIX_MAX_SYNC_DELETE_NODES`로 제한한다.
 
 이동은 root lock을 쥔 한 트랜잭션에서 하위 노드마다 revision UPDATE와 경로 계산용 부모 조회를 실행한다.
-쿼리 수는 대략 `N × (3 + 하위 노드의 평균 깊이)`이고, 이동하는 동안 같은 namespace의 mutation이 멈춘다.
+쿼리 수는 대략 `N × (3 + 하위 노드의 평균 깊이)`이고(결정 시점, 이후 배치 조회로 바뀜), 이동하는 동안 같은 namespace의 mutation이 멈춘다.
 SQLite는 프로세스 전체 DB 접근이 멈춘다.
 
 SQLite 파일 DB에서 실측한 소요 시간(2026-10-05, Postgres는 측정하지 않음):
@@ -46,6 +46,7 @@ SQLite 파일 DB에서 실측한 소요 시간(2026-10-05, Postgres는 측정하
   - 쿼리 수는 줄지만 노드별 change feed 이벤트와 응답의 `affectedRevisions` 항목 수는 줄지 않는다.
   - 상한 없이는 root lock 점유 시간을 제한하지 못해 이번 결정에서 제외했다.
   - 상한을 키울 때 선행하는 별도 작업으로 남긴다.
+  - 이후 GitHub 이슈 #33·#34에서 revision bump와 경로 계산을 배치 조회로 바꿨다(TRP-008). 상한은 root lock 점유 시간의 1차 제한이라 유지한다.
 - **copy 상한 값을 재사용**: 의미가 다른 두 연산이 한 값에 묶여 운영자가 따로 조정할 수 없다.
 - **깊이를 반영한 가중 상한**: 구현·설명 비용이 크고 경로 길이 상한이 깊이를 간접 제한한다.
 

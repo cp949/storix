@@ -24,4 +24,4 @@
 - 회귀 검증: `apps/api/test/persistence/vfs-node.repository.shared-tests/bulk-limits.ts`의 "평평한 디렉터리의 대량 노드 처리 시간"이 12,000개 `removeNode`·`copyNode`를 3.5초 상한으로 확인한다. 수정 전 SQLite에서 rm 5.5초·cp 6.7초로 실패했다.
 - 남는 위험:
   - `moveNode`의 CTE는 namespace 조건이 없어 `AUTOMATIC COVERING INDEX (parent_id=?)`에 의존한다. 평평한 트리 3,000·6,000·12,000개에서는 선형이었다(374·657·1,307ms).
-  - PostgreSQL에서 12,000개 `copyNode`는 수정 전 19.2초, 수정 후 22.3초였다. CTE가 아닌 다른 단계의 지연이다. 이 TRP의 범위가 아니다.
+  - PostgreSQL에서 12,000개 `copyNode`는 수정 전 19.2초, 수정 후 22.3초였다. CTE가 아닌 다른 단계의 지연이며 원인은 TRP-008이다.
