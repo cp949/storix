@@ -1,7 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Injectable, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ExternalPathResolutionError } from '../document-archive/document-archive.errors.js';
-import { StorixApiError } from '../storix-client/storix-client.errors.js';
+import { StorixApiError, StorixUpstreamUnauthorizedError } from '../storix-client/storix-client.errors.js';
 import { DomainError } from './domain-error.js';
 
 @Catch()
@@ -18,11 +18,13 @@ export class DomainErrorFilter implements ExceptionFilter {
         response.setHeader('Retry-After', exception.retryAfter);
       }
       if (exception.shouldReport) {
-        const internalPathSuffix =
-          exception instanceof ExternalPathResolutionError
-            ? ` (internalPath: ${exception.internalPath})`
-            : '';
-        this.logger.error(`${exception.message}${internalPathSuffix}`, exception.stack);
+        let suffix = '';
+        if (exception instanceof ExternalPathResolutionError) {
+          suffix = ` (internalPath: ${exception.internalPath})`;
+        } else if (exception instanceof StorixUpstreamUnauthorizedError) {
+          suffix = ` (upstream 401 ${exception.upstreamCode} requestId=${exception.upstreamRequestId ?? '없음'})`;
+        }
+        this.logger.error(`${exception.message}${suffix}`, exception.stack);
       }
       response.status(exception.status).json({
         code: exception.code,

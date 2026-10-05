@@ -159,12 +159,21 @@ describe('StorixClient — namespace 부트스트랩', () => {
 
     it.each([
       [409, 'IDEMPOTENCY_KEY_REUSED'],
-      [401, 'UNAUTHORIZED'],
       [500, 'INTERNAL_ERROR'],
     ])('status %i·code %s이면 list를 호출하지 않고 전파한다', async (status, code) => {
       const spy = mockFetchOnce(status, { code, message: '실패', requestId: 'req-2' });
 
       await expect(client.ensurePublicNamespace()).rejects.toMatchObject({ status, code });
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('upstream 401이면 list를 호출하지 않고 502 STORIX_UPSTREAM_UNAUTHORIZED로 전파한다', async () => {
+      const spy = mockFetchOnce(401, { code: 'UNAUTHORIZED', message: '실패', requestId: 'req-2' });
+
+      await expect(client.ensurePublicNamespace()).rejects.toMatchObject({
+        status: 502,
+        code: 'STORIX_UPSTREAM_UNAUTHORIZED',
+      });
       expect(spy).toHaveBeenCalledTimes(1);
     });
   });

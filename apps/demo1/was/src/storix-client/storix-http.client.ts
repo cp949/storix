@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
-import { StorixApiError, StorixUnreachableError } from './storix-client.errors.js';
+import {
+  StorixApiError,
+  StorixUnreachableError,
+  StorixUpstreamUnauthorizedError,
+} from './storix-client.errors.js';
 import { storixTransport } from './storix-transport.js';
 
 interface StorixErrorBody {
@@ -56,6 +60,13 @@ export class StorixHttpClient {
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as StorixErrorBody | null;
+      // WAS의 API 키 문제를 브라우저가 사용자 인증 실패(401)로 오해하지 않게 502로 바꾼다.
+      if (response.status === 401) {
+        throw new StorixUpstreamUnauthorizedError(
+          errorBody?.code ?? 'STORIX_UNKNOWN_ERROR',
+          errorBody?.requestId,
+        );
+      }
       throw new StorixApiError(
         response.status,
         errorBody?.code ?? 'STORIX_UNKNOWN_ERROR',

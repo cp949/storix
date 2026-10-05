@@ -8,7 +8,11 @@ import { Test } from '@nestjs/testing';
 import type { DemoWasConfig } from '../config/demo-was-config.js';
 import { DEMO_WAS_CONFIG } from '../config/demo-was-config.js';
 import { mockFetchOnce } from '../../test/fetch-mock.js';
-import { StorixUnreachableError } from './storix-client.errors.js';
+import {
+  StorixApiError,
+  StorixUnreachableError,
+  StorixUpstreamUnauthorizedError,
+} from './storix-client.errors.js';
 import { StorixHttpClient } from './storix-http.client.js';
 import { storixTransport } from './storix-transport.js';
 
@@ -61,6 +65,31 @@ describe('StorixHttpClient', () => {
       status: 404,
       upstreamRequestId: 'req-1',
     });
+  });
+
+  it('401은 사용자 인증 실패로 오해되지 않도록 502 StorixUpstreamUnauthorizedError로 바꾼다', async () => {
+    mockFetchOnce(401, { code: 'UNAUTHORIZED', message: 'invalid api key abc', requestId: 'req-401' });
+
+    const error = await client.requestJson({ method: 'GET', path: '/api/v2/probe' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StorixUpstreamUnauthorizedError);
+    expect(error).toMatchObject({
+      status: 502,
+      code: 'STORIX_UPSTREAM_UNAUTHORIZED',
+      upstreamCode: 'UNAUTHORIZED',
+      upstreamRequestId: 'req-401',
+    });
+    // 응답 message는 고정 문구이며 upstream message를 싣지 않는다.
+    expect((error as Error).message).not.toContain('invalid api key abc');
+  });
+
+  it('401이 아닌 4xx는 StorixApiError 그대로 전달한다', async () => {
+    mockFetchOnce(403, { code: 'FORBIDDEN', message: '금지', requestId: 'req-403' });
+
+    const error = await client.requestJson({ method: 'GET', path: '/api/v2/probe' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StorixApiError);
+    expect(error).toMatchObject({ status: 403, code: 'FORBIDDEN' });
   });
 
   it('429 Retry-After 헤더를 StorixApiError에 보존한다', async () => {

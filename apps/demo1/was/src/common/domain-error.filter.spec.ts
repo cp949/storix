@@ -1,6 +1,8 @@
-import { Controller, Get, INestApplication, NotFoundException, UseFilters } from '@nestjs/common';
+import { Controller, Get, INestApplication, Logger, NotFoundException, UseFilters } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { jest } from '@jest/globals';
+import { StorixUpstreamUnauthorizedError } from '../storix-client/storix-client.errors.js';
 import { DomainError } from './domain-error.js';
 import { DomainErrorFilter } from './domain-error.filter.js';
 
@@ -18,6 +20,11 @@ class ProbeController {
   @Get('domain-error')
   throwDomainError(): never {
     throw new TeapotError();
+  }
+
+  @Get('upstream-unauthorized')
+  throwUpstreamUnauthorized(): never {
+    throw new StorixUpstreamUnauthorizedError('UNAUTHORIZED', 'up-req-1');
   }
 
   @Get('unknown-error')
@@ -75,5 +82,18 @@ describe('DomainErrorFilter', () => {
       message: '없음',
       requestId: 'test-request-id',
     });
+  });
+
+  it('upstream 401 변환 오류는 502 고정 문구로 응답하고 원인은 로그에만 남긴다', async () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await request(app.getHttpServer()).get('/probe/upstream-unauthorized').expect(502);
+      expect(response.body.code).toBe('STORIX_UPSTREAM_UNAUTHORIZED');
+      expect(response.body.message).not.toContain('UNAUTHORIZED');
+      expect(response.body.message).not.toContain('up-req-1');
+      expect(String(logged.mock.calls[0]?.[0])).toContain('upstream 401 UNAUTHORIZED requestId=up-req-1');
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
