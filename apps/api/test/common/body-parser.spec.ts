@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import {
   dropParserErrorCode,
+  hasUnparsedBody,
   isMutationJsonRoute,
   isRawUploadRoute,
   isSnapshotJsonMutationRoute,
@@ -70,6 +71,29 @@ describe('snapshot JSON mutation routes', () => {
       expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(false);
     },
   );
+});
+
+describe('hasUnparsedBody', () => {
+  const headers = (value: Record<string, string>) => ({ headers: value });
+
+  it('JSON이 아닌 Content-Type에 본문이 있으면 true를 반환한다', () => {
+    expect(hasUnparsedBody(headers({ 'content-type': 'text/plain', 'content-length': '2' }))).toBe(true);
+    expect(hasUnparsedBody(headers({ 'content-length': '2' }))).toBe(true);
+    expect(hasUnparsedBody(headers({ 'content-type': 'text/plain', 'transfer-encoding': 'chunked' }))).toBe(
+      true,
+    );
+  });
+
+  it('본문이 없거나 길이가 0이면 Content-Type과 무관하게 false를 반환한다', () => {
+    expect(hasUnparsedBody(headers({}))).toBe(false);
+    expect(hasUnparsedBody(headers({ 'content-type': 'text/plain', 'content-length': '0' }))).toBe(false);
+  });
+
+  it('JSON Content-Type은 파라미터와 대소문자가 달라도 false를 반환한다', () => {
+    expect(
+      hasUnparsedBody(headers({ 'content-type': 'Application/JSON; charset=utf-8', 'content-length': '2' })),
+    ).toBe(false);
+  });
 });
 
 describe('dropParserErrorCode', () => {

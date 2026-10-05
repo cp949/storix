@@ -15,6 +15,7 @@ import type { Request, Response } from 'express';
 import { Audited } from '../audit/audited.decorator.js';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { Public } from '../auth/public.decorator.js';
+import { hasUnparsedBody } from '../common/body-parser.js';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
 import { VfsInvalidMutationRequestError } from './vfs.errors.js';
@@ -49,6 +50,8 @@ export class VfsTrashController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    // 파서가 읽지 않은 비JSON 본문은 빈 본문으로 오인되어 무시되므로 먼저 거부한다.
+    if (hasUnparsedBody(req)) throw new VfsInvalidMutationRequestError();
     const result = await this.trash.restore(
       namespaceId,
       trashId,
@@ -74,6 +77,8 @@ export class VfsTrashController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    // 파서가 읽지 않은 비JSON 본문은 빈 본문으로 오인되어 무시되므로 먼저 거부한다.
+    if (hasUnparsedBody(req)) throw new VfsInvalidMutationRequestError();
     const result = await this.trash.purge(
       namespaceId,
       trashId,

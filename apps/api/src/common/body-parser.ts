@@ -39,6 +39,20 @@ function matchesContentType(req: Request, expected: string): boolean {
 }
 
 /**
+ * 본문이 있는데 JSON 파서가 읽지 않은 요청인지 판정한다. JSON이 아닌 Content-Type의 본문은
+ * 파서가 건너뛰어 컨트롤러에는 빈 본문과 구분되지 않게 도달한다. 본문이 선택 사항인 라우트가
+ * 이를 거부하지 않으면 요청 필드(예: trash restore의 `targetPath`)가 조용히 사라진다.
+ */
+export function hasUnparsedBody(req: Pick<Request, 'headers'>): boolean {
+  if (matchesContentType(req as Request, 'application/json')) return false;
+  const length = req.headers['content-length'];
+  return (
+    req.headers['transfer-encoding'] !== undefined ||
+    (typeof length === 'string' && length.trim() !== '' && Number(length) !== 0)
+  );
+}
+
+/**
  * NestFactory.create(AppModule, { bodyParser: false })로 기본 body-parser를 끈 뒤,
  * POST .../fs/content 라우트만 제외하고 json/urlencoded 파서를 동일하게 재적용한다.
  *

@@ -542,6 +542,44 @@ export function registerVfsTrashHttpContract(
     expect((await http().get(`${base}/content`).query({ path: '/other/dir/a' }).expect(200)).text).toBe('a');
   });
 
+  it('복구·purge 요청의 비JSON 본문은 무시하지 않고 400으로 거부하며 같은 키의 JSON 재시도를 막지 않는다', async () => {
+    const id = await createTrashEnabledNamespace(`trash-non-json-body-${randomUUID()}`);
+    const base = namespace(id);
+    await http().post(`${base}/mkdir`).send({ path: '/other' }).expect(201);
+    await http().post(`${base}/touch`).send({ path: '/doc' }).expect(201);
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/doc' }).expect(204)).headers[
+      'x-trash-id'
+    ] as string;
+    const route = `${base}/trash/${trashId}/restore`;
+    const key = randomUUID();
+    const rejected = await http()
+      .post(route)
+      .set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', key)
+      .set('Content-Type', 'text/plain')
+      .send(JSON.stringify({ targetPath: '/other/doc' }))
+      .expect(400);
+    expect(rejected.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
+    await http().get(`${base}/stat`).query({ path: '/doc' }).expect(404);
+    const restored = await http()
+      .post(route)
+      .set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', key)
+      .send({ targetPath: '/other/doc' })
+      .expect(200);
+    expect(restored.body.resource.path).toBe('/other/doc');
+    const purgeRoute = `${base}/trash/${randomUUID()}/purge`;
+    const purge = await http()
+      .post(purgeRoute)
+      .set('Authorization', 'Bearer trash-admin-test-key')
+      .set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID())
+      .set('Content-Type', 'text/plain')
+      .send('x')
+      .expect(400);
+    expect(purge.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
+  });
+
   it('TREE root보다 먼저 정렬되는 자식 이름도 원래 ID와 구조로 복원한다', async () => {
     const id = await createTrashEnabledNamespace(`trash-root-order-${randomUUID()}`);
     const base = namespace(id);
