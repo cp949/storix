@@ -35,6 +35,7 @@ OFF 전환은 이미 만들어진 trash item을 제거하거나 숨기지 않는
 
 - 복구는 원래 경로 또는 명시한 `targetPath`에 manifest 전체를 되살린다.
 - 원래 node ID와 subtree 구조를 유지하고 모든 node에 새 revision을 발급한다.
+- 원래 `createdAt`을 보존하고 `updatedAt`은 복구 시각으로 둔다. Manifest가 삭제 직전 `createdAt`을 가진다. 이 값이 없는 항목은 복구 시각을 `createdAt`으로 쓴다.
 - 복구 경로의 부모가 없거나 대상이 이미 있으면 전체 변경을 거절한다.
 - 원래 경로에 그사이 생긴 node는 덮어쓰지 않는다.
 - 성공한 항목은 휴지통에서 제거된다.

@@ -2241,7 +2241,7 @@ paths:
       operationId: restoreTrash
       tags: [Trash]
       summary: 원래 node ID와 새 revision으로 휴지통 항목 복구
-      description: 원래 경로 또는 선택한 `targetPath`에 subtree 전체를 복구한다. 부모는 자동 생성하지 않고 대상은 덮어쓰지 않는다. 동일 namespace/scope/key와 본문은 최초 status/body/X-Request-Id를 receipt로 재생한다. 원래 revision은 복구 뒤 유효하지 않다. 본문이 있으면 Content-Type이 `application/json`이어야 한다. 다른 Content-Type의 본문은 무시하지 않고 400 `VFS_INVALID_MUTATION_REQUEST`로 거부하며 receipt를 남기지 않는다.
+      description: 원래 경로 또는 선택한 `targetPath`에 subtree 전체를 복구한다. 부모는 자동 생성하지 않고 대상은 덮어쓰지 않는다. 동일 namespace/scope/key와 본문은 최초 status/body/X-Request-Id를 receipt로 재생한다. 원래 revision은 복구 뒤 유효하지 않다. 복구된 node는 원래 `createdAt`을 유지하고 `updatedAt`은 복구 시각이다(`createdAt`이 기록되지 않은 항목은 복구 시각). 본문이 있으면 Content-Type이 `application/json`이어야 한다. 다른 Content-Type의 본문은 무시하지 않고 400 `VFS_INVALID_MUTATION_REQUEST`로 거부하며 receipt를 남기지 않는다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - $ref: '#/components/parameters/TrashId'
