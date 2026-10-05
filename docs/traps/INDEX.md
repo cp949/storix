@@ -11,3 +11,4 @@
 | TRP-004 | GC 없이 잰 arrayBuffers 증가량은 힙 크기와 GC 위상에 따라 흔들린다   | ACTIVE | `process.memoryUsage().arrayBuffers`의 전후 차이로 버퍼 상한을 단언할 때                  |
 | TRP-005 | SQLite는 varchar 길이를 강제하지 않아 PostgreSQL 22001을 놓친다      | ACTIVE | 클라이언트 문자열 입력을 `varchar(N)` 컬럼에 저장하는 코드를 추가·변경할 때               |
 | TRP-006 | TypeORM SQLite runner는 자동 롤백 뒤 트랜잭션 상태를 정리하지 않는다 | ACTIVE | SQLite 쿼리 게이트나 TypeORM 트랜잭션 상태(`isTransactionActive`)에 의존하는 코드를 쓸 때 |
+| TRP-007 | SQLite 재귀 CTE가 namespace 인덱스를 골라 노드 수에 O(N²)가 된다     | ACTIVE | `vfs_node`처럼 큰 테이블을 자기 자신에 조인하는 재귀 CTE(SQLite 경로)를 추가·변경할 때    |
