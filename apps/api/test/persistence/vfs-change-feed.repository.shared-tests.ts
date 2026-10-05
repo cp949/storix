@@ -70,6 +70,25 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
     expect((await c.state()).lastSequence).toBe('6');
   });
 
+  it('깊은 경로의 mutation도 root부터 부모까지 조상 updated를 경로 순서대로 기록한다', async () => {
+    const c = await setup();
+    const depth = 40;
+    const directories = Array.from({ length: depth }, () => 'n');
+    await c.repository.ensureDirectory(c.namespaceId, c.rootId, directories, true);
+    await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);
+
+    await c.repository.touchFile(c.namespaceId, c.rootId, [...directories, 'f'], false, c.blob());
+
+    const ancestorPaths = [
+      '/',
+      ...directories.map((_, index) => `/${directories.slice(0, index + 1).join('/')}`),
+    ];
+    expect((await c.events()).map((event) => [event.kind, event.path])).toEqual([
+      ...ancestorPaths.map((path) => ['updated', path]),
+      ['created', `/${directories.join('/')}/f`],
+    ]);
+  });
+
   it('rollback은 sequence를 보존하고 일시 생성·삭제는 커밋된 조상 revision만 기록한다', async () => {
     const c = await setup();
     await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);

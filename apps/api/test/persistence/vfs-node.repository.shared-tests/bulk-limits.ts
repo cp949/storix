@@ -212,6 +212,49 @@ export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void 
     });
   });
 
+  describe('change feed checkpoint가 있는 깊은 경로의 mutation', () => {
+    // checkpoint가 있으면 조상마다 변경 전 상태를 읽는다. 조상 하나씩 경로를 root까지 다시 계산하던 시기에는
+    // 깊이 300 체인의 put이 쿼리 약 4만 6천 개(깊이의 제곱에 비례)였다. 부모 경로를 재사용한 뒤 실측은 레벨당 5개 안쪽이다.
+    const deepSegments = Array.from({ length: PARENTS_DEPTH }, () => 'n');
+
+    it.each<[string, (namespaceId: string, rootId: string) => Promise<unknown>]>([
+      [
+        'put',
+        (namespaceId: string, rootId: string) =>
+          getRepo().putFileContent(
+            namespaceId,
+            rootId,
+            [...deepSegments, 'f.bin'],
+            false,
+            makeBlobData(),
+            null,
+            true,
+          ),
+      ],
+      [
+        'touch',
+        (namespaceId: string, rootId: string) =>
+          getRepo().touchFile(namespaceId, rootId, [...deepSegments, 'f.bin'], false, makeBlobData()),
+      ],
+      [
+        'mv',
+        (namespaceId: string, rootId: string) =>
+          getRepo().moveNode(namespaceId, rootId, deepSegments, ['moved'], false, PARENTS_DEPTH + 10),
+      ],
+    ])(
+      '%s 쿼리 수가 깊이에 이차로 늘지 않는다',
+      async (title, operate) => {
+        const { namespace, root } = await directoryChain(`deep-feed-${title}-ns`, PARENTS_DEPTH);
+        await getRepo().createChangeFeedCheckpoint(namespace.id, root.id);
+
+        const { queryCount } = await countQueries(() => operate(namespace.id, root.id));
+
+        expect(queryCount).toBeLessThan(PARENTS_DEPTH * PARENTS_MAX_QUERIES_PER_LEVEL);
+      },
+      60_000,
+    );
+  });
+
   describe('청크 경계를 넘는 mv의 revision 증가', () => {
     // version 증가 UPDATE 청크(500)를 두 개 이상 만드는 규모다.
     const MOVE_NODE_COUNT = 600;

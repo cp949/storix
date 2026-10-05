@@ -118,10 +118,13 @@ export interface ChangeFeedNodeState {
 }
 
 // root lock / SQLite query gate를 획득한 caller의 transaction에서만 호출한다.
+// known은 이미 해석한 노드 상태다. 부모가 known에 있으면 root까지 다시 거슬러 올라가지 않고 그 경로를 쓴다.
+// 조상 하나씩 단건 호출하면 호출마다 경로를 root까지 다시 계산해 깊이에 이차가 된다(TRP-008).
 export async function captureChangeFeedNodes(
   manager: EntityManager,
   namespaceId: string,
   ids: string[],
+  known?: ReadonlyMap<string, ChangeFeedNodeState>,
 ): Promise<Map<string, ChangeFeedNodeState>> {
   if (ids.length === 0) return new Map();
   const repo = manager.getRepository(VfsNodeEntity);
@@ -133,7 +136,7 @@ export async function captureChangeFeedNodes(
   const states = new Map<string, ChangeFeedNodeState>();
   const resolving = new Set<string>();
   const resolve = async (node: VfsNodeEntity): Promise<ChangeFeedNodeState> => {
-    const cached = states.get(node.id);
+    const cached = states.get(node.id) ?? known?.get(node.id);
     if (cached) return cached;
     if (resolving.has(node.id)) throw new Error('VFS node parent cycle');
     resolving.add(node.id);
@@ -158,7 +161,8 @@ export async function trackChangeFeedBefore(tx: MutationTx, ids: string[]): Prom
   if (!tx.feedBefore) return;
   // 같은 transaction에서 만든 노드는 최초 상태가 부재다.
   const missing = ids.filter((id) => !tx.feedBefore!.has(id) && !tx.changed.has(id));
-  const captured = await captureChangeFeedNodes(tx.manager, tx.namespaceId, missing);
+  // feedBefore의 부모는 변경 전 구조에서 읽은 상태라 자식의 변경 전 경로를 만드는 데 그대로 쓸 수 있다.
+  const captured = await captureChangeFeedNodes(tx.manager, tx.namespaceId, missing, tx.feedBefore);
   for (const [id, state] of captured) tx.feedBefore.set(id, state);
 }
 

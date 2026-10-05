@@ -374,11 +374,12 @@ export class VfsNodeRepositoryCore {
         namespaceId: tx.namespaceId,
       });
       if (!current) throw new VfsNodeNotFoundError('/');
-      await trackChangeFeedBefore(tx, [current.id]);
       this.markChanged(tx, currentId, true);
       walked.push(currentId);
       currentId = current.parentId;
     }
+    // 조상 전체를 한 번에 읽어야 경로를 한 번만 해석한다. 조상마다 부르면 깊이에 이차다.
+    await trackChangeFeedBefore(tx, walked);
     // 중간에 오류가 나면 트랜잭션이 롤백되므로 걷기를 마친 뒤에만 기록한다.
     for (const walkedId of walked) tx.ancestorChainMarked.add(walkedId);
   }
