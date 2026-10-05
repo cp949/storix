@@ -207,11 +207,13 @@ export class UploadSessionService {
     };
   }
 
-  async status(namespaceId: string, sessionId: string) {
+  async status(namespaceId: string, rawSessionId: string) {
     if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
-    if (!isUuid(sessionId))
+    if (!isUuid(rawSessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    // 발급 ID는 소문자다. 대문자 입력은 DB 비교 방식과 무관하게 같은 세션으로 다룬다.
+    const sessionId = rawSessionId.toLowerCase();
     const found = await this.sessions.findForStatus(namespaceId, sessionId);
     if (!found) throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const { session, parts } = found;
@@ -237,11 +239,13 @@ export class UploadSessionService {
     };
   }
 
-  async cancel(namespaceId: string, sessionId: string) {
+  async cancel(namespaceId: string, rawSessionId: string) {
     if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
-    if (!isUuid(sessionId))
+    if (!isUuid(rawSessionId))
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    // 발급 ID는 소문자다. 대문자 입력은 DB 비교 방식과 무관하게 같은 세션으로 다룬다.
+    const sessionId = rawSessionId.toLowerCase();
     const before = await this.sessions.findForStatus(namespaceId, sessionId);
     if (!before) throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const now = new Date();

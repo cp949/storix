@@ -59,7 +59,7 @@ export class UploadSessionPartService {
 
   async putPart(
     namespaceId: string,
-    sessionId: string,
+    rawSessionId: string,
     rawIndex: string,
     source: Readable,
     contentLength: string | undefined,
@@ -67,8 +67,10 @@ export class UploadSessionPartService {
   ): Promise<UploadedPartResult> {
     if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
-    if (!isUuid(sessionId))
+    if (!isUuid(rawSessionId))
       throw new UploadPartError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    // 발급 ID는 소문자다. 대문자 입력은 DB 비교 방식과 무관하게 같은 세션으로 다룬다.
+    const sessionId = rawSessionId.toLowerCase();
     if (!/^(0|[1-9][0-9]*)$/.test(rawIndex) || !Number.isSafeInteger(Number(rawIndex)))
       throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '유효하지 않은 조각 index');
     const index = Number(rawIndex);

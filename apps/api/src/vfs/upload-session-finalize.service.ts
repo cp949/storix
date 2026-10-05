@@ -45,11 +45,13 @@ export class UploadSessionFinalizeService {
     private readonly blobs: BlobRepository,
   ) {}
 
-  async complete(namespaceId: string, sessionId: string, requestId: string): Promise<MutationHttpResult> {
+  async complete(namespaceId: string, rawSessionId: string, requestId: string): Promise<MutationHttpResult> {
     if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
-    if (!isUuid(sessionId))
+    if (!isUuid(rawSessionId))
       throw new UploadFinalizeError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
+    // 발급 ID는 소문자다. 대문자 입력은 DB 비교 방식과 무관하게 같은 세션으로 다룬다.
+    const sessionId = rawSessionId.toLowerCase();
     const claim = await this.sessions.claimFinalize(namespaceId, sessionId, LEASE_MS);
     if (claim.kind === 'not-found')
       throw new UploadFinalizeError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');

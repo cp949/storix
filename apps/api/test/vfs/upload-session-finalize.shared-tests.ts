@@ -708,4 +708,25 @@ export function registerFinalizeTests(context: FinalizeContext): void {
       await context.restartEnabled();
     }
   });
+
+  it('대문자 세션 ID로도 조회·조각 업로드·완료가 같은 세션으로 동작한다', async () => {
+    const id = await create('/final-upper-id.bin', '6');
+    const upper = id.toUpperCase();
+    const status = await auth(api().get(`${base()}/${upper}`)).expect(200);
+    expect(status.body.sessionId).toBe(id);
+    await put(upper, 0, 'abcd');
+    await put(upper, 1, 'xy');
+    await complete(upper).expect(201);
+    const content = await auth(api().get(`/api/v2/namespaces/${context.namespace()}/fs/content`))
+      .query({ path: '/final-upper-id.bin' })
+      .expect(200);
+    expect(content.body.toString()).toBe('abcdxy');
+  });
+
+  it('대문자 세션 ID로 취소하면 같은 세션이 취소된다', async () => {
+    const id = await create('/final-upper-cancel.bin', '4');
+    await auth(api().delete(`${base()}/${id.toUpperCase()}`)).expect(200);
+    const status = await auth(api().get(`${base()}/${id}`)).expect(200);
+    expect(status.body.state).toBe('CANCELLED');
+  });
 }
