@@ -20,8 +20,8 @@
 ## 탐지/회피
 
 - 탐지: `EXPLAIN QUERY PLAN`에서 recursive step이 `SCAN t` 뒤에 `SEARCH n USING INDEX <namespace_id 단독 인덱스>`로 나오면 위험하다. `sqlite_autoindex_vfs_node_3 (namespace_id=? AND parent_id=?)`가 나와야 한다.
-- 회피: tree에 `namespace_id`를 싣고 `ON n.namespace_id = t.namespace_id AND n.parent_id = t.id`로 조인한다. `captureSnapshotRows`와 `copyNode`가 이 형태다. `find`(`reads.ts`)는 처음부터 이 형태다.
+- 회피: tree에 `namespace_id`를 싣고 `ON n.namespace_id = t.namespace_id AND n.parent_id = t.id`로 조인한다. `captureSnapshotRows`, `copyNode`, `moveNode`가 이 형태다. `find`(`reads.ts`)는 처음부터 이 형태다.
 - 회귀 검증: `apps/api/test/persistence/vfs-node.repository.shared-tests/bulk-limits.ts`의 "평평한 디렉터리의 대량 노드 처리 시간"이 12,000개 `removeNode`·`copyNode`를 3.5초 상한으로 확인한다. 수정 전 SQLite에서 rm 5.5초·cp 6.7초로 실패했다.
 - 남는 위험:
-  - `moveNode`의 CTE는 namespace 조건이 없어 `AUTOMATIC COVERING INDEX (parent_id=?)`에 의존한다. 평평한 트리 3,000·6,000·12,000개에서는 선형이었다(374·657·1,307ms).
+  - `moveNode`의 CTE는 namespace 조건이 없어 다른 namespace의 행 수에 비례해 느렸다. PostgreSQL 행 211만 개에서 노드 11개 mv가 약 3초였고(`Parallel Seq Scan`), SQLite 행 50만 개에서 CTE만 756ms였다(`SCAN vfs_node`와 `AUTOMATIC COVERING INDEX (parent_id=?)` 생성). `namespace_id` 조건을 더한 뒤 SQLite 같은 조건에서 0ms이고 플랜은 `sqlite_autoindex_vfs_node_3 (namespace_id=? AND parent_id=?)`다. 회귀 검증은 `bulk-limits.ts`의 "mv의 하위 트리 조회 범위"가 재귀 조회의 `JOIN` 조건과 바인드 값을 확인한다. 수정 뒤 PostgreSQL 대용량 재측정은 하지 않았다.
   - PostgreSQL에서 12,000개 `copyNode`는 수정 전 19.2초, 수정 후 22.3초였다. CTE가 아닌 다른 단계의 지연이며 원인은 TRP-008이다.

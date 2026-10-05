@@ -173,6 +173,24 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
     }
   }
 
+  /** work가 DB로 보낸 쿼리의 SQL과 바인드 값을 모은다. 쿼리 개수가 아니라 쿼리 모양을 확인할 때 쓴다. */
+  async function captureQueries<T>(
+    work: () => Promise<T>,
+  ): Promise<{ result: T; queries: { query: string; parameters: unknown[] }[] }> {
+    const logger = getDs().logger;
+    const original = logger.logQuery;
+    const queries: { query: string; parameters: unknown[] }[] = [];
+    logger.logQuery = function (this: typeof logger, ...args: Parameters<typeof original>) {
+      queries.push({ query: args[0], parameters: (args[1] as unknown[] | undefined) ?? [] });
+      return original.apply(this, args);
+    };
+    try {
+      return { result: await work(), queries };
+    } finally {
+      logger.logQuery = original;
+    }
+  }
+
   return {
     getDs,
     getRepo,
@@ -182,5 +200,6 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
     runSameConditionAttempts,
     makeBlobData,
     countQueries,
+    captureQueries,
   };
 }

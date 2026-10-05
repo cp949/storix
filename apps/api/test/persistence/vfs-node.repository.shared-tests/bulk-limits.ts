@@ -32,7 +32,7 @@ const PARENTS_DEPTH = 300;
 const PARENTS_MAX_QUERIES_PER_LEVEL = 8;
 
 export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void {
-  const { getDs, getRepo, createNamespace, countQueries, makeBlobData } = helpers;
+  const { getDs, getRepo, createNamespace, countQueries, captureQueries, makeBlobData } = helpers;
 
   /** 부모 아래에 빈 디렉터리 노드를 직접 만든다. repository 경로로는 수만 개를 만들기 어렵다. */
   async function insertDirectories(namespaceId: string, parentId: string, count: number) {
@@ -253,6 +253,25 @@ export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void 
       },
       60_000,
     );
+  });
+
+  describe('mv의 하위 트리 조회 범위', () => {
+    // namespace 조건이 없으면 (namespace_id, parent_id, name) 인덱스를 못 써서, 다른 namespace의 행까지
+    // 재귀 단계마다 훑는다. PG 행 211만 개에서 노드 11개 mv가 약 3초였고 cp는 14ms였다.
+    it('재귀 조회가 namespace_id로 범위를 좁힌다', async () => {
+      const namespace = await createNamespace('move-scope-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'b'], true);
+
+      const { queries } = await captureQueries(() =>
+        getRepo().moveNode(namespace.id, root.id, ['a'], ['moved'], false, 100),
+      );
+
+      const recursive = queries.filter(({ query }) => /^\s*WITH RECURSIVE/i.test(query));
+      expect(recursive).toHaveLength(1);
+      expect(recursive[0].query).toMatch(/JOIN subtree s ON[^)]*namespace_id/);
+      expect(recursive[0].parameters).toContain(namespace.id);
+    });
   });
 
   describe('청크 경계를 넘는 mv의 revision 증가', () => {

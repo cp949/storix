@@ -445,8 +445,11 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
     const ph = new DialectPlaceholders(this.isSqlite);
     const descendants: NamedDescendant[] = await manager.query(
       `WITH RECURSIVE subtree AS (
-           SELECT id, parent_id, name FROM vfs_node WHERE parent_id = ${ph.bind(sourceNode.id)}
-           UNION ALL SELECT n.id, n.parent_id, n.name FROM vfs_node n JOIN subtree s ON n.parent_id = s.id
+           SELECT id, namespace_id, parent_id, name FROM vfs_node
+           WHERE namespace_id = ${ph.bind(namespaceId)} AND parent_id = ${ph.bind(sourceNode.id)}
+           UNION ALL
+           SELECT n.id, n.namespace_id, n.parent_id, n.name FROM vfs_node n
+           JOIN subtree s ON n.namespace_id = s.namespace_id AND n.parent_id = s.id
          ) SELECT id, parent_id, name FROM subtree LIMIT ${ph.bind(maxSyncMoveNodes)}`,
       ph.params,
     );
