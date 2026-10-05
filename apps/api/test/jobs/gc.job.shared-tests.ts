@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DataSource, IsNull } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
@@ -456,14 +457,14 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       '21',
     ]);
 
-    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7' });
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7', failed: 0 });
     const midway = await namespaceRepo.findOneByOrFail({ id: fixture.namespaceId });
     expect([String(midway.retainedTrashNodeCount), String(midway.retainedTrashByteCount)]).toEqual([
       '2',
       '14',
     ]);
-    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7' });
-    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 0, nodes: 0, bytes: '0' });
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 1, nodes: 1, bytes: '7', failed: 0 });
+    expect(await trashRetention.pruneExpiredBatch(1)).toEqual({ items: 0, nodes: 0, bytes: '0', failed: 0 });
     expect(
       await dataSource.getRepository(VfsTrashEntity).findBy({ namespaceId: fixture.namespaceId }),
     ).toHaveLength(1);
@@ -477,6 +478,32 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       (await dataSource.getRepository(BlobEntity).findOneByOrFail({ id: fixture.blob.id })).referenceCount,
     ).toBe(2);
     await expect(storage.get(fixture.storageKey)).resolves.toBeDefined();
+  });
+
+  it('손상된 휴지통 항목이 있어도 다른 namespace의 만료 항목은 정리하고 실패 수를 집계한다', async () => {
+    const { dataSource, trashRetention } = getContext();
+    const broken = await createTrashFixture(1, 0);
+    const healthy = await createTrashFixture(1, 0);
+    // entry 크기 합(7)과 manifest logical_bytes가 어긋난 손상 항목
+    await dataSource.getRepository(VfsTrashEntity).update({ id: broken.ids[0] }, { logicalBytes: '8' });
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await trashRetention.pruneExpiredBatch(500);
+
+      expect(result.failed).toBeGreaterThanOrEqual(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining(broken.ids[0]), expect.anything());
+    } finally {
+      error.mockRestore();
+    }
+    expect(await dataSource.getRepository(VfsTrashEntity).countBy({ namespaceId: healthy.namespaceId })).toBe(
+      0,
+    );
+    expect(await dataSource.getRepository(VfsTrashEntity).countBy({ namespaceId: broken.namespaceId })).toBe(
+      1,
+    );
+    // 같은 DB를 쓰는 뒤 테스트의 실패 수에 섞이지 않도록 손상 항목을 지운다.
+    await dataSource.getRepository(VfsTrashEntryEntity).delete({ trashId: broken.ids[0] });
+    await dataSource.getRepository(VfsTrashEntity).delete({ id: broken.ids[0] });
   });
 
   it('GC 결과는 완료된 만료 purge의 item 수와 논리 byte만 집계한다', async () => {

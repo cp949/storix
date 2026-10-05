@@ -65,6 +65,9 @@ export interface GcResult {
   readonly prunedChangeEvents: number;
   readonly prunedTrashItems: number;
   readonly prunedTrashBytes: string;
+
+  /** 예상 밖 오류로 보존 정리하지 못한 휴지통 항목 수다. 항목별 원인은 error 로그에 남는다. */
+  readonly failedTrashItems: number;
   readonly expiredFiles: number;
   readonly expiredBytes: string;
 
@@ -158,6 +161,7 @@ export class GcJob {
       prunedChangeEvents,
       prunedTrashItems: trash.items,
       prunedTrashBytes: trash.bytes,
+      failedTrashItems: trash.failed,
       expiredFiles: expired.files,
       expiredBytes: expired.bytes,
       budgetExhaustedStages: exhausted,
@@ -416,18 +420,22 @@ export class GcJob {
     return pruned;
   }
 
-  private async pruneTrash(exhausted: string[]): Promise<{ items: number; bytes: string }> {
+  private async pruneTrash(exhausted: string[]): Promise<{ items: number; bytes: string; failed: number }> {
     const trash = this.trashRetention;
-    if (!trash) return { items: 0, bytes: '0' };
+    if (!trash) return { items: 0, bytes: '0', failed: 0 };
     let items = 0;
     let bytes = 0n;
+    let failed = 0;
     await runBudgetedStage(this.stageContext, 'trash-prune', exhausted, async () => {
       const batch = await trash.pruneExpiredBatch(CLEANUP_BATCH_SIZE);
       items += batch.items;
       bytes += BigInt(batch.bytes);
-      return { done: batch.items === 0, examined: batch.items };
+      // 실패 항목은 expires_at 순서상 남은 후보보다 앞서므로 다음 배치에서 다시 후보가 된다.
+      // 그래서 마지막 배치의 실패 수가 이번 실행의 실패 항목 수다. 정리한 항목이 없으면 끝낸다.
+      failed = batch.failed;
+      return { done: batch.items === 0, examined: batch.items + batch.failed };
     });
-    return { items, bytes: bytes.toString() };
+    return { items, bytes: bytes.toString(), failed };
   }
 
   private get stageContext(): GcStageContext {

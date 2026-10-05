@@ -667,13 +667,26 @@ describe('GcJob', () => {
 
     it('trash prune은 항목 수 예산 안에서 반복하고 소진되면 단계를 보고한다', async () => {
       const pruneExpiredBatch = jest
-        .fn<(limit: number) => Promise<{ items: number; nodes: number; bytes: string }>>()
-        .mockResolvedValue({ items: 500, nodes: 500, bytes: '5' });
+        .fn<(limit: number) => Promise<{ items: number; nodes: number; bytes: string; failed: number }>>()
+        .mockResolvedValue({ items: 500, nodes: 500, bytes: '5', failed: 0 });
       const result = await buildJob({ trash: { pruneExpiredBatch }, budget: '1000' }).run();
       expect(pruneExpiredBatch).toHaveBeenCalledTimes(2);
       expect(result.prunedTrashItems).toBe(1000);
       expect(result.prunedTrashBytes).toBe('10');
+      expect(result.failedTrashItems).toBe(0);
       expect(result.budgetExhaustedStages).toEqual(['trash-prune']);
+    });
+
+    it('trash prune에서 실패한 항목은 매 배치 다시 후보가 되므로 마지막 배치의 실패 수를 보고한다', async () => {
+      const pruneExpiredBatch = jest
+        .fn<(limit: number) => Promise<{ items: number; nodes: number; bytes: string; failed: number }>>()
+        .mockResolvedValueOnce({ items: 3, nodes: 3, bytes: '3', failed: 1 })
+        .mockResolvedValueOnce({ items: 0, nodes: 0, bytes: '0', failed: 1 });
+      const result = await buildJob({ trash: { pruneExpiredBatch } }).run();
+      expect(pruneExpiredBatch).toHaveBeenCalledTimes(2);
+      expect(result.prunedTrashItems).toBe(3);
+      expect(result.failedTrashItems).toBe(1);
+      expect(result.budgetExhaustedStages).toEqual([]);
     });
 
     it('idempotency receipt prune은 batch를 이어 돌고 예산이 소진되면 단계를 보고한다', async () => {

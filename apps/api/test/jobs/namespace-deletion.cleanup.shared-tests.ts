@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { IsNull } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
@@ -26,7 +27,6 @@ import { VfsUploadUsageEntity } from '../../src/persistence/entities/vfs-upload-
 import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
 import { VfsChangeEventEntity } from '../../src/persistence/entities/vfs-change-event.entity.js';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
-import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
 import type { GcJobTestContext } from './gc.job.shared-tests.js';
 
 /** 두 드라이버에서 같은 정리 계약을 실행한다. */
@@ -743,7 +743,7 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     expect(await f.dataSource.manager.countBy(VfsTrashEntity, { namespaceId: other.ns.id })).toBe(0);
   });
 
-  it('ACTIVE namespace의 root 손상은 VfsNodeNotFoundError로 남긴다', async () => {
+  it('ACTIVE namespace의 root 손상은 건너뛰지 않고 error 로그와 실패 수로 남긴다', async () => {
     const f = await fixture();
     await content(f, true);
     const original = f.nodeRepository.purgeTrashItem.bind(f.nodeRepository);
@@ -754,10 +754,16 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
       }
       return original(ns, id, tx);
     });
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     try {
-      await expect(f.trashRetention.pruneExpiredBatch(500)).rejects.toBeInstanceOf(VfsNodeNotFoundError);
+      await expect(f.trashRetention.pruneExpiredBatch(500)).resolves.toMatchObject({ failed: 1 });
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining(`휴지통 보존 정리 실패 namespace=${f.ns.id}`),
+        expect.anything(),
+      );
     } finally {
       race.mockRestore();
+      error.mockRestore();
     }
     expect((await f.dataSource.manager.findOneByOrFail(NamespaceEntity, { id: f.ns.id })).status).toBe(
       'ACTIVE',

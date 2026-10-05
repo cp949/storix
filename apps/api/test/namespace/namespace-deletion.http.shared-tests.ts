@@ -393,7 +393,7 @@ export function registerNamespaceDeletionAccessHttpTests(options: {
         },
       );
       const retention = new VfsTrashRetentionRepository(db, options.app().get(VfsNodeRepository));
-      expect(await retention.pruneExpiredBatch(500)).toEqual({ items: 0, nodes: 0, bytes: '0' });
+      expect(await retention.pruneExpiredBatch(500)).toEqual({ items: 0, nodes: 0, bytes: '0', failed: 0 });
       expect(await db.getRepository(VfsTrashEntity).countBy({ namespaceId: options.namespace() })).toBe(1);
     });
   });

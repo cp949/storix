@@ -1,5 +1,5 @@
 import { NamespaceEntity } from './entities/namespace.entity.js';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import {
@@ -13,10 +13,15 @@ export interface PrunedTrashBatch {
   readonly items: number;
   readonly nodes: number;
   readonly bytes: string;
+
+  /** 예상 밖 오류로 정리하지 못하고 남긴 항목 수다. 다음 실행에서 다시 시도한다. */
+  readonly failed: number;
 }
 
 @Injectable()
 export class VfsTrashRetentionRepository {
+  private readonly logger = new Logger(VfsTrashRetentionRepository.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly nodes: VfsNodeRepository,
@@ -38,6 +43,7 @@ export class VfsTrashRetentionRepository {
     if (selectedNodes > BigInt(Number.MAX_SAFE_INTEGER))
       throw new Error('Trash prune node count exceeds safe integer');
     let items = 0;
+    let failed = 0;
     let nodes = 0n;
     let bytes = 0n;
     for (const row of rows) {
@@ -49,17 +55,24 @@ export class VfsTrashRetentionRepository {
         // Another purge or restore may consume a selected item before its lock is acquired.
         if (error instanceof VfsTrashItemNotFoundError || error instanceof VfsNamespaceNotFoundError)
           continue;
-        // 후보 조회 뒤 삭제 완료로 root가 없어질 수 있다. ACTIVE root 손상은 숨기지 않는다.
+        // 후보 조회 뒤 삭제 완료로 root가 없어질 수 있다.
         if (error instanceof VfsNodeNotFoundError) {
           const namespace = await this.dataSource.manager.findOneBy(NamespaceEntity, { id: row.namespaceId });
           if (namespace && namespace.status !== 'ACTIVE') continue;
         }
-        throw error;
+        // ACTIVE root 손상·manifest 불일치 같은 예상 밖 오류는 error 로그와 실패 수로 드러낸다.
+        // 이 항목은 expires_at이 가장 이르므로 다시 던지면 모든 namespace의 정리가 매번 여기서 멈춘다.
+        failed++;
+        this.logger.error(
+          `휴지통 보존 정리 실패 namespace=${row.namespaceId} trash=${row.id}: ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        continue;
       }
       items++;
       nodes += BigInt(row.nodeCount);
       bytes += BigInt(row.logicalBytes);
     }
-    return { items, nodes: Number(nodes), bytes: bytes.toString() };
+    return { items, nodes: Number(nodes), bytes: bytes.toString(), failed };
   }
 }
