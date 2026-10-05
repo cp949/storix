@@ -1,4 +1,6 @@
+import { jest } from '@jest/globals';
 import {
+  dropParserErrorCode,
   isMutationJsonRoute,
   isRawUploadRoute,
   isSnapshotJsonMutationRoute,
@@ -68,4 +70,40 @@ describe('snapshot JSON mutation routes', () => {
       expect(isSnapshotJsonMutationRoute({ method: 'POST', path: base + suffix })).toBe(false);
     },
   );
+});
+
+describe('dropParserErrorCode', () => {
+  const run = (error: unknown): unknown => {
+    const next = jest.fn<(error?: unknown) => void>();
+    dropParserErrorCode(error, {} as never, {} as never, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    return next.mock.calls[0][0];
+  };
+
+  it('status와 문자열 code가 있는 파서 오류는 code를 지우고 status·message·type을 유지한다', () => {
+    const zlibError = Object.assign(new Error('incorrect header check'), {
+      status: 400,
+      code: 'Z_DATA_ERROR',
+    });
+
+    const passed = run(zlibError) as Error & { status: number; code?: string };
+
+    expect(passed).toMatchObject({ message: 'incorrect header check', status: 400 });
+    expect(passed.code).toBeUndefined();
+  });
+
+  it('code가 없는 파서 오류는 같은 객체를 그대로 넘긴다', () => {
+    const syntaxError = Object.assign(new Error('Unexpected token'), {
+      status: 400,
+      type: 'entity.parse.failed',
+    });
+
+    expect(run(syntaxError)).toBe(syntaxError);
+  });
+
+  it('status가 없는 오류는 code가 있어도 그대로 넘긴다', () => {
+    const systemError = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+    expect(run(systemError)).toBe(systemError);
+  });
 });

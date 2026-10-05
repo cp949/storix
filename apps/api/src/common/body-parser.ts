@@ -83,4 +83,20 @@ export function configureBodyParsers(app: INestApplication): void {
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),
     }),
   );
+  httpAdapter.use(dropParserErrorCode);
+}
+
+/**
+ * 파서 단계 오류의 라이브러리 `code`(압축 해제의 `Z_DATA_ERROR`, 입력에 따라 번호가 달라지는 brotli의
+ * `ERR__ERROR_FORMAT_PADDING_N`, `ECONNABORTED`)를 지운다. 필터는 문자열 code를 그대로 응답하므로
+ * 지우지 않으면 공개 계약의 `BAD_REQUEST` 대신 외부 라이브러리 코드가 나간다.
+ * 범위를 파서 직후로 한정해, 다른 경로의 code(`DB_BUSY` 등)는 건드리지 않는다.
+ */
+export function dropParserErrorCode(error: unknown, _req: Request, _res: Response, next: NextFunction): void {
+  const { status, code, message, type } = (error ?? {}) as Record<string, unknown>;
+  if (typeof status !== 'number' || typeof code !== 'string') {
+    next(error);
+    return;
+  }
+  next(Object.assign(new Error(typeof message === 'string' ? message : undefined), { status, type }));
 }

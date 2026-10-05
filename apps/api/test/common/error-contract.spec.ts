@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
 import { DomainErrorFilter } from '../../src/common/domain-error.filter.js';
 import { RequestContextMiddleware } from '../../src/common/request-context.middleware.js';
@@ -48,6 +49,12 @@ class ProbeController {
   @Post('echo')
   echo(@Body() body: unknown) {
     return { received: body };
+  }
+
+  // raw 파서를 타는 경로(isMutationJsonRoute)다.
+  @Post('fs/mutations')
+  rawEcho(@Body() body: unknown) {
+    return { bytes: Buffer.isBuffer(body) ? body.length : null };
   }
 }
 
@@ -114,6 +121,52 @@ describe('오류 응답 계약 (미들웨어+필터+인터셉터 파이프라인
     expect(response.body).toMatchObject({
       code: 'BAD_REQUEST',
       requestId: expect.any(String),
+    });
+  });
+
+  describe('압축 요청 본문', () => {
+    const good = JSON.stringify({ hello: 'world' });
+    const truncatedGzip = gzipSync(good).subarray(0, 10);
+
+    function post(path: string, encoding: string, body: Buffer) {
+      return (
+        request(app.getHttpServer())
+          .post(path)
+          .set('Content-Type', 'application/json')
+          .set('Content-Encoding', encoding)
+          // supertest는 JSON 타입의 Buffer를 다시 직렬화하므로 그대로 보내도록 지정한다.
+          .serialize((b: unknown) => b as string)
+          .send(body)
+      );
+    }
+
+    it.each<[string, string, Buffer]>([
+      ['gzip 손상', 'gzip', Buffer.from('not gzip data at all')],
+      ['gzip 잘림', 'gzip', truncatedGzip],
+      ['deflate 손상', 'deflate', Buffer.from('garbage garbage')],
+      ['br 손상', 'br', Buffer.from('garbage garbage garbage')],
+    ])('%s 본문은 압축 라이브러리 code 대신 400 BAD_REQUEST로 응답한다', async (_name, encoding, body) => {
+      for (const path of ['/probe/echo', '/probe/fs/mutations']) {
+        const response = await post(path, encoding, body).expect(400);
+
+        expect(response.body).toMatchObject({ code: 'BAD_REQUEST', requestId: expect.any(String) });
+      }
+    });
+
+    it('지원하지 않는 Content-Encoding은 415 BAD_REQUEST를 유지한다', async () => {
+      const response = await post('/probe/echo', 'zstd', Buffer.from(good)).expect(415);
+
+      expect(response.body).toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it.each<[string, Buffer]>([
+      ['gzip', gzipSync(good)],
+      ['deflate', deflateSync(good)],
+      ['br', brotliCompressSync(good)],
+    ])('정상 %s 본문은 해제되어 처리된다', async (encoding, body) => {
+      const response = await post('/probe/echo', encoding, body).expect(201);
+
+      expect(response.body).toEqual({ received: { hello: 'world' } });
     });
   });
 
