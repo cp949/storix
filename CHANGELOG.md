@@ -17,6 +17,7 @@
 
 ### Changed
 
+- `POST /fs/rm`이 `recursive` 없이 빈 디렉터리를 삭제한다. 이전에는 비어 있어도 409 `VFS_IS_DIRECTORY`였다. 비어 있지 않은 디렉터리는 409 `VFS_DIRECTORY_NOT_EMPTY`다. OpenAPI 설명과 `POST /fs/mutations`의 `kind: delete` 동작에 맞췄다.
 - 메트릭 `storix_http_transferred_bytes_total`과 구조화 로그 `byteCount`가 요청 수신과 응답 송신 바이트의 합(HTTP 헤더 포함, 소켓 기준)을 센다. 이전에는 요청 `Content-Length`가 있으면 그 값, 없으면 응답 `Content-Length`만 셌다. 그래서 chunked 업로드는 응답 크기만, HEAD와 중간에 끊긴 다운로드는 보내지 않은 본문 길이까지 셌다.
 - 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.
 - 정수 환경변수(포트, 초, 개수, GC 주기 등 `parsePositiveInt`로 읽는 변수)를 앞자리 0이 없는 10진 숫자만 받는다. 이전에 통과하던 `1e3`, `0x10`, `+5`, `5.0`, 공백이 붙은 값, 2^53 이상의 값은 부팅을 거부한다. `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 2147483647 ms, `STORIX_DB_PORT`·`STORIX_STORAGE_PORT`·`STORIX_STORAGE_PUBLIC_PORT`는 65535를 넘으면 부팅을 거부한다. 3000000000 ms를 설정하면 `setTimeout` 상한 때문에 1ms 뒤에 타임아웃이 나던 문제가 이 거부로 바뀐다.
