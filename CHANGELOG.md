@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- GC 실행 중 advisory lock 커넥션이 끊기면(PostgreSQL `idle_session_timeout`·failover) 완료한 GC가 실패(exit 1)로 보고되고 `last_completed_at`이 남지 않아 쿨다운이 적용되지 않던 문제를 수정했다. 이제 완료 시각은 별도 커넥션으로 기록하고, 끊긴 커넥션의 unlock 실패는 경고로만 남긴다. 실행 중 커넥션이 끊긴 사실도 경고로 남긴다.
 - 디렉터리를 자기 하위로 이동·복사할 때 목적지 중간 경로가 없거나 파일이면 409 `VFS_INVALID_OPERATION` 대신 404 `VFS_NODE_NOT_FOUND`·409 `VFS_NOT_DIRECTORY`가 응답되던 문제를 수정했다. 경로 계약대로 자기 subtree 지정을 먼저 거부한다. `destinationParents: true`여도 중간 디렉터리를 만들지 않는다.
 - 클라이언트가 응답 전에 연결을 끊은 요청이 감사 로그·메트릭(`storix_http_requests_total`의 `status`)·구조화 로그에 status 200으로 기록되던 문제를 수정했다. 이제 응답을 끝까지 보내지 못한 요청은 499로 기록한다. 다운로드 도중 끊긴 요청도 499다.
 - `POST /fs/mutations`, `POST /fs/snapshots`(생성·restore·delete), `POST /fs/trash/{trashId}/restore`·`purge`의 감사 로그에 `path`·`detail`이 null로 남던 문제를 수정했다. 이 라우트는 body를 원문 그대로 받아 감사 인터셉터가 필드를 읽지 못했다. 이제 JSON으로 읽어 기록한다. `detail`에는 `kind`(mutations·snapshot 변경 종류)와 `targetPath`(휴지통 복원 위치)도 기록한다(GitHub 이슈 #39).
