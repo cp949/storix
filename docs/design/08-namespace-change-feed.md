@@ -28,6 +28,7 @@
 
 최종 상태 비교에는 디렉터리 listing revision도 포함한다. 같은 transaction에서 자식을 생성했다 삭제하면 그 자식의 이벤트는 없지만, 커밋된 revision이 바뀐 디렉터리 조상마다 최종 revision을 담은 `updated` 한 항목을 기록한다.
 
+- 최초 상태의 경로는 변경 전 구조에서 읽는다. 조상은 한 번에 읽고, 부모가 이미 읽힌 노드는 그 경로를 재사용한다. 그래서 경로 해석 쿼리는 깊이에 선형이다(TRP-008).
 - 같은 transaction의 이벤트는 `operationId`를 공유하고 `operationIndex`와 `operationCount`로 묶인다.
 - 항목 순서는 경로 segment와 node ID로 결정한다.
 - 페이지는 transaction 중간에서 끝날 수 있다.
