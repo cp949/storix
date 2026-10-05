@@ -94,12 +94,12 @@ export class VfsNodeRepositoryTreeMutations extends VfsNodeRepositoryFileMutatio
     const ph = new DialectPlaceholders(this.isSqlite);
     const subtreeRows: CopySourceRow[] = await manager.query(
       `WITH RECURSIVE subtree AS (
-           SELECT id, parent_id, type, name, blob_id, size, mime_type
+           SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type
            FROM vfs_node WHERE id = ${ph.bind(sourceNode.id)} AND namespace_id = ${ph.bind(namespaceId)}
            UNION ALL
-           SELECT vn.id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
+           SELECT vn.id, vn.namespace_id, vn.parent_id, vn.type, vn.name, vn.blob_id, vn.size, vn.mime_type
            FROM vfs_node vn
-           INNER JOIN subtree s ON vn.namespace_id = ${ph.bind(namespaceId)} AND vn.parent_id = s.id
+           INNER JOIN subtree s ON vn.namespace_id = s.namespace_id AND vn.parent_id = s.id
          )
          SELECT id, parent_id, type, name, blob_id, size, mime_type FROM subtree LIMIT ${ph.bind(maxSyncCopyNodes + 1)}`,
       ph.params,
