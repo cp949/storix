@@ -26,7 +26,7 @@ function createContext(
     auditSnapshotId: options.auditSnapshotId,
     headers: options.headers ?? {},
   };
-  const response = Object.assign(new EventEmitter(), { statusCode: 200 });
+  const response = Object.assign(new EventEmitter(), { statusCode: 200, writableFinished: true });
   const context = {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
     getClass: () => ({ name: 'FsController' }),
@@ -293,6 +293,19 @@ describe('AuditLogInterceptor', () => {
         response.statusCode = 204;
         response.emit('close');
         expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({ status: 204 });
+        done();
+      });
+  });
+
+  it('응답 전에 클라이언트가 연결을 끊으면 기본 statusCode 200 대신 499를 기록한다', (done) => {
+    const { context, response } = createContext({ namespaceId: 'ns-1' });
+    response.writableFinished = false;
+
+    createInterceptor()
+      .intercept(context, { handle: () => of({ ok: true }) })
+      .subscribe(() => {
+        response.emit('close');
+        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({ status: 499 });
         done();
       });
   });

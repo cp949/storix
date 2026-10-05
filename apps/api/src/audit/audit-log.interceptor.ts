@@ -5,6 +5,7 @@ import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator.js';
 import { isUuid } from '../common/uuid.js';
 import { isNamespaceId } from '../common/namespace-id.js';
+import { resolveResponseStatus } from '../common/response-status.js';
 import { AuditLogRepository } from '../persistence/audit-log.repository.js';
 import { AUDITED_KEY } from './audited.decorator.js';
 import { sanitizeAuditString } from './audit-string.js';
@@ -77,7 +78,7 @@ export class AuditLogInterceptor implements NestInterceptor {
           path: this.resolvePath(request, body),
           detail: this.resolveDetail(body),
           caller: resolveCallerId(request.headers[CALLER_ID_HEADER]),
-          status: response.statusCode,
+          status: resolveResponseStatus(response),
         })
         .catch((error: unknown) => {
           this.logger.error('감사 로그 기록 실패', error instanceof Error ? error.stack : String(error));

@@ -9,6 +9,7 @@ function createContext(requestHeaders: Record<string, string> = {}) {
   const request = { startTime: Date.now() - 5, headers: requestHeaders };
   const response = Object.assign(new EventEmitter(), {
     statusCode: 200,
+    writableFinished: true,
     getHeader: () => undefined as string | number | undefined,
   });
   const context = {
@@ -58,6 +59,22 @@ describe('MetricsInterceptor', () => {
       expect(counterIncMocks.get('storix_http_requests_total')).toHaveBeenCalledWith({
         operation: 'FsController.upload',
         status: '200',
+      });
+      done();
+    });
+  });
+
+  it('응답 전에 클라이언트가 연결을 끊으면 status 라벨을 499로 기록한다', (done) => {
+    const { registry, counterIncMocks } = createFakeRegistry();
+    const interceptor = new MetricsInterceptor(registry);
+    const { context, response } = createContext();
+    response.writableFinished = false;
+
+    interceptor.intercept(context, { handle: () => of({ ok: true }) }).subscribe(() => {
+      response.emit('close');
+      expect(counterIncMocks.get('storix_http_requests_total')).toHaveBeenCalledWith({
+        operation: 'FsController.upload',
+        status: '499',
       });
       done();
     });

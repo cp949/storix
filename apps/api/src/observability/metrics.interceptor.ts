@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
+import { resolveResponseStatus } from '../common/response-status.js';
 import type { MetricCounter, MetricHistogram, MetricsRegistry } from './metrics-registry.js';
 import { METRICS_REGISTRY } from './observability.constants.js';
 
@@ -37,7 +38,7 @@ export class MetricsInterceptor implements NestInterceptor {
     const operation = `${context.getClass().name}.${context.getHandler().name}`;
 
     response.once('close', () => {
-      this.requestCounter.inc({ operation, status: String(response.statusCode) });
+      this.requestCounter.inc({ operation, status: String(resolveResponseStatus(response)) });
       this.durationHistogram.observe((Date.now() - request.startTime) / 1000, { operation });
 
       const byteCount = this.resolveByteCount(request, response);

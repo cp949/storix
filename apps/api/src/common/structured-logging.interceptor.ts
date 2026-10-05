@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
+import { resolveResponseStatus } from './response-status.js';
 
 @Injectable()
 export class StructuredLoggingInterceptor implements NestInterceptor {
@@ -22,7 +23,7 @@ export class StructuredLoggingInterceptor implements NestInterceptor {
           requestId: request.requestId,
           namespaceId: request.params.namespaceId ?? request.params.id,
           operation,
-          status: response.statusCode,
+          status: resolveResponseStatus(response),
           duration: Date.now() - request.startTime,
           byteCount: this.resolveByteCount(request, response),
         }),

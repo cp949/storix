@@ -8,6 +8,7 @@ function createContext(params: Record<string, string>, requestHeaders: Record<st
   const request = { requestId: 'req-1', startTime: Date.now() - 5, params, headers: requestHeaders };
   const response = Object.assign(new EventEmitter(), {
     statusCode: 200,
+    writableFinished: true,
     getHeader: () => undefined as string | number | undefined,
   });
   const context = {
@@ -119,16 +120,29 @@ describe('StructuredLoggingInterceptor', () => {
     });
   });
 
-  it('finish 없이 close만 발생해도(응답이 destroy된 경우) 로그를 남긴다', (done) => {
+  it('finish 없이 close만 발생해도(응답이 destroy된 경우) 로그를 남기고 status는 499다', (done) => {
     const { context, response } = createContext({ namespaceId: 'ns-1' });
     response.statusCode = 500;
+    response.writableFinished = false;
     const interceptor = new StructuredLoggingInterceptor();
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
     interceptor.intercept(context, handler).subscribe(() => {
       response.emit('close');
       const logged = JSON.parse(logSpy.mock.calls[0][0] as string);
-      expect(logged.status).toBe(500);
+      expect(logged.status).toBe(499);
+      done();
+    });
+  });
+
+  it('응답 전에 클라이언트가 연결을 끊으면 기본 statusCode 200 대신 499를 기록한다', (done) => {
+    const { context, response } = createContext({ namespaceId: 'ns-1' });
+    response.writableFinished = false;
+    const interceptor = new StructuredLoggingInterceptor();
+
+    interceptor.intercept(context, { handle: () => of({ ok: true }) }).subscribe(() => {
+      response.emit('close');
+      expect(JSON.parse(logSpy.mock.calls[0][0] as string).status).toBe(499);
       done();
     });
   });
