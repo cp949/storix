@@ -109,15 +109,54 @@ describe('classifyPersistenceFailure', () => {
     expect(classifyPersistenceFailure({ code })).toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
   });
 
-  it.each(['53100', 'XX001', 'SQLITE_FULL', 'SQLITE_CORRUPT', 'SQLITE_CORRUPT_INDEX', 'SQLITE_READONLY'])(
-    '%s 저장 오류는 500이다',
-    (code) => {
-      expect(classifyPersistenceFailure({ driverError: { code } })).toMatchObject({
-        code: 'STORAGE_FAILURE',
-        status: 500,
-      });
-    },
-  );
+  it.each([
+    '53100',
+    'XX001',
+    'SQLITE_FULL',
+    'SQLITE_CORRUPT',
+    'SQLITE_CORRUPT_INDEX',
+    'SQLITE_READONLY',
+    'SQLITE_IOERR',
+    'SQLITE_IOERR_WRITE',
+    'SQLITE_IOERR_SHORT_READ',
+    'SQLITE_IOERR_FSYNC',
+    'SQLITE_IOERR_DIR_FSYNC',
+  ])('%s 저장 오류는 500이다', (code) => {
+    expect(classifyPersistenceFailure({ driverError: { code } })).toMatchObject({
+      code: 'STORAGE_FAILURE',
+      status: 500,
+    });
+  });
+
+  it.each(['57014', 'SQLITE_NOMEM'])('%s 드라이버 오류는 503이다', (code) => {
+    expect(classifyPersistenceFailure({ driverError: { code } })).toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  it.each([
+    'Connection terminated unexpectedly',
+    'Client has encountered a connection error and is not queryable',
+  ])('code 없는 pg 연결 오류 "%s"는 메시지가 정확히 같을 때 503이다', (message) => {
+    expect(classifyPersistenceFailure(new Error(message))).toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  it.each([
+    'Connection terminated',
+    'Connection terminated unexpectedly while reading',
+    'connection terminated unexpectedly',
+    'Client was closed and is not queryable',
+  ])('pg 연결 오류와 비슷하지만 같지 않은 메시지 "%s"는 유지한다', (message) => {
+    expect(classifyPersistenceFailure(new Error(message))).toBeNull();
+  });
+
+  it('메시지 일치는 Error 인스턴스에만 적용한다', () => {
+    expect(classifyPersistenceFailure({ message: 'Connection terminated unexpectedly' })).toBeNull();
+  });
 
   it.each(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'])('%s 연결 오류는 503이다', (code) => {
     expect(classifyPersistenceFailure(Object.assign(new Error('secret dsn'), { code }))).toMatchObject({
@@ -130,7 +169,6 @@ describe('classifyPersistenceFailure', () => {
     expect(classifyPersistenceFailure(new SqliteGateTimeoutError(30_000))).toBeNull();
     expect(classifyPersistenceFailure({ driverError: { code: '23505' } })).toBeNull();
     expect(classifyPersistenceFailure({ code: 'SQLITE_CONSTRAINT_UNIQUE' })).toBeNull();
-    expect(classifyPersistenceFailure({ code: 'SQLITE_IOERR' })).toBeNull();
     expect(classifyPersistenceFailure({ code: 'SQLITE_CANTOPEN' })).toBeNull();
     // READONLY 확장 코드는 일시성이 기본 코드와 달라 접지 않는다.
     expect(classifyPersistenceFailure({ code: 'SQLITE_READONLY_RECOVERY' })).toBeNull();

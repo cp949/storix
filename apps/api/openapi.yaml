@@ -245,6 +245,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          description: 일시적 DB 장애(`DB_BUSY`, `STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
     get:
       operationId: listNamespaces
       summary: Namespace 목록 조회
@@ -286,6 +291,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          description: 일시적 DB 장애(`DB_BUSY`, `STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v2/namespaces/{id}:
     get:
       operationId: getNamespace
@@ -2017,6 +2027,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: 일시적 DB 장애(`DB_BUSY`, `STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v2/namespaces/{namespaceId}/fs/ls:
     get:
       operationId: ls

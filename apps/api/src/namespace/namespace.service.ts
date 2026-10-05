@@ -2,12 +2,19 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, QueryDeepPartialEntity, Repository } from 'typeorm';
-import { classifyPersistenceFailure } from '../persistence/persistence-failure.js';
+import {
+  classifyPersistenceFailure,
+  classifyPersistenceOperation,
+} from '../persistence/persistence-failure.js';
 import { canonicalJsonHash } from '../common/canonical-json-hash.js';
 import { MASTER_KEY } from '../encryption/encryption.constants.js';
 import { NamespaceEncryptionNotConfiguredError } from '../encryption/encryption.errors.js';
 import { IdempotencyKeyEntity } from '../persistence/entities/idempotency-key.entity.js';
-import { AccessPolicy, EncryptionPolicy, NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import {
+  type AccessPolicy,
+  type EncryptionPolicy,
+  NamespaceEntity,
+} from '../persistence/entities/namespace.entity.js';
 import { NamespaceProvisioningRepository } from '../persistence/namespace-provisioning.repository.js';
 import { withExactNamespaceBigints } from '../persistence/namespace-bigint-read.js';
 import { NamespaceResponseDto, toNamespaceResponse } from './dto/namespace-response.dto.js';
@@ -61,6 +68,7 @@ export class NamespaceService {
     this.globalLimits = readNamespaceGlobalLimits(config);
   }
 
+  @classifyPersistenceOperation
   async create(
     idempotencyKey: string,
     name: string | null,
@@ -182,6 +190,7 @@ export class NamespaceService {
    * `limit`·`cursor` 없이 호출하는 이전 계약의 전체 목록이다. 개수에 상한이 없어 namespace가 많으면 비용이
    * 개수에 비례한다. 새 호출자는 `findPage`를 쓴다.
    */
+  @classifyPersistenceOperation
   async findAll(): Promise<NamespaceResponseDto[]> {
     const named = await this.namespaceRepo.find({
       where: { status: 'ACTIVE', name: Not(IsNull()) },
@@ -203,6 +212,7 @@ export class NamespaceService {
    * `limit + 1`개를 읽어 다음 page 존재를 판정한다. 순회 중 생성·삭제는 snapshot을 보장하지 않으며
    * cursor가 가리킨 행이 없어도 그 위치 뒤부터 이어 읽는다.
    */
+  @classifyPersistenceOperation
   async findPage(rawLimit: string | undefined, rawCursor: string | undefined): Promise<NamespacePage> {
     const limit = resolveLimit(rawLimit);
     const after = rawCursor === undefined ? null : decodeNamespaceListCursor(rawCursor);

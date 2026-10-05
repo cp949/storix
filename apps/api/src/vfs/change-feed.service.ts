@@ -5,6 +5,7 @@ import { CapabilityService } from '../capability/capability.service.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { NamespaceNotFoundError } from '../namespace/namespace.errors.js';
 import { NamespaceEntity } from '../persistence/entities/namespace.entity.js';
+import { classifyPersistenceOperation } from '../persistence/persistence-failure.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { decodeChangeFeedCursor, encodeChangeFeedCursor } from './change-feed-cursor.js';
 import { toChangeFeedEventDto, type ChangeFeedPageDto } from './dto/change-feed-response.dto.js';
@@ -19,6 +20,7 @@ export class ChangeFeedService {
     private readonly capabilities: CapabilityService,
   ) {}
 
+  @classifyPersistenceOperation
   async list(
     namespaceId: string,
     rawCursor: string | undefined,
