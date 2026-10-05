@@ -26,10 +26,11 @@ import { withExactNamespaceBigints } from './namespace-bigint-read.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
 import type { VfsNodeType } from './entities/vfs-node.entity.js';
 import type { MutationTx, AffectedRevision, WithMutationOptions } from './vfs-node.repository.types.js';
-import { joinSegments } from './vfs-node.repository.helpers.js';
+import { chunked, joinSegments, NODE_BULK_CHUNK_SIZE } from './vfs-node.repository.helpers.js';
 import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
 import {
   appendChangeFeedEvents,
+  captureChangeFeedNodes,
   readChangeFeedEvents,
   readChangeFeedState,
   trackChangeFeedBefore,
@@ -375,34 +376,33 @@ export class VfsNodeRepositoryCore {
     }
   }
 
+  /**
+   * 변경된 노드의 version을 올리고 응답에 실을 최종 revision을 읽는다.
+   * DB 왕복은 노드 수를 청크 크기로 나눈 만큼과 변경 집합 밖 조상 수만큼만 쓴다.
+   * 노드마다 노드·부모 체인을 개별 조회하면 평평한 12,000개 cp가 쿼리 약 3만 6천 개,
+   * 깊이 1,500 체인 mv·cp가 약 113만 개(깊이의 제곱)가 된다.
+   */
   protected async bumpAndReadChangedNodes(tx: MutationTx): Promise<AffectedRevision[]> {
     const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
-    for (const [id, change] of tx.changed) {
-      if (!change.increment) continue;
+    const incrementIds = [...tx.changed].filter(([, change]) => change.increment).map(([id]) => id);
+    for (const ids of chunked(incrementIds, NODE_BULK_CHUNK_SIZE)) {
       const result = await nodeRepo
         .createQueryBuilder()
         .update(VfsNodeEntity)
         .set({ version: () => 'version + 1', updatedAt: () => 'CURRENT_TIMESTAMP' })
-        .where('id = :id AND version < :maxVersion', { id, maxVersion: MAX_VFS_VERSION })
+        .where('id IN (:...ids) AND version < :maxVersion', { ids, maxVersion: MAX_VFS_VERSION })
         .execute();
-      if (result.affected !== 1) {
+      // 청크 안에 상한에 닿은 노드가 하나라도 있으면 affected가 모자란다. 트랜잭션 전체가 롤백된다.
+      if (result.affected !== ids.length) {
         throw new VfsRevisionExhaustedError();
       }
     }
 
+    // version 증가 뒤의 최종 상태를 읽는다. 변경 집합에 없는 조상만 추가로 조회한다.
+    const states = await captureChangeFeedNodes(tx.manager, tx.namespaceId, [...tx.changed.keys()]);
     const result: AffectedRevision[] = [];
-    for (const id of tx.changed.keys()) {
-      const node = await nodeRepo.findOneBy({ id, namespaceId: tx.namespaceId });
-      if (!node) continue;
-      const names: string[] = [];
-      let parent = node;
-      while (parent.parentId) {
-        names.unshift(parent.name);
-        const next = await nodeRepo.findOneBy({ id: parent.parentId, namespaceId: tx.namespaceId });
-        if (!next) throw new Error('VFS parent node missing');
-        parent = next;
-      }
-      result.push({ path: joinSegments(names), revision: encodeRevision(node) });
+    for (const { node, path } of states.values()) {
+      result.push({ path, revision: encodeRevision(node) });
     }
     return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }

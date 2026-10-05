@@ -153,6 +153,26 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
       ...overrides,
     };
   }
+
+  /**
+   * work가 DB로 보낸 쿼리 개수를 센다. 모든 query runner가 DataSource logger의 logQuery를 거치므로
+   * 트랜잭션 안의 쿼리와 START TRANSACTION·COMMIT도 포함한다. 시간과 달리 DB 지연·통계 상태와 무관하다.
+   */
+  async function countQueries<T>(work: () => Promise<T>): Promise<{ result: T; queryCount: number }> {
+    const logger = getDs().logger;
+    const original = logger.logQuery;
+    let queryCount = 0;
+    logger.logQuery = function (this: typeof logger, ...args: Parameters<typeof original>) {
+      queryCount += 1;
+      return original.apply(this, args);
+    };
+    try {
+      return { result: await work(), queryCount };
+    } finally {
+      logger.logQuery = original;
+    }
+  }
+
   return {
     getDs,
     getRepo,
@@ -161,5 +181,6 @@ export function createVfsNodeRepositoryTestHelpers(getContext: () => VfsNodeRepo
     captureState,
     runSameConditionAttempts,
     makeBlobData,
+    countQueries,
   };
 }
