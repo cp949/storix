@@ -22,6 +22,22 @@ describe('parseRange', () => {
     expect(parseRange('bytes=0-1000', 10)).toEqual({ start: 0, end: 9 });
   });
 
+  describe('309자리 이상 숫자(Number가 Infinity가 되는 값)', () => {
+    const huge = '9'.repeat(400);
+
+    it('end가 매우 크면 size-1로 잘라낸다', () => {
+      expect(parseRange(`bytes=0-${huge}`, 10)).toEqual({ start: 0, end: 9 });
+    });
+
+    it('suffix가 매우 크면 전체를 돌려준다', () => {
+      expect(parseRange(`bytes=-${huge}`, 10)).toEqual({ start: 0, end: 9 });
+    });
+
+    it('start가 매우 크면 거부한다', () => {
+      expect(() => parseRange(`bytes=${huge}-`, 10)).toThrow(VfsRangeNotSatisfiableError);
+    });
+  });
+
   it('여러 range(콤마)는 거부한다', () => {
     expect(() => parseRange('bytes=0-1,3-4', 10)).toThrow(VfsRangeNotSatisfiableError);
   });

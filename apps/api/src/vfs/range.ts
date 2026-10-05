@@ -7,6 +7,12 @@ export interface ByteRange {
 
 const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/;
 
+// 309자리 이상 십진수는 Number가 Infinity로 바꾼다. 파일 크기는 항상 안전 정수 이하라
+// 상한으로 접어도 비교 결과가 같고, end는 파일 끝으로 잘리며 suffix는 전체가 된다.
+function parseDecimal(text: string): number {
+  return Math.min(Number(text), Number.MAX_SAFE_INTEGER);
+}
+
 export function parseRange(header: string, size: number): ByteRange {
   const trimmed = header.trim();
 
@@ -28,15 +34,15 @@ export function parseRange(header: string, size: number): ByteRange {
   let end: number;
 
   if (startText === '') {
-    const suffixLength = Number(endText);
+    const suffixLength = parseDecimal(endText);
     if (!Number.isInteger(suffixLength) || suffixLength <= 0) {
       throw new VfsRangeNotSatisfiableError(header, size);
     }
     start = Math.max(size - suffixLength, 0);
     end = size - 1;
   } else {
-    start = Number(startText);
-    end = endText === '' ? size - 1 : Number(endText);
+    start = parseDecimal(startText);
+    end = endText === '' ? size - 1 : parseDecimal(endText);
     if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) {
       throw new VfsRangeNotSatisfiableError(header, size);
     }
