@@ -120,6 +120,7 @@ export class VfsNodeRepositoryCore {
           liveFileByteDelta: 0n,
           logicalByteDelta: 0n,
           liveNodeDelta: 0n,
+          ancestorChainMarked: new Set(),
           folderFileDeltas: new Map(),
           trashByteDelta: 0n,
           snapshotByteDelta: 0n,
@@ -363,8 +364,11 @@ export class VfsNodeRepositoryCore {
 
   protected async markAncestorChain(tx: MutationTx, id: string): Promise<void> {
     const nodeRepo = tx.manager.getRepository(VfsNodeEntity);
+    const walked: string[] = [];
     let currentId: string | null = id;
-    while (currentId) {
+    // 이미 표시한 노드를 만나면 그 위쪽 조상도 표시된 상태다. mkdir -p는 새 디렉터리마다 이 함수를 불러
+    // 매번 root까지 걸으면 깊이에 이차가 된다(TRP-008).
+    while (currentId && !tx.ancestorChainMarked.has(currentId)) {
       const current: VfsNodeEntity | null = await nodeRepo.findOneBy({
         id: currentId,
         namespaceId: tx.namespaceId,
@@ -372,8 +376,11 @@ export class VfsNodeRepositoryCore {
       if (!current) throw new VfsNodeNotFoundError('/');
       await trackChangeFeedBefore(tx, [current.id]);
       this.markChanged(tx, currentId, true);
+      walked.push(currentId);
       currentId = current.parentId;
     }
+    // 중간에 오류가 나면 트랜잭션이 롤백되므로 걷기를 마친 뒤에만 기록한다.
+    for (const walkedId of walked) tx.ancestorChainMarked.add(walkedId);
   }
 
   /**

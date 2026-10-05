@@ -69,6 +69,8 @@ export interface MutationTx {
   readonly namespaceId: string;
   readonly rootId: string;
   readonly changed: Map<string, { path: string; increment: boolean }>;
+  // markAncestorChain이 root까지 걸어 표시를 마친 노드. 새 디렉터리를 만들 때마다 체인을 다시 걷지 않게 한다.
+  readonly ancestorChainMarked: Set<string>;
   readonly feedBefore: Map<string, ChangeFeedNodeState> | null;
   liveFileByteDelta: bigint;
   logicalByteDelta: bigint;

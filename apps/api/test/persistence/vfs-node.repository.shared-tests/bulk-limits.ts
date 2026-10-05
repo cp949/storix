@@ -26,9 +26,13 @@ const FLAT_COPY_MAX_MS_POSTGRES = 3_500;
 const CHAIN_MAX_QUERIES = 100;
 // 한 줄로 이어진 디렉터리 체인의 깊이. 경로 상한(4096 byte)에서 허용되는 최악(약 2,000)에 가깝다.
 const CHAIN_DEPTH = 1_500;
+// 새 디렉터리마다 조상 체인을 root까지 다시 조회하던 시기에는 깊이 300 생성이 쿼리 약 4만 5천 개(깊이의 제곱에 비례)였다.
+// 걸은 조상을 기억한 뒤 실측은 레벨당 5개 안쪽이고, 상한은 레벨당 8개로 둔다.
+const PARENTS_DEPTH = 300;
+const PARENTS_MAX_QUERIES_PER_LEVEL = 8;
 
 export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void {
-  const { getDs, getRepo, createNamespace, countQueries } = helpers;
+  const { getDs, getRepo, createNamespace, countQueries, makeBlobData } = helpers;
 
   /** 부모 아래에 빈 디렉터리 노드를 직접 만든다. repository 경로로는 수만 개를 만들기 어렵다. */
   async function insertDirectories(namespaceId: string, parentId: string, count: number) {
@@ -148,6 +152,64 @@ export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void 
       },
       120_000,
     );
+  });
+
+  describe('깊은 경로의 parents 생성', () => {
+    const deepSegments = Array.from({ length: PARENTS_DEPTH }, () => 'n');
+
+    it('mkdir -p 쿼리 수가 깊이에 이차로 늘지 않는다', async () => {
+      const namespace = await createNamespace('deep-mkdirp-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+
+      const { queryCount } = await countQueries(() =>
+        getRepo().ensureDirectory(namespace.id, root.id, deepSegments, true),
+      );
+
+      expect(queryCount).toBeLessThan(PARENTS_DEPTH * PARENTS_MAX_QUERIES_PER_LEVEL);
+    }, 60_000);
+
+    it('parents로 만드는 put 쿼리 수가 깊이에 이차로 늘지 않는다', async () => {
+      const namespace = await createNamespace('deep-put-parents-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+
+      const { queryCount } = await countQueries(() =>
+        getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          [...deepSegments, 'f.bin'],
+          true,
+          makeBlobData(),
+          null,
+          false,
+        ),
+      );
+
+      expect(queryCount).toBeLessThan(PARENTS_DEPTH * PARENTS_MAX_QUERIES_PER_LEVEL);
+    }, 60_000);
+
+    it('일부 조상이 이미 있으면 기존 조상 version만 한 번씩 오르고 새 디렉터리는 1이다', async () => {
+      const namespace = await createNamespace('deep-mkdirp-versions-ns');
+      const root = (await getRepo().getRoot(namespace.id))!;
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'b'], true);
+      const before = {
+        root: (await getRepo().getRoot(namespace.id))!.version,
+        a: (await getRepo().resolvePath(namespace.id, root.id, ['a']))!.version,
+        b: (await getRepo().resolvePath(namespace.id, root.id, ['a', 'b']))!.version,
+      };
+
+      await getRepo().ensureDirectory(namespace.id, root.id, ['a', 'b', 'c', 'd', 'e'], true);
+
+      expect((await getRepo().getRoot(namespace.id))!.version).toBe(before.root + 1);
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['a']))!.version).toBe(before.a + 1);
+      expect((await getRepo().resolvePath(namespace.id, root.id, ['a', 'b']))!.version).toBe(before.b + 1);
+      for (const segments of [
+        ['a', 'b', 'c'],
+        ['a', 'b', 'c', 'd'],
+        ['a', 'b', 'c', 'd', 'e'],
+      ]) {
+        expect((await getRepo().resolvePath(namespace.id, root.id, segments))!.version).toBe(1);
+      }
+    });
   });
 
   describe('청크 경계를 넘는 mv의 revision 증가', () => {
