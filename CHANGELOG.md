@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- demo1 web이 `nextCursor`를 무시해 폴더·검색 결과·폴더 트리의 101번째 이후 항목이 보이지 않던 문제를 수정했다. 이제 "더 보기" 버튼으로 다음 페이지를 불러온다. 폴더 트리 조회가 실패하면 처리되지 않은 rejection 대신 오류 패널에 표시한다.
+- demo1 web에서 업로드·이동·삭제나 검색 응답이 늦게 도착해 이미 이동한 폴더의 목록·검색 결과를 덮어쓰던 문제를 수정했다. 변경 뒤 재로드는 현재 폴더를 첫 페이지부터 다시 불러온다.
 - demo1 WAS가 Storix에서 401을 받으면(WAS의 Storix API 키 거부) 같은 401을 브라우저에 그대로 전달해 사용자 인증 실패처럼 보이던 문제를 수정했다. 이제 502 `STORIX_UPSTREAM_UNAUTHORIZED`와 고정 문구로 응답하고 upstream 원인은 WAS 로그에만 남긴다. 401 외 Storix 오류는 `status`·`code`·`message`를 그대로 전달한다.
 - demo1 WAS가 요청 본문의 `source`·`destination`·`path`가 문자열이 아니면 500이던 문제를 수정했다. 이제 400 `DEMO_INVALID_REQUEST_BODY`로 응답한다. 필드가 없거나 `null`인 요청도 400이다. 이전에는 빈 문자열로 해석돼 사용자 root가 대상이 됐다(본문 없는 `POST /demo-api/documents/download`는 root 경로로 요청하던 것이 400으로 바뀐다). 빈 문자열은 계속 root로 해석한다.
 - demo1 WAS가 잘못된 JSON 응답에 `requestId`를 싣지 않던 문제와, 100 KB를 넘는 JSON 본문에 413 대신 500 `INTERNAL_ERROR`를 반환하던 문제를 수정했다. 둘 다 `HTTP_ERROR` code와 해당 status로 응답하고 `requestId`를 싣는다.
