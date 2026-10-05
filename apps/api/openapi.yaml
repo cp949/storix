@@ -728,7 +728,9 @@ paths:
                     kind: { type: string, enum: [delete] }
                     path: { type: string }
                     ifRevision: { type: string, pattern: '^r1\.' }
-                    recursive: { type: boolean }
+                    recursive:
+                      type: boolean
+                      description: 디렉터리를 하위 트리째 삭제할지 여부. 생략하면 `false`이며 이때 빈 디렉터리만 삭제하고, 비어 있지 않으면 409 `VFS_DIRECTORY_NOT_EMPTY`다.
                 - type: object
                   required: [kind, path, ifRevision]
                   additionalProperties: false
@@ -1047,7 +1049,7 @@ paths:
         - name: recursive
           in: query
           required: false
-          description: 디렉터리를 재귀적으로 삭제할지 여부. 기본 `false`(빈 디렉터리만 허용).
+          description: 디렉터리를 하위 트리째 삭제할지 여부. 기본 `false`이며 이때 빈 디렉터리만 삭제하고, 비어 있지 않으면 409 `VFS_DIRECTORY_NOT_EMPTY`다.
           schema:
             type: boolean
             default: false

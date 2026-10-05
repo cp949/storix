@@ -3,7 +3,6 @@ import { IsNull } from 'typeorm';
 import {
   VfsDirectoryNotEmptyError,
   VfsDeleteLimitExceededError,
-  VfsIsDirectoryError,
   VfsNodeNotFoundError,
   VfsNotDirectoryError,
   VfsPreconditionFailedError,
@@ -200,7 +199,13 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
     const parentId = await this.lockParentChain(manager, namespaceId, rootId, segments, false, tx);
     const target = await this.lockTargetNode(manager, namespaceId, parentId, segments.at(-1)!, tx);
     if (!target) throw new VfsNodeNotFoundError(joinSegments(segments));
-    if (target.type === 'DIRECTORY' && !recursive) throw new VfsIsDirectoryError(joinSegments(segments));
+    // recursive가 없으면 빈 디렉터리만 지운다(rmdir·조건부 delete와 같은 규칙).
+    if (target.type === 'DIRECTORY' && !recursive) {
+      const children = await manager
+        .getRepository(VfsNodeEntity)
+        .countBy({ namespaceId, parentId: target.id });
+      if (children > 0) throw new VfsDirectoryNotEmptyError(joinSegments(segments));
+    }
 
     // 하위 트리의 모든 mutation은 target을 통과하므로 target 잠금이 하위 행 구성도 고정한다.
     const rows = await this.captureSnapshotRows(

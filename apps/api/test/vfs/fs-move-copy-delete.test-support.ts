@@ -478,19 +478,17 @@ export function registerFsMoveCopyDeleteContract(ctx: FsHttpContext) {
         .expect(404);
     });
 
-    it('recursive=false로 directory를 삭제하면 409 VFS_IS_DIRECTORY를 반환한다', async () => {
+    it('recursive=false면 빈 디렉터리만 삭제하고 비어 있지 않으면 409 VFS_DIRECTORY_NOT_EMPTY를 반환한다', async () => {
       const namespaceId = await ctx.createNamespace('rm-dir-ns');
-      await request(ctx.httpServer)
-        .post(`/api/v2/namespaces/${namespaceId}/fs/mkdir`)
-        .send({ path: '/a' })
-        .expect(201);
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/a/b', parents: true }).expect(201);
 
-      const response = await request(ctx.httpServer)
-        .post(`/api/v2/namespaces/${namespaceId}/fs/rm`)
-        .query({ path: '/a' })
-        .expect(409);
+      const nonEmpty = await request(ctx.httpServer).post(`${base}/rm`).query({ path: '/a' }).expect(409);
+      expect(nonEmpty.body.code).toBe('VFS_DIRECTORY_NOT_EMPTY');
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/a/b' }).expect(200);
 
-      expect(response.body.code).toBe('VFS_IS_DIRECTORY');
+      await request(ctx.httpServer).post(`${base}/rm`).query({ path: '/a/b' }).expect(204);
+      await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/a/b' }).expect(404);
     });
 
     it('recursive=true면 하위 트리를 모두 삭제한다', async () => {

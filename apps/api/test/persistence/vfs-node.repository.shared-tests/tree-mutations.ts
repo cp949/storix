@@ -9,7 +9,7 @@ import {
   VfsDeleteLimitExceededError,
   VfsInvalidOperationError,
   VfsInvalidPathError,
-  VfsIsDirectoryError,
+  VfsDirectoryNotEmptyError,
   VfsMoveLimitExceededError,
   VfsNodeNotFoundError,
   VfsQuotaExceededError,
@@ -162,14 +162,16 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       expect(blob.zeroSince).toBeNull();
     });
 
-    it('recursive=false로 directory를 삭제하려 하면 VfsIsDirectoryError를 던진다', async () => {
+    it('recursive=false면 비어 있지 않은 directory는 VfsDirectoryNotEmptyError, 빈 directory는 삭제한다', async () => {
       const namespace = await createNamespace('rm-dir-non-recursive-ns');
       const root = await getRepo().getRoot(namespace.id);
-      await getRepo().ensureDirectory(namespace.id, root!.id, ['a'], false);
+      await getRepo().ensureDirectory(namespace.id, root!.id, ['a', 'b'], true);
 
       await expect(getRepo().removeNode(namespace.id, root!.id, ['a'], false, UNLIMITED)).rejects.toThrow(
-        VfsIsDirectoryError,
+        VfsDirectoryNotEmptyError,
       );
+      await getRepo().removeNode(namespace.id, root!.id, ['a', 'b'], false, UNLIMITED);
+      expect(await getRepo().resolvePath(namespace.id, root!.id, ['a', 'b'])).toBeNull();
     });
 
     it('recursive=true면 하위 트리를 휴지통으로 옮기고 각 file의 Blob 참조를 보존한다', async () => {
