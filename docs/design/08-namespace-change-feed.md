@@ -79,6 +79,10 @@
 - 선두가 유효한 namespace의 만료 이벤트는 삭제하지 않고 건너뛴다.
 - namespace 단위 잠금은 PostgreSQL `FOR UPDATE SKIP LOCKED`이며 잠긴 후보는 건너뛴다.
 - prefix가 500개보다 길면 그 namespace의 위치에서 멈추고 다음 호출이 이어간다.
+- 경계 불변식 위반 같은 예상 밖 오류가 나면 그 namespace의 transaction만 롤백하고 다음 후보로 넘어간다.
+- 실패한 namespace는 `error` 로그(namespace ID·원인)를 남기고 GC 결과의 `failedChangeFeedNamespaces`에 집계한다. GC는 실패로 끝나지 않는다.
+- 실패한 namespace는 다음 실행에서 다시 후보가 된다.
+- PostgreSQL의 `occurred_at`은 transaction 시작 시각이라 sequence 순서와 어긋날 수 있다. 이때 뒤 sequence의 삭제는 앞 sequence가 만료될 때까지 늦어진다. 늦어지는 시간은 두 transaction의 시작 시각 차이 이하다.
 - 비용은 전체 namespace 수가 아니라 읽은 만료 이벤트 수에 비례한다.
 
 - GC 실행은 단계 예산(`STORIX_GC_MAX_ROWS_PER_STAGE`, 기본 200000, 읽은 만료 이벤트 수)을 쓴다.
