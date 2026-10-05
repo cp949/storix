@@ -13,6 +13,7 @@
   - lease의 만료 비교와 새 만료 시각은 DB 시계로 계산한다.
   - lease 시간이 지났어도 generation이 그대로인 owner는 갱신할 수 있고, takeover와 경합하면 먼저 성공한 쪽이 generation fencing으로 승리한다.
   - 보존 기한은 **완료 시점부터** 30일이다(claim 시점이 아니다).
+  - `RESERVED` 행의 `expires_at`은 claim 시점 + 30일이고 takeover가 바꾸지 않는다. GC(`pruneExpired`)는 `expires_at`이 지났고 lease도 만료된 `RESERVED` 행을 지운다. lease가 살아 있으면 owner가 갱신 중이므로 남긴다.
 - `current`: 412 응답 body에 실리는 충돌 시점의 노드 metadata와 `revision`(4절).
 
 ## 2. 저장 경계
@@ -50,7 +51,7 @@
   - ACTIVE이거나 상태를 확인하지 못하면 원래 claim-lost 오류를 전파한다.
   - 이 오류의 응답은 500이다.
   - 새 owner의 claim은 지우지 않는다.
-- 롤백과 저장 사이에 프로세스가 종료되면 claim이 `RESERVED`로 남는다. 응답이 나간 적이 없으므로, lease가 만료된 뒤 같은 key의 요청이 claim을 인수(`generation + 1`)해 다시 평가한다.
+- 롤백과 저장 사이에 프로세스가 종료되면 claim이 `RESERVED`로 남는다. 응답이 나간 적이 없으므로, lease가 만료된 뒤 같은 key의 요청이 claim을 인수(`generation + 1`)해 다시 평가한다. 재요청이 없으면 claim 시점부터 30일 뒤 GC가 지운다.
 - content 업로드에서 반영이 실패하면(트랜잭션 롤백, claim lost, commit 결과 불명) 업로드한 object를 가리키는 Blob row가 있는지 확인한다.
   - 업로드마다 새 storage key를 만들므로 Blob row는 이 요청이 commit된 경우에만 있다.
   - Blob row가 없고 오류가 확정된 4xx 롤백이면 object 삭제를 시도하고 삭제 실패는 무시한다.
@@ -247,5 +248,5 @@ FILE snapshot 생성 요청의 선택 필드다. `kind: 'file'`에서만 허용�
   - 임의 인터리빙을 무작위로 생성하는 검증은 하지 않았다.
   - SQLite에서는 `sourceRevision` 비교와 writer의 동시 실행을 검증하지 않았다.
 - 프로세스 강제 종료(롤백과 receipt 저장 사이, 업로드 중)와 lease 만료 뒤 인수는 통합 수준에서 실제 프로세스 종료로 확인하지 않았다. "앱 재시작"은 Nest 애플리케이션을 닫고 같은 DB로 다시 만드는 테스트다.
-- receipt를 포함한 운영 백업·복구와 30일 만료 정리(`pruneExpired`)의 오류 receipt 대상 동작은 별도로 확인하지 않았다.
+- receipt를 포함한 운영 백업·복구와 30일 만료 정리(`pruneExpired`)의 오류 receipt 대상 동작은 별도로 확인하지 않았다. `pruneExpired`의 `RESERVED` 정리는 레포지토리 통합 테스트(SQLite·PostgreSQL)로 확인했고, 실제 프로세스 종료로 만든 `RESERVED`로는 확인하지 않았다.
 - 기존 receipt와의 호환(ADR-0024 Consequences)은 fingerprint 코드 경로로 판단했고 기존 빌드가 저장한 데이터로 실행해 확인하지 않았다.
