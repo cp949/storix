@@ -361,6 +361,7 @@ describe('VfsSnapshotService FILE sourceRevision', () => {
     blobId: type === 'FILE' ? randomUUID() : null,
     size: type === 'FILE' ? '3' : null,
     mimeType: type === 'FILE' ? 'text/plain' : null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
   });
   const sourceNode = Object.assign(new VfsNodeEntity(), {
     id: nodeId,

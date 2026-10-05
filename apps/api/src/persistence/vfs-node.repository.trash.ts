@@ -132,6 +132,8 @@ export class VfsNodeRepositoryTrash extends VfsNodeRepositoryTreeMutations {
         size: entry.size,
         mimeType: entry.mimeType,
         version: source.version + 1,
+        // 이 컬럼 도입 전에 삭제된 항목은 값이 없어 복구 시각(DB 기본값)을 쓴다.
+        ...(entry.createdAt ? { createdAt: entry.createdAt } : {}),
       });
       if (entry.type === 'FILE') this.recordFolderFileDelta(tx, nodeParentId, 1n);
       this.recordLiveNodeDelta(tx, 1n);

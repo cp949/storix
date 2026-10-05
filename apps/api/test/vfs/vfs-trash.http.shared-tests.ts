@@ -580,6 +580,64 @@ export function registerVfsTrashHttpContract(
     expect(purge.body.code).toBe('VFS_INVALID_MUTATION_REQUEST');
   });
 
+  it('복구는 TREE 모든 node의 원래 createdAt을 보존하고 updatedAt과 revision은 새로 발급한다', async () => {
+    const id = await createTrashEnabledNamespace(`trash-restore-created-at-${randomUUID()}`);
+    const base = namespace(id);
+    await http().post(`${base}/mkdir`).send({ path: '/dir' }).expect(201);
+    await http()
+      .post(`${base}/content`)
+      .query({ path: '/dir/a' })
+      .set('Content-Type', 'text/plain')
+      .send('a')
+      .expect(201);
+    const stat = async (path: string) => (await http().get(`${base}/stat`).query({ path }).expect(200)).body;
+    const before = { dir: await stat('/dir'), file: await stat('/dir/a') };
+    // SQLite 타임스탬프는 초 단위라 복구 시각이 원래 시각과 구분되도록 1초 넘게 기다린다.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/dir', recursive: true }).expect(204))
+      .headers['x-trash-id'] as string;
+    await http()
+      .post(`${base}/trash/${trashId}/restore`)
+      .set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(200);
+    const after = { dir: await stat('/dir'), file: await stat('/dir/a') };
+    for (const key of ['dir', 'file'] as const) {
+      expect(after[key].id).toBe(before[key].id);
+      expect(after[key].createdAt).toBe(before[key].createdAt);
+      expect(Date.parse(after[key].updatedAt)).toBeGreaterThan(Date.parse(before[key].updatedAt));
+      expect(after[key].revision).not.toBe(before[key].revision);
+    }
+  });
+
+  it('createdAt이 기록되지 않은 기존 휴지통 항목은 복구 시각을 createdAt으로 쓴다', async () => {
+    const id = await createTrashEnabledNamespace(`trash-restore-created-at-null-${randomUUID()}`);
+    const base = namespace(id);
+    await http().post(`${base}/touch`).send({ path: '/legacy' }).expect(201);
+    const original = (await http().get(`${base}/stat`).query({ path: '/legacy' }).expect(200)).body;
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const trashId = (await http().post(`${base}/rm`).query({ path: '/legacy' }).expect(204)).headers[
+      'x-trash-id'
+    ] as string;
+    // 마이그레이션 이전에 삭제된 항목은 manifest에 created_at이 없다.
+    await getApp()
+      .get(DataSource)
+      .getRepository(VfsTrashEntryEntity)
+      .update({ trashId }, { createdAt: null });
+    const restoreStartedAt = Date.now();
+    await http()
+      .post(`${base}/trash/${trashId}/restore`)
+      .set('X-Mutation-Scope', 'trash-test')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(200);
+    const restored = (await http().get(`${base}/stat`).query({ path: '/legacy' }).expect(200)).body;
+    expect(restored.id).toBe(original.id);
+    expect(Date.parse(restored.createdAt)).toBeGreaterThanOrEqual(restoreStartedAt - 1000);
+    expect(restored.createdAt).not.toBe(original.createdAt);
+  });
+
   it('TREE root보다 먼저 정렬되는 자식 이름도 원래 ID와 구조로 복원한다', async () => {
     const id = await createTrashEnabledNamespace(`trash-root-order-${randomUUID()}`);
     const base = namespace(id);

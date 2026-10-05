@@ -204,6 +204,7 @@ export class VfsTrashRepository {
           blobId: row.blobId,
           size: row.size,
           mimeType: row.mimeType,
+          createdAt: row.createdAt,
         })),
       );
     }

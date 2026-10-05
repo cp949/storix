@@ -20,6 +20,7 @@ import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/179
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
 import { WidenUploadSessionRequestId1791700000021 } from '../../src/persistence/migrations/1791700000021-WidenUploadSessionRequestId.js';
+import { AddTrashEntryCreatedAt1791700000024 } from '../../src/persistence/migrations/1791700000024-AddTrashEntryCreatedAt.js';
 import { WidenVfsNodeVersion1791700000023 } from '../../src/persistence/migrations/1791700000023-WidenVfsNodeVersion.js';
 
 describe('Migration: InitSchema', () => {
@@ -1341,6 +1342,25 @@ describe('Migration: InitSchema', () => {
       expect(await versionType()).toEqual([{ data_type: 'integer' }]);
       await migration.up(runner);
       expect(await versionType()).toEqual([{ data_type: 'bigint' }]);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('휴지통 manifest created_at 컬럼은 nullable이며 up/down이 가역이다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new AddTrashEntryCreatedAt1791700000024();
+    const column = async () =>
+      runner.query(`SELECT data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'vfs_trash_entry' AND column_name = 'created_at'`);
+    try {
+      // 앞선 테스트가 휴지통 migration을 되돌려 다시 만들면 이 컬럼 없이 테이블이 남는다.
+      if ((await column()).length === 0) await migration.up(runner);
+      expect(await column()).toEqual([{ data_type: 'timestamp with time zone', is_nullable: 'YES' }]);
+      await migration.down(runner);
+      expect(await column()).toEqual([]);
+      await migration.up(runner);
+      expect(await column()).toEqual([{ data_type: 'timestamp with time zone', is_nullable: 'YES' }]);
     } finally {
       await runner.release();
     }

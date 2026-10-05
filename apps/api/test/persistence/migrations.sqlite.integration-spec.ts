@@ -8,6 +8,7 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { AddVfsChangeFeed1791700000006 } from '../../src/persistence/migrations/1791700000006-AddVfsChangeFeed.js';
 import { AddVfsSnapshotListIndex1791500000000 } from '../../src/persistence/migrations/1791500000000-AddVfsSnapshotListIndex.js';
+import { AddTrashEntryCreatedAt1791700000024 } from '../../src/persistence/migrations/1791700000024-AddTrashEntryCreatedAt.js';
 import { AddAuditLogSnapshotId1791600000000 } from '../../src/persistence/migrations/1791600000000-AddAuditLogSnapshotId.js';
 import { AddVfsTrash1791700000007 } from '../../src/persistence/migrations/1791700000007-AddVfsTrash.js';
 import { AddNamespaceTrashEnabled1791700000009 } from '../../src/persistence/migrations/1791700000009-AddNamespaceTrashEnabled.js';
@@ -415,6 +416,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'WidenUploadSessionRequestId1791700000021',
       'AddNamespaceMoveLimit1791700000022',
       'WidenVfsNodeVersion1791700000023',
+      'AddTrashEntryCreatedAt1791700000024',
     ]);
   });
 
@@ -539,6 +541,25 @@ describe('마이그레이션 체인 (SQLite)', () => {
       await dataSource.query(`SELECT snapshot_id FROM audit_log
       WHERE request_id = 'before-snapshot-id-migration'`),
     ).toEqual([{ snapshot_id: null }]);
+    await runner.release();
+  });
+
+  it('휴지통 manifest created_at 컬럼은 nullable이며 up/down이 가역이다', async () => {
+    const migration = new AddTrashEntryCreatedAt1791700000024();
+    const runner = dataSource.createQueryRunner();
+    // 앞선 테스트가 휴지통 migration을 되돌려 다시 만들면 이 컬럼 없이 테이블이 남는다.
+    const columns = (await dataSource.query("PRAGMA table_info('vfs_trash_entry')")) as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === 'created_at')) await migration.up(runner);
+    await migration.down(runner);
+    expect(await dataSource.query("PRAGMA table_info('vfs_trash_entry')")).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'created_at' })]),
+    );
+    await migration.up(runner);
+    expect(await dataSource.query("PRAGMA table_info('vfs_trash_entry')")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'created_at', notnull: 0 })]),
+    );
     await runner.release();
   });
 

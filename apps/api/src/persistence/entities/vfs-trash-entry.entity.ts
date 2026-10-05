@@ -1,4 +1,4 @@
-import { NAMESPACE_ID_COLUMN_LENGTH } from './dialect-column-types.js';
+import { NAMESPACE_ID_COLUMN_LENGTH, TIMESTAMP_COLUMN_TYPE } from './dialect-column-types.js';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export type VfsTrashEntryType = 'FILE' | 'DIRECTORY';
@@ -37,4 +37,8 @@ export class VfsTrashEntryEntity {
 
   @Column({ name: 'mime_type', type: 'varchar', length: 255, nullable: true })
   mimeType: string | null;
+
+  /** 삭제 직전 node의 생성 시각. 이 컬럼 도입 전에 삭제된 항목은 null이고 복구 시각을 쓴다. */
+  @Column({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
+  createdAt: Date | null;
 }

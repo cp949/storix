@@ -92,6 +92,7 @@ export interface SnapshotSourceRow {
   readonly blobId: string | null;
   readonly size: string | null;
   readonly mimeType: string | null;
+  readonly createdAt: Date;
 }
 
 export interface AffectedRevision {

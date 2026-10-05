@@ -3,11 +3,15 @@ import { encodeRevision } from '../vfs/revision.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 import { VfsNodeNotFoundError } from '../vfs/vfs.errors.js';
 import type { MutationTx, SnapshotSourceRow, CopySourceRow } from './vfs-node.repository.types.js';
-import { joinSegments } from './vfs-node.repository.helpers.js';
+import { joinSegments, parseSqlTimestamp } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryReads } from './vfs-node.repository.reads.js';
 
 // PostgreSQL bigint는 raw 결과에서 문자열이다(TRP-011).
-type SnapshotRawRow = CopySourceRow & { version: number | string; relative_path: string };
+type SnapshotRawRow = CopySourceRow & {
+  version: number | string;
+  relative_path: string;
+  created_at: Date | string;
+};
 
 export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
   // ORDER BY 없는 LIMIT으로 PostgreSQL recursive CTE의 평가도 maxNodes + 1에서
@@ -30,10 +34,10 @@ export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
     const bound = ph.bind(maxNodes + 1);
     const rows: SnapshotRawRow[] = await tx.manager.query(
       `WITH RECURSIVE tree AS (
-        SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, version, '.' AS relative_path
+        SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, version, created_at, '.' AS relative_path
         FROM vfs_node WHERE namespace_id = ${namespace} AND id = ${sourceId}
         UNION ALL
-        SELECT n.id, n.namespace_id, n.parent_id, n.type, n.name, n.blob_id, n.size, n.mime_type, n.version,
+        SELECT n.id, n.namespace_id, n.parent_id, n.type, n.name, n.blob_id, n.size, n.mime_type, n.version, n.created_at,
           CASE WHEN t.relative_path = '.' THEN n.name ELSE t.relative_path || '/' || n.name END
         FROM vfs_node n JOIN tree t ON n.namespace_id = t.namespace_id AND n.parent_id = t.id
         ${this.isSqlite ? `LIMIT ${bound}` : ''}
@@ -61,6 +65,7 @@ export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
       blobId: row.blob_id,
       size: row.size === null ? null : String(row.size),
       mimeType: row.mime_type,
+      createdAt: parseSqlTimestamp(row.created_at),
     }));
   }
 }

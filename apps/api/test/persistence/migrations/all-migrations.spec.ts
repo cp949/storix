@@ -39,6 +39,7 @@ describe('ALL_MIGRATIONS', () => {
       'WidenUploadSessionRequestId1791700000021',
       'AddNamespaceMoveLimit1791700000022',
       'WidenVfsNodeVersion1791700000023',
+      'AddTrashEntryCreatedAt1791700000024',
     ]);
   });
 });
