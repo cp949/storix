@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
+import { resolveTransferredBytes } from './transferred-bytes.js';
 import { resolveResponseStatus } from './response-status.js';
 
 @Injectable()
@@ -25,20 +26,11 @@ export class StructuredLoggingInterceptor implements NestInterceptor {
           operation,
           status: resolveResponseStatus(response),
           duration: Date.now() - request.startTime,
-          byteCount: this.resolveByteCount(request, response),
+          byteCount: resolveTransferredBytes(request, response),
         }),
       );
     });
 
     return next.handle();
-  }
-
-  private resolveByteCount(request: Request, response: Response): number | undefined {
-    const requestLength = Number(request.headers['content-length']);
-    if (Number.isFinite(requestLength)) {
-      return requestLength;
-    }
-    const responseLength = Number(response.getHeader('content-length'));
-    return Number.isFinite(responseLength) ? responseLength : undefined;
   }
 }

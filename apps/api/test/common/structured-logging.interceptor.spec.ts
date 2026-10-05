@@ -4,8 +4,12 @@ import { jest } from '@jest/globals';
 import { of } from 'rxjs';
 import { StructuredLoggingInterceptor } from '../../src/common/structured-logging.interceptor.js';
 
-function createContext(params: Record<string, string>, requestHeaders: Record<string, string> = {}) {
-  const request = { requestId: 'req-1', startTime: Date.now() - 5, params, headers: requestHeaders };
+function createContext(
+  params: Record<string, string>,
+  requestHeaders: Record<string, string> = {},
+  socket: { bytesRead: number; bytesWritten: number } | null = null,
+) {
+  const request = { requestId: 'req-1', startTime: Date.now() - 5, params, headers: requestHeaders, socket };
   const response = Object.assign(new EventEmitter(), {
     statusCode: 200,
     writableFinished: true,
@@ -64,8 +68,12 @@ describe('StructuredLoggingInterceptor', () => {
     });
   });
 
-  it('byte count는 request content-length를 response보다 우선한다', (done) => {
-    const { context, response } = createContext({ namespaceId: 'ns-1' }, { 'content-length': '2048' });
+  it('byteCount는 Content-Length가 아닌 소켓의 수신·송신 바이트 합이다', (done) => {
+    const { context, response } = createContext(
+      { namespaceId: 'ns-1' },
+      { 'content-length': '2048' },
+      { bytesRead: 40, bytesWritten: 60 },
+    );
     response.getHeader = () => '16';
     const interceptor = new StructuredLoggingInterceptor();
     const handler: CallHandler = { handle: () => of({ ok: true }) };
@@ -73,35 +81,7 @@ describe('StructuredLoggingInterceptor', () => {
     interceptor.intercept(context, handler).subscribe(() => {
       response.emit('close');
       const logged = JSON.parse(logSpy.mock.calls[0][0] as string);
-      expect(logged.byteCount).toBe(2048);
-      done();
-    });
-  });
-
-  it('request content-length가 없으면 response content-length를 쓴다', (done) => {
-    const { context, response } = createContext({ namespaceId: 'ns-1' });
-    response.getHeader = () => '512';
-    const interceptor = new StructuredLoggingInterceptor();
-    const handler: CallHandler = { handle: () => of({ ok: true }) };
-
-    interceptor.intercept(context, handler).subscribe(() => {
-      response.emit('close');
-      const logged = JSON.parse(logSpy.mock.calls[0][0] as string);
-      expect(logged.byteCount).toBe(512);
-      done();
-    });
-  });
-
-  it('request content-length가 0이면 값 없음이 아니라 0으로 기록한다', (done) => {
-    const { context, response } = createContext({ namespaceId: 'ns-1' }, { 'content-length': '0' });
-    response.getHeader = () => '512';
-    const interceptor = new StructuredLoggingInterceptor();
-    const handler: CallHandler = { handle: () => of({ ok: true }) };
-
-    interceptor.intercept(context, handler).subscribe(() => {
-      response.emit('close');
-      const logged = JSON.parse(logSpy.mock.calls[0][0] as string);
-      expect(logged.byteCount).toBe(0);
+      expect(logged.byteCount).toBe(100);
       done();
     });
   });

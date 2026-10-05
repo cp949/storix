@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
+import { resolveTransferredBytes } from '../common/transferred-bytes.js';
 import { resolveResponseStatus } from '../common/response-status.js';
 import type { MetricCounter, MetricHistogram, MetricsRegistry } from './metrics-registry.js';
 import { METRICS_REGISTRY } from './observability.constants.js';
@@ -26,7 +27,7 @@ export class MetricsInterceptor implements NestInterceptor {
     );
     this.transferredBytesCounter = registry.counter(
       'storix_http_transferred_bytes_total',
-      'HTTP 요청/응답으로 전송된 바이트 합계',
+      'HTTP 요청 수신과 응답 송신 바이트 합계(헤더 포함, 소켓 기준)',
       ['operation'],
     );
   }
@@ -41,21 +42,12 @@ export class MetricsInterceptor implements NestInterceptor {
       this.requestCounter.inc({ operation, status: String(resolveResponseStatus(response)) });
       this.durationHistogram.observe((Date.now() - request.startTime) / 1000, { operation });
 
-      const byteCount = this.resolveByteCount(request, response);
+      const byteCount = resolveTransferredBytes(request, response);
       if (byteCount !== undefined) {
         this.transferredBytesCounter.inc({ operation }, byteCount);
       }
     });
 
     return next.handle();
-  }
-
-  private resolveByteCount(request: Request, response: Response): number | undefined {
-    const requestLength = Number(request.headers['content-length']);
-    if (Number.isFinite(requestLength)) {
-      return requestLength;
-    }
-    const responseLength = Number(response.getHeader('content-length'));
-    return Number.isFinite(responseLength) ? responseLength : undefined;
   }
 }

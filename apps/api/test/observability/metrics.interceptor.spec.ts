@@ -5,8 +5,11 @@ import { of } from 'rxjs';
 import { MetricsInterceptor } from '../../src/observability/metrics.interceptor.js';
 import type { MetricsRegistry } from '../../src/observability/metrics-registry.js';
 
-function createContext(requestHeaders: Record<string, string> = {}) {
-  const request = { startTime: Date.now() - 5, headers: requestHeaders };
+function createContext(
+  requestHeaders: Record<string, string> = {},
+  socket: { bytesRead: number; bytesWritten: number } | null = null,
+) {
+  const request = { startTime: Date.now() - 5, headers: requestHeaders, socket };
   const response = Object.assign(new EventEmitter(), {
     statusCode: 200,
     writableFinished: true,
@@ -96,26 +99,31 @@ describe('MetricsInterceptor', () => {
     });
   });
 
-  it('content-length가 있으면 전송 바이트 카운터를 그 값만큼 증가시킨다', (done) => {
+  it('전송 바이트 카운터를 Content-Length가 아닌 소켓의 수신·송신 바이트 합으로 증가시킨다', (done) => {
     const { registry, counterIncMocks } = createFakeRegistry();
     const interceptor = new MetricsInterceptor(registry);
-    const { context, response } = createContext({ 'content-length': '2048' });
+    // chunked 업로드처럼 Content-Length가 실제 수신량과 무관한 요청
+    const { context, response } = createContext(
+      { 'content-length': '7' },
+      { bytesRead: 300, bytesWritten: 200 },
+    );
+    response.getHeader = () => '16';
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
     interceptor.intercept(context, handler).subscribe(() => {
       response.emit('close');
       expect(counterIncMocks.get('storix_http_transferred_bytes_total')).toHaveBeenCalledWith(
         { operation: 'FsController.upload' },
-        2048,
+        500,
       );
       done();
     });
   });
 
-  it('content-length 정보가 전혀 없으면 전송 바이트 카운터를 증가시키지 않는다', (done) => {
+  it('소켓이 없으면 전송 바이트 카운터를 증가시키지 않는다', (done) => {
     const { registry, counterIncMocks } = createFakeRegistry();
     const interceptor = new MetricsInterceptor(registry);
-    const { context, response } = createContext();
+    const { context, response } = createContext({ 'content-length': '2048' });
     const handler: CallHandler = { handle: () => of({ ok: true }) };
 
     interceptor.intercept(context, handler).subscribe(() => {
