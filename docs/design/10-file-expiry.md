@@ -27,7 +27,11 @@
 | `POST /fs/upload-sessions`     | JSON integer `expiresInSeconds`               | `ifAbsent: true`          |
 | `POST /fs/mutations`의 `copy`  | JSON integer `expiresInSeconds`               | `destinationAbsent: true` |
 
-- `ConditionalContentService`는 잘못된 헤더 형식·범위·조건 조합을 본문 소비와 receipt 생성 전에 400 `VFS_INVALID_EXPIRY`로 거부한다.
+- `ConditionalContentService`는 잘못된 헤더 형식(10진 정수 아님, 저장 가능 범위 초과)과 조건 조합을 본문 소비와 receipt 생성 전에 400 `VFS_INVALID_EXPIRY`로 거부한다.
+- 설정 범위(`STORIX_VFS_EXPIRY_MIN_SECONDS`·`STORIX_VFS_EXPIRY_MAX_SECONDS`) 밖의 값은 receipt를 처리한 뒤 판정한다.
+  - 본문을 읽어 hash한 뒤 400 `VFS_INVALID_EXPIRY`를 오류 receipt로 저장한다. 경로·조건 오류와 같은 경로다.
+  - 범위는 env로 바뀔 수 있으므로 fingerprint는 범위와 무관하게 파싱한 값으로 만든다. 범위를 바꾼 뒤 같은 key로 재시도하면 이전 응답을 재생한다.
+- `POST /fs/mutations`의 `copy`도 같다. 구조 검사(정수·저장 가능 범위)로 fingerprint를 만들고 설정 범위 검사는 그 뒤에 한다.
 - 유효한 값은 receipt fingerprint에 포함한다.
 - 같은 key로 만료 값만 바꾸면 409 `MUTATION_KEY_REUSED`다.
 
