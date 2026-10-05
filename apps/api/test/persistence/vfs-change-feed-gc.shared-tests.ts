@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { GcJob } from '../../src/jobs/gc.job.js';
+import type { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
+import { BlobRepositoryDouble, PagedStorage } from '../jobs/gc-doubles.js';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import {
   type ChangeFeedPruneCursor,
@@ -186,7 +192,76 @@ export function runVfsChangeFeedGcSharedTests(get: () => Context): void {
   it('만료 이벤트가 없으면 아무것도 읽지 않고 next가 null이다', async () => {
     const c = await fixture();
     await c.insert(1, false);
-    expect(await c.retention.pruneNext(30, 500, null)).toEqual({ deleted: 0, examined: 0, next: null });
+    expect(await c.retention.pruneNext(30, 500, null)).toEqual({
+      deleted: 0,
+      examined: 0,
+      failed: 0,
+      next: null,
+    });
+  });
+
+  it('경계가 손상된 namespace는 실패로 집계하고 다른 namespace의 만료 이벤트는 정리한다', async () => {
+    const broken = await fixture();
+    await broken.insert(1, 40);
+    await broken.insert(2, 40);
+    // lastSequence보다 큰 sequence의 이벤트는 boundary 불변식 위반이다.
+    await broken.dataSource.query(
+      broken.sqlite
+        ? 'UPDATE vfs_change_feed_state SET last_sequence = 1 WHERE namespace_id = ?'
+        : 'UPDATE vfs_change_feed_state SET last_sequence = 1 WHERE namespace_id = $1',
+      [broken.id],
+    );
+    const healthy = await fixture();
+    await healthy.insert(1, 35);
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await healthy.retention.pruneNext(30, 500, null);
+
+      expect(result).toMatchObject({ deleted: 1, failed: 1, next: null });
+      expect(error).toHaveBeenCalledWith(expect.stringContaining(broken.id), expect.anything());
+    } finally {
+      error.mockRestore();
+    }
+    expect((await healthy.state())?.prunedThrough).toBe('1');
+    expect((await broken.state())?.prunedThrough).toBe('0');
+    expect((await broken.events()).map((event) => event.sequence)).toEqual(['1', '2']);
+  });
+
+  it('GC는 change feed 정리 실패를 집계하고 뒤 단계인 휴지통 정리까지 진행한다', async () => {
+    const broken = await fixture();
+    await broken.insert(1, 40);
+    await broken.insert(2, 40);
+    await broken.dataSource.query(
+      broken.sqlite
+        ? 'UPDATE vfs_change_feed_state SET last_sequence = 1 WHERE namespace_id = ?'
+        : 'UPDATE vfs_change_feed_state SET last_sequence = 1 WHERE namespace_id = $1',
+      [broken.id],
+    );
+    const healthy = await fixture();
+    await healthy.insert(1, 35);
+    const pruneExpiredBatch = jest
+      .fn<(limit: number) => Promise<{ items: number; nodes: number; bytes: string; failed: number }>>()
+      .mockResolvedValue({ items: 0, nodes: 0, bytes: '0', failed: 0 });
+    const job = new GcJob(
+      new PagedStorage().asBlobStorage(),
+      new BlobRepositoryDouble().asBlobRepository(),
+      { get: () => undefined } as unknown as ConfigService,
+      undefined,
+      undefined,
+      healthy.retention,
+      { pruneExpiredBatch } as unknown as VfsTrashRetentionRepository,
+    );
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await job.run();
+
+      expect(result.prunedChangeEvents).toBe(1);
+      expect(result.failedChangeFeedNamespaces).toBe(1);
+    } finally {
+      error.mockRestore();
+    }
+    expect(pruneExpiredBatch).toHaveBeenCalled();
+    expect((await healthy.state())?.prunedThrough).toBe('1');
   });
 
   it('PostgreSQL에서 다른 트랜잭션이 잠근 후보는 건너뛰고 다음 후보를 정리한다', async () => {

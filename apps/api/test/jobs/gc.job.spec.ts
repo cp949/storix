@@ -99,9 +99,9 @@ describe('GcJob', () => {
     it('next가 null이 될 때까지 이어 호출하고 삭제 수를 집계한 뒤 저장된 cursor를 지운다', async () => {
       const pruneNext = jest
         .fn<PruneNext>()
-        .mockResolvedValueOnce({ deleted: 500, examined: 500, next: cursorA })
-        .mockResolvedValueOnce({ deleted: 2, examined: 2, next: cursorB })
-        .mockResolvedValueOnce({ deleted: 0, examined: 0, next: null });
+        .mockResolvedValueOnce({ deleted: 500, examined: 500, failed: 0, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 2, examined: 2, failed: 0, next: cursorB })
+        .mockResolvedValueOnce({ deleted: 0, examined: 0, failed: 0, next: null });
       const cursors = makeCursors(null);
       const result = await makeJob({ pruneNext, cursors: cursors.repository }).run();
       expect(result.prunedChangeEvents).toBe(502);
@@ -115,8 +115,8 @@ describe('GcJob', () => {
     it('읽은 이벤트 수가 예산에 도달하면 멈추고 cursor를 저장하고 단계를 보고한다', async () => {
       const pruneNext = jest
         .fn<PruneNext>()
-        .mockResolvedValueOnce({ deleted: 0, examined: 500, next: cursorA })
-        .mockResolvedValueOnce({ deleted: 3, examined: 500, next: cursorB });
+        .mockResolvedValueOnce({ deleted: 0, examined: 500, failed: 0, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 3, examined: 500, failed: 0, next: cursorB });
       const cursors = makeCursors(null);
       const result = await makeJob({ pruneNext, budget: '1000', cursors: cursors.repository }).run();
       expect(pruneNext).toHaveBeenCalledTimes(2);
@@ -127,14 +127,18 @@ describe('GcJob', () => {
     });
 
     it('저장된 cursor에서 이어 시작한다', async () => {
-      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: null });
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValue({ deleted: 0, examined: 0, failed: 0, next: null });
       const cursors = makeCursors(JSON.stringify(cursorA));
       await makeJob({ pruneNext, cursors: cursors.repository }).run();
       expect(pruneNext.mock.calls[0][2]).toEqual(cursorA);
     });
 
     it('읽을 수 없는 저장 cursor는 처음부터 다시 시작한다', async () => {
-      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: null });
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValue({ deleted: 0, examined: 0, failed: 0, next: null });
       await makeJob({ pruneNext, cursors: makeCursors('not-json').repository }).run();
       expect(pruneNext.mock.calls[0][2]).toBeNull();
     });
@@ -142,13 +146,25 @@ describe('GcJob', () => {
     it('cursor 저장소가 없어도 정리한다', async () => {
       const pruneNext = jest
         .fn<PruneNext>()
-        .mockResolvedValueOnce({ deleted: 1, examined: 1, next: cursorA })
-        .mockResolvedValueOnce({ deleted: 0, examined: 0, next: null });
+        .mockResolvedValueOnce({ deleted: 1, examined: 1, failed: 0, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 0, examined: 0, failed: 0, next: null });
       expect((await makeJob({ pruneNext }).run()).prunedChangeEvents).toBe(1);
     });
 
+    it('정리에 실패한 namespace 수를 호출마다 누적해 보고한다', async () => {
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValueOnce({ deleted: 2, examined: 3, failed: 1, next: cursorA })
+        .mockResolvedValueOnce({ deleted: 0, examined: 2, failed: 2, next: null });
+      const result = await makeJob({ pruneNext }).run();
+      expect(result.prunedChangeEvents).toBe(2);
+      expect(result.failedChangeFeedNamespaces).toBe(3);
+    });
+
     it('아무것도 읽지 못하는 호출이 이어져도 예산을 소모해 무한 반복하지 않는다', async () => {
-      const pruneNext = jest.fn<PruneNext>().mockResolvedValue({ deleted: 0, examined: 0, next: cursorA });
+      const pruneNext = jest
+        .fn<PruneNext>()
+        .mockResolvedValue({ deleted: 0, examined: 0, failed: 0, next: cursorA });
       const result = await makeJob({ pruneNext, budget: '5' }).run();
       expect(pruneNext).toHaveBeenCalledTimes(5);
       expect(result.budgetExhaustedStages).toEqual(['change-feed-prune']);

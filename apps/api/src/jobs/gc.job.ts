@@ -63,6 +63,9 @@ export interface GcResult {
   readonly deletedStagingObjects: number;
   readonly prunedUploadSessions: number;
   readonly prunedChangeEvents: number;
+
+  /** 예상 밖 오류로 change feed를 보존 정리하지 못한 namespace 수다. namespace별 원인은 error 로그에 남는다. */
+  readonly failedChangeFeedNamespaces: number;
   readonly prunedTrashItems: number;
   readonly prunedTrashBytes: string;
 
@@ -139,7 +142,7 @@ export class GcJob {
     const prunedMutationReceipts = await this.pruneReceipts(exhausted);
     const prunedIdempotencyReceipts = await this.pruneIdempotencyReceipts(exhausted);
     const prunedUploadSessions = await this.pruneTerminalSessions(now, exhausted);
-    const prunedChangeEvents = await this.pruneChangeFeed(exhausted);
+    const changeFeed = await this.pruneChangeFeed(exhausted);
     const trash = await this.pruneTrash(exhausted);
 
     this.logger.log(
@@ -158,7 +161,8 @@ export class GcJob {
       recoveredUploadSessions,
       deletedStagingObjects,
       prunedUploadSessions,
-      prunedChangeEvents,
+      prunedChangeEvents: changeFeed.deleted,
+      failedChangeFeedNamespaces: changeFeed.failed,
       prunedTrashItems: trash.items,
       prunedTrashBytes: trash.bytes,
       failedTrashItems: trash.failed,
@@ -442,10 +446,12 @@ export class GcJob {
     return { budgetLimit: this.stageBudgetLimit, cursors: this.gcCursors, logger: this.logger };
   }
 
-  private async pruneChangeFeed(exhaustedStages: string[]): Promise<number> {
+  private async pruneChangeFeed(exhaustedStages: string[]): Promise<{ deleted: number; failed: number }> {
     const retention = this.changeFeedRetention;
-    if (!retention) return 0;
+    if (!retention) return { deleted: 0, failed: 0 };
     let pruned = 0;
+    // 실패한 namespace는 cursor가 지나가므로 한 실행 안에서 다시 읽지 않는다. 호출별 실패 수를 누적한다.
+    let failed = 0;
     await runCursorStage<ChangeFeedPruneCursor>(
       this.stageContext,
       CHANGE_FEED_PRUNE_CURSOR,
@@ -463,10 +469,11 @@ export class GcJob {
       async (cursor) => {
         const result = await retention.pruneNext(this.changeRetentionDays, CLEANUP_BATCH_SIZE, cursor);
         pruned += result.deleted;
+        failed += result.failed;
         return { next: result.next, examined: result.examined };
       },
     );
-    return pruned;
+    return { deleted: pruned, failed };
   }
 
   // metadata 없는 스토리지 object: 'blobs/'·'upload-staging/' prefix를 key 오름차순으로 한 page씩 읽고

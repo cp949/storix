@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
@@ -34,6 +34,9 @@ export interface ChangeFeedPruneResult {
   /** 이번 호출이 읽은 만료 이벤트 수. GC 단계 예산을 소모하는 단위다. */
   readonly examined: number;
 
+  /** 예상 밖 오류로 정리하지 못한 namespace 수다. namespace별 원인은 error 로그에 남는다. */
+  readonly failed: number;
+
   /** 이어 호출할 위치. null이면 cursor 뒤에 만료 이벤트가 더 없다. */
   readonly next: ChangeFeedPruneCursor | null;
 }
@@ -49,6 +52,8 @@ interface ExpiredRow {
 
 @Injectable()
 export class VfsChangeFeedRetentionRepository {
+  private readonly logger = new Logger(VfsChangeFeedRetentionRepository.name);
+
   constructor(private readonly dataSource: DataSource) {}
 
   /**
@@ -59,6 +64,7 @@ export class VfsChangeFeedRetentionRepository {
    * 남은 이벤트가 있으면 그 namespace에서 멈추고 cursor를 그 위치에 둔다.
    * 후보 선택은 만료 이벤트 인덱스 범위 스캔이라 비용이 전체 namespace 수가 아니라 읽은 만료
    * 이벤트 수에 비례한다.
+   * 불변식 위반 같은 예상 밖 오류는 그 namespace만 롤백하고 실패로 집계한 뒤 다음 후보로 넘어간다.
    */
   async pruneNext(
     days: number,
@@ -101,7 +107,7 @@ export class VfsChangeFeedRetentionRepository {
          ORDER BY e.occurred_at, e.namespace_id, e.sequence LIMIT ${limitBind}`,
       ph.params,
     )) as ExpiredRow[];
-    if (page.length === 0) return { deleted: 0, examined: 0, next: null };
+    if (page.length === 0) return { deleted: 0, examined: 0, failed: 0, next: null };
 
     const cursorOf = (row: ExpiredRow): ChangeFeedPruneCursor => ({
       occurredAt: row.occurred_at,
@@ -109,18 +115,32 @@ export class VfsChangeFeedRetentionRepository {
       sequence: row.sequence,
     });
     let total = 0;
+    let failed = 0;
     for (const [index, row] of page.entries()) {
       if (!row.is_head) continue;
-      const deleted = await this.dataSource.transaction((manager) =>
-        this.pruneNamespacePrefix(manager, sqlite, row.namespace_id, cutoff, batchSize),
-      );
+      let deleted: number | null;
+      try {
+        deleted = await this.dataSource.transaction((manager) =>
+          this.pruneNamespacePrefix(manager, sqlite, row.namespace_id, cutoff, batchSize),
+        );
+      } catch (error) {
+        // 다시 던지면 GC 실행 전체가 실패한다. cursor가 저장되지 않아 다음 실행도 같은 namespace에서
+        // 멈추므로, 뒤쪽 namespace와 뒤 단계(휴지통 정리)가 계속 막힌다.
+        failed++;
+        this.logger.error(
+          `change feed 보존 정리 실패 namespace=${row.namespace_id}: ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        continue;
+      }
       if (deleted === null) continue;
       total += deleted;
-      if (deleted >= batchSize) return { deleted: total, examined: index + 1, next: cursorOf(row) };
+      if (deleted >= batchSize) return { deleted: total, examined: index + 1, failed, next: cursorOf(row) };
     }
     return {
       deleted: total,
       examined: page.length,
+      failed,
       next: page.length < scanLimit ? null : cursorOf(page[page.length - 1]),
     };
   }
