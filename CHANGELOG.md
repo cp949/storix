@@ -14,9 +14,11 @@
 - 비밀값을 파일(`<변수>_FILE`)과 통신형 어댑터(`<변수>_REF`, `STORIX_SECRET_ADAPTERS`)로 받는다. 대상은 API key, 마스터 키, DB·스토리지 자격증명, Sentry DSN이다. 값은 기동 시 한 번 읽는다. 결정은 api ADR-0040이고 규칙은 `docs/design/15-secret-sources.md`다.
 - `single-host-private` 시나리오에 compose secret override(`compose.secrets.yml`, `compose.secrets-postgres.yml`)를 추가했다. VersityGW는 이 override의 파일 전달 대상이 아니다. `STORIX_STORAGE_*`는 환경변수로 남는다.
 - 400 오류 코드 `VFS_INVALID_QUERY`를 추가했다. `GET /fs/find`의 `name`이 유효하지 않을 때 쓴다.
+- 스토리지 호출의 timeout 환경변수 `STORIX_STORAGE_SOCKET_TIMEOUT_MS`(기본 120000)·`STORIX_STORAGE_CONNECT_TIMEOUT_MS`(기본 10000)를 추가했다. 양의 정수만 받고 `0`은 거부한다. 결정은 api ADR-0012다(GitHub 이슈 #44).
 
 ### Changed
 
+- S3 호환 스토리지가 응답을 멈춰도 소켓과 요청 처리가 무기한 남던 문제를 고쳤다. 소켓 무활동 120초(`STORIX_STORAGE_SOCKET_TIMEOUT_MS`)가 지나면 요청을 끊는다. 응답 헤더 전에 멈춘 경우는 이전에 500 `INTERNAL_ERROR`였고 이제 503 `STORAGE_UNAVAILABLE`이다. 클라이언트가 다운로드 읽기를 이 시간 넘게 완전히 멈춰도 연결이 중단된다. 큰 object의 완료 처리처럼 백엔드가 응답 전에 오래 걸리면 값을 늘린다(GitHub 이슈 #44).
 - PostgreSQL `vfs_node.version`을 `integer`에서 `bigint`로 넓히고 revision 상한(`MAX_VFS_VERSION`)을 2147483647에서 2^53−1로 올렸다(마이그레이션 `WidenVfsNodeVersion1791700000023`, SQLite는 건너뜀). 모든 mutation이 조상을 root까지 올리므로 root version이 2147483647에 닿으면 그 namespace의 모든 쓰기가 409 `VFS_REVISION_EXHAUSTED`로 영구 실패했다(초당 100회 mutation이면 약 248일). 이미 발급된 revision 토큰은 그대로 유효하다. 이 마이그레이션은 `vfs_node` 테이블을 재작성하고 `ACCESS EXCLUSIVE` 락을 잡으므로 행이 많은 배포는 점검 창에서 적용한다. 2147483647을 넘는 version이 생긴 뒤에는 `down`이 `22003`으로 실패한다. 결정은 api ADR-0044다(GitHub 이슈 #41).
 - `POST /fs/rm`이 `recursive` 없이 빈 디렉터리를 삭제한다. 이전에는 비어 있어도 409 `VFS_IS_DIRECTORY`였다. 비어 있지 않은 디렉터리는 409 `VFS_DIRECTORY_NOT_EMPTY`다. OpenAPI 설명과 `POST /fs/mutations`의 `kind: delete` 동작에 맞췄다.
 - 메트릭 `storix_http_transferred_bytes_total`과 구조화 로그 `byteCount`가 요청 수신과 응답 송신 바이트의 합(HTTP 헤더 포함, 소켓 기준)을 센다. 이전에는 요청 `Content-Length`가 있으면 그 값, 없으면 응답 `Content-Length`만 셌다. 그래서 chunked 업로드는 응답 크기만, HEAD와 중간에 끊긴 다운로드는 보내지 않은 본문 길이까지 셌다.

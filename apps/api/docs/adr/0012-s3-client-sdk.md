@@ -22,6 +22,15 @@
   - 업로드 stream은 재생할 수 없다.
   - 실패는 즉시 전달한다.
   - 저장 장애는 호출자가 분류해 응답한다.
+- **`requestHandler.socketTimeout`/`requestHandler.connectionTimeout`**
+  - `STORIX_STORAGE_SOCKET_TIMEOUT_MS`(기본 120초)·`STORIX_STORAGE_CONNECT_TIMEOUT_MS`(기본 10초)를 사용한다.
+  - SDK 기본값은 둘 다 0(비활성)이라 S3가 응답을 멈추면 소켓과 요청 처리가 무기한 남는다.
+  - `socketTimeout`은 소켓 무활동 시간이다. 정상 전송은 끊지 않고 헤더 전·본문 도중 정지를 모두 끊는다.
+  - 요청 전체 시간인 `requestTimeout`은 쓰지 않는다. 대용량 전송을 끊을 수 있고, 본문 도중 정지는 `throwOnRequestTimeout`을 켜도 끊지 못했다(모사에서 60초 넘게 종료되지 않음).
+  - 양의 정수만 받고 상한은 2147483647이다. `0`(무제한)은 거부한다. 상한을 넘는 값은 Node 타이머가 1ms로 줄여 즉시 끊는다.
+  - 소비자(클라이언트)가 다운로드 읽기를 완전히 멈춰도 소켓이 무활동이라 같은 값으로 끊긴다. 응답 헤더는 이미 나간 뒤라 연결이 중단된다. 느리지만 계속 읽는 클라이언트는 영향이 없다고 본다(`pipe`가 읽은 만큼 소켓을 소비하는 구조 기준이며 느린 수신 속도로는 직접 확인하지 않았다).
+  - 헤더 전 timeout은 `code` 없이 `name`만 `TimeoutError`다. `classifyBlobFailure`가 이름으로 분류해 503 `STORAGE_UNAVAILABLE`로 응답한다. 본문 도중 정지는 `ECONNRESET`(`aborted`)으로 끝나 기존 분류가 503으로 처리한다.
+  - 내부·public(presign) client와 gc·backup·restore가 같은 값을 쓴다. public client는 서명만 하므로 값이 무관하다.
 - **`requestChecksumCalculation`/`responseChecksumValidation`**
   - 둘 다 `WHEN_REQUIRED`를 사용한다.
   - 기본값 `WHEN_SUPPORTED`는 요청에 CRC32 체크섬과 `aws-chunked` 인코딩을 추가한다.
