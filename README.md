@@ -411,8 +411,8 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_PUBLISH_HOST`                     | 선택   | `0.0.0.0`             | compose | `app` 컨테이너의 호스트 bind 주소                                              |
 | `STORIX_PUBLISH_PORT`                     | 선택   | `3000`                | compose | `app` 컨테이너를 호스트에 노출하는 포트                                        |
 | `STORIX_PORT`                             | 선택   | `3000`                | app     | app의 listen 포트                                                              |
-| `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`      | 선택   | `53687091200`         | app     | Namespace quota override가 없을 때 적용하는 기본값(50 GiB)                     |
-| `STORIX_MAX_TOTAL_LOGICAL_BYTES`          | 선택   | 기본값과 같음         | app     | namespace quota override의 전역 ceiling                                        |
+| `STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`      | 선택   | `53687091200`         | app·gc  | Namespace quota override가 없을 때 적용하는 기본값(50 GiB)                     |
+| `STORIX_MAX_TOTAL_LOGICAL_BYTES`          | 선택   | 기본값과 같음         | app·gc  | namespace quota override의 전역 ceiling                                        |
 | `STORIX_VFS_CAPABILITIES_CONFIG_PATH`     | 선택   | —                     | app     | 시작 시 읽는 선택 VFS capability JSON 파일 경로                                |
 | `STORIX_VFS_CHANGE_RETENTION_DAYS`        | 선택   | `30`                  | gc      | 변경 feed 이벤트 보존 기간(1~365000 일수)                                      |
 | `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`  | 조건부 | —                     | app     | 재개 업로드 정책 JSON 경로                                                     |
@@ -456,7 +456,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_MAX_SNAPSHOT_BYTES`               | 선택   | `5368709120`          | app     | snapshot 한 건의 논리적 파일 크기 합계 상한(5 GiB)                             |
 | `STORIX_MAX_RETAINED_SNAPSHOT_NODES`      | 선택   | `100000`              | app     | namespace 내 보존 중인 모든 snapshot의 manifest 노드 수 합계 상한              |
 | `STORIX_MAX_RETAINED_SNAPSHOT_BYTES`      | 선택   | `53687091200`         | app     | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB)      |
-| `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`              | app     | namespace별 보존 휴지통 node 수 상한                                           |
+| `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`              | app·gc  | namespace별 보존 휴지통 node 수 상한                                           |
 | `STORIX_MUTATION_LEASE_SECONDS`           | 선택   | `60`                  | app     | 조건부 업로드 claim lease(초, 최대 6442450)                                    |
 | `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`               | app·gc  | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간, 최대 2147483). HTTP 서버의 요청 수신 상한(`requestTimeout`)도 이 값을 따른다 |
 | `STORIX_SHUTDOWN_TIMEOUT_SECONDS`         | 선택   | `25`                  | app     | SIGTERM·SIGINT 뒤 진행 중 요청을 기다리는 최대 시간(초, 1~3600)                |
