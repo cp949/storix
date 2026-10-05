@@ -78,6 +78,7 @@
 - `PATCH /admin/namespaces/{id}/quota`와 `PATCH /admin/namespaces/{id}/trash`가 255 byte를 넘는 `Idempotency-Key`를 받아들이던 것을 openapi `maxLength: 255`에 맞춰 400 `IDEMPOTENCY_KEY_REQUIRED`로 거절한다. 이전에 성공하던 256 byte 이상 키는 400이 된다. 두 경로는 키를 해시해 저장하므로 서버 오류는 없었다. `PATCH /namespaces/{id}/settings`와 `POST /admin/namespaces/{id}/delete`의 오류 코드는 그대로다.
 - `openapi.yaml`이 live Node 수·폴더 파일 수·논리 quota 상한 초과 413(`VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`·`VFS_FOLDER_FILE_LIMIT_EXCEEDED`·`VFS_QUOTA_EXCEEDED`)을 operation에 적지 않던 문제를 고쳤다. `mkdir`·`touch`·`mv`·휴지통 `restore`에는 `413` 응답을 추가했고, `cp`·`content`·`content/conditional`·`mutations`·업로드 세션 `complete`·snapshot 생성·snapshot `restore`는 설명에 누락된 코드를 더했다. 서버 동작은 바뀌지 않는다(GitHub 이슈 #16).
 - SQLite에서 재귀 `rm`·`cp`가 노드 수에 O(N²)로 느려지던 문제를 수정했다. 하위 노드를 모으는 재귀 CTE가 `namespace_id` 인덱스를 골라 큐 행마다 namespace 전체를 훑었다. 평평한 디렉터리 12,000개를 SQLite 메모리 DB에서 지울 때 5.3초이던 것이 0.1초로, 복사할 때 6.7초이던 것이 1.4초로 줄었다. 노드 수에 선형으로 늘어난다. 결과와 공개 계약은 바뀌지 않는다. PostgreSQL의 12,000개 `cp`는 약 20초로 수정 전후가 같다. 원인은 이 CTE가 아니며 조사하지 않았다. 함정은 `docs/traps/TRP-007`에 기록했다.
+- 같은 FILE에 `POST /fs/touch`를 직전 쓰기와 같은 밀리초 안에 다시 보내면 200을 응답하면서 FILE version이 오르지 않던 문제를 수정했다. 응답 revision이 이전 값과 같았고 change feed에 파일 `updated` 이벤트가 남지 않았다. 이제 touch는 매번 version을 1 올린다. 함정은 `docs/traps/TRP-010`에 기록했다(GitHub 이슈 #40).
 
 ### Security
 
