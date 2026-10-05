@@ -2,6 +2,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { Readable } from 'node:stream';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 import { buildS3ClientConfig } from '../../src/storage/storage.module.js';
 
@@ -68,5 +69,75 @@ describe('S3BlobStorage 응답 정지 timeout', () => {
       })(),
     ).rejects.toMatchObject({ code: 'ECONNRESET' });
     expect(Date.now() - startedAt).toBeLessThan(SOCKET_TIMEOUT_MS * 5);
+  });
+});
+
+// 소켓 점유가 풀리지 않는 동안 다음 요청이 어떻게 되는지 실제 소켓으로 확인한다.
+describe('S3BlobStorage 소켓 상한', () => {
+  const CONNECT_TIMEOUT_MS = 300;
+  let server: Server;
+  let port: number;
+  const clients: S3Client[] = [];
+  const heldStreams: Readable[] = [];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      // GET은 본문을 다 보내지 않아 소켓을 점유한다. HEAD는 즉시 끝난다.
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'content-length': '1000000' });
+        res.write('x');
+        return;
+      }
+      res.writeHead(200, { 'content-length': '0' });
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    // 점유한 stream을 끊을 때 나는 ECONNRESET이 처리되지 않은 'error'로 프로세스를 죽이지 않게 한다.
+    for (const stream of heldStreams) stream.on('error', () => undefined).destroy();
+    for (const client of clients) client.destroy();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  async function hold(storage: S3BlobStorage, key: string): Promise<void> {
+    heldStreams.push(await storage.get(key));
+  }
+
+  function storageWith(maxSockets: number): S3BlobStorage {
+    const values: Record<string, string> = {
+      STORIX_STORAGE_ENDPOINT: '127.0.0.1',
+      STORIX_STORAGE_PORT: String(port),
+      STORIX_STORAGE_ACCESS_KEY: 'storix',
+      STORIX_STORAGE_SECRET_KEY: 'storix-secret',
+      STORIX_STORAGE_MAX_SOCKETS: String(maxSockets),
+      STORIX_STORAGE_CONNECT_TIMEOUT_MS: String(CONNECT_TIMEOUT_MS),
+    };
+    const config = {
+      getOrThrow: (key: string) => values[key],
+      get: (key: string) => values[key],
+    } as unknown as ConfigService;
+    const client = new S3Client(buildS3ClientConfig(config));
+    clients.push(client);
+    return new S3BlobStorage(client, 'bucket', null);
+  }
+
+  it('점유된 소켓이 상한에 닿으면 다음 요청은 connectionTimeout 뒤 503 저장 장애로 끝난다', async () => {
+    const storage = storageWith(2);
+    await hold(storage, 'held-1');
+    await hold(storage, 'held-2');
+
+    await expect(storage.delete('next')).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
+  });
+
+  it('상한을 점유 수보다 크게 두면 다음 요청이 소켓을 받아 끝난다', async () => {
+    const storage = storageWith(3);
+    await hold(storage, 'held-1');
+    await hold(storage, 'held-2');
+
+    await expect(storage.delete('next')).resolves.toBeUndefined();
   });
 });

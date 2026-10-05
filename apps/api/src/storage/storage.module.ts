@@ -11,6 +11,9 @@ import { StorageKeyGenerator } from './storage-key-generator.js';
 // 큰 object의 CompleteMultipartUpload처럼 서버가 응답 전에 오래 걸리는 호출을 오탐하지 않도록 넉넉히 잡는다.
 const DEFAULT_SOCKET_TIMEOUT_MS = 120_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+// SDK 기본값과 같다. 진행 중인 요청마다 소켓 하나를 쓰고, 장기 다운로드는 클라이언트가 다 받을 때까지 점유한다.
+// 상한에 닿으면 다음 요청은 대기열에서 connectionTimeout 뒤 TimeoutError(503)로 끝난다.
+const DEFAULT_MAX_SOCKETS = 50;
 // Node 타이머는 2^31-1ms를 넘으면 1ms로 줄여 즉시 발화하므로 그 값까지만 받는다.
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -21,6 +24,14 @@ function toEndpoint(host: string, port: number, useSsl: boolean): string {
 }
 
 function buildClientConfig(config: ConfigService, endpoint: string): S3ClientConfig {
+  const agent = {
+    // 한 목적지에 대한 연결 수는 TCP 포트 수를 넘을 수 없다.
+    maxSockets: parsePositiveInt(
+      config.get<string>('STORIX_STORAGE_MAX_SOCKETS'),
+      DEFAULT_MAX_SOCKETS,
+      MAX_TCP_PORT,
+    ),
+  };
   return {
     endpoint,
     // SDK는 리전을 자동 조회하지 않는다. 백엔드가 리전을 지정해 운영되면(AWS S3 버킷 리전, VersityGW
@@ -49,6 +60,9 @@ function buildClientConfig(config: ConfigService, endpoint: string): S3ClientCon
         DEFAULT_CONNECT_TIMEOUT_MS,
         MAX_TIMEOUT_MS,
       ),
+      // 객체로 주면 SDK가 keepAlive를 유지한 채 이 값만 덮어쓴 Agent를 만든다.
+      httpAgent: agent,
+      httpsAgent: agent,
     },
     // 기본값(WHEN_SUPPORTED)은 요청에 CRC32 체크섬과 aws-chunked 인코딩을 붙인다.
     // 일부 S3 호환 백엔드가 이를 거부하므로 서비스가 요구할 때만 계산한다.

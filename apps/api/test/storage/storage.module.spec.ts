@@ -71,7 +71,7 @@ describe('buildS3ClientConfig', () => {
   });
 
   it('timeout 환경변수가 없으면 socketTimeout 120초, connectionTimeout 10초를 쓴다', () => {
-    expect(buildS3ClientConfig(stubConfig(REQUIRED)).requestHandler).toEqual({
+    expect(buildS3ClientConfig(stubConfig(REQUIRED)).requestHandler).toMatchObject({
       socketTimeout: 120_000,
       connectionTimeout: 10_000,
     });
@@ -86,7 +86,7 @@ describe('buildS3ClientConfig', () => {
       }),
     );
 
-    expect(config.requestHandler).toEqual({ socketTimeout: 30_000, connectionTimeout: 2_500 });
+    expect(config.requestHandler).toMatchObject({ socketTimeout: 30_000, connectionTimeout: 2_500 });
   });
 
   it('timeout 환경변수가 빈 문자열이면 기본값을 쓴다', () => {
@@ -98,7 +98,7 @@ describe('buildS3ClientConfig', () => {
       }),
     );
 
-    expect(config.requestHandler).toEqual({ socketTimeout: 120_000, connectionTimeout: 10_000 });
+    expect(config.requestHandler).toMatchObject({ socketTimeout: 120_000, connectionTimeout: 10_000 });
   });
 
   // 0은 무제한이라 무기한 대기를 되살린다. 2147483647 초과는 Node 타이머가 1ms로 줄여 즉시 끊는다.
@@ -111,6 +111,40 @@ describe('buildS3ClientConfig', () => {
       expect(() => buildS3ClientConfig(stubConfig({ ...REQUIRED, [name]: '2147483647' }))).not.toThrow();
     },
   );
+
+  it('STORIX_STORAGE_MAX_SOCKETS가 없으면 http·https agent의 maxSockets를 50으로 둔다', () => {
+    expect(buildS3ClientConfig(stubConfig(REQUIRED)).requestHandler).toMatchObject({
+      httpAgent: { maxSockets: 50 },
+      httpsAgent: { maxSockets: 50 },
+    });
+  });
+
+  it('STORIX_STORAGE_MAX_SOCKETS를 http·https agent의 maxSockets에 그대로 반영한다', () => {
+    const config = buildS3ClientConfig(stubConfig({ ...REQUIRED, STORIX_STORAGE_MAX_SOCKETS: '200' }));
+
+    expect(config.requestHandler).toMatchObject({
+      httpAgent: { maxSockets: 200 },
+      httpsAgent: { maxSockets: 200 },
+    });
+  });
+
+  it('STORIX_STORAGE_MAX_SOCKETS가 빈 문자열이면 기본값을 쓴다', () => {
+    const config = buildS3ClientConfig(stubConfig({ ...REQUIRED, STORIX_STORAGE_MAX_SOCKETS: '' }));
+
+    expect(config.requestHandler).toMatchObject({ httpAgent: { maxSockets: 50 } });
+  });
+
+  // 0은 Agent가 무제한(Infinity가 아니라 0 그대로)으로 다뤄 대기열이 사라진다. 65535는 한 목적지에 대한 연결 수의 상한이다.
+  it('STORIX_STORAGE_MAX_SOCKETS가 0·음수·비정수·65535 초과면 설정 해석을 거부한다', () => {
+    for (const value of ['0', '-1', '1.5', 'abc', '65536']) {
+      expect(() =>
+        buildS3ClientConfig(stubConfig({ ...REQUIRED, STORIX_STORAGE_MAX_SOCKETS: value })),
+      ).toThrow();
+    }
+    expect(() =>
+      buildS3ClientConfig(stubConfig({ ...REQUIRED, STORIX_STORAGE_MAX_SOCKETS: '65535' })),
+    ).not.toThrow();
+  });
 
   it('SDK 자동 재시도를 끄고 체크섬을 필요할 때만 계산한다', () => {
     const config = buildS3ClientConfig(stubConfig(REQUIRED));
@@ -168,7 +202,7 @@ describe('buildS3PublicClientConfig', () => {
       }),
     );
 
-    expect(config?.requestHandler).toEqual({ socketTimeout: 30_000, connectionTimeout: 10_000 });
+    expect(config?.requestHandler).toMatchObject({ socketTimeout: 30_000, connectionTimeout: 10_000 });
   });
 
   it('path style·region·자격증명은 내부 설정을 그대로 재사용한다', () => {
