@@ -89,7 +89,7 @@ export function toMatch(row: FindRecursiveRow): VfsNodeMatch {
     mimeType: row.mime_type,
     createdAt: parseSqlTimestamp(row.created_at),
     updatedAt: parseSqlTimestamp(row.updated_at),
-    version: row.version,
+    version: Number(row.version),
     expiresAt: row.expires_at === null ? null : parseSqlTimestamp(row.expires_at),
     relativeSegments: row.path_segments.split('/'),
   };

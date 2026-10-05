@@ -1,7 +1,9 @@
 import type { VfsNodeRecord } from '../persistence/vfs-node.repository.js';
 import { VfsInvalidRevisionError, VfsRevisionExhaustedError } from './vfs.errors.js';
 
-export const MAX_VFS_VERSION = 2147483647;
+// PostgreSQL bigint 컬럼과 JS number가 모두 정확히 표현하는 최댓값이다. 토큰은 8바이트라 더 큰 값도 담지만
+// version을 number로 다루므로 안전한 정수 범위까지만 쓴다.
+export const MAX_VFS_VERSION = Number.MAX_SAFE_INTEGER;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TOKEN_PATTERN = /^r1\.([A-Za-z0-9_-]{32})$/;

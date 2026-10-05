@@ -6,6 +6,9 @@ import type { MutationTx, SnapshotSourceRow, CopySourceRow } from './vfs-node.re
 import { joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryReads } from './vfs-node.repository.reads.js';
 
+// PostgreSQL bigint는 raw 결과에서 문자열이다(TRP-011).
+type SnapshotRawRow = CopySourceRow & { version: number | string; relative_path: string };
+
 export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
   // ORDER BY 없는 LIMIT으로 PostgreSQL recursive CTE의 평가도 maxNodes + 1에서
   // 멈춘다. SQLite는 recursive term 내부 LIMIT으로 큐의 확장까지 제한한다.
@@ -25,7 +28,7 @@ export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
     const namespace = ph.bind(tx.namespaceId);
     const sourceId = ph.bind(source.id);
     const bound = ph.bind(maxNodes + 1);
-    const rows: (CopySourceRow & { version: number; relative_path: string })[] = await tx.manager.query(
+    const rows: SnapshotRawRow[] = await tx.manager.query(
       `WITH RECURSIVE tree AS (
         SELECT id, namespace_id, parent_id, type, name, blob_id, size, mime_type, version, '.' AS relative_path
         FROM vfs_node WHERE namespace_id = ${namespace} AND id = ${sourceId}
@@ -53,7 +56,7 @@ export class VfsNodeRepositorySnapshots extends VfsNodeRepositoryReads {
       parentId: row.parent_id,
       name: row.name,
       type: row.type,
-      revision: encodeRevision(row),
+      revision: encodeRevision({ id: row.id, version: Number(row.version) }),
       relativePath: row.relative_path,
       blobId: row.blob_id,
       size: row.size === null ? null : String(row.size),

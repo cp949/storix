@@ -49,6 +49,11 @@ export class VfsNodeEntity {
   @UpdateDateColumn({ name: 'updated_at', type: TIMESTAMP_COLUMN_TYPE })
   updatedAt: Date;
 
-  @VersionColumn()
+  // PostgreSQL bigint는 pg 드라이버가 문자열로 돌려주므로 엔티티 경로에서는 number로 변환한다.
+  // raw SQL 결과에는 적용되지 않는다(TRP-011). 상한은 MAX_VFS_VERSION이라 정밀도 손실이 없다.
+  @VersionColumn({
+    type: 'bigint',
+    transformer: { to: (value: number) => value, from: (value: string | number) => Number(value) },
+  })
   version: number;
 }

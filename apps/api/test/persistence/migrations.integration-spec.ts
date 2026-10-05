@@ -20,6 +20,7 @@ import { AddFileExpiry1791700000010 } from '../../src/persistence/migrations/179
 import { ConvertNamespaceIdToString1791700000016 } from '../../src/persistence/migrations/1791700000016-ConvertNamespaceIdToString.js';
 import { MakeNamespaceNameNullable1791700000017 } from '../../src/persistence/migrations/1791700000017-MakeNamespaceNameNullable.js';
 import { WidenUploadSessionRequestId1791700000021 } from '../../src/persistence/migrations/1791700000021-WidenUploadSessionRequestId.js';
+import { WidenVfsNodeVersion1791700000023 } from '../../src/persistence/migrations/1791700000023-WidenVfsNodeVersion.js';
 
 describe('Migration: InitSchema', () => {
   let container: StartedPostgreSqlContainer;
@@ -1308,6 +1309,38 @@ describe('Migration: InitSchema', () => {
         { column_name: 'creation_request_id', character_maximum_length: 200 },
         { column_name: 'request_id', character_maximum_length: 200 },
       ]);
+    } finally {
+      await runner.release();
+    }
+  });
+
+  it('vfs_node.version을 bigint로 넓히고, int4 상한을 넘는 값이 있으면 down을 거부한다', async () => {
+    const runner = dataSource.createQueryRunner();
+    const migration = new WidenVfsNodeVersion1791700000023();
+    const namespaceId = randomUUID();
+    const nodeId = randomUUID();
+    const versionType = async () =>
+      runner.query(`SELECT data_type FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'vfs_node' AND column_name = 'version'`);
+    try {
+      expect(await versionType()).toEqual([{ data_type: 'bigint' }]);
+
+      await runner.query('INSERT INTO namespace (id, name) VALUES ($1, $2)', [namespaceId, 'widen-version']);
+      await runner.query(
+        `INSERT INTO vfs_node (id, namespace_id, parent_id, type, name, version)
+         VALUES ($1, $2, NULL, 'DIRECTORY', '', 3000000000)`,
+        [nodeId, namespaceId],
+      );
+
+      await expect(migration.down(runner)).rejects.toMatchObject({ code: '22003' });
+      expect(await versionType()).toEqual([{ data_type: 'bigint' }]);
+
+      await runner.query('DELETE FROM vfs_node WHERE id = $1', [nodeId]);
+      await runner.query('DELETE FROM namespace WHERE id = $1', [namespaceId]);
+      await migration.down(runner);
+      expect(await versionType()).toEqual([{ data_type: 'integer' }]);
+      await migration.up(runner);
+      expect(await versionType()).toEqual([{ data_type: 'bigint' }]);
     } finally {
       await runner.release();
     }

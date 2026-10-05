@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NamespaceEntity } from '../../../src/persistence/entities/namespace.entity.js';
 import { VfsNodeEntity } from '../../../src/persistence/entities/vfs-node.entity.js';
+import { MAX_VFS_VERSION } from '../../../src/vfs/revision.js';
 import { VfsRevisionExhaustedError } from '../../../src/vfs/vfs.errors.js';
 import type { VfsNodeRepositoryTestHelpers } from '../vfs-node.repository.shared-test-context.js';
 
@@ -171,7 +172,7 @@ export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void 
       const children = (await repository.findBy({ namespaceId: namespace.id, type: 'DIRECTORY' })).filter(
         (node) => node.name.startsWith('d'),
       );
-      await repository.update(children[children.length - 1].id, { version: 2147483647 });
+      await repository.update(children[children.length - 1].id, { version: MAX_VFS_VERSION });
 
       await expect(
         getRepo().moveNode(namespace.id, root.id, ['big'], ['moved'], false, MOVE_NODE_COUNT + 10),

@@ -109,7 +109,8 @@ export interface FindRecursiveRow {
   readonly mime_type: string | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
-  readonly version: number;
+  // PostgreSQL bigint는 raw 결과에서 문자열이다.
+  readonly version: number | string;
   readonly expires_at: Date | string | null;
   readonly path_segments: string;
 }

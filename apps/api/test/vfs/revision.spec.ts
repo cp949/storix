@@ -11,8 +11,12 @@ describe('VFS revision', () => {
     expect(decodeRevision(token)).toEqual({ id, version: 1 });
     expect(decodeRevision(encodeRevision({ id, version: MAX_VFS_VERSION }))).toEqual({
       id,
-      version: 2147483647,
+      version: MAX_VFS_VERSION,
     });
+  });
+
+  it('int4 상한(2147483647)을 넘는 version도 왕복한다', () => {
+    expect(decodeRevision(encodeRevision({ id, version: 2147483648 }))).toEqual({ id, version: 2147483648 });
   });
 
   it.each([
@@ -26,7 +30,7 @@ describe('VFS revision', () => {
     `r1.${(() => {
       const bytes = Buffer.alloc(24);
       Buffer.from(id.replaceAll('-', ''), 'hex').copy(bytes);
-      bytes.writeBigUInt64BE(2147483648n, 16);
+      bytes.writeBigUInt64BE(BigInt(MAX_VFS_VERSION) + 1n, 16);
       return bytes.toString('base64url');
     })()}`,
   ])('rejects malformed or out-of-range token %s', (token) => {
