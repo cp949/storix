@@ -2,6 +2,7 @@ import { Body, Controller, Headers, HttpCode, Post } from '@nestjs/common';
 import { StorixClient } from '../storix-client/storix-client.service.js';
 import { parseDemoUser } from './demo-user.js';
 import { resolveInternalPath } from './path-guard.js';
+import { requireStringFields } from './request-body.js';
 
 @Controller('demo-api/directories')
 export class DirectoriesController {
@@ -14,10 +15,10 @@ export class DirectoriesController {
   @HttpCode(204)
   async create(
     @Headers('x-demo-user') demoUserHeader: string | undefined,
-    @Body() body: { path?: string },
+    @Body() body: unknown,
   ): Promise<void> {
     const user = parseDemoUser(demoUserHeader);
-    const internalPath = resolveInternalPath(user, body?.path ?? '');
+    const internalPath = resolveInternalPath(user, requireStringFields(body, ['path']).path);
     await this.storixClient.createDirectory(internalPath);
   }
 }

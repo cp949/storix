@@ -28,6 +28,7 @@ import { StorixApiError } from '../storix-client/storix-client.errors.js';
 import { parseDemoUser } from './demo-user.js';
 import { firstQueryValue } from './http-query.js';
 import { resolveExternalPath, resolveInternalPath } from './path-guard.js';
+import { requireStringFields } from './request-body.js';
 import { UploadSessionInvalidRequestError, UploadSessionNotFoundError } from './document-archive.errors.js';
 
 function toExternalEntry(user: DemoUser, entry: FileEntry): FileEntry {
@@ -251,12 +252,9 @@ export class DocumentsController {
   }
 
   @Post('download')
-  async createDownload(
-    @Headers('x-demo-user') demoUserHeader: string | undefined,
-    @Body() body: { path?: string },
-  ) {
+  async createDownload(@Headers('x-demo-user') demoUserHeader: string | undefined, @Body() body: unknown) {
     const user = parseDemoUser(demoUserHeader);
-    const internalPath = resolveInternalPath(user, body?.path ?? '');
+    const internalPath = resolveInternalPath(user, requireStringFields(body, ['path']).path);
     return this.storixClient.createDownload(internalPath);
   }
 

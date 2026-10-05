@@ -60,4 +60,30 @@ describe('DirectoriesController — POST /demo-api/directories', () => {
       .expect(403);
     expect(createDirectory).not.toHaveBeenCalled();
   });
+
+  it.each([[{ path: ['x'] }], [{ path: 1 }], [{ path: null }], [{}]])(
+    '본문 path가 문자열이 아니면(%j) 400이고 createDirectory를 호출하지 않는다',
+    async (body) => {
+      const response = await request(app.getHttpServer())
+        .post('/demo-api/directories')
+        .set('X-Demo-User', 'alice')
+        .send(body)
+        .expect(400);
+
+      expect(response.body).toMatchObject({ code: 'DEMO_INVALID_REQUEST_BODY' });
+      expect(createDirectory).not.toHaveBeenCalled();
+    },
+  );
+
+  it('본문 path가 빈 문자열이면 사용자 root로 해석한다', async () => {
+    createDirectory.mockResolvedValue(undefined);
+
+    await request(app.getHttpServer())
+      .post('/demo-api/directories')
+      .set('X-Demo-User', 'alice')
+      .send({ path: '' })
+      .expect(204);
+
+    expect(createDirectory).toHaveBeenCalledWith('/documents/alice');
+  });
 });

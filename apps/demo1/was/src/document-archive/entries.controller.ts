@@ -3,6 +3,7 @@ import { StorixClient } from '../storix-client/storix-client.service.js';
 import { parseDemoUser } from './demo-user.js';
 import { firstQueryValue } from './http-query.js';
 import { resolveInternalPath } from './path-guard.js';
+import { requireStringFields } from './request-body.js';
 
 @Controller('demo-api/entries')
 export class EntriesController {
@@ -15,11 +16,12 @@ export class EntriesController {
   @HttpCode(204)
   async move(
     @Headers('x-demo-user') demoUserHeader: string | undefined,
-    @Body() body: { source?: string; destination?: string },
+    @Body() body: unknown,
   ): Promise<void> {
     const user = parseDemoUser(demoUserHeader);
-    const source = resolveInternalPath(user, body?.source ?? '');
-    const destination = resolveInternalPath(user, body?.destination ?? '');
+    const fields = requireStringFields(body, ['source', 'destination']);
+    const source = resolveInternalPath(user, fields.source);
+    const destination = resolveInternalPath(user, fields.destination);
     await this.storixClient.move(source, destination);
   }
 
@@ -27,11 +29,12 @@ export class EntriesController {
   @HttpCode(204)
   async copy(
     @Headers('x-demo-user') demoUserHeader: string | undefined,
-    @Body() body: { source?: string; destination?: string },
+    @Body() body: unknown,
   ): Promise<void> {
     const user = parseDemoUser(demoUserHeader);
-    const source = resolveInternalPath(user, body?.source ?? '');
-    const destination = resolveInternalPath(user, body?.destination ?? '');
+    const fields = requireStringFields(body, ['source', 'destination']);
+    const source = resolveInternalPath(user, fields.source);
+    const destination = resolveInternalPath(user, fields.destination);
     await this.storixClient.copy(source, destination);
   }
 

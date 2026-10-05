@@ -46,3 +46,12 @@ export class UploadSessionInvalidRequestError extends DomainError {
     super('업로드 세션 생성 요청이 올바르지 않음');
   }
 }
+
+export class InvalidRequestBodyError extends DomainError {
+  readonly code = 'DEMO_INVALID_REQUEST_BODY';
+  readonly status = 400;
+
+  constructor(field: string) {
+    super(`요청 본문의 ${field}는 문자열이어야 함`);
+  }
+}

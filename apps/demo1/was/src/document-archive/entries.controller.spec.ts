@@ -124,4 +124,25 @@ describe('EntriesController', () => {
 
     expect(copy).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['move', { source: ['x'], destination: '/a' }],
+    ['move', { source: '/a' }],
+    ['move', { source: '/a', destination: null }],
+    ['copy', { source: 1, destination: '/a' }],
+    ['copy', {}],
+  ])(
+    '%s 본문 필드가 문자열이 아니면 500이 아니라 400이고 StorixClient를 호출하지 않는다',
+    async (action, body) => {
+      const response = await request(app.getHttpServer())
+        .post(`/demo-api/entries/${action}`)
+        .set('X-Demo-User', 'alice')
+        .send(body)
+        .expect(400);
+
+      expect(response.body).toMatchObject({ code: 'DEMO_INVALID_REQUEST_BODY', requestId: 'req-1' });
+      expect(move).not.toHaveBeenCalled();
+      expect(copy).not.toHaveBeenCalled();
+    },
+  );
 });

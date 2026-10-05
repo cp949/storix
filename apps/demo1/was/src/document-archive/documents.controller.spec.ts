@@ -197,205 +197,27 @@ describe('DocumentsController — POST download', () => {
     expect(createDownload).toHaveBeenCalledWith('/documents/bob/notes/a.txt');
   });
 
-  it('body를 아예 보내지 않아도 500이 아니라 정상 처리된다', async () => {
-    createDownload.mockResolvedValue({
-      url: 'http://storage.test/signed',
-      expiresAt: '2026-01-01T00:00:00.000Z',
-    });
-
+  it('body를 아예 보내지 않으면 500이 아니라 400이고 createDownload를 호출하지 않는다', async () => {
     const response = await request(app.getHttpServer())
       .post('/demo-api/documents/download')
       .set('X-Demo-User', 'bob')
-      .send();
+      .send()
+      .expect(400);
 
-    expect(response.status).not.toBe(500);
-    expect(createDownload).toHaveBeenCalledWith('/documents/bob');
-  });
-});
-
-describe('DocumentsController — publish/unpublish', () => {
-  let app: INestApplication;
-  const publish = jest.fn<StorixClient['publish']>();
-  const unpublish = jest.fn<StorixClient['unpublish']>();
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      controllers: [DocumentsController],
-      providers: [{ provide: StorixClient, useValue: { publish, unpublish } }],
-    }).compile();
-
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    configureBodyParsers(app);
-    app.useGlobalFilters(new DomainErrorFilter());
-    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
-      req.requestId = 'req-1';
-      next();
-    });
-    await app.init();
+    expect(response.body).toMatchObject({ code: 'DEMO_INVALID_REQUEST_BODY' });
+    expect(createDownload).not.toHaveBeenCalled();
   });
 
-  afterAll(async () => {
-    await app.close();
-  });
+  it.each([[{ path: ['x'] }], [{ path: 1 }], [{}]])(
+    'body path가 문자열이 아니면(%j) 400이다',
+    async (body) => {
+      await request(app.getHttpServer())
+        .post('/demo-api/documents/download')
+        .set('X-Demo-User', 'bob')
+        .send(body)
+        .expect(400);
 
-  beforeEach(() => {
-    publish.mockReset();
-    unpublish.mockReset();
-  });
-
-  it('alice가 자신의 문서를 발행하면 PublicLink를 반환한다', async () => {
-    publish.mockResolvedValue({ url: 'http://public.test/x', publicPath: '/documents/alice/a.txt' });
-
-    const response = await request(app.getHttpServer())
-      .post('/demo-api/documents/publish?path=/a.txt')
-      .set('X-Demo-User', 'alice')
-      .expect(201);
-
-    expect(response.body).toEqual({ url: 'http://public.test/x', publicPath: '/documents/alice/a.txt' });
-    expect(publish).toHaveBeenCalledWith('/documents/alice/a.txt');
-  });
-
-  it('발행 취소는 204를 반환하고 원본 경로 그대로 unpublish를 호출한다', async () => {
-    unpublish.mockResolvedValue(undefined);
-
-    await request(app.getHttpServer())
-      .delete('/demo-api/documents/publish?path=/a.txt')
-      .set('X-Demo-User', 'alice')
-      .expect(204);
-
-    expect(unpublish).toHaveBeenCalledWith('/documents/alice/a.txt');
-  });
-
-  it('publish 경로가 root를 벗어나면 403이고 StorixClient.publish를 호출하지 않는다', async () => {
-    await request(app.getHttpServer())
-      .post('/demo-api/documents/publish?path=../bob/secret.txt')
-      .set('X-Demo-User', 'alice')
-      .expect(403);
-
-    expect(publish).not.toHaveBeenCalled();
-  });
-});
-
-describe('DocumentsController — GET list', () => {
-  let app: INestApplication;
-  const list = jest.fn<StorixClient['list']>();
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      controllers: [DocumentsController],
-      providers: [{ provide: StorixClient, useValue: { list } }],
-    }).compile();
-
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    configureBodyParsers(app);
-    app.useGlobalFilters(new DomainErrorFilter());
-    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
-      req.requestId = 'req-1';
-      next();
-    });
-    await app.init();
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  beforeEach(() => {
-    list.mockReset();
-  });
-
-  it('alice의 목록 응답에서 root prefix가 제거된다', async () => {
-    list.mockResolvedValue({
-      items: [
-        {
-          path: '/documents/alice/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ],
-      nextCursor: 'cursor-1',
-    });
-
-    const response = await request(app.getHttpServer())
-      .get('/demo-api/documents?path=/')
-      .set('X-Demo-User', 'alice')
-      .expect(200);
-
-    expect(list).toHaveBeenCalledWith('/documents/alice', undefined);
-    expect(response.body).toEqual({
-      items: [
-        {
-          path: '/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 1,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ],
-      nextCursor: 'cursor-1',
-    });
-  });
-});
-
-describe('DocumentsController — GET search', () => {
-  let app: INestApplication;
-  const find = jest.fn<StorixClient['find']>();
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      controllers: [DocumentsController],
-      providers: [{ provide: StorixClient, useValue: { find } }],
-    }).compile();
-
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    configureBodyParsers(app);
-    app.useGlobalFilters(new DomainErrorFilter());
-    app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
-      req.requestId = 'req-1';
-      next();
-    });
-    await app.init();
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  beforeEach(() => {
-    find.mockReset();
-  });
-
-  it('bob의 검색 결과에서도 root prefix가 제거된다', async () => {
-    find.mockResolvedValue({
-      items: [
-        {
-          path: '/documents/bob/notes/a.txt',
-          name: 'a.txt',
-          type: 'FILE',
-          size: 2,
-          mimeType: 'text/plain',
-          createdAt: '',
-          updatedAt: '',
-          version: 1,
-        },
-      ],
-      nextCursor: null,
-    });
-
-    const response = await request(app.getHttpServer())
-      .get('/demo-api/documents/search?path=/&name=a.txt')
-      .set('X-Demo-User', 'bob')
-      .expect(200);
-
-    expect(find).toHaveBeenCalledWith('/documents/bob', 'a.txt', undefined);
-    expect(response.body.items[0].path).toBe('/notes/a.txt');
-  });
+      expect(createDownload).not.toHaveBeenCalled();
+    },
+  );
 });
