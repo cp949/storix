@@ -240,9 +240,10 @@ export class FsController {
     @Query('limit') limit: string | undefined,
     @Query('consistency') consistency: unknown,
   ) {
+    // openapi: ls·stat·exists·find는 path 생략 시 namespace root다. 빈 문자열은 상대경로로 거부한다.
     return this.vfsService.ls(
       namespaceId,
-      path ?? '',
+      path ?? '/',
       optionalCursorParam(cursor),
       limit,
       optionalConsistencyParam(consistency),
@@ -256,12 +257,12 @@ export class FsController {
 
   @Get('stat')
   stat(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
-    return this.vfsService.stat(namespaceId, path ?? '');
+    return this.vfsService.stat(namespaceId, path ?? '/');
   }
 
   @Get('exists')
   exists(@Param('namespaceId') namespaceId: string, @Query('path') path: string | undefined) {
-    return this.vfsService.exists(namespaceId, path ?? '');
+    return this.vfsService.exists(namespaceId, path ?? '/');
   }
 
   @Get('find')
@@ -274,7 +275,7 @@ export class FsController {
     @Query('cursor') cursor: unknown,
     @Query('limit') limit: string | undefined,
   ) {
-    return this.vfsService.find(namespaceId, path ?? '', {
+    return this.vfsService.find(namespaceId, path ?? '/', {
       name: optionalNameFilterParam(name),
       match,
       type,

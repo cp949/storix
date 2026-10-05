@@ -43,6 +43,31 @@ export function registerFsBasicOperationsContract(ctx: FsHttpContext) {
       expect(response.body.code).toBe('VFS_INVALID_PATH');
     });
 
+    it('ls·stat·exists·find에서 path를 생략하면 namespace root를 대상으로 한다', async () => {
+      const namespaceId = await ctx.createNamespace('omitted-path-root-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/a/b', parents: true }).expect(201);
+
+      const listed = await request(ctx.httpServer).get(`${base}/ls`).expect(200);
+      expect(listed.body.items.map((i: { name: string }) => i.name)).toEqual(['a']);
+      const stat = await request(ctx.httpServer).get(`${base}/stat`).expect(200);
+      expect(stat.body).toMatchObject({ path: '/', type: 'DIRECTORY' });
+      expect((await request(ctx.httpServer).get(`${base}/exists`).expect(200)).body).toEqual({
+        exists: true,
+      });
+      const found = await request(ctx.httpServer).get(`${base}/find`).expect(200);
+      expect(found.body.items.map((i: { path: string }) => i.path).sort()).toEqual(['/a', '/a/b']);
+    });
+
+    it('ls·stat·exists·find에서 빈 path는 상대경로처럼 400 VFS_INVALID_PATH로 거부한다', async () => {
+      const namespaceId = await ctx.createNamespace('empty-path-ns');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      for (const route of ['ls', 'stat', 'exists', 'find']) {
+        const response = await request(ctx.httpServer).get(`${base}/${route}?path=`).expect(400);
+        expect(response.body.code).toBe('VFS_INVALID_PATH');
+      }
+    });
+
     it('일반 파일 경로도 alias를 정규화하고 NFD·길이 초과를 무변경으로 거부한다', async () => {
       const namespaceId = await ctx.createNamespace('global-path-contract-ns');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;
