@@ -17,10 +17,11 @@ const FLAT_OPERATION_MAX_MS = 3_500;
 // 깊이 1,500 체인 mv·cp가 쿼리 약 113만 개(깊이의 제곱에 비례)였다. 배치 조회는 노드 수를 250으로 나눈 만큼만 쓴다.
 // 배치 조회 뒤 실측은 평평한 12,000개 cp가 114개, 깊이 1,500 체인 mv가 25개·cp가 30개다.
 const FLAT_COPY_MAX_QUERIES = 300;
-// PostgreSQL 평평한 12,000개 cp는 쿼리 수를 줄인 뒤에도 통계가 없는 새 DB에서 약 6.6초(3회 6.60~6.64초)다.
-// 청크 INSERT와 `id AND namespace_id` 조회의 쿼리 계획 선택이 원인으로 추정한다(GitHub 이슈 #35).
-// 상한은 이 실측의 약 1.5배이고, 노드마다 개별 조회하던 시기의 최소 실측(18.1초)보다 낮다.
-const FLAT_COPY_MAX_MS_POSTGRES = 10_000;
+// PostgreSQL 평평한 12,000개 cp는 테이블이 작을 때 만들어진 `FK_vfs_node_parent` RI 계획이 backend에 캐시되어
+// 테이블이 커진 뒤에도 남으면 약 6.6초다. 그 계획은 `IDX_vfs_node_namespace_id_blob_id`를 쓰고 `id`를 Filter로 거른다.
+// 테스트 DB는 새 컨테이너라 이 상태로 시작한다. cp 직전에 `ANALYZE vfs_node`로 캐시를 무효화해 측정한다(TRP-009).
+// 그 뒤 실측은 1.10~1.17초(3회)이고, 상한은 SQLite와 같은 값이다.
+const FLAT_COPY_MAX_MS_POSTGRES = 3_500;
 const CHAIN_MAX_QUERIES = 100;
 // 한 줄로 이어진 디렉터리 체인의 깊이. 경로 상한(4096 byte)에서 허용되는 최악(약 2,000)에 가깝다.
 const CHAIN_DEPTH = 1_500;
@@ -100,6 +101,8 @@ export function runBulkLimitsTests(helpers: VfsNodeRepositoryTestHelpers): void 
 
     it('노드 수에 비선형으로 느려지지 않고 재귀 cp가 끝난다', async () => {
       const { namespace, root } = await bigDirectory('flat-cp-ns', FLAT_NODE_COUNT);
+      // 시드가 끝난 뒤의 통계로 RI 계획을 다시 만들게 한다. 운영에서는 autoanalyze가 같은 일을 한다.
+      if (getDs().options.type === 'postgres') await getDs().query('ANALYZE vfs_node');
 
       const startedAt = performance.now();
       const { queryCount } = await countQueries(() =>
