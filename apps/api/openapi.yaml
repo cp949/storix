@@ -1500,6 +1500,8 @@ paths:
         staging key, digest, 암호화 IV와 기대·계산 checksum은 공개하지 않는다. checksum 불일치로
         종료된 세션은 state FAILED와 failure.code VFS_CHECKSUM_MISMATCH만 공개한다.
         종결 결과는 종결 시점부터 최소 30일 보존하며, 조각 정리가 끝나야 제거한다.
+        만료 시각(expiresAt·maxExpiresAt)이 지난 OPEN 세션은 GC가 EXPIRED로 전환하기 전까지
+        state OPEN으로 보일 수 있다. 이 세션에 조각 저장·완료·취소를 요청하면 409다.
         예시는 설명을 위해 전역 업로드 세션 정책의 partSizeBytes=4로 설정하고 `test` 4바이트를
         index 0에 저장한 상태다. 기본 조각 크기는 16777216 bytes다. 요청은
         `GET .../upload-sessions/33333333-3333-4333-8333-333333333333`이다.
@@ -1543,6 +1545,7 @@ paths:
       description: |
         capability 비활성화 뒤에도 가능하다. OPEN만 CANCELLED로 바꾸며 반복 취소는
         현재 CANCELLED 상태를 반환한다. FINALIZING, COMPLETED, EXPIRED는 409다.
+        만료 시각이 지난 OPEN 세션은 GC 전이라도 EXPIRED로 전환하고 409 VFS_UPLOAD_SESSION_CLOSED다.
         FAILED도 409 VFS_UPLOAD_SESSION_CLOSED다. 실제 staging 객체 삭제는 GC가 재시도한다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'

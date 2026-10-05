@@ -54,6 +54,8 @@
 - 이후 완료는 최초 status, body, request ID를 재생한다.
 - 진행 중 완료는 `409 VFS_UPLOAD_SESSION_IN_PROGRESS`, 빠진 조각은 `409 VFS_UPLOAD_PARTS_INCOMPLETE`다.
 - `DELETE /{sessionId}`는 OPEN 세션을 취소하고 현재 세션 상태 본문을 반환한다.
+- 만료 시각이 지난 OPEN 세션의 취소는 GC 전이라도 EXPIRED로 전환하고 `409 VFS_UPLOAD_SESSION_CLOSED`다. 조각 저장·완료와 같은 판정이다.
+- `GET /{sessionId}`는 상태를 전환하지 않는다. GC 전환 전의 만료 세션은 `state: OPEN`과 지난 만료 시각을 함께 반환한다.
 - 반복 취소는 같은 종결 상태를 반환한다.
 - 완료·취소·만료·실패 중 다른 종결 상태로의 전이는 `409 VFS_UPLOAD_SESSION_CLOSED`다.
 - 없는 세션과 다른 namespace의 세션은 `404 VFS_UPLOAD_SESSION_NOT_FOUND`다.
