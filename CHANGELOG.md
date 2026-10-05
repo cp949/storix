@@ -15,6 +15,7 @@
 - `single-host-private` 시나리오에 compose secret override(`compose.secrets.yml`, `compose.secrets-postgres.yml`)를 추가했다. VersityGW는 이 override의 파일 전달 대상이 아니다. `STORIX_STORAGE_*`는 환경변수로 남는다.
 - 400 오류 코드 `VFS_INVALID_QUERY`를 추가했다. `GET /fs/find`의 `name`이 유효하지 않을 때 쓴다.
 - 스토리지 호출의 timeout 환경변수 `STORIX_STORAGE_SOCKET_TIMEOUT_MS`(기본 120000)·`STORIX_STORAGE_CONNECT_TIMEOUT_MS`(기본 10000)를 추가했다. 양의 정수만 받고 `0`은 거부한다. 결정은 api ADR-0012다(GitHub 이슈 #44).
+- GC가 강제 종료로 남은 미완료 multipart upload를 abort한다. 시작 뒤 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`와 `STORIX_ORPHAN_GRACE_PERIOD`(기본 합 2일)가 지난 `blobs/`·`upload-staging/` upload만 대상이다. 이전에는 조각이 스토리지에 남았고 완성 object가 아니라서 orphan object 단계가 보지 못했다. 스토리지 계정에 `s3:ListBucketMultipartUploads`·`s3:AbortMultipartUpload` 권한이 필요하다. gc 서비스에 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`를 전달한다. 결정은 api ADR-0045다.
 - 스토리지 동시 연결 상한 환경변수 `STORIX_STORAGE_MAX_SOCKETS`(기본 50, 1~65535)를 추가했다. 기본값은 이전 동작과 같다. 결정은 api ADR-0012다.
 
 ### Changed

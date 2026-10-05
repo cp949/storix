@@ -360,6 +360,7 @@ GC 회수 대상:
 
 - 참조가 0이 된 뒤 `STORIX_ORPHAN_GRACE_PERIOD`(기본 1일)를 넘긴 Blob.
 - metadata 없는 orphan object.
+- 강제 종료로 남은 미완료 multipart upload. 시작 뒤 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`와 `STORIX_ORPHAN_GRACE_PERIOD`(기본 합 2일)가 지난 것만 abort한다. 스토리지 계정에 `s3:ListBucketMultipartUploads`·`s3:AbortMultipartUpload` 권한이 필요하다.
 - 변경 feed 보존 기간을 넘긴 이벤트.
 - 종결된 재개 업로드 세션의 staging 조각.
 
@@ -402,6 +403,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | ------- | -------------------------------- |
 | 모두    | app·migrate·gc·backup·restore    |
 | app·잡  | app·gc·backup·restore            |
+| app·gc  | app·gc                           |
 | compose | 코드가 읽지 않는 compose 보간 값 |
 
 | 변수                                      | 구분   | 기본값                | 읽는 곳 | 용도                                                                           |
@@ -456,7 +458,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_MAX_RETAINED_SNAPSHOT_BYTES`      | 선택   | `53687091200`         | app     | namespace 내 보존 중인 모든 snapshot의 논리적 파일 크기 합계 상한(50 GiB)      |
 | `STORIX_MAX_RETAINED_TRASH_NODES`         | 선택   | `100000`              | app     | namespace별 보존 휴지통 node 수 상한                                           |
 | `STORIX_MUTATION_LEASE_SECONDS`           | 선택   | `60`                  | app     | 조건부 업로드 claim lease(초, 최대 6442450)                                    |
-| `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`               | app     | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간, 최대 2147483). HTTP 서버의 요청 수신 상한(`requestTimeout`)도 이 값을 따른다 |
+| `STORIX_MUTATION_MAX_UPLOAD_SECONDS`      | 선택   | `86400`               | app·gc  | 조건부 raw 업로드와 재개 업로드 조각 요청의 최대 지속 시간(초, 기본 24시간, 최대 2147483). HTTP 서버의 요청 수신 상한(`requestTimeout`)도 이 값을 따른다 |
 | `STORIX_SHUTDOWN_TIMEOUT_SECONDS`         | 선택   | `25`                  | app     | SIGTERM·SIGINT 뒤 진행 중 요청을 기다리는 최대 시간(초, 1~3600)                |
 | `STORIX_VFS_EXPIRY_MIN_SECONDS`           | 선택   | `60`                  | app     | 새 FILE 만료 입력의 최소 기간(초)                                              |
 | `STORIX_VFS_EXPIRY_MAX_SECONDS`           | 선택   | `2592000`             | app     | 새 FILE 만료 입력의 최대 기간(초)                                              |
@@ -549,6 +551,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 - `STORIX_MUTATION_LEASE_SECONDS`: 업로드 중 이 시간의 1/3 간격으로 갱신. 최대 6442450(갱신 간격이 타이머 한도를 넘지 않는 값)이고 넘으면 부팅을 거부한다.
 - `STORIX_MUTATION_MAX_UPLOAD_SECONDS`:
   - 최대 2147483(타이머 한도)이고 넘으면 부팅을 거부한다.
+  - gc도 이 값을 읽어 미완료 multipart upload의 회수 시점을 정한다. app보다 작은 값을 gc에 주면 진행 중인 upload를 abort할 수 있으므로 같은 값을 준다.
   - HTTP 서버의 `requestTimeout`을 이 값(ms)으로 설정한다. Node 기본값(300초)이 남으면 느린 업로드가 이 값보다 먼저 408로 끊긴다. `headersTimeout`은 Node 기본값(60초)을 유지한다.
   - `requestTimeout`은 모든 라우트의 본문 수신에 적용된다. 업로드가 아닌 요청의 느린 본문 전송을 더 짧게 제한하려면 앞단 프록시에서 제한한다.
 - `STORIX_VFS_EXPIRY_MIN_SECONDS`: 최대값 이하의 양의 안전 정수다.

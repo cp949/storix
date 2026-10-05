@@ -49,6 +49,8 @@
   - `orphan-objects-blobs`.
   - `orphan-objects-staging`.
   - `orphan-blobs`.
+  - `incomplete-uploads-blobs`.
+  - `incomplete-uploads-staging`.
   - `expired-upload-sessions`.
   - `staging-reserved-parts`.
   - `staging-cleanup-parts`.

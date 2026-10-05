@@ -25,6 +25,7 @@
 
 - 업로드 세션의 RESERVED part와 FINALIZING 세션은 GC가 되돌리거나 만료시킨다.
 - 객체만 올라가고 DB에 커밋되지 않은 orphan 객체는 GC가 `STORIX_ORPHAN_GRACE_PERIOD` 뒤 삭제한다.
+- 완료되지 않은 multipart upload의 조각은 orphan 객체 단계가 보지 못한다. 별도 GC 단계가 abort한다(api ADR-0045).
 - Postgres advisory lock은 연결이 끊기면 서버가 해제한다.
 - SQLite 쿼리 게이트(api ADR-0025)는 메모리 상태뿐이라 디스크에 남는 상태가 없다.
 
