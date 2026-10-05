@@ -178,6 +178,47 @@ describe('SQLite 쿼리 게이트', () => {
     expect(await rows()).toEqual(['held', 'after']);
   });
 
+  it('트랜잭션 시작이 대기 상한을 넘겨 실패해도 게이트를 쥔 트랜잭션은 롤백되지 않고 커밋된다', async () => {
+    await open(50);
+    const mayEnd = deferred();
+    const holder = ds.transaction(async (m) => {
+      await m.query("INSERT INTO t VALUES ('held')");
+      await mayEnd.promise;
+      await m.query("INSERT INTO t VALUES ('held-2')");
+    });
+    await tick();
+
+    await expect(
+      ds.transaction(async (m) => {
+        await m.query("INSERT INTO t VALUES ('waiter')");
+      }),
+    ).rejects.toBeInstanceOf(SqliteGateTimeoutError);
+    mayEnd.resolve();
+    await holder;
+
+    expect(await rows()).toEqual(['held', 'held-2']);
+  });
+
+  it('repository.save처럼 TypeORM이 직접 연 트랜잭션이 대기 상한을 넘겨도 소유 트랜잭션은 커밋된다', async () => {
+    await open(50);
+    const mayEnd = deferred();
+    const holder = ds.transaction(async (m) => {
+      await m.query("INSERT INTO t VALUES ('held')");
+      await mayEnd.promise;
+    });
+    await tick();
+
+    const runner = ds.createQueryRunner();
+    await expect(runner.startTransaction()).rejects.toBeInstanceOf(SqliteGateTimeoutError);
+    // TypeORM은 startTransaction이 실패하면 같은 runner에서 rollbackTransaction을 호출한다.
+    await runner.rollbackTransaction().catch(() => undefined);
+    await runner.release();
+    mayEnd.resolve();
+    await holder;
+
+    expect(await rows()).toEqual(['held']);
+  });
+
   it('destroy 뒤 다시 initialize해도 이전 연결의 prepared statement를 쓰지 않는다', async () => {
     await open();
     await ds.query("INSERT INTO t VALUES ('before')");

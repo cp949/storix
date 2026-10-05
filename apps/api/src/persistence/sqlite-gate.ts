@@ -167,6 +167,9 @@ function createGatedRunnerClass(
 
     // 트랜잭션·SAVEPOINT 하나를 마쳤을 때 깊이를 줄이고, 최상위가 끝나면 상태를 정리해 게이트를 해제한다.
     private leaveTransaction(): void {
+      // 게이트를 쥐지 않은 runner(대기 상한 초과나 BEGIN 실패 뒤 TypeORM이 부르는 롤백)는 연결 상태에 손대지 않는다.
+      // 연결의 트랜잭션은 현재 소유자의 것이라, 여기서 ROLLBACK을 보내면 소유자의 쓰기가 사라진다.
+      if (gate.owner !== this) return;
       if (this.gateDepth > 0) this.gateDepth -= 1;
       if (this.gateDepth > 0) return;
 
