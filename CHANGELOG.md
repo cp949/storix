@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- `POST /fs/trash/{trashId}/restore`·`purge`가 JSON이 아닌 Content-Type의 본문을 조용히 무시하던 문제를 고쳤다. 이전에는 `text/plain` 등으로 `targetPath`를 보내도 무시되어 항목이 원래 경로로 복구됐다. 이제 본문이 있고 Content-Type이 `application/json`이 아니면 400 `VFS_INVALID_MUTATION_REQUEST`다. receipt를 남기지 않으므로 같은 `Idempotency-Key`로 JSON 본문을 다시 보내면 처리된다. 본문이 없는 요청과 JSON 본문 요청은 달라지지 않는다. 비JSON Content-Type으로 본문을 보내던 클라이언트는 `application/json`으로 바꿔야 한다.
 - 업로드 세션 ID를 대문자 UUID로 보내면 SQLite에서만 404 `VFS_UPLOAD_SESSION_NOT_FOUND`가 나던 문제를 고쳤다(`GET`·`DELETE /fs/upload-sessions/{id}`, `PUT …/parts/{index}`, `POST …/complete`). PostgreSQL은 `uuid` 비교라 대소문자와 무관하게 통과했다. 이제 두 드라이버 모두 대문자 ID를 같은 세션으로 처리한다. 응답의 `sessionId`는 소문자 그대로다.
 - change feed가 켜진 namespace에서 `POST /fs/mkdir`, `POST /fs/mutations`의 `kind: mkdir`(`parents` 포함)이 이미 있던 조상 디렉터리(root 포함)를 `updated`가 아닌 `created`로 기록하던 문제를 고쳤다. 이제 기존 조상은 `updated`, 새로 만든 디렉터리만 `created`다. 다른 mutation은 영향이 없었다. 이미 기록된 이벤트는 바뀌지 않는다.
 - 디렉터리 이동(`POST /fs/mv`, `POST /fs/mutations`의 `kind: move`)이 하위 트리를 찾을 때 `namespace_id` 조건 없이 `vfs_node` 전체를 훑어, 다른 namespace의 행 수에 비례해 느리던 문제를 고쳤다. 같은 namespace 안의 노드만 조회한다. 결과 노드 집합과 상한 판정은 같다.

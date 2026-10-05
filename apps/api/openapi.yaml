@@ -2239,7 +2239,7 @@ paths:
       operationId: restoreTrash
       tags: [Trash]
       summary: 원래 node ID와 새 revision으로 휴지통 항목 복구
-      description: 원래 경로 또는 선택한 `targetPath`에 subtree 전체를 복구한다. 부모는 자동 생성하지 않고 대상은 덮어쓰지 않는다. 동일 namespace/scope/key와 본문은 최초 status/body/X-Request-Id를 receipt로 재생한다. 원래 revision은 복구 뒤 유효하지 않다.
+      description: 원래 경로 또는 선택한 `targetPath`에 subtree 전체를 복구한다. 부모는 자동 생성하지 않고 대상은 덮어쓰지 않는다. 동일 namespace/scope/key와 본문은 최초 status/body/X-Request-Id를 receipt로 재생한다. 원래 revision은 복구 뒤 유효하지 않다. 본문이 있으면 Content-Type이 `application/json`이어야 한다. 다른 Content-Type의 본문은 무시하지 않고 400 `VFS_INVALID_MUTATION_REQUEST`로 거부하며 receipt를 남기지 않는다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - $ref: '#/components/parameters/TrashId'
@@ -2290,7 +2290,7 @@ paths:
       operationId: purgeTrash
       tags: [Trash]
       summary: 관리자 전용 영구 삭제
-      description: 보존 기한 전후에 단일 manifest를 영구 삭제한다. quota는 purge commit 뒤 해제하고 다른 live node·snapshot·휴지통 항목의 Blob 참조는 보존한다. 복구 불가. 동일 namespace/scope/key와 본문은 최초 응답을 재생한다.
+      description: 보존 기한 전후에 단일 manifest를 영구 삭제한다. quota는 purge commit 뒤 해제하고 다른 live node·snapshot·휴지통 항목의 Blob 참조는 보존한다. 복구 불가. 동일 namespace/scope/key와 본문은 최초 응답을 재생한다. 본문이 있으면 Content-Type이 `application/json`이어야 하고, 다른 Content-Type의 본문은 400 `VFS_INVALID_MUTATION_REQUEST`로 거부한다.
       security:
         - AdminApiKeyAuth: []
       parameters:
