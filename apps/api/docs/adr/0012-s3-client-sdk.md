@@ -31,6 +31,14 @@
   - 소비자(클라이언트)가 다운로드 읽기를 완전히 멈춰도 소켓이 무활동이라 같은 값으로 끊긴다. 응답 헤더는 이미 나간 뒤라 연결이 중단된다. 느리지만 계속 읽는 클라이언트는 영향이 없다고 본다(`pipe`가 읽은 만큼 소켓을 소비하는 구조 기준이며 느린 수신 속도로는 직접 확인하지 않았다).
   - 헤더 전 timeout은 `code` 없이 `name`만 `TimeoutError`다. `classifyBlobFailure`가 이름으로 분류해 503 `STORAGE_UNAVAILABLE`로 응답한다. 본문 도중 정지는 `ECONNRESET`(`aborted`)으로 끝나 기존 분류가 503으로 처리한다.
   - 내부·public(presign) client와 gc·backup·restore가 같은 값을 쓴다. public client는 서명만 하므로 값이 무관하다.
+- **`requestHandler.httpAgent`/`httpsAgent`의 `maxSockets`**
+  - `STORIX_STORAGE_MAX_SOCKETS`(기본 50)를 사용한다. 기본값은 SDK 기본값과 같다.
+  - 진행 중인 요청마다 소켓 하나를 쓰고, 장기 다운로드는 클라이언트가 다 받을 때까지 점유한다. 상한은 가용 소켓이 아니라 동시 전송 수의 상한이다.
+  - 상한에 닿으면 SDK는 요청을 Agent 대기열에 둔다. 소켓 대기 전용 timeout은 없다. 대기 중에도 `connectionTimeout` 타이머가 돌아 `TimeoutError`로 끝난다(`@smithy/node-http-handler` 4.12.1, fake 서버로 확인: 소켓 50개 점유 중 51번째 요청이 `connectionTimeout` 시간에 맞춰 실패).
+  - 그래서 소켓 고갈은 무기한 대기가 아니라 `STORIX_STORAGE_CONNECT_TIMEOUT_MS`(기본 10초) 뒤 503 `STORAGE_UNAVAILABLE`이다. 새 대기 timeout 설정은 만들지 않는다.
+  - `/health/ready`(`HeadBucket`)도 같은 client를 쓴다. 소켓이 차면 함께 503이 된다. 이 연동을 막으려고 health 전용 client를 두지 않는다. 용량이 부족하다는 신호로 읽는다.
+  - 값은 1~65535의 양의 정수만 받는다. 한 목적지에 대한 연결 수는 TCP 포트 수를 넘을 수 없다. `0`은 거부한다.
+  - `httpAgent`에 객체를 주면 SDK가 `keepAlive: true`를 유지한 채 `maxSockets`만 덮어쓴 Agent를 만든다.
 - **`requestChecksumCalculation`/`responseChecksumValidation`**
   - 둘 다 `WHEN_REQUIRED`를 사용한다.
   - 기본값 `WHEN_SUPPORTED`는 요청에 CRC32 체크섬과 `aws-chunked` 인코딩을 추가한다.

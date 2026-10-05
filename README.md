@@ -432,7 +432,8 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_STORAGE_PATH_STYLE`               | 선택   | `true`                | app·잡  | path-style 주소 사용                                                           |
 | `STORIX_STORAGE_REGION`                   | 선택   | `us-east-1`           | app·잡  | 서명에 쓰는 리전                                                               |
 | `STORIX_STORAGE_SOCKET_TIMEOUT_MS`        | 선택   | `120000`              | app·잡  | 스토리지 소켓 무활동 상한(ms). 넘으면 요청을 끊고 503                          |
-| `STORIX_STORAGE_CONNECT_TIMEOUT_MS`       | 선택   | `10000`               | app·잡  | 스토리지 TCP 연결 수립 상한(ms)                                                |
+| `STORIX_STORAGE_CONNECT_TIMEOUT_MS`       | 선택   | `10000`               | app·잡  | 스토리지 TCP 연결 수립 상한(ms). 연결 대기열 대기도 포함                       |
+| `STORIX_STORAGE_MAX_SOCKETS`              | 선택   | `50`                  | app·잡  | 스토리지 동시 연결 상한. 넘으면 다음 요청이 대기하다 503                       |
 | `STORIX_STORAGE_PUBLIC_ENDPOINT`          | 선택   | —                     | app     | presigned download URL의 외부 접근 주소                                        |
 | `STORIX_STORAGE_PUBLIC_PORT`              | 선택   | `9000`                | app     | 외부 접근 포트                                                                 |
 | `STORIX_STORAGE_PUBLIC_USE_SSL`           | 선택   | `false`               | app     | 외부 접근 TLS 여부                                                             |
@@ -486,6 +487,10 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - `0`(무제한)은 거부한다. Node 타이머는 상한을 넘는 값을 1ms로 줄여 즉시 끊기 때문에 상한을 넘는 값도 거부한다.
   - 소켓 무활동 시간은 클라이언트가 다운로드 읽기를 완전히 멈춘 경우에도 흐른다. 이 경우 응답 헤더가 이미 나간 뒤라 연결이 중단된다.
   - 큰 object의 완료 처리나 대량 삭제처럼 백엔드가 응답 전에 오래 걸리는 호출이 있으면 소켓 무활동 상한을 늘린다.
+- `STORIX_STORAGE_MAX_SOCKETS`는 1~65535의 양의 정수만 받는다.
+  - 진행 중인 스토리지 요청마다 연결 하나를 쓴다. 장기 다운로드는 클라이언트가 다 받을 때까지 연결을 점유한다.
+  - 상한에 닿으면 다음 요청이 연결을 기다리다 `STORIX_STORAGE_CONNECT_TIMEOUT_MS` 뒤 503으로 끝난다. `/health/ready`도 같은 연결을 쓰므로 함께 503이 될 수 있다.
+  - 동시 다운로드·업로드가 50을 넘는 배포는 값을 늘린다. 스토리지 백엔드(VersityGW 등)의 동시 연결 한도는 별도로 확인한다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다.
 - `STORIX_PUBLISH_HOST`: host Nginx만 접근시키려면 `127.0.0.1`로 설정한다.
 - `STORIX_PORT`:

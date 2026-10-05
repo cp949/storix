@@ -15,6 +15,7 @@
 - `single-host-private` 시나리오에 compose secret override(`compose.secrets.yml`, `compose.secrets-postgres.yml`)를 추가했다. VersityGW는 이 override의 파일 전달 대상이 아니다. `STORIX_STORAGE_*`는 환경변수로 남는다.
 - 400 오류 코드 `VFS_INVALID_QUERY`를 추가했다. `GET /fs/find`의 `name`이 유효하지 않을 때 쓴다.
 - 스토리지 호출의 timeout 환경변수 `STORIX_STORAGE_SOCKET_TIMEOUT_MS`(기본 120000)·`STORIX_STORAGE_CONNECT_TIMEOUT_MS`(기본 10000)를 추가했다. 양의 정수만 받고 `0`은 거부한다. 결정은 api ADR-0012다(GitHub 이슈 #44).
+- 스토리지 동시 연결 상한 환경변수 `STORIX_STORAGE_MAX_SOCKETS`(기본 50, 1~65535)를 추가했다. 기본값은 이전 동작과 같다. 결정은 api ADR-0012다.
 
 ### Changed
 
