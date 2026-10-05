@@ -39,6 +39,49 @@ describe('S3BlobStorage', () => {
     }).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
   });
 
+  describe('get이 반환한 stream', () => {
+    async function getStream(body: Readable): Promise<Readable> {
+      const send = jest.fn<(command: unknown) => Promise<unknown>>().mockResolvedValue({ Body: body });
+      return new S3BlobStorage({ send } as unknown as S3Client, 'bucket', null).get('key');
+    }
+
+    it('chunk를 순서대로 모두 전달한다', async () => {
+      const body = Readable.from([Buffer.from('ab'), Buffer.from('cd'), Buffer.from('ef')]);
+      const chunks: Buffer[] = [];
+      for await (const chunk of await getStream(body)) chunks.push(Buffer.from(chunk as Buffer));
+      expect(Buffer.concat(chunks).toString()).toBe('abcdef');
+    });
+
+    it('응답이 멈춘 상태에서 소비자가 destroy하면 원본 stream도 바로 destroy한다', async () => {
+      // 첫 chunk 뒤로 더 이상 데이터를 보내지 않는 S3 응답을 모사한다.
+      const body = new Readable({ read: () => undefined });
+      body.push(Buffer.from('first'));
+      const result = await getStream(body);
+      await new Promise<void>((resolve) => result.once('data', () => resolve()));
+
+      result.destroy();
+      // 원본 정리가 다음 chunk 도착까지 미뤄지면 이 대기는 시간 초과로 실패한다.
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        new Promise<void>((resolve) => body.once('close', () => resolve())),
+        new Promise<void>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('원본이 정리되지 않았다')), 1000);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      expect(body.destroyed).toBe(true);
+    });
+
+    it('원본이 오류 없이 중간에 닫히면 대기하지 않고 오류로 끝난다', async () => {
+      const body = new Readable({ read: () => undefined });
+      body.push(Buffer.from('first'));
+      const result = await getStream(body);
+      setImmediate(() => body.destroy());
+      await expect(async () => {
+        for await (const chunk of result) void chunk;
+      }).rejects.toThrow();
+    });
+  });
+
   it('upload source의 ECONNRESET은 SDK 저장 장애로 재분류하지 않는다', async () => {
     const sourceError = Object.assign(new Error('client disconnected'), { code: 'ECONNRESET' });
     const source = Readable.from(

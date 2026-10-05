@@ -8,7 +8,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Readable } from 'node:stream';
+import { finished, PassThrough, Readable } from 'node:stream';
 import type { BlobObjectInfo, BlobPage, BlobPageOptions, BlobRange, BlobStorage } from './blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 import { StorageFailureError } from '../common/storage-failure.errors.js';
@@ -25,16 +25,18 @@ function sdkFailure(error: unknown): unknown {
   return classifyBlobFailure(error) ?? error;
 }
 
+// 반환 stream은 소비자가 destroy하면 원본(SDK 응답)도 바로 destroy해야 한다. Readable.from(async
+// generator)로 감싸면 generator가 원본의 다음 chunk를 기다리는 동안 destroy가 미뤄져, S3가 멈춘 채
+// 클라이언트가 끊겨도 소켓과 요청 처리가 다음 chunk 도착까지 남는다.
 function classifyReturnedStream(source: Readable): Readable {
-  return Readable.from(
-    (async function* () {
-      try {
-        for await (const chunk of source) yield chunk;
-      } catch (error) {
-        throw sdkFailure(error);
-      }
-    })(),
-  );
+  const out = new PassThrough();
+  // 정상 종료는 pipe가 out.end()로 전달한다. 오류와 중간 닫힘은 분류한 오류로 out을 끝낸다.
+  finished(source, (error) => {
+    if (error) out.destroy(sdkFailure(error) as Error);
+  });
+  out.once('close', () => source.destroy());
+  source.pipe(out);
+  return out;
 }
 
 async function* prependChunk(first: Buffer, rest: AsyncIterator<Buffer>): AsyncGenerator<Buffer> {
