@@ -7,7 +7,7 @@ import { startS3Container, StartedS3Container } from '../storage/s3-container.te
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { ConfigService } from '@nestjs/config';
 import { createTestBucket, createTestS3Client } from '../storage/s3-client.test-support.js';
-import { DataSource } from 'typeorm';
+import { DataSource, type MigrationInterface, type QueryRunner } from 'typeorm';
 import { BackupJob } from '../../src/jobs/backup.job.js';
 import { PgDumpCliTool } from '../../src/jobs/pg-dump-cli.tool.js';
 import { RestoreJob } from '../../src/jobs/restore.job.js';
@@ -314,5 +314,138 @@ describe('RestoreJob 통합', () => {
           makeConfig({ ...baseConfigValues(), STORIX_RESTORE_SOURCE_DIR: '', STORIX_RESTORE_FORCE: 'false' }),
         ),
     ).toThrow('STORIX_RESTORE_SOURCE_DIR가 비어 있음');
+  });
+
+  describe('다른 버전·다른 사용자 대상 복구', () => {
+    // 백업 이후 버전에서 추가된 migration을 흉내 낸다. 실제 migration처럼 IF NOT EXISTS가 없다.
+    class AddFutureTable9999999999999 implements MigrationInterface {
+      name = 'AddFutureTable9999999999999';
+      async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query('CREATE TABLE "future_table" ("id" integer PRIMARY KEY)');
+      }
+      async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query('DROP TABLE "future_table"');
+      }
+    }
+
+    function makeRestoreJob(
+      values: Record<string, string>,
+      repository: BackupRepository = backupRepository,
+    ): RestoreJob {
+      return new RestoreJob(storage, repository, new PgDumpCliTool(makeConfig(values)), makeConfig(values));
+    }
+
+    it('백업 이후 migration이 만든 테이블이 있어도 복구 뒤 migration을 다시 적용할 수 있다', async () => {
+      const futureDataSource = new DataSource({
+        type: 'postgres',
+        url: pgContainer.getConnectionUri(),
+        synchronize: false,
+        migrations: [...ALL_MIGRATIONS, AddFutureTable9999999999999],
+      });
+      await futureDataSource.initialize();
+      try {
+        await futureDataSource.runMigrations();
+
+        await makeRestoreJob({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: backupDir,
+          STORIX_RESTORE_FORCE: 'false',
+        }).run();
+
+        // 백업에 없는 테이블이 남아 있으면 이 단계가 relation already exists로 실패한다.
+        const applied = await futureDataSource.runMigrations();
+        expect(applied.map((migration) => migration.name)).toEqual(['AddFutureTable9999999999999']);
+        expect(
+          await dataSource.getRepository(NamespaceEntity).findOneBy({ name: 'restore-fixture-ns' }),
+        ).not.toBeNull();
+      } finally {
+        await futureDataSource.query('DROP TABLE IF EXISTS "future_table"');
+        await futureDataSource.query(`DELETE FROM "migrations" WHERE "name" = 'AddFutureTable9999999999999'`);
+        await futureDataSource.destroy();
+        await dataSource.query('TRUNCATE namespace CASCADE');
+        await wipeBucket();
+      }
+    });
+
+    it('복구 대상 DB 사용자가 백업을 만든 사용자와 달라도 복구된다', async () => {
+      const otherUser = 'restore_other_owner';
+      const otherPassword = 'restore-other-password';
+      const otherDatabase = 'restore_other_db';
+      await dataSource.query(`CREATE ROLE ${otherUser} LOGIN PASSWORD '${otherPassword}'`);
+      await dataSource.query(`CREATE DATABASE ${otherDatabase} OWNER ${otherUser}`);
+      const otherValues = {
+        ...baseConfigValues(),
+        STORIX_DB_USERNAME: otherUser,
+        STORIX_DB_PASSWORD: otherPassword,
+        STORIX_DB_NAME: otherDatabase,
+        STORIX_RESTORE_SOURCE_DIR: backupDir,
+        STORIX_RESTORE_FORCE: 'false',
+      };
+      const otherDataSource = new DataSource({
+        type: 'postgres',
+        host: pgContainer.getHost(),
+        port: pgContainer.getPort(),
+        username: otherUser,
+        password: otherPassword,
+        database: otherDatabase,
+        synchronize: false,
+        entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+        migrations: ALL_MIGRATIONS,
+      });
+      await otherDataSource.initialize();
+      try {
+        await otherDataSource.runMigrations();
+
+        await makeRestoreJob(otherValues, new BackupRepository(otherDataSource)).run();
+
+        expect(
+          await otherDataSource.getRepository(NamespaceEntity).findOneBy({ name: 'restore-fixture-ns' }),
+        ).not.toBeNull();
+        const owners = (await otherDataSource.query(
+          `SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = 'public'`,
+        )) as Array<{ tableowner: string }>;
+        expect(owners.map((row) => row.tableowner)).toEqual([otherUser]);
+      } finally {
+        await otherDataSource.destroy();
+        await dataSource.query(`DROP DATABASE ${otherDatabase}`);
+        await dataSource.query(`DROP ROLE ${otherUser}`);
+        await wipeBucket();
+      }
+    });
+
+    it('DB 복구가 중간에 실패해도 force 없이 같은 백업으로 다시 실행할 수 있다', async () => {
+      // 기존 데이터를 force로 덮어쓰다가 dump가 잘려 pg_restore가 실패하는 상황
+      const namespaceRepo = dataSource.getRepository(NamespaceEntity);
+      await namespaceRepo.save(namespaceRepo.create({ name: 'restore-live-ns', encryptionPolicy: 'NONE' }));
+      const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-restore-broken-'));
+      try {
+        const dump = await fs.readFile(path.join(backupDir, 'postgres.dump'));
+        await fs.writeFile(
+          path.join(brokenDir, 'postgres.dump'),
+          dump.subarray(0, Math.floor(dump.length * 0.7)),
+        );
+
+        await expect(
+          makeRestoreJob({
+            ...baseConfigValues(),
+            STORIX_RESTORE_SOURCE_DIR: brokenDir,
+            STORIX_RESTORE_FORCE: 'true',
+          }).run(),
+        ).rejects.toThrow('pg_restore');
+
+        await makeRestoreJob({
+          ...baseConfigValues(),
+          STORIX_RESTORE_SOURCE_DIR: backupDir,
+          STORIX_RESTORE_FORCE: 'false',
+        }).run();
+
+        const names = (await namespaceRepo.find()).map((namespace) => namespace.name);
+        expect(names).toEqual(['restore-fixture-ns']);
+      } finally {
+        await fs.rm(brokenDir, { recursive: true, force: true });
+        await dataSource.query('TRUNCATE namespace CASCADE');
+        await wipeBucket();
+      }
+    });
   });
 });

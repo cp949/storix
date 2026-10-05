@@ -60,6 +60,16 @@ function runProcess(command: string, args: string[], password: string): Promise<
   });
 }
 
+// public 스키마에서 접속 사용자가 소유한 테이블을 한 문장(원자적)으로 모두 지운다.
+const DROP_OWNED_PUBLIC_TABLES_SQL = `DO $$
+DECLARE target record;
+BEGIN
+  FOR target IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user LOOP
+    EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', target.tablename);
+  END LOOP;
+END
+$$;`;
+
 @Injectable()
 export class PgDumpCliTool implements DbDumpTool {
   readonly dumpFileName = 'postgres.dump';
@@ -94,27 +104,43 @@ export class PgDumpCliTool implements DbDumpTool {
     );
   }
 
-  // --clean --if-exists: 대상에 이미 스키마가 있어도(예: migrate가 먼저 실행돼
-  // 빈 테이블이 존재) 실패하지 않고 지운 뒤 다시 만든다. 스키마가 아예 없는
-  // 완전히 빈 Postgres에도 동일하게 동작한다(--if-exists가 DROP 대상 부재를
-  // 무시함).
+  // 복구 전에 public 스키마에서 접속 사용자가 소유한 테이블을 모두 지운다.
+  // - `pg_restore --clean`은 dump에 있는 객체만 지운다. 백업 이후 migration이 만든 테이블이 남으면
+  //   복구 뒤 migrate 재실행이 실패한다.
+  // - Storix 전용 DB를 전제로 한다. 같은 사용자가 소유한 다른 테이블도 지워진다.
+  // - 지운 뒤 pg_restore가 실패하면 테이블이 없는 상태로 남는다. 같은 백업으로 다시 실행할 수 있다.
   async restore(inFile: string): Promise<void> {
+    await runProcess(
+      'psql',
+      [...this.connectionArgs(), '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', DROP_OWNED_PUBLIC_TABLES_SQL],
+      this.conn.password,
+    );
+    // --no-owner·--no-privileges: 백업을 만든 사용자와 다른 사용자로도 복구한다.
+    // --single-transaction·--exit-on-error: 실패하면 적재분 없이 롤백한다.
     await runProcess(
       'pg_restore',
       [
-        '-h',
-        this.conn.host,
-        '-p',
-        String(this.conn.port),
-        '-U',
-        this.conn.username,
-        '-d',
-        this.conn.database,
-        '--clean',
-        '--if-exists',
+        ...this.connectionArgs(),
+        '--no-owner',
+        '--no-privileges',
+        '--single-transaction',
+        '--exit-on-error',
         inFile,
       ],
       this.conn.password,
     );
+  }
+
+  private connectionArgs(): string[] {
+    return [
+      '-h',
+      this.conn.host,
+      '-p',
+      String(this.conn.port),
+      '-U',
+      this.conn.username,
+      '-d',
+      this.conn.database,
+    ];
   }
 }
