@@ -18,7 +18,7 @@ import {
   unpublishDocument,
   setDocumentMimeType,
 } from "../api/client";
-import type { EntryPage } from "../api/types";
+import type { EntryPage, FileEntry } from "../api/types";
 import { ErrorPanel } from "../error/ErrorPanel";
 import { ErrorProvider } from "../error/ErrorProvider";
 import { DocumentArchive } from "./DocumentArchive";
@@ -568,5 +568,213 @@ describe("DocumentArchive", () => {
 
     await waitFor(() => expect(screen.queryByText("공개 링크")).toBeNull());
     expect(screen.getByText("발행")).toBeTruthy();
+  });
+  describe("페이지네이션과 늦은 응답", () => {
+    const entryB = { ...entryA, path: "/b.txt", name: "b.txt" };
+    const entryInReports = {
+      ...entryA,
+      path: "/reports/in.txt",
+      name: "in.txt",
+    };
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    function renderArchive() {
+      return render(
+        <ErrorProvider>
+          <DocumentArchive user="alice" />
+          <ErrorPanel />
+        </ErrorProvider>,
+      );
+    }
+
+    async function flush() {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    it("nextCursor가 있으면 더 보기로 다음 페이지를 목록에 이어 붙인다", async () => {
+      vi.mocked(listDocuments)
+        .mockResolvedValueOnce({ items: [entryA], nextCursor: "c1" })
+        .mockResolvedValueOnce(page([entryB]));
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.click(screen.getByText("더 보기"));
+
+      expect(await screen.findByText("b.txt", { exact: false })).toBeTruthy();
+      expect(screen.getByText("a.txt", { exact: false })).toBeTruthy();
+      expect(listDocuments).toHaveBeenLastCalledWith("alice", "/", "c1");
+      expect(screen.queryByText("더 보기")).toBeNull();
+    });
+
+    it("nextCursor가 null이면 더 보기 버튼을 표시하지 않는다", async () => {
+      vi.mocked(listDocuments).mockResolvedValue(page([entryA]));
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+
+      expect(screen.queryByText("더 보기")).toBeNull();
+    });
+
+    it("검색 결과에도 더 보기로 다음 페이지를 이어 붙인다", async () => {
+      vi.mocked(listDocuments).mockResolvedValue(page([]));
+      vi.mocked(searchDocuments)
+        .mockResolvedValueOnce({ items: [entryA], nextCursor: "s1" })
+        .mockResolvedValueOnce(page([entryB]));
+
+      renderArchive();
+      fireEvent.change(screen.getByLabelText("검색어"), {
+        target: { value: "txt" },
+      });
+      fireEvent.click(screen.getByText("검색"));
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.click(screen.getByText("더 보기"));
+
+      expect(await screen.findByText("b.txt", { exact: false })).toBeTruthy();
+      expect(searchDocuments).toHaveBeenLastCalledWith(
+        "alice",
+        "/",
+        "txt",
+        "s1",
+      );
+    });
+
+    it("더 보기 요청 중에는 버튼을 비활성화한다", async () => {
+      const second = deferred<EntryPage>();
+      vi.mocked(listDocuments)
+        .mockResolvedValueOnce({ items: [entryA], nextCursor: "c1" })
+        .mockReturnValueOnce(second.promise);
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.click(screen.getByText("더 보기"));
+
+      await waitFor(() =>
+        expect(
+          (screen.getByText("더 보기") as HTMLButtonElement).disabled,
+        ).toBe(true),
+      );
+      second.resolve(page([entryB]));
+      expect(await screen.findByText("b.txt", { exact: false })).toBeTruthy();
+    });
+
+    it("더 보기가 실패하면 기존 목록과 버튼을 유지하고 재시도할 수 있다", async () => {
+      vi.mocked(listDocuments)
+        .mockResolvedValueOnce({ items: [entryA], nextCursor: "c1" })
+        .mockRejectedValueOnce(
+          new ApiError(500, "STORAGE_FAILURE", "req-2", "실패"),
+        )
+        .mockResolvedValueOnce(page([entryB]));
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.click(screen.getByText("더 보기"));
+
+      expect(await screen.findByText(/STORAGE_FAILURE/)).toBeTruthy();
+      expect(screen.getByText("a.txt", { exact: false })).toBeTruthy();
+      await waitFor(() =>
+        expect(
+          (screen.getByText("더 보기") as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
+
+      fireEvent.click(screen.getByText("더 보기"));
+      expect(await screen.findByText("b.txt", { exact: false })).toBeTruthy();
+      expect(listDocuments).toHaveBeenLastCalledWith("alice", "/", "c1");
+    });
+
+    it("더 보기 응답이 오기 전에 폴더를 이동하면 그 응답을 버린다", async () => {
+      const second = deferred<EntryPage>();
+      vi.mocked(FolderTree).mockImplementation(({ onNavigate }) => (
+        <button type="button" onClick={() => onNavigate("/reports")}>
+          tree-nav-reports
+        </button>
+      ));
+      vi.mocked(listDocuments).mockImplementation((_user, path, cursor) => {
+        if (path === "/" && cursor === "c1") return second.promise;
+        if (path === "/") {
+          return Promise.resolve({ items: [entryA], nextCursor: "c1" });
+        }
+        return Promise.resolve(page([entryInReports]));
+      });
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.click(screen.getByText("더 보기"));
+      fireEvent.click(screen.getByText("tree-nav-reports"));
+      await screen.findByText("in.txt", { exact: false });
+
+      second.resolve(page([entryB]));
+      await flush();
+
+      expect(screen.queryByText("b.txt", { exact: false })).toBeNull();
+      expect(screen.getByText("in.txt", { exact: false })).toBeTruthy();
+    });
+
+    it("업로드 중 다른 폴더로 이동해도 완료 뒤 목록은 현재 폴더 내용이다", async () => {
+      const upload = deferred<FileEntry>();
+      vi.mocked(uploadDocument).mockReturnValue(upload.promise);
+      vi.mocked(FolderTree).mockImplementation(({ onNavigate }) => (
+        <button type="button" onClick={() => onNavigate("/reports")}>
+          tree-nav-reports
+        </button>
+      ));
+      vi.mocked(listDocuments).mockImplementation((_user, path) =>
+        Promise.resolve(
+          path === "/" ? page([dirReports, entryA]) : page([entryInReports]),
+        ),
+      );
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.change(screen.getByLabelText("파일 업로드"), {
+        target: { files: [new File(["x"], "new.txt")] },
+      });
+      fireEvent.click(screen.getByText("tree-nav-reports"));
+      await screen.findByText("in.txt", { exact: false });
+
+      upload.resolve({ ...entryA, path: "/new.txt", name: "new.txt" });
+      await screen.findByText("업로드 완료");
+      await flush();
+
+      expect(screen.getByText("in.txt", { exact: false })).toBeTruthy();
+      expect(screen.queryByText("a.txt", { exact: false })).toBeNull();
+    });
+
+    it("검색 응답이 오기 전에 폴더를 이동하면 늦은 검색 결과를 무시한다", async () => {
+      const search = deferred<EntryPage>();
+      vi.mocked(FolderTree).mockImplementation(({ onNavigate }) => (
+        <button type="button" onClick={() => onNavigate("/reports")}>
+          tree-nav-reports
+        </button>
+      ));
+      vi.mocked(listDocuments).mockImplementation((_user, path) =>
+        Promise.resolve(path === "/" ? page([entryA]) : page([entryInReports])),
+      );
+      vi.mocked(searchDocuments).mockReturnValue(search.promise);
+
+      renderArchive();
+      await screen.findByText("a.txt", { exact: false });
+      fireEvent.change(screen.getByLabelText("검색어"), {
+        target: { value: "found" },
+      });
+      fireEvent.click(screen.getByText("검색"));
+      fireEvent.click(screen.getByText("tree-nav-reports"));
+      await screen.findByText("in.txt", { exact: false });
+
+      search.resolve(
+        page([{ ...entryA, path: "/found.txt", name: "found.txt" }]),
+      );
+      await flush();
+
+      expect(screen.queryByText("found.txt", { exact: false })).toBeNull();
+      expect(screen.getByText("in.txt", { exact: false })).toBeTruthy();
+    });
   });
 });

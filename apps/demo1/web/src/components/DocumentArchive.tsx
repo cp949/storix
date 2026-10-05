@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   copyEntry,
   createDirectory,
@@ -47,31 +47,35 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
   >({});
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+  const [listCursor, setListCursor] = useState<string | null>(null);
+  const [searchCursor, setSearchCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const { reportError, clearError } = useErrorReporter();
 
-  const loadList = useCallback(
-    async (path: string) => {
-      try {
-        const pageResult = await listDocuments(user, path);
-        setItems(pageResult.items);
-        clearError();
-      } catch (cause) {
-        reportError(cause);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [user, reportError, clearError],
-  );
+  // 응답이 돌아왔을 때 그 응답을 요청한 시점의 화면(목록 경로·재로드, 검색)이
+  // 그대로인지 판별하는 번호. 바뀌었으면 응답을 버린다.
+  const listEpochRef = useRef(0);
+  const searchEpochRef = useRef(0);
+  const searchedNameRef = useRef("");
+
+  // 현재 경로 목록을 첫 페이지부터 다시 불러온다. 응답 처리는 아래 effect가 맡아
+  // 늦은 응답 폐기 로직이 한 곳에만 있다.
+  const reloadList = useCallback(() => {
+    setLoading(true);
+    setListRefreshKey((key) => key + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    listEpochRef.current += 1;
     void listDocuments(user, currentPath)
       .then((pageResult) => {
         if (cancelled) {
           return;
         }
         setItems(pageResult.items);
+        setListCursor(pageResult.nextCursor);
         clearError();
       })
       .catch((cause) => {
@@ -82,16 +86,20 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       .finally(() => {
         if (!cancelled) {
           setLoading(false);
+          setLoadingMore(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [user, currentPath, clearError, reportError]);
+  }, [user, currentPath, listRefreshKey, clearError, reportError]);
 
   const handleNavigate = useCallback(
     (path: string) => {
+      searchEpochRef.current += 1;
       setSearchResults(null);
+      setSearchCursor(null);
+      setLoadingMore(false);
       setSelectedPath(null);
       if (path !== currentPath) {
         setLoading(true);
@@ -102,16 +110,76 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
   );
 
   async function handleSearch() {
+    const epoch = (searchEpochRef.current += 1);
+    const name = searchName;
     setLoading(true);
+    setLoadingMore(false);
     try {
-      const pageResult = await searchDocuments(user, "/", searchName);
+      const pageResult = await searchDocuments(user, "/", name);
+      if (epoch !== searchEpochRef.current) {
+        return;
+      }
+      searchedNameRef.current = name;
       setSearchResults(pageResult.items);
+      setSearchCursor(pageResult.nextCursor);
       setSelectedPath(null);
       clearError();
     } catch (cause) {
-      reportError(cause);
+      if (epoch === searchEpochRef.current) {
+        reportError(cause);
+      }
     } finally {
-      setLoading(false);
+      if (epoch === searchEpochRef.current) {
+        setLoading(false);
+      }
+    }
+  }
+
+  function handleBackToList() {
+    searchEpochRef.current += 1;
+    setSearchResults(null);
+    setSearchCursor(null);
+    setLoadingMore(false);
+  }
+
+  async function handleLoadMore() {
+    if (loadingMore) {
+      return;
+    }
+    const inSearch = searchResults !== null;
+    const cursor = inSearch ? searchCursor : listCursor;
+    if (cursor === null) {
+      return;
+    }
+    const epochRef = inSearch ? searchEpochRef : listEpochRef;
+    const epoch = epochRef.current;
+    setLoadingMore(true);
+    try {
+      const pageResult = inSearch
+        ? await searchDocuments(user, "/", searchedNameRef.current, cursor)
+        : await listDocuments(user, currentPath, cursor);
+      if (epoch !== epochRef.current) {
+        return;
+      }
+      if (inSearch) {
+        setSearchResults((current) => [
+          ...(current ?? []),
+          ...pageResult.items,
+        ]);
+        setSearchCursor(pageResult.nextCursor);
+      } else {
+        setItems((current) => [...current, ...pageResult.items]);
+        setListCursor(pageResult.nextCursor);
+      }
+      clearError();
+    } catch (cause) {
+      if (epoch === epochRef.current) {
+        reportError(cause);
+      }
+    } finally {
+      if (epoch === epochRef.current) {
+        setLoadingMore(false);
+      }
     }
   }
 
@@ -121,8 +189,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       await uploadDocument(user, joinPath(currentPath, file.name), file);
       setUploadStatus("success");
       clearError();
-      setLoading(true);
-      await loadList(currentPath);
+      reloadList();
     } catch (cause) {
       setUploadStatus("error");
       reportError(cause);
@@ -140,8 +207,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       setNewFolderName("");
       clearError();
       setTreeRefreshKey((key) => key + 1);
-      setLoading(true);
-      await loadList(currentPath);
+      reloadList();
     } catch (cause) {
       reportError(cause);
     }
@@ -157,8 +223,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
-      setLoading(true);
-      await loadList(currentPath);
+      reloadList();
     } catch (cause) {
       reportError(cause);
     }
@@ -174,8 +239,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
-      setLoading(true);
-      await loadList(currentPath);
+      reloadList();
     } catch (cause) {
       reportError(cause);
     }
@@ -190,8 +254,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
       clearError();
       setSelectedPath(null);
       setTreeRefreshKey((key) => key + 1);
-      setLoading(true);
-      await loadList(currentPath);
+      reloadList();
     } catch (cause) {
       reportError(cause);
     }
@@ -305,7 +368,7 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
             </label>
             <button type="submit">검색</button>
             {searchResults !== null && (
-              <button type="button" onClick={() => setSearchResults(null)}>
+              <button type="button" onClick={handleBackToList}>
                 목록으로 돌아가기
               </button>
             )}
@@ -350,10 +413,9 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
             user={user}
             currentPath={currentPath}
             onComplete={async () => {
-              setSearchResults(null);
+              handleBackToList();
               setTreeRefreshKey((key) => key + 1);
-              setLoading(true);
-              await loadList(currentPath);
+              reloadList();
             }}
           />
 
@@ -385,6 +447,16 @@ function DocumentArchiveForUser({ user }: DocumentArchiveProps) {
           onCopyLink={copyToClipboard}
           onSetMimeType={handleSetMimeType}
         />
+        {!loading &&
+          (searchResults !== null ? searchCursor : listCursor) !== null && (
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={() => void handleLoadMore()}
+            >
+              더 보기
+            </button>
+          )}
       </div>
     </section>
   );

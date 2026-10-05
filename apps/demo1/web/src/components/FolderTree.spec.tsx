@@ -1,7 +1,10 @@
+import type { ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listDocuments } from "../api/client";
+import { ApiError, listDocuments } from "../api/client";
 import type { EntryPage } from "../api/types";
+import { ErrorPanel } from "../error/ErrorPanel";
+import { ErrorProvider } from "../error/ErrorProvider";
 import { FolderTree } from "./FolderTree";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -41,6 +44,15 @@ const reports2024Dir = {
   name: "2024",
 };
 
+function TreeWithProvider(props: ComponentProps<typeof FolderTree>) {
+  return (
+    <ErrorProvider>
+      <FolderTree {...props} />
+      <ErrorPanel />
+    </ErrorProvider>
+  );
+}
+
 describe("FolderTree", () => {
   beforeEach(() => {
     vi.mocked(listDocuments).mockReset();
@@ -50,7 +62,7 @@ describe("FolderTree", () => {
     vi.mocked(listDocuments).mockResolvedValue(page([reportsDir, aFile]));
 
     render(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/"
         onNavigate={vi.fn()}
@@ -68,7 +80,7 @@ describe("FolderTree", () => {
     const onNavigate = vi.fn();
 
     render(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/"
         onNavigate={onNavigate}
@@ -88,7 +100,7 @@ describe("FolderTree", () => {
     });
 
     render(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/"
         onNavigate={vi.fn()}
@@ -108,7 +120,7 @@ describe("FolderTree", () => {
     vi.mocked(listDocuments).mockResolvedValue(page([reportsDir]));
 
     render(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/reports"
         onNavigate={vi.fn()}
@@ -126,7 +138,7 @@ describe("FolderTree", () => {
     vi.mocked(listDocuments).mockResolvedValue(page([reportsDir]));
 
     const { rerender } = render(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/"
         onNavigate={vi.fn()}
@@ -136,7 +148,7 @@ describe("FolderTree", () => {
     await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(1));
 
     rerender(
-      <FolderTree
+      <TreeWithProvider
         user="alice"
         selectedPath="/"
         onNavigate={vi.fn()}
@@ -145,5 +157,58 @@ describe("FolderTree", () => {
     );
 
     await waitFor(() => expect(listDocuments).toHaveBeenCalledTimes(2));
+  });
+  it("한 페이지에 폴더가 없어도 nextCursor가 있으면 더 보기로 다음 페이지를 불러온다", async () => {
+    vi.mocked(listDocuments)
+      .mockResolvedValueOnce({ items: [aFile], nextCursor: "c1" })
+      .mockResolvedValueOnce(page([reportsDir]));
+
+    render(
+      <TreeWithProvider
+        user="alice"
+        selectedPath="/"
+        onNavigate={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+    fireEvent.click(await screen.findByLabelText("root 더 보기"));
+
+    expect(await screen.findByText("reports", { exact: false })).toBeTruthy();
+    expect(listDocuments).toHaveBeenLastCalledWith("alice", "/", "c1");
+    expect(screen.queryByLabelText("root 더 보기")).toBeNull();
+  });
+
+  it("nextCursor가 null이면 더 보기 버튼을 표시하지 않는다", async () => {
+    vi.mocked(listDocuments).mockResolvedValue(page([reportsDir]));
+
+    render(
+      <TreeWithProvider
+        user="alice"
+        selectedPath="/"
+        onNavigate={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+    await screen.findByText("reports", { exact: false });
+
+    expect(screen.queryByLabelText("root 더 보기")).toBeNull();
+  });
+
+  it("조회가 실패하면 오류를 보고하고 노드는 빈 상태로 둔다", async () => {
+    vi.mocked(listDocuments).mockRejectedValue(
+      new ApiError(500, "STORAGE_FAILURE", "req-1", "실패"),
+    );
+
+    render(
+      <TreeWithProvider
+        user="alice"
+        selectedPath="/"
+        onNavigate={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    expect(await screen.findByText(/STORAGE_FAILURE/)).toBeTruthy();
+    expect(screen.queryByText("불러오는 중...")).toBeNull();
   });
 });
