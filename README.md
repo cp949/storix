@@ -507,7 +507,9 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - `resumable-upload`를 전역 또는 namespace에서 허용하면 필수다.
   - 전달 방식은 `STORIX_VFS_CAPABILITIES_CONFIG_PATH`와 같다. override에서 경로와 volume을 함께 지정한다.
   - 엄격한 schema·기본값·활성 순서는 아래 참고.
-- `STORIX_ADMIN_API_KEY`: 비우면 관리자 API는 모두 401.
+- `STORIX_ADMIN_API_KEY`:
+  - 비우면 관리자 API는 모두 401.
+  - 현재·이전 관리자 키 중 하나가 현재·이전 서비스 키(`STORIX_API_KEY`·`STORIX_API_KEY_PREVIOUS`) 중 하나와 같으면 부팅을 거부한다.
 - `STORIX_DB_DRIVER`:
   - `sqlite`이면 `STORIX_DB_HOST` 등은 무시한다.
   - SQLite는 `STORIX_DB_SQLITE_PATH`만 사용한다.
