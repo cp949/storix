@@ -1458,7 +1458,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: VFS_FEATURE_DISABLED 또는 MUTATION_KEY_REUSED
+          description: VFS_FEATURE_DISABLED, MUTATION_KEY_REUSED, 대상 경로의 조상이 파일임(VFS_NOT_DIRECTORY) 또는 ifRevision 대상이 디렉터리임(VFS_IS_DIRECTORY). 대상 조건(412·404)을 조상 경로보다 먼저 판정한다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

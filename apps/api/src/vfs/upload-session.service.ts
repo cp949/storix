@@ -146,11 +146,8 @@ export class UploadSessionService {
     );
     const size = BigInt(parsed.sizeBytes);
     if (size > BigInt(maxBytes)) throw new VfsFileTooLargeError(maxBytes);
-    const parentPath = resolved.segments.slice(0, -1);
-    const parent =
-      parentPath.length === 0 ? root : await this.nodes.resolvePath(namespaceId, root.id, parentPath);
-    if (!parent || parent.type !== 'DIRECTORY')
-      throw new VfsNodeNotFoundError(parentPath.length === 0 ? '/' : `/${parentPath.join('/')}`);
+    // 완료 시점의 putConditionalContent와 같은 순서·오류로 판정한다.
+    // 대상 조건(412·404) → 조상 경로(404·409 VFS_NOT_DIRECTORY) → DIRECTORY 대상(409) 순서다.
     const target = await this.nodes.resolvePath(namespaceId, root.id, resolved.segments);
     if (parsed.ifAbsent && target)
       throw new VfsPreconditionFailedError(
@@ -159,13 +156,14 @@ export class UploadSessionService {
       );
     if (parsed.ifRevision) {
       if (!target) throw new VfsNodeNotFoundError(resolved.canonical);
-      if (target.type === 'DIRECTORY') throw new VfsIsDirectoryError(resolved.canonical);
       if (encodeRevision(target) !== parsed.ifRevision)
         throw new VfsPreconditionFailedError(
           resolved.canonical,
           toPreconditionCurrent(target, resolved.canonical),
         );
     }
+    await this.nodes.assertParentChain(namespaceId, root.id, resolved.segments);
+    if (target?.type === 'DIRECTORY') throw new VfsIsDirectoryError(resolved.canonical);
     const partCount = Number(
       (size + BigInt(this.policy.global.partSizeBytes) - 1n) / BigInt(this.policy.global.partSizeBytes),
     );

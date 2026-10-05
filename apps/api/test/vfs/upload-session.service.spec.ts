@@ -10,6 +10,7 @@ import type { UploadSessionPolicy } from '../../src/vfs/upload-session-config.js
 import { PathResolver } from '../../src/vfs/path-resolver.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { UploadSessionService } from '../../src/vfs/upload-session.service.js';
+import { VfsNodeNotFoundError, VfsNotDirectoryError } from '../../src/vfs/vfs.errors.js';
 
 describe('UploadSessionService lifecycle', () => {
   const namespaceId = randomUUID();
@@ -91,12 +92,32 @@ describe('UploadSessionService lifecycle', () => {
     };
     let enabled = true;
     let parentExists = true;
+    // 경로('a/b') → 노드. 기본 트리는 /parent 디렉터리 하나다.
+    const tree = new Map<
+      string,
+      { id: string; type: 'FILE' | 'DIRECTORY'; version: number } & Record<string, unknown>
+    >();
+    const nodeAt = (segments: string[]) => {
+      const joined = segments.join('/');
+      if (joined === 'parent') return parentExists ? { id: 'parent', type: 'DIRECTORY', version: 1 } : null;
+      return tree.get(joined) ?? null;
+    };
     const nodes = {
       getRoot: async () => ({ id: 'root' }),
       getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { maxFileSizeBytes: '8' } }),
       resolvePath: async (_ns: string, _root: string, segments: string[]) => {
-        if (segments.join('/') === 'parent') return parentExists ? { id: 'parent', type: 'DIRECTORY' } : null;
-        return null;
+        for (let i = 1; i < segments.length; i++)
+          if (nodeAt(segments.slice(0, i))?.type !== 'DIRECTORY') return null;
+        return nodeAt(segments);
+      },
+      // VfsNodeRepository.assertParentChain과 같은 규칙: 처음 없는 경로는 404, FILE 조상은 409다.
+      assertParentChain: async (_ns: string, _root: string, segments: string[]) => {
+        for (let i = 1; i < segments.length; i++) {
+          const node = nodeAt(segments.slice(0, i));
+          const path = `/${segments.slice(0, i).join('/')}`;
+          if (!node) throw new VfsNodeNotFoundError(path);
+          if (node.type !== 'DIRECTORY') throw new VfsNotDirectoryError(path);
+        }
       },
     };
     const capability = {
@@ -133,8 +154,65 @@ describe('UploadSessionService lifecycle', () => {
       setParentExists: (value: boolean) => {
         parentExists = value;
       },
+      tree,
     };
   }
+
+  describe('생성 시 조건 판정은 완료(putConditionalContent)와 같은 순서·오류를 따른다', () => {
+    // 412 응답의 current 표현(toPreconditionCurrent)에 필요한 노드 필드
+    const nodeFields = {
+      name: 'dir',
+      size: null,
+      mimeType: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      expiresAt: null,
+    };
+    const create = (service: UploadSessionService, body: Record<string, unknown>) =>
+      service.create(
+        namespaceId,
+        'scope',
+        randomUUID(),
+        { sizeBytes: '0', mimeType: 'text/plain', ...body },
+        'r',
+      );
+
+    it('중간 경로가 FILE이면 409 VFS_NOT_DIRECTORY다', async () => {
+      const { service, tree } = setup();
+      tree.set('parent/f', { id: randomUUID(), type: 'FILE', version: 1 });
+      await expect(create(service, { path: '/parent/f/x.bin', ifAbsent: true })).rejects.toMatchObject({
+        code: 'VFS_NOT_DIRECTORY',
+        status: 409,
+      });
+    });
+
+    it('중간 경로가 없으면 처음 없는 경로로 404 VFS_NODE_NOT_FOUND다', async () => {
+      const { service } = setup();
+      await expect(create(service, { path: '/parent/a/b/x.bin', ifAbsent: true })).rejects.toMatchObject({
+        code: 'VFS_NODE_NOT_FOUND',
+        path: '/parent/a',
+      });
+    });
+
+    it('DIRECTORY 대상의 revision이 다르면 409가 아니라 412 VFS_PRECONDITION_FAILED다', async () => {
+      const { service, tree } = setup();
+      tree.set('parent/dir', { ...nodeFields, id: randomUUID(), type: 'DIRECTORY', version: 1 });
+      const stale = encodeRevision({ id: randomUUID(), version: 1 });
+      await expect(create(service, { path: '/parent/dir', ifRevision: stale })).rejects.toMatchObject({
+        code: 'VFS_PRECONDITION_FAILED',
+        status: 412,
+      });
+    });
+
+    it('DIRECTORY 대상의 revision이 같으면 409 VFS_IS_DIRECTORY다', async () => {
+      const { service, tree } = setup();
+      const dir = { id: randomUUID(), type: 'DIRECTORY' as const, version: 1 };
+      tree.set('parent/dir', dir);
+      await expect(
+        create(service, { path: '/parent/dir', ifRevision: encodeRevision(dir) }),
+      ).rejects.toMatchObject({ code: 'VFS_IS_DIRECTORY', status: 409 });
+    });
+  });
 
   it('namespace 항목이 없는 정책은 전역 한도를 적용해 세션을 만든다', async () => {
     const { service } = setup({ global: policy.global, namespaces: {} });

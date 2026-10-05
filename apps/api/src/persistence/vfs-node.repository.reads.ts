@@ -21,7 +21,7 @@ import type {
   FindFilter,
   FindRecursiveRow,
 } from './vfs-node.repository.types.js';
-import { toRecord, toMatch, buildLikePattern } from './vfs-node.repository.helpers.js';
+import { toRecord, toMatch, buildLikePattern, joinSegments } from './vfs-node.repository.helpers.js';
 import { VfsNodeRepositoryCore } from './vfs-node.repository.core.js';
 
 export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
@@ -65,6 +65,23 @@ export class VfsNodeRepositoryReads extends VfsNodeRepositoryCore {
         accessPolicy: namespace.accessPolicy,
       },
     };
+  }
+
+  // lockParentChain(parents=false)과 같은 오류를 잠금 없이 판정한다.
+  // 처음 없는 조상은 404, FILE 조상은 409 VFS_NOT_DIRECTORY다. 마지막 segment(대상)는 보지 않는다.
+  // 업로드 세션 생성의 사전 검사가 완료 시점(putConditionalContent)과 같은 오류를 내도록 쓴다.
+  @classifyPersistenceOperation
+  async assertParentChain(namespaceId: string, rootId: string, segments: string[]): Promise<void> {
+    let parentId = rootId;
+    let parentType: VfsNodeType = 'DIRECTORY';
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      if (parentType !== 'DIRECTORY') throw new VfsNotDirectoryError(joinSegments(segments.slice(0, i)));
+      const child = await this.nodeRepo.findOneBy({ namespaceId, parentId, name: segments[i] });
+      if (!child) throw new VfsNodeNotFoundError(joinSegments(segments.slice(0, i + 1)));
+      parentId = child.id;
+      parentType = child.type;
+    }
+    if (parentType !== 'DIRECTORY') throw new VfsNotDirectoryError(joinSegments(segments.slice(0, -1)));
   }
 
   @classifyPersistenceOperation
