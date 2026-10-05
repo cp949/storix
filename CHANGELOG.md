@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- 휴지통 보존 정리(GC)에서 manifest·counter 불일치나 root 손상 같은 예상 밖 오류가 난 항목 하나가 GC 전체를 실패시켜 모든 namespace의 만료 휴지통 정리를 막던 문제를 수정했다. 이제 그 항목만 남기고 `error` 로그를 남긴 뒤 다음 항목을 정리한다. GC 결과에 `failedTrashItems`를 추가했다.
 - GC 실행 중 advisory lock 커넥션이 끊기면(PostgreSQL `idle_session_timeout`·failover) 완료한 GC가 실패(exit 1)로 보고되고 `last_completed_at`이 남지 않아 쿨다운이 적용되지 않던 문제를 수정했다. 이제 완료 시각은 별도 커넥션으로 기록하고, 끊긴 커넥션의 unlock 실패는 경고로만 남긴다. 실행 중 커넥션이 끊긴 사실도 경고로 남긴다.
 - 디렉터리를 자기 하위로 이동·복사할 때 목적지 중간 경로가 없거나 파일이면 409 `VFS_INVALID_OPERATION` 대신 404 `VFS_NODE_NOT_FOUND`·409 `VFS_NOT_DIRECTORY`가 응답되던 문제를 수정했다. 경로 계약대로 자기 subtree 지정을 먼저 거부한다. `destinationParents: true`여도 중간 디렉터리를 만들지 않는다.
 - 클라이언트가 응답 전에 연결을 끊은 요청이 감사 로그·메트릭(`storix_http_requests_total`의 `status`)·구조화 로그에 status 200으로 기록되던 문제를 수정했다. 이제 응답을 끝까지 보내지 못한 요청은 499로 기록한다. 다운로드 도중 끊긴 요청도 499다.

@@ -43,6 +43,10 @@ OFF 전환은 이미 만들어진 trash item을 제거하거나 숨기지 않는
 - GC는 `expiresAt <= DB now`인 항목을 최대 500개씩 조회해 같은 `purgeTrashItem` 경로로 처리한다.
 - 각 항목은 namespace root 잠금과 DB transaction에서 manifest, quota counter, Blob 참조를 함께 변경한다.
 - 후보 조회 뒤 다른 purge·restore가 먼저 소비한 항목은 재시도 가능한 소진 상태로 다룬다.
+- 그 밖의 예상 밖 오류(ACTIVE namespace root 손상, manifest·counter 불일치 등)는 항목별로 격리한다.
+  - 해당 항목은 남기고 `error` 로그(namespace·trash ID·원인)를 남긴 뒤 다음 항목을 처리한다.
+  - GC 결과의 `failedTrashItems`에 실패 항목 수를 집계한다. GC는 실패로 끝나지 않는다.
+  - 실패 항목은 만료 순서상 맨 앞이라 다음 실행에서 다시 시도한다.
 - 참조가 0인 Blob의 object는 기존 orphan GC 유예 기간 이후 정리된다.
 - Purge는 되돌릴 수 없다.
 
