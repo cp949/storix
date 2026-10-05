@@ -104,6 +104,10 @@ export function namespaceDeletionAccessSuite(sqlite: boolean): void {
           const items = keys.slice(0, limit).map((key) => ({ key, lastModified: new Date() }));
           return { items, nextAfter: keys.length > limit ? items[items.length - 1].key : null };
         },
+        async listIncompleteUploadsPage() {
+          return { items: [], next: null };
+        },
+        async abortIncompleteUpload() {},
         async getPresignedUrl(key) {
           return `https://storage.example/${key}`;
         },

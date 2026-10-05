@@ -1,15 +1,27 @@
 import {
+  AbortMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  ListMultipartUploadsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   paginateListObjectsV2,
+  S3ServiceException,
   type S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { finished, PassThrough, Readable } from 'node:stream';
-import type { BlobObjectInfo, BlobPage, BlobPageOptions, BlobRange, BlobStorage } from './blob-storage.js';
+import type {
+  BlobObjectInfo,
+  BlobPage,
+  BlobPageOptions,
+  BlobRange,
+  BlobStorage,
+  IncompleteUploadInfo,
+  IncompleteUploadPage,
+  IncompleteUploadPageOptions,
+} from './blob-storage.js';
 import { VfsInvalidRangeError } from './storage.errors.js';
 import { StorageFailureError } from '../common/storage-failure.errors.js';
 import { S3_MULTIPART_PART_SIZE_BYTES } from '../common/resource-limit.js';
@@ -153,6 +165,48 @@ export class S3BlobStorage implements BlobStorage {
         nextAfter: response.IsTruncated === true && items.length > 0 ? items[items.length - 1].key : null,
       };
     } catch (error) {
+      throw sdkFailure(error);
+    }
+  }
+
+  async listIncompleteUploadsPage(
+    prefix: string,
+    options: IncompleteUploadPageOptions,
+  ): Promise<IncompleteUploadPage> {
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 1000)
+      throw new Error('listIncompleteUploadsPage limit은 1 이상 1000 이하의 정수여야 한다');
+    try {
+      const response = await this.client.send(
+        new ListMultipartUploadsCommand({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          KeyMarker: options.after,
+          MaxUploads: options.limit,
+        }),
+      );
+      const items: IncompleteUploadInfo[] = [];
+      for (const upload of response.Uploads ?? []) {
+        if (upload.Key && upload.UploadId && upload.Initiated) {
+          items.push({ key: upload.Key, uploadId: upload.UploadId, initiated: upload.Initiated });
+        }
+      }
+      return {
+        items,
+        next: response.IsTruncated === true && response.NextKeyMarker ? response.NextKeyMarker : null,
+      };
+    } catch (error) {
+      throw sdkFailure(error);
+    }
+  }
+
+  async abortIncompleteUpload(key: string, uploadId: string): Promise<void> {
+    try {
+      await this.client.send(
+        new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }),
+      );
+    } catch (error) {
+      // 완료되었거나 다른 GC가 먼저 지운 upload는 목표 상태에 이미 도달했다.
+      if (error instanceof S3ServiceException && error.name === 'NoSuchUpload') return;
       throw sdkFailure(error);
     }
   }

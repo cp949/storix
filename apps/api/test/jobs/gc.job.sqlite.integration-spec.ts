@@ -25,6 +25,7 @@ import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.r
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { installSqliteGate } from '../../src/persistence/sqlite-gate.js';
+import type { S3Client } from '@aws-sdk/client-s3';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 // STORIX_DB_DRIVER=sqlite를 얹은 별도 jest 실행에서만 돈다(blob.repository.sqlite.integration-spec.ts와
@@ -35,6 +36,7 @@ describe('GcJob 통합 (SQLite)', () => {
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
   let storage: S3BlobStorage;
+  let s3Client: S3Client;
   let namespaceId: string;
   let nodeRepository: VfsNodeRepository;
   let trashRetention: VfsTrashRetentionRepository;
@@ -92,6 +94,7 @@ describe('GcJob 통합 (SQLite)', () => {
     const client = createTestS3Client(s3Container);
     await createTestBucket(client, bucket);
     storage = new S3BlobStorage(client, bucket, null);
+    s3Client = client;
 
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'gc-job-owner' }));
@@ -106,6 +109,7 @@ describe('GcJob 통합 (SQLite)', () => {
   runGcJobSharedTests(() => ({
     dataSource,
     storage,
+    client: s3Client,
     blobRepository,
     namespaceId,
     nodeRepository,
@@ -120,6 +124,7 @@ describe('GcJob 통합 (SQLite)', () => {
   runNamespaceDeletionCleanupTests(() => ({
     dataSource,
     storage,
+    client: s3Client,
     blobRepository,
     namespaceId,
     nodeRepository,

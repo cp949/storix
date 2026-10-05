@@ -205,6 +205,105 @@ describe('S3BlobStorage', () => {
     );
   });
 
+  describe('미완료 multipart upload', () => {
+    const initiated = new Date('2026-10-01T00:00:00Z');
+
+    function storageWith(send: jest.Mock<(command: unknown) => Promise<unknown>>): S3BlobStorage {
+      return new S3BlobStorage({ send } as unknown as S3Client, 'bucket', null);
+    }
+
+    it('목록 요청에 prefix·marker·limit을 싣고 응답을 항목과 다음 marker로 바꾼다', async () => {
+      const send = jest.fn<(command: unknown) => Promise<unknown>>().mockResolvedValue({
+        Uploads: [
+          { Key: 'blobs/ab/1', UploadId: 'u1', Initiated: initiated },
+          { Key: 'blobs/ab/2', UploadId: 'u2', Initiated: initiated },
+          { Key: 'blobs/ab/no-id', Initiated: initiated },
+        ],
+        IsTruncated: true,
+        NextKeyMarker: 'blobs/ab/2',
+        NextUploadIdMarker: 'u2',
+      });
+
+      const page = await storageWith(send).listIncompleteUploadsPage('blobs/', {
+        after: 'blobs/aa/0',
+        limit: 50,
+      });
+
+      expect(send.mock.calls[0][0]).toMatchObject({
+        input: {
+          Bucket: 'bucket',
+          Prefix: 'blobs/',
+          KeyMarker: 'blobs/aa/0',
+          MaxUploads: 50,
+        },
+      });
+      // VersityGW가 UploadIdMarker를 거부하므로 요청에 싣지 않는다.
+      expect(
+        (send.mock.calls[0][0] as { input: { UploadIdMarker?: string } }).input.UploadIdMarker,
+      ).toBeUndefined();
+      expect(page.items).toEqual([
+        { key: 'blobs/ab/1', uploadId: 'u1', initiated },
+        { key: 'blobs/ab/2', uploadId: 'u2', initiated },
+      ]);
+      expect(page.next).toBe('blobs/ab/2');
+    });
+
+    it('마지막 page면 next가 null이다', async () => {
+      const send = jest
+        .fn<(command: unknown) => Promise<unknown>>()
+        .mockResolvedValue({ Uploads: [], IsTruncated: false });
+
+      const page = await storageWith(send).listIncompleteUploadsPage('blobs/', { limit: 10 });
+
+      expect(page).toEqual({ items: [], next: null });
+    });
+
+    it('limit이 1 이상 1000 이하의 정수가 아니면 거부한다', async () => {
+      const storage = storageWith(jest.fn<(command: unknown) => Promise<unknown>>());
+
+      await expect(storage.listIncompleteUploadsPage('blobs/', { limit: 0 })).rejects.toThrow(/limit/);
+      await expect(storage.listIncompleteUploadsPage('blobs/', { limit: 1001 })).rejects.toThrow(/limit/);
+    });
+
+    it('목록 호출 실패를 저장 장애로 분류한다', async () => {
+      const send = jest
+        .fn<(command: unknown) => Promise<unknown>>()
+        .mockRejectedValue(s3Exception('SlowDown'));
+
+      await expect(
+        storageWith(send).listIncompleteUploadsPage('blobs/', { limit: 10 }),
+      ).rejects.toMatchObject({
+        code: 'STORAGE_UNAVAILABLE',
+        status: 503,
+      });
+    });
+
+    it('abort는 key와 uploadId를 보내고, 이미 없는 upload(NoSuchUpload)는 성공으로 본다', async () => {
+      const send = jest
+        .fn<(command: unknown) => Promise<unknown>>()
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(s3Exception('NoSuchUpload'));
+      const storage = storageWith(send);
+
+      await storage.abortIncompleteUpload('blobs/ab/1', 'u1');
+      await expect(storage.abortIncompleteUpload('blobs/ab/1', 'u1')).resolves.toBeUndefined();
+
+      expect(send.mock.calls[0][0]).toMatchObject({
+        input: { Bucket: 'bucket', Key: 'blobs/ab/1', UploadId: 'u1' },
+      });
+    });
+
+    it('abort가 NoSuchUpload 외의 이유로 실패하면 던진다', async () => {
+      const send = jest
+        .fn<(command: unknown) => Promise<unknown>>()
+        .mockRejectedValue(s3Exception('AccessDenied'));
+
+      await expect(storageWith(send).abortIncompleteUpload('blobs/ab/1', 'u1')).rejects.toMatchObject({
+        code: 'STORAGE_FAILURE',
+      });
+    });
+  });
+
   describe('getPresignedUrl', () => {
     const presignClient = new S3Client({
       endpoint: 'https://public.example.com',

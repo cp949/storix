@@ -9,13 +9,20 @@ import type {
   BlobPage,
   BlobPageOptions,
   BlobStorage,
+  IncompleteUploadInfo,
+  IncompleteUploadPage,
+  IncompleteUploadPageOptions,
 } from '../../src/storage/blob-storage.js';
 
 /** GC 단위 테스트용 저장소. key 오름차순 page와 삭제 기록을 제공한다. */
 export class PagedStorage {
   readonly deleted: string[] = [];
   readonly pageCalls: Array<{ prefix: string; options: BlobPageOptions }> = [];
+  readonly incompletePageCalls: Array<{ prefix: string; options: IncompleteUploadPageOptions }> = [];
+  readonly aborted: Array<{ key: string; uploadId: string }> = [];
   private readonly objects: BlobObjectInfo[];
+  private incompleteUploads: IncompleteUploadInfo[] = [];
+  private onAbort: (key: string, uploadId: string) => Promise<void> = async () => undefined;
 
   constructor(
     objects: readonly BlobObjectInfo[] = [],
@@ -32,6 +39,43 @@ export class PagedStorage {
     );
     const items = matching.slice(0, options.limit);
     return { items, nextAfter: matching.length > options.limit ? items[items.length - 1].key : null };
+  }
+
+  /** 미완료 multipart upload 목록을 설정한다. `onAbort`가 던지면 abort 실패를 모사한다. */
+  withIncompleteUploads(
+    uploads: readonly IncompleteUploadInfo[],
+    onAbort: (key: string, uploadId: string) => Promise<void> = async () => undefined,
+  ): this {
+    this.incompleteUploads = [...uploads].sort((a, b) =>
+      a.key === b.key ? (a.uploadId < b.uploadId ? -1 : 1) : a.key < b.key ? -1 : 1,
+    );
+    this.onAbort = onAbort;
+    return this;
+  }
+
+  async listIncompleteUploadsPage(
+    prefix: string,
+    options: IncompleteUploadPageOptions,
+  ): Promise<IncompleteUploadPage> {
+    this.incompletePageCalls.push({ prefix, options });
+    const after = options.after;
+    const matching = this.incompleteUploads.filter(
+      (item) => item.key.startsWith(prefix) && (after === undefined || item.key > after),
+    );
+    const items = matching.slice(0, options.limit);
+    const last = items[items.length - 1];
+    return {
+      items,
+      next: matching.length > options.limit ? last.key : null,
+    };
+  }
+
+  async abortIncompleteUpload(key: string, uploadId: string): Promise<void> {
+    await this.onAbort(key, uploadId);
+    this.aborted.push({ key, uploadId });
+    this.incompleteUploads = this.incompleteUploads.filter(
+      (item) => !(item.key === key && item.uploadId === uploadId),
+    );
   }
 
   async delete(key: string): Promise<void> {

@@ -138,4 +138,10 @@ class MemoryBlobStorage implements BlobStorage {
   async listPage(): Promise<{ items: []; nextAfter: null }> {
     return { items: [], nextAfter: null };
   }
+
+  async listIncompleteUploadsPage(): Promise<{ items: []; next: null }> {
+    return { items: [], next: null };
+  }
+
+  async abortIncompleteUpload(): Promise<void> {}
 }

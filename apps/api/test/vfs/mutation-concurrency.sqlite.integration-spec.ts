@@ -49,6 +49,12 @@ class SlowGetBlobStorage implements BlobStorage {
     return { items: [], nextAfter: null };
   }
 
+  async listIncompleteUploadsPage(): Promise<{ items: []; next: null }> {
+    return { items: [], next: null };
+  }
+
+  async abortIncompleteUpload(): Promise<void> {}
+
   async getPresignedUrl(): Promise<string> {
     throw new Error('not supported');
   }

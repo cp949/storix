@@ -25,6 +25,7 @@ import { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js'
 import { VfsFileExpiryRepository } from '../../src/persistence/vfs-file-expiry.repository.js';
 import { VfsTrashRetentionRepository } from '../../src/persistence/vfs-trash-retention.repository.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
+import type { S3Client } from '@aws-sdk/client-s3';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 describe('GcJob 통합', () => {
@@ -33,6 +34,7 @@ describe('GcJob 통합', () => {
   let dataSource: DataSource;
   let blobRepository: BlobRepository;
   let storage: S3BlobStorage;
+  let s3Client: S3Client;
   let namespaceId: string;
   let nodeRepository: VfsNodeRepository;
   let trashRetention: VfsTrashRetentionRepository;
@@ -86,6 +88,7 @@ describe('GcJob 통합', () => {
     const client = createTestS3Client(s3Container);
     await createTestBucket(client, bucket);
     storage = new S3BlobStorage(client, bucket, null);
+    s3Client = client;
 
     const namespaceRepo = dataSource.getRepository(NamespaceEntity);
     const namespace = await namespaceRepo.save(namespaceRepo.create({ name: 'gc-job-owner' }));
@@ -100,6 +103,7 @@ describe('GcJob 통합', () => {
   runGcJobSharedTests(() => ({
     dataSource,
     storage,
+    client: s3Client,
     blobRepository,
     namespaceId,
     nodeRepository,
@@ -114,6 +118,7 @@ describe('GcJob 통합', () => {
   runNamespaceDeletionCleanupTests(() => ({
     dataSource,
     storage,
+    client: s3Client,
     blobRepository,
     namespaceId,
     nodeRepository,

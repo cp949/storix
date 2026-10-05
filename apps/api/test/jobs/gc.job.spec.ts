@@ -467,6 +467,114 @@ describe('GcJob', () => {
     });
   });
 
+  describe('미완료 multipart upload', () => {
+    const HOUR = 3600_000;
+    // 유예 1시간 + 최대 업로드 2시간이면 시작 3시간이 지난 upload만 회수 대상이다.
+    function makeJob(
+      storage: PagedStorage,
+      extra: Record<string, string> = {},
+      cursors?: GcCursorRepository,
+    ) {
+      const values: Record<string, string> = {
+        STORIX_ORPHAN_GRACE_PERIOD: '3600',
+        STORIX_MUTATION_MAX_UPLOAD_SECONDS: '7200',
+        ...extra,
+      };
+      const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+      return new GcJob(
+        storage.asBlobStorage(),
+        new BlobRepositoryDouble().asBlobRepository(),
+        config,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        cursors,
+      );
+    }
+
+    const ago = (hours: number) => new Date(Date.now() - hours * HOUR);
+
+    it('시작 시각이 최대 업로드 시간과 유예를 합친 기간보다 오래된 upload만 abort한다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'blobs/ab/old', uploadId: 'u1', initiated: ago(4) },
+        { key: 'blobs/ab/in-flight', uploadId: 'u2', initiated: ago(2.5) },
+        { key: 'upload-staging/old', uploadId: 'u3', initiated: ago(10) },
+        { key: 'upload-staging/fresh', uploadId: 'u4', initiated: ago(0) },
+      ]);
+
+      const result = await makeJob(storage).run();
+
+      expect(result.abortedIncompleteUploads).toBe(2);
+      expect(storage.aborted).toEqual([
+        { key: 'blobs/ab/old', uploadId: 'u1' },
+        { key: 'upload-staging/old', uploadId: 'u3' },
+      ]);
+    });
+
+    it('Storix가 만드는 key prefix 밖은 조회하지 않는다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'other/foreign', uploadId: 'u1', initiated: ago(100) },
+      ]);
+
+      const result = await makeJob(storage).run();
+
+      expect(result.abortedIncompleteUploads).toBe(0);
+      expect(storage.aborted).toEqual([]);
+      expect(storage.incompletePageCalls.map((call) => call.prefix).sort()).toEqual([
+        'blobs/',
+        'upload-staging/',
+      ]);
+    });
+
+    it('abort에 실패한 upload는 집계하지 않고 나머지를 계속 abort한다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads(
+        [
+          { key: 'blobs/ab/1', uploadId: 'u1', initiated: ago(5) },
+          { key: 'blobs/ab/2', uploadId: 'u2', initiated: ago(5) },
+        ],
+        async (key) => {
+          if (key.endsWith('/1')) throw new Error('storage down');
+        },
+      );
+      const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const result = await makeJob(storage).run();
+        expect(result.abortedIncompleteUploads).toBe(1);
+        expect(storage.aborted).toEqual([{ key: 'blobs/ab/2', uploadId: 'u2' }]);
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('예산이 소진되면 마지막 marker를 저장하고 다음 실행이 그 뒤에서 이어간다', async () => {
+      const uploads = Array.from({ length: 1500 }, (_, i) => ({
+        key: `blobs/ab/${String(i).padStart(4, '0')}`,
+        uploadId: 'u',
+        initiated: ago(0),
+      }));
+      const storage = new PagedStorage().withIncompleteUploads(uploads);
+      const stored = new Map<string, string>();
+      const cursors = {
+        read: async (name: string) => stored.get(name) ?? null,
+        write: async (name: string, position: string) => void stored.set(name, position),
+        clear: async (name: string) => void stored.delete(name),
+      } as unknown as GcCursorRepository;
+      const budget = { STORIX_GC_MAX_ROWS_PER_STAGE: '1000' };
+
+      const first = await makeJob(storage, budget, cursors).run();
+      expect(first.budgetExhaustedStages).toContain('incomplete-uploads-blobs');
+      expect(JSON.parse(stored.get('incomplete-uploads-blobs')!)).toBe('blobs/ab/0999');
+
+      await makeJob(storage, budget, cursors).run();
+      const resumed = storage.incompletePageCalls.filter((call) => call.prefix === 'blobs/').at(-1);
+      expect(resumed?.options.after).toBe('blobs/ab/0999');
+      expect(stored.has('incomplete-uploads-blobs')).toBe(false);
+    });
+  });
+
   it('expires idle sessions, recovers stale leases, retries cleanup and protects active staging keys', async () => {
     const storage = new PagedStorage(
       [

@@ -6,6 +6,7 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { parsePositiveInt } from '../common/env-parsing.js';
+import { parseMaxUploadSeconds } from '../common/upload-duration.js';
 import { BlobRepository, type OrphanBlobCursor } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
@@ -39,6 +40,7 @@ const ORPHAN_BLOBS_CURSOR = 'orphan-blobs';
 const NAMESPACE_DELETION_PAGE_SIZE = 100;
 const ORPHAN_OBJECT_PAGE_SIZE = 1000;
 const ORPHAN_BLOB_PAGE_SIZE = 500;
+const INCOMPLETE_UPLOAD_PAGE_SIZE = 1000;
 
 export interface GcResult {
   /** 다음 정리 phase로 진행한 namespace 수다. */
@@ -61,6 +63,9 @@ export interface GcResult {
   readonly expiredUploadSessions: number;
   readonly recoveredUploadSessions: number;
   readonly deletedStagingObjects: number;
+
+  /** abort한 미완료 multipart upload 수다. */
+  readonly abortedIncompleteUploads: number;
   readonly prunedUploadSessions: number;
   readonly prunedChangeEvents: number;
 
@@ -82,6 +87,7 @@ export interface GcResult {
 export class GcJob {
   private readonly logger = new Logger(GcJob.name);
   private readonly gracePeriodSeconds: number;
+  private readonly incompleteUploadMaxAgeSeconds: number;
   private readonly changeRetentionDays: number;
   private readonly stageBudgetLimit: number;
   private readonly namespaceDeletedRetentionDays: number;
@@ -101,6 +107,10 @@ export class GcJob {
     @Optional() private readonly namespacePurge?: NamespacePurgeRepository,
   ) {
     this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
+    // 정상 upload는 최대 업로드 시간 안에 끝난다. 그 뒤 orphan 유예까지 지난 upload는 소유한 요청이 없다.
+    this.incompleteUploadMaxAgeSeconds =
+      this.gracePeriodSeconds +
+      parseMaxUploadSeconds(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'));
     this.stageBudgetLimit = parsePositiveInt(
       config.get<string>('STORIX_GC_MAX_ROWS_PER_STAGE'),
       DEFAULT_GC_STAGE_BUDGET,
@@ -129,6 +139,7 @@ export class GcJob {
     const expired = await this.expireFiles(exhausted);
     const deletedOrphanObjects = await this.collectOrphanObjects(cutoff, exhausted);
     const deletedOrphanBlobs = await this.collectOrphanBlobs(cutoff, exhausted);
+    const abortedIncompleteUploads = await this.abortIncompleteUploads(now, exhausted);
     const settled = await this.visitNamespaceDeletions('namespace-deletion-settle', exhausted, (after) =>
       this.namespaceDeletion!.settle(
         cutoff,
@@ -160,6 +171,7 @@ export class GcJob {
       expiredUploadSessions,
       recoveredUploadSessions,
       deletedStagingObjects,
+      abortedIncompleteUploads,
       prunedUploadSessions,
       prunedChangeEvents: changeFeed.deleted,
       failedChangeFeedNamespaces: changeFeed.failed,
@@ -571,6 +583,65 @@ export class GcJob {
       },
     );
     return deleted;
+  }
+
+  // 강제 종료된 프로세스가 남긴 multipart 조각은 완성 object가 아니라 orphan object 단계가 보지 못한다.
+  // Storix prefix 안에서 시작한 지 incompleteUploadMaxAgeSeconds를 넘긴 upload만 abort한다.
+  private async abortIncompleteUploads(now: Date, exhaustedStages: string[]): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.incompleteUploadMaxAgeSeconds * 1000);
+    let aborted = await this.abortIncompleteUploadsUnder(
+      BLOB_KEY_PREFIX,
+      'incomplete-uploads-blobs',
+      cutoff,
+      exhaustedStages,
+    );
+    aborted += await this.abortIncompleteUploadsUnder(
+      UPLOAD_STAGING_KEY_PREFIX,
+      'incomplete-uploads-staging',
+      cutoff,
+      exhaustedStages,
+    );
+    return aborted;
+  }
+
+  private async abortIncompleteUploadsUnder(
+    prefix: string,
+    stage: string,
+    cutoff: Date,
+    exhaustedStages: string[],
+  ): Promise<number> {
+    let aborted = 0;
+    await runCursorStage<string>(
+      this.stageContext,
+      stage,
+      exhaustedStages,
+      (raw) => (typeof raw === 'string' ? raw : null),
+      async (after) => {
+        const page = await this.storage.listIncompleteUploadsPage(prefix, {
+          after: after ?? undefined,
+          limit: INCOMPLETE_UPLOAD_PAGE_SIZE,
+        });
+        const stale = page.items.filter((upload) => upload.initiated < cutoff);
+        for (let i = 0; i < stale.length; i += DELETE_CONCURRENCY) {
+          const chunk = stale.slice(i, i + DELETE_CONCURRENCY);
+          const results = await Promise.allSettled(
+            chunk.map((upload) => this.storage.abortIncompleteUpload(upload.key, upload.uploadId)),
+          );
+          results.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              aborted += 1;
+            } else {
+              this.logger.error(
+                `미완료 multipart upload abort 실패: ${chunk[index].key} (${chunk[index].uploadId})`,
+                result.reason,
+              );
+            }
+          });
+        }
+        return { next: page.next, examined: page.items.length };
+      },
+    );
+    return aborted;
   }
 
   private async deleteKeysInChunks(keys: string[]): Promise<number> {

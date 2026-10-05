@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
-import type { S3Client } from '@aws-sdk/client-s3';
+import { CreateMultipartUploadCommand, UploadPartCommand, type S3Client } from '@aws-sdk/client-s3';
 import { startS3Container, StartedS3Container } from './s3-container.test-support.js';
 import { createTestBucket, createTestS3Client } from './s3-client.test-support.js';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
@@ -88,6 +88,63 @@ describe('S3BlobStorage', () => {
     expect(last.items.map((item) => item.key)).toEqual([`${prefix}e`]);
     expect(last.nextAfter).toBeNull();
     expect(last.items[0].lastModified).toBeInstanceOf(Date);
+  });
+
+  describe('미완료 multipart upload', () => {
+    const prefix = 'blobs/incomplete/';
+
+    async function startUpload(key: string): Promise<string> {
+      const created = await client.send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: key }));
+      await client.send(
+        new UploadPartCommand({
+          Bucket: bucket,
+          Key: key,
+          UploadId: created.UploadId,
+          PartNumber: 1,
+          Body: Buffer.alloc(16),
+        }),
+      );
+      return created.UploadId!;
+    }
+
+    it('목록은 prefix 안의 미완료 upload만 key·uploadId 순서로 limit개씩 이어 읽는다', async () => {
+      const before = new Date(Date.now() - 1000);
+      const ids = [
+        await startUpload(`${prefix}b`),
+        await startUpload(`${prefix}a`),
+        await startUpload(`${prefix}c`),
+      ];
+      await startUpload('blobs/incomplete-other/z');
+
+      const first = await storage.listIncompleteUploadsPage(prefix, { limit: 2 });
+      expect(first.items.map((item) => item.key)).toEqual([`${prefix}a`, `${prefix}b`]);
+      expect(first.items[0].initiated.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(first.next).not.toBeNull();
+
+      const second = await storage.listIncompleteUploadsPage(prefix, { limit: 2, after: first.next! });
+      expect(second.items.map((item) => item.key)).toEqual([`${prefix}c`]);
+      expect(second.next).toBeNull();
+      expect(ids).toContain(second.items[0].uploadId);
+    });
+
+    it('미완료 upload는 완성 object 목록에 보이지 않는다', async () => {
+      await startUpload('blobs/incomplete-hidden/x');
+
+      const page = await storage.listPage('blobs/incomplete-hidden/', { limit: 10 });
+
+      expect(page.items).toEqual([]);
+    });
+
+    it('abort하면 목록에서 사라지고 같은 upload를 다시 abort해도 성공한다', async () => {
+      const key = 'blobs/incomplete-abort/x';
+      const uploadId = await startUpload(key);
+
+      await storage.abortIncompleteUpload(key, uploadId);
+
+      const page = await storage.listIncompleteUploadsPage('blobs/incomplete-abort/', { limit: 10 });
+      expect(page.items).toEqual([]);
+      await expect(storage.abortIncompleteUpload(key, uploadId)).resolves.toBeUndefined();
+    });
   });
 
   it('listPage는 limit이 SDK 한 page(1000)를 넘으면 거부한다', async () => {

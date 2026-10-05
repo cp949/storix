@@ -23,11 +23,14 @@ import { NamespaceProvisioningRepository } from '../../src/persistence/namespace
 import { readDbNow } from '../../src/persistence/vfs-node.repository.helpers.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
+import { CreateMultipartUploadCommand, type S3Client, UploadPartCommand } from '@aws-sdk/client-s3';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 
 export interface GcJobTestContext {
   readonly dataSource: DataSource;
   readonly storage: S3BlobStorage;
+  /** 미완료 multipart upload처럼 어댑터가 만들지 않는 상태를 직접 만드는 데 쓴다. */
+  readonly client: S3Client;
   readonly blobRepository: BlobRepository;
   readonly namespaceId: string;
   readonly nodeRepository: VfsNodeRepository;
@@ -585,6 +588,52 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
 
     expect(result.deletedOrphanObjects).toBeGreaterThanOrEqual(1);
     await expect(storage.get(orphanKey)).rejects.toThrow();
+  });
+
+  it('시작 뒤 최대 업로드 시간과 유예가 지난 미완료 multipart upload만 abort하고 Storix 밖 prefix는 건드리지 않는다', async () => {
+    const { client, storage, blobRepository } = getContext();
+    const bucket = (storage as unknown as { bucket: string }).bucket;
+    async function startUpload(key: string): Promise<string> {
+      const created = await client.send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: key }));
+      await client.send(
+        new UploadPartCommand({
+          Bucket: bucket,
+          Key: key,
+          UploadId: created.UploadId,
+          PartNumber: 1,
+          Body: Buffer.alloc(16),
+        }),
+      );
+      return created.UploadId!;
+    }
+    const staleKey = `blobs/ab/${randomUUID()}`;
+    const stagingKey = `upload-staging/${randomUUID()}`;
+    const foreignKey = `foreign/${randomUUID()}`;
+    await startUpload(staleKey);
+    await startUpload(stagingKey);
+    const foreignUploadId = await startUpload(foreignKey);
+    // 유예 1초 + 최대 업로드 1초가 지나도록 기다린 뒤 시작한 upload는 아직 소유 요청이 있을 수 있어 남아야 한다.
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    const freshKey = `blobs/ab/${randomUUID()}`;
+    const freshUploadId = await startUpload(freshKey);
+    const values: Record<string, string> = {
+      STORIX_ORPHAN_GRACE_PERIOD: '1',
+      STORIX_MUTATION_MAX_UPLOAD_SECONDS: '1',
+    };
+    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+
+    const result = await new GcJob(storage, blobRepository, config).run();
+
+    expect(result.abortedIncompleteUploads).toBeGreaterThanOrEqual(2);
+    const remaining = async (prefix: string) =>
+      (await storage.listIncompleteUploadsPage(prefix, { limit: 1000 })).items.map((item) => item.key);
+    expect(await remaining('blobs/')).toContain(freshKey);
+    expect(await remaining('blobs/')).not.toContain(staleKey);
+    expect(await remaining('upload-staging/')).not.toContain(stagingKey);
+    expect(await remaining('foreign/')).toContain(foreignKey);
+
+    await storage.abortIncompleteUpload(freshKey, freshUploadId);
+    await storage.abortIncompleteUpload(foreignKey, foreignUploadId);
   });
 
   it('metadata 없어도 grace period 이내면 orphan 스토리지 object를 보존한다', async () => {
