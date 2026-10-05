@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- 디렉터리를 자기 하위로 이동·복사할 때 목적지 중간 경로가 없거나 파일이면 409 `VFS_INVALID_OPERATION` 대신 404 `VFS_NODE_NOT_FOUND`·409 `VFS_NOT_DIRECTORY`가 응답되던 문제를 수정했다. 경로 계약대로 자기 subtree 지정을 먼저 거부한다. `destinationParents: true`여도 중간 디렉터리를 만들지 않는다.
 - 클라이언트가 응답 전에 연결을 끊은 요청이 감사 로그·메트릭(`storix_http_requests_total`의 `status`)·구조화 로그에 status 200으로 기록되던 문제를 수정했다. 이제 응답을 끝까지 보내지 못한 요청은 499로 기록한다. 다운로드 도중 끊긴 요청도 499다.
 - `POST /fs/mutations`, `POST /fs/snapshots`(생성·restore·delete), `POST /fs/trash/{trashId}/restore`·`purge`의 감사 로그에 `path`·`detail`이 null로 남던 문제를 수정했다. 이 라우트는 body를 원문 그대로 받아 감사 인터셉터가 필드를 읽지 못했다. 이제 JSON으로 읽어 기록한다. `detail`에는 `kind`(mutations·snapshot 변경 종류)와 `targetPath`(휴지통 복원 위치)도 기록한다(GitHub 이슈 #39).
 - 이전 버전에서 만든 PostgreSQL 백업을 복구한 뒤 `migrate` 재실행이 `relation … already exists`로 실패하던 문제를 수정했다. `pg_restore --clean`은 dump에 있는 테이블만 지워 백업 이후 버전의 테이블이 남았다. 이제 복구 전에 `public` 스키마에서 접속 사용자가 소유한 테이블을 모두 지운다. Storix 전용 DB를 전제로 한다. 운영 이미지는 이 단계에 `psql`을 쓴다(GitHub 이슈 #38).
