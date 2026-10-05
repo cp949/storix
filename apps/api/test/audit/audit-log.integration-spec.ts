@@ -257,6 +257,43 @@ describe('감사 로그 end-to-end', () => {
     });
   });
 
+  // mutations·snapshot 변경은 raw() 파서를 거쳐 body가 Buffer로 도착한다(GitHub 이슈 #39).
+  it('mutations·snapshot 생성 요청은 body의 path와 kind를 기록한다', async () => {
+    const name = `audit-raw-body-${randomUUID()}`;
+    const ns = await request(httpServer)
+      .post('/api/v2/namespaces')
+      .set('Idempotency-Key', `ns-${name}`)
+      .send({ name })
+      .expect(201);
+    const base = `/api/v2/namespaces/${ns.body.id}/fs`;
+    await request(httpServer).post(`${base}/touch`).send({ path: '/kept.txt' }).expect(201);
+    await request(httpServer).post(`${base}/touch`).send({ path: '/secret.txt' }).expect(201);
+    const snapshot = await request(httpServer)
+      .post(`${base}/snapshots`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({ kind: 'file', path: '/kept.txt' })
+      .expect(201);
+    const revision = (
+      await request(httpServer).get(`${base}/stat`).query({ path: '/secret.txt' }).expect(200)
+    ).body.revision as string;
+    const deleted = await request(httpServer)
+      .post(`${base}/mutations`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Mutation-Scope', 'audit-test')
+      .send({ kind: 'delete', path: '/secret.txt', ifRevision: revision, recursive: false })
+      .expect(200);
+
+    expect(await findAuditLogByRequestId(snapshot.headers['x-request-id'] as string)).toMatchObject({
+      path: '/kept.txt',
+      detail: { kind: 'file' },
+    });
+    expect(await findAuditLogByRequestId(deleted.headers['x-request-id'] as string)).toMatchObject({
+      path: '/secret.txt',
+      detail: { kind: 'delete' },
+    });
+  });
+
   it('snapshot 생성과 개별 ID 조회는 ID를 기록하고 목록에는 단일 ID를 기록하지 않는다', async () => {
     const name = `audit-snapshot-${randomUUID()}`;
     const ns = await request(httpServer)

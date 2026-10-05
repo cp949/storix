@@ -25,6 +25,25 @@ function resolveStringField(source: Record<string, unknown> | undefined, key: st
   return typeof value === 'string' ? sanitizeAuditString(value) : undefined;
 }
 
+// body에서 detail로 기록하는 문자열 필드. kind는 mutations·snapshot 변경의 종류를 구분한다.
+const DETAIL_FIELDS = ['kind', 'source', 'destination', 'targetPath', 'name'] as const;
+
+// mutations·snapshot·trash 변경 라우트는 raw() 파서를 거쳐 body가 Buffer다(body-parser.ts).
+// 이때는 JSON으로 읽어 본다. 객체가 아니거나 읽을 수 없으면 기록할 필드가 없다.
+function resolveBodyFields(body: unknown): Record<string, unknown> | undefined {
+  let value = body;
+  if (Buffer.isBuffer(value)) {
+    try {
+      value = JSON.parse(value.toString('utf8')) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditLogInterceptor.name);
@@ -47,6 +66,7 @@ export class AuditLogInterceptor implements NestInterceptor {
     const operation = `${context.getClass().name}.${context.getHandler().name}`;
 
     response.once('close', () => {
+      const body = resolveBodyFields(request.body);
       this.auditLogRepository
         .record({
           requestId: request.requestId,
@@ -54,8 +74,8 @@ export class AuditLogInterceptor implements NestInterceptor {
           snapshotId: this.resolveSnapshotId(request),
           trashId: this.resolveTrashId(request),
           operation,
-          path: this.resolvePath(request),
-          detail: this.resolveDetail(request),
+          path: this.resolvePath(request, body),
+          detail: this.resolveDetail(body),
           caller: resolveCallerId(request.headers[CALLER_ID_HEADER]),
           status: response.statusCode,
         })
@@ -84,21 +104,17 @@ export class AuditLogInterceptor implements NestInterceptor {
     return typeof value === 'string' && isNamespaceId(value) ? value : null;
   }
 
-  private resolvePath(request: Request): string | null {
+  private resolvePath(request: Request, body: Record<string, unknown> | undefined): string | null {
     const query = request.query as Record<string, unknown>;
-    const body = request.body as Record<string, unknown> | undefined;
     return resolveStringField(query, 'path') ?? resolveStringField(body, 'path') ?? null;
   }
 
-  private resolveDetail(request: Request): Record<string, unknown> | null {
-    const body = request.body as Record<string, unknown> | undefined;
+  private resolveDetail(body: Record<string, unknown> | undefined): Record<string, unknown> | null {
     const detail: Record<string, unknown> = {};
-    const source = resolveStringField(body, 'source');
-    const destination = resolveStringField(body, 'destination');
-    const name = resolveStringField(body, 'name');
-    if (source !== undefined) detail.source = source;
-    if (destination !== undefined) detail.destination = destination;
-    if (name !== undefined) detail.name = name;
+    for (const key of DETAIL_FIELDS) {
+      const value = resolveStringField(body, key);
+      if (value !== undefined) detail[key] = value;
+    }
     return Object.keys(detail).length > 0 ? detail : null;
   }
 }

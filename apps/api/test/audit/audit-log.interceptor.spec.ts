@@ -13,7 +13,7 @@ function createContext(
   params: Record<string, string>,
   options: {
     query?: Record<string, unknown>;
-    body?: Record<string, unknown>;
+    body?: unknown;
     headers?: Record<string, string>;
     auditSnapshotId?: string;
   } = {},
@@ -330,5 +330,59 @@ describe('AuditLogInterceptor', () => {
               });
           });
       });
+  });
+
+  describe('raw 파서 라우트의 Buffer body', () => {
+    // mutations·snapshot·trash 변경 라우트는 raw() 파서를 거쳐 body가 Buffer다.
+    function recordedEntry(body: unknown): Promise<AuditLogEntry> {
+      return new Promise((resolve) => {
+        const { context, response } = createContext({ namespaceId: 'ns-1' }, { body });
+        createInterceptor()
+          .intercept(context, { handle: () => of({ ok: true }) })
+          .subscribe(() => {
+            response.emit('close');
+            resolve(auditLogRepository.record.mock.calls[0][0]);
+          });
+      });
+    }
+
+    const jsonBuffer = (value: unknown) => Buffer.from(JSON.stringify(value));
+
+    it('mutations delete의 path와 kind를 기록한다', async () => {
+      const entry = await recordedEntry(
+        jsonBuffer({ kind: 'delete', path: '/secret/a.txt', ifRevision: 'r1' }),
+      );
+      expect(entry).toMatchObject({ path: '/secret/a.txt', detail: { kind: 'delete' } });
+    });
+
+    it('mutations move의 source·destination과 kind를 detail에 담는다', async () => {
+      const entry = await recordedEntry(
+        jsonBuffer({ kind: 'move', source: '/a.txt', destination: '/b.txt' }),
+      );
+      expect(entry).toMatchObject({
+        path: null,
+        detail: { kind: 'move', source: '/a.txt', destination: '/b.txt' },
+      });
+    });
+
+    it('trash restore의 targetPath를 detail에 담는다', async () => {
+      const entry = await recordedEntry(jsonBuffer({ targetPath: '/restored/a.txt' }));
+      expect(entry).toMatchObject({ path: null, detail: { targetPath: '/restored/a.txt' } });
+    });
+
+    it.each([
+      ['잘못된 JSON', Buffer.from('{"path":')],
+      ['빈 본문', Buffer.alloc(0)],
+      ['배열', jsonBuffer([{ path: '/a' }])],
+      ['원시값', jsonBuffer('/a')],
+    ])('%s이면 path·detail을 null로 기록한다', async (_label, body) => {
+      const entry = await recordedEntry(body);
+      expect(entry).toMatchObject({ path: null, detail: null });
+    });
+
+    it('문자열이 아닌 kind·targetPath는 기록하지 않는다', async () => {
+      const entry = await recordedEntry(jsonBuffer({ kind: 1, targetPath: ['/a'], path: '/b' }));
+      expect(entry).toMatchObject({ path: '/b', detail: null });
+    });
   });
 });
