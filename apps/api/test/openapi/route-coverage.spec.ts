@@ -90,6 +90,10 @@ function specRoutes(): string[] {
   return routes;
 }
 
+function isAdminOnly(security: unknown): boolean {
+  return JSON.stringify(security) === JSON.stringify([{ AdminApiKeyAuth: [] }]);
+}
+
 describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
   it('스펙의 엔드포인트 집합이 namespace/fs/public-fs 컨트롤러 라우트 집합과 정확히 일치한다', () => {
     const codeRoutes = [
@@ -153,6 +157,24 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
     const namespace = spec.components.schemas.Namespace;
     expect(namespace.properties!.quota.properties!.trash.required).toContain('enabled');
     expect(namespace.properties!.quota.properties!.trash.properties!.enabled.type).toBe('boolean');
+  });
+
+  it('관리자 경로와 purge는 모두 AdminApiKeyAuth를 선언해 전역 기본 ApiKeyAuth로 오인되지 않는다', () => {
+    const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8')) as {
+      paths: Record<string, Record<string, OpenApiOperation>>;
+    };
+    const adminOperations = Object.entries(spec.paths)
+      .filter(([path]) => path.startsWith('/api/v2/admin/') || path.endsWith('/trash/{trashId}/purge'))
+      .flatMap(([path, methods]) =>
+        Object.entries(methods).map(([method, operation]) => ({
+          route: `${method.toUpperCase()} ${path}`,
+          security: operation.security,
+        })),
+      );
+    expect(adminOperations.length).toBeGreaterThanOrEqual(6);
+    expect(adminOperations.filter((item) => !isAdminOnly(item.security)).map((item) => item.route)).toEqual(
+      [],
+    );
   });
 
   it('legacy 삭제의 X-Trash-Id는 휴지통 활성 namespace 응답에만 존재할 수 있다고 명시한다', () => {

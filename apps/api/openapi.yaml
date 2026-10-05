@@ -378,6 +378,8 @@ paths:
       operationId: updateNamespaceQuota
       summary: Namespace 논리 사용량 상한 변경
       description: '별도 `STORIX_ADMIN_API_KEY` 인증과 `Idempotency-Key`가 필요하다. 같은 키의 응답 재생은 receipt 생성 시점부터 30일간 보장한다. `maxTotalLogicalBytes: null`은 기본값 상속을 뜻한다. ceiling 이하의 override는 기본값보다 커도 허용한다. 현재 사용량보다 낮은 상한도 받아들이며 저장된 파일은 지우지 않고, 사용량이 상한 아래로 내려올 때까지 사용량을 늘리는 새 저장만 413 `VFS_QUOTA_EXCEEDED`로 거부한다.'
+      security:
+        - AdminApiKeyAuth: []
       parameters:
         - name: namespaceId
           in: path
