@@ -1,7 +1,5 @@
 import { NamespaceDeletionCleanupRepository } from './namespace-deletion-cleanup.repository.js';
 import { NamespaceDeletionRepository } from './namespace-deletion.repository.js';
-import { NamespaceDeletionEntity } from './entities/namespace-deletion.entity.js';
-import { NamespaceDeletionReceiptEntity } from './entities/namespace-deletion-receipt.entity.js';
 import { VfsSnapshotRepository } from './vfs-snapshot.repository.js';
 import { Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,16 +7,7 @@ import { DataSource, type DataSourceOptions } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 import { loadDbConfig } from './db-config.js';
 import { installSqliteGate } from './sqlite-gate.js';
-import { AuditLogEntity } from './entities/audit-log.entity.js';
-import { BlobEntity } from './entities/blob.entity.js';
-import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
-import { NamespaceEntity } from './entities/namespace.entity.js';
-import { VfsNodeEntity } from './entities/vfs-node.entity.js';
-import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
-import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
-import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
-import { VfsTrashEntity } from './entities/vfs-trash.entity.js';
-import { VfsTrashEntryEntity } from './entities/vfs-trash-entry.entity.js';
+import { ALL_ENTITIES } from './entities/all-entities.js';
 import { AuditLogRepository } from './audit-log.repository.js';
 import { AUDIT_LOG_REPOSITORY } from './audit-log.tokens.js';
 import { BlobRepository } from './blob.repository.js';
@@ -27,13 +16,7 @@ import { NamespaceCreationReceiptWriter } from './namespace-creation-receipt.wri
 import { VfsNodeRepository } from './vfs-node.repository.js';
 import { BackupRepository } from './backup.repository.js';
 import { VfsMutationReceiptRepository } from './vfs-mutation-receipt.repository.js';
-import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
-import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
-import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
-import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 import { VfsUploadSessionRepository } from './vfs-upload-session.repository.js';
-import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
-import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
 import { VfsChangeFeedRetentionRepository } from './vfs-change-feed-retention.repository.js';
 import { GcCursorRepository } from './gc-cursor.repository.js';
 import { IdempotencyReceiptRetentionRepository } from './idempotency-receipt-retention.repository.js';
@@ -41,27 +24,6 @@ import { NamespacePurgeRepository } from './namespace-purge.repository.js';
 import { VfsTrashRepository } from './vfs-trash.repository.js';
 import { VfsTrashRetentionRepository } from './vfs-trash-retention.repository.js';
 import { VfsFileExpiryRepository } from './vfs-file-expiry.repository.js';
-
-const ENTITIES = [
-  NamespaceEntity,
-  NamespaceDeletionEntity,
-  NamespaceDeletionReceiptEntity,
-  VfsNodeEntity,
-  BlobEntity,
-  IdempotencyKeyEntity,
-  AuditLogEntity,
-  VfsMutationReceiptEntity,
-  VfsSnapshotEntity,
-  VfsSnapshotEntryEntity,
-  VfsTrashEntity,
-  VfsTrashEntryEntity,
-  VfsUploadSessionEntity,
-  VfsUploadPartEntity,
-  VfsUploadStagingCleanupEntity,
-  VfsUploadUsageEntity,
-  VfsChangeFeedStateEntity,
-  VfsChangeEventEntity,
-];
 
 // SQLite는 기본적으로 ASCII 대소문자 무시로 LIKE를 평가한다(Postgres는 대소문자
 // 구분) — findRecursive의 name 필터(contains/prefix/suffix)가 두 드라이버에서
@@ -92,7 +54,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
             type: 'better-sqlite3' as const,
             database: dbConfig.sqlitePath,
             synchronize: false,
-            entities: ENTITIES,
+            entities: ALL_ENTITIES,
           };
         }
         return {
@@ -103,7 +65,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
           password: dbConfig.password,
           database: dbConfig.database,
           synchronize: false,
-          entities: ENTITIES,
+          entities: ALL_ENTITIES,
         };
       },
       // SQLite는 연결 하나를 모든 요청이 공유하므로 초기화 직후 쿼리 직렬화 게이트를 건다(PostgreSQL은 무변경).
@@ -113,7 +75,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
         return dataSource;
       },
     }),
-    TypeOrmModule.forFeature(ENTITIES),
+    TypeOrmModule.forFeature(ALL_ENTITIES),
   ],
   providers: [
     NamespaceProvisioningRepository,

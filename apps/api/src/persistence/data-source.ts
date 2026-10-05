@@ -1,43 +1,11 @@
-import { NamespaceDeletionEntity } from './entities/namespace-deletion.entity.js';
-import { NamespaceDeletionReceiptEntity } from './entities/namespace-deletion-receipt.entity.js';
 import 'reflect-metadata';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { loadDbConfig } from './db-config.js';
-import { AuditLogEntity } from './entities/audit-log.entity.js';
-import { BlobEntity } from './entities/blob.entity.js';
-import { IdempotencyKeyEntity } from './entities/idempotency-key.entity.js';
-import { NamespaceEntity } from './entities/namespace.entity.js';
-import { VfsNodeEntity } from './entities/vfs-node.entity.js';
-import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
-import { VfsSnapshotEntity } from './entities/vfs-snapshot.entity.js';
-import { VfsSnapshotEntryEntity } from './entities/vfs-snapshot-entry.entity.js';
-import { VfsTrashEntity } from './entities/vfs-trash.entity.js';
-import { VfsTrashEntryEntity } from './entities/vfs-trash-entry.entity.js';
-import { VfsUploadSessionEntity } from './entities/vfs-upload-session.entity.js';
-import { VfsUploadPartEntity } from './entities/vfs-upload-part.entity.js';
-import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
-import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
+import { ALL_ENTITIES } from './entities/all-entities.js';
 import { ALL_MIGRATIONS } from './migrations/all-migrations.js';
 import { resolveSecrets } from '../secrets/resolve-secrets.js';
 
-const entities = [
-  NamespaceEntity,
-  NamespaceDeletionEntity,
-  NamespaceDeletionReceiptEntity,
-  VfsNodeEntity,
-  BlobEntity,
-  IdempotencyKeyEntity,
-  AuditLogEntity,
-  VfsMutationReceiptEntity,
-  VfsSnapshotEntity,
-  VfsSnapshotEntryEntity,
-  VfsTrashEntity,
-  VfsTrashEntryEntity,
-  VfsUploadSessionEntity,
-  VfsUploadPartEntity,
-  VfsUploadStagingCleanupEntity,
-  VfsUploadUsageEntity,
-];
+const entities = ALL_ENTITIES;
 const migrations = ALL_MIGRATIONS;
 
 function buildOptions(): DataSourceOptions {
