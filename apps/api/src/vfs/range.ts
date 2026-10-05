@@ -5,7 +5,8 @@ export interface ByteRange {
   readonly end: number;
 }
 
-const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/;
+// RFC 9110 §14.1: range unit 이름은 대소문자를 구분하지 않는다.
+const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/i;
 
 // 309자리 이상 십진수는 Number가 Infinity로 바꾼다. 파일 크기는 항상 안전 정수 이하라
 // 상한으로 접어도 비교 결과가 같고, end는 파일 끝으로 잘리며 suffix는 전체가 된다.

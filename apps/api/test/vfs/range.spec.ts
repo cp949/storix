@@ -22,6 +22,15 @@ describe('parseRange', () => {
     expect(parseRange('bytes=0-1000', 10)).toEqual({ start: 0, end: 9 });
   });
 
+  it('단위 이름은 대소문자를 구분하지 않는다', () => {
+    expect(parseRange('Bytes=1-2', 10)).toEqual({ start: 1, end: 2 });
+    expect(parseRange('BYTES=-3', 10)).toEqual({ start: 7, end: 9 });
+  });
+
+  it('알 수 없는 단위는 거부한다', () => {
+    expect(() => parseRange('items=0-1', 10)).toThrow(VfsRangeNotSatisfiableError);
+  });
+
   describe('309자리 이상 숫자(Number가 Infinity가 되는 값)', () => {
     const huge = '9'.repeat(400);
 
