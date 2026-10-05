@@ -3,13 +3,13 @@
  * 규칙은 docs/design/12-contract-checks.md "중단과 정리".
  */
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, it } from 'node:test';
+import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { API_MAIN } from './runner/paths.ts';
 import { waitUntil } from './runner/wait.ts';
@@ -29,9 +29,15 @@ function workDirs(): Set<string> {
   return new Set(readdirSync(tmpdir()).filter((name) => /^storix-contract-[A-Za-z0-9]{6}$/.test(name)));
 }
 
+/**
+ * `ps` 출력 상한. 기본값 1MiB는 프로세스가 많거나 인자가 긴 호스트에서 `ENOBUFS`로 넘친다.
+ * 조회가 던지면 정리가 CLI를 죽이기 전에 끝나 테스트 프로세스가 종료되지 않았다(issue #11).
+ */
+const PS_MAX_BUFFER = 64 * 1024 * 1024;
+
 /** API PID를 CLI의 직접 자식으로 한정한다. 다른 실행의 서버는 포함하지 않는다. */
 function serverPids(cliPid: number): number[] {
-  return execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf-8' })
+  return execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf-8', maxBuffer: PS_MAX_BUFFER })
     .split('\n')
     .flatMap((line) => {
       const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
@@ -39,9 +45,20 @@ function serverPids(cliPid: number): number[] {
     });
 }
 
+/**
+ * 아직 종료하지 않은 CLI. 테스트나 정리가 중간에 던져도 파일 끝에서 남은 CLI를 죽여야 한다.
+ * CLI가 살아 있으면 stdout 파이프가 열려 `node:test` 프로세스가 끝나지 않는다.
+ */
+const liveClis = new Set<ChildProcess>();
+
+after(() => {
+  for (const cli of liveClis) cli.kill('SIGKILL');
+});
+
 /** stdout·stderr와 종료 신호를 함께 수집한다. close 이후에는 출력이 모두 도착했다. */
 function startCli(args: string[]) {
   const cli = spawn(process.execPath, [CLI, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  liveClis.add(cli);
   let output = '';
   let closed = false;
   cli.stdout.setEncoding('utf-8').on('data', (chunk: string) => (output += chunk));
@@ -49,6 +66,7 @@ function startCli(args: string[]) {
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     cli.once('close', (code, signal) => {
       closed = true;
+      liveClis.delete(cli);
       resolve({ code, signal });
     });
   });
@@ -77,7 +95,13 @@ function assertRetainedWorkDir(before: ReadonlySet<string>, output: string): voi
 
 /** 실패해도 이번 테스트가 띄운 CLI·API·컨테이너와 검사한 임시 파일을 정리한다. */
 async function cleanup(run: ReturnType<typeof startCli>, before: ReadonlySet<string>, pids: number[]) {
-  const ownedPids = new Set([...pids, ...serverPids(run.cli.pid!)]);
+  const ownedPids = new Set(pids);
+  // 서버 PID 조회가 실패해도 CLI는 반드시 죽여야 한다. 조회 실패는 경고만 남긴다.
+  try {
+    for (const pid of serverPids(run.cli.pid!)) ownedPids.add(pid);
+  } catch (error) {
+    console.warn(`서버 PID 조회에 실패해 이미 알려진 PID만 정리한다: ${(error as Error).message}`);
+  }
   run.cli.kill('SIGKILL');
   await run.exit();
   for (const pid of ownedPids) {
