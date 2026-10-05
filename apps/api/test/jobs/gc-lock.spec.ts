@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import type { DataSource, QueryRunner } from 'typeorm';
 import { GcLock } from '../../src/jobs/gc-lock.js';
@@ -11,10 +12,14 @@ describe('GcLock', () => {
     };
   }
 
-  function makeDataSource(queryRunner: ReturnType<typeof makeQueryRunner>): DataSource {
+  function makeDataSource(
+    queryRunner: ReturnType<typeof makeQueryRunner>,
+    query = jest.fn<(sql: string) => Promise<unknown>>().mockResolvedValue(undefined),
+  ): DataSource {
     return {
       options: { type: 'postgres' },
       createQueryRunner: () => queryRunner as unknown as QueryRunner,
+      query,
     } as unknown as DataSource;
   }
 
@@ -68,18 +73,63 @@ describe('GcLock', () => {
     expect(queryRunner.release).not.toHaveBeenCalled();
   });
 
-  it('markCompleted는 락 획득에 쓴 커넥션으로 last_completed_at을 갱신한다', async () => {
+  it('markCompleted는 lock 연결이 아닌 별도 연결로 last_completed_at을 갱신한다', async () => {
     const queryRunner = makeQueryRunner();
     queryRunner.query
       .mockResolvedValueOnce([{ locked: true }])
       .mockResolvedValueOnce([{ last_completed_at: null }])
-      .mockResolvedValueOnce(undefined);
-    const gcLock = new GcLock(makeDataSource(queryRunner));
+      .mockResolvedValueOnce([{ '?column?': 1 }]);
+    const dataSourceQuery = jest.fn<(sql: string) => Promise<unknown>>().mockResolvedValue(undefined);
+    const gcLock = new GcLock(makeDataSource(queryRunner, dataSourceQuery));
     await gcLock.tryAcquire(3600);
 
     await gcLock.markCompleted();
 
-    expect(queryRunner.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO gc_state'));
+    expect(dataSourceQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO gc_state'));
+    expect(queryRunner.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO gc_state'));
+  });
+
+  it('lock 연결이 끊겼으면 경고를 남기고 완료는 그대로 기록한다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const queryRunner = makeQueryRunner();
+      queryRunner.query
+        .mockResolvedValueOnce([{ locked: true }])
+        .mockResolvedValueOnce([{ last_completed_at: null }])
+        .mockRejectedValueOnce(new Error('Connection terminated'));
+      const dataSourceQuery = jest.fn<(sql: string) => Promise<unknown>>().mockResolvedValue(undefined);
+      const gcLock = new GcLock(makeDataSource(queryRunner, dataSourceQuery));
+      await gcLock.tryAcquire(3600);
+
+      await gcLock.markCompleted();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('advisory lock 연결이 끊겼다'));
+      expect(dataSourceQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO gc_state'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('release는 unlock·반납이 실패해도 throw하지 않고 다시 호출하면 아무 것도 하지 않는다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const queryRunner = makeQueryRunner();
+      queryRunner.query
+        .mockResolvedValueOnce([{ locked: true }])
+        .mockResolvedValueOnce([{ last_completed_at: null }])
+        .mockRejectedValueOnce(new Error('Connection terminated'));
+      queryRunner.release.mockRejectedValueOnce(new Error('already released'));
+      const gcLock = new GcLock(makeDataSource(queryRunner));
+      await gcLock.tryAcquire(3600);
+
+      await expect(gcLock.release()).resolves.toBeUndefined();
+      await expect(gcLock.release()).resolves.toBeUndefined();
+
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('release는 advisory unlock 후 커넥션을 반납한다', async () => {

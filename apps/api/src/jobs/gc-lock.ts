@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
 
@@ -7,6 +7,7 @@ const ADVISORY_LOCK_KEY = 84_217_001;
 
 @Injectable()
 export class GcLock {
+  private readonly logger = new Logger(GcLock.name);
   private queryRunner: QueryRunner | undefined;
 
   constructor(private readonly dataSource: DataSource) {}
@@ -50,22 +51,51 @@ export class GcLock {
     return true;
   }
 
+  // lock 연결은 GC 동안 idle이라 idle_session_timeout이나 failover로 끊길 수 있다.
+  // 끊기면 서버가 lock을 풀어 다른 인스턴스가 동시에 실행할 수 있다(api ADR-0021, 정확성 영향 없음).
+  // 완료 기록은 쿨다운을 유지하도록 lock 연결이 아닌 별도 연결로 남긴다.
   async markCompleted(): Promise<void> {
     if (this.isSqlite || !this.queryRunner) {
       return;
     }
-    await this.queryRunner.query(
+    if (!(await this.isLockConnectionAlive(this.queryRunner))) {
+      this.logger.warn('GC 실행 중 advisory lock 연결이 끊겼다. 다른 인스턴스가 동시에 실행했을 수 있다');
+    }
+    await this.dataSource.query(
       `INSERT INTO gc_state (id, last_completed_at) VALUES (1, now())
        ON CONFLICT (id) DO UPDATE SET last_completed_at = now()`,
     );
   }
 
+  // 연결이 끊겼으면 서버가 세션과 함께 lock을 이미 풀었다. 실패는 경고로만 남긴다.
   async release(): Promise<void> {
     if (this.isSqlite || !this.queryRunner) {
       return;
     }
-    await this.queryRunner.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]);
-    await this.queryRunner.release();
+    const queryRunner = this.queryRunner;
     this.queryRunner = undefined;
+    try {
+      await queryRunner.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]);
+    } catch (error) {
+      this.logger.warn(`advisory lock 해제 실패(연결 끊김으로 이미 해제됨): ${describeError(error)}`);
+    }
+    try {
+      await queryRunner.release();
+    } catch (error) {
+      this.logger.warn(`lock 연결 반납 실패: ${describeError(error)}`);
+    }
   }
+
+  private async isLockConnectionAlive(queryRunner: QueryRunner): Promise<boolean> {
+    try {
+      await queryRunner.query('SELECT 1');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

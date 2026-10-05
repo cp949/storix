@@ -52,6 +52,27 @@ describe('GcLock 통합', () => {
     expect(acquiredB).toBe(false);
   });
 
+  it('실행 중 lock 연결이 끊겨도 완료를 기록하고 release는 실패하지 않는다', async () => {
+    const lockA = new GcLock(dataSource);
+    expect(await lockA.tryAcquire(3600)).toBe(true);
+    // idle_session_timeout·failover로 서버가 lock 연결을 끊은 상황
+    const terminated = (await dataSource.query(
+      `SELECT pg_terminate_backend(pid) AS terminated FROM pg_locks
+       WHERE locktype = 'advisory' AND objid = 84217001 AND granted`,
+    )) as Array<{ terminated: boolean }>;
+    expect(terminated).toEqual([{ terminated: true }]);
+
+    await lockA.markCompleted();
+    await expect(lockA.release()).resolves.toBeUndefined();
+
+    const rows = (await dataSource.query('SELECT last_completed_at FROM gc_state WHERE id = 1')) as Array<{
+      last_completed_at: Date | null;
+    }>;
+    expect(rows[0]?.last_completed_at).toBeInstanceOf(Date);
+    const lockB = new GcLock(dataSource);
+    expect(await lockB.tryAcquire(3600)).toBe(false);
+  });
+
   it('min interval이 지나면 다음 인스턴스가 실행할 수 있다', async () => {
     const lockA = new GcLock(dataSource);
     expect(await lockA.tryAcquire(1)).toBe(true);
