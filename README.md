@@ -493,6 +493,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
   - 진행 중인 스토리지 요청마다 연결 하나를 쓴다. 장기 다운로드는 클라이언트가 다 받을 때까지 연결을 점유한다.
   - 상한에 닿으면 다음 요청이 연결을 기다리다 `STORIX_STORAGE_CONNECT_TIMEOUT_MS` 뒤 503으로 끝난다. `/health/ready`도 같은 연결을 쓰므로 함께 503이 될 수 있다.
   - 동시 다운로드·업로드가 50을 넘는 배포는 값을 늘린다. 스토리지 백엔드(VersityGW 등)의 동시 연결 한도는 별도로 확인한다.
+- `STORIX_MAX_SYNC_SNAPSHOT_NODES`, `STORIX_MAX_RETAINED_SNAPSHOT_NODES`, `STORIX_MAX_SNAPSHOT_BYTES`, `STORIX_MAX_RETAINED_SNAPSHOT_BYTES`는 시작할 때 검증한다. 앞자리 0이 없는 양의 10진 정수가 아니면 시작을 거부하고 오류 메시지에 변수 이름이 나온다. 빈 값은 기본값이다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`, `STORIX_VFS_CHANGE_RETENTION_DAYS`는 다른 파서를 쓰고 빈 값도 거부한다. 두 변수와 `STORIX_ORPHAN_GRACE_PERIOD`는 약 1000년(365000일) 상한을 넘으면 시작을 거부한다. PostgreSQL은 그 이상에서 날짜 범위 오류가 나 GC 실행이 중간에 끝난다.
 - `STORIX_PUBLISH_HOST`: host Nginx만 접근시키려면 `127.0.0.1`로 설정한다.
 - `STORIX_PORT`:

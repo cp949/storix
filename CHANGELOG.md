@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- snapshot 전역 상한 환경변수(`STORIX_MAX_SYNC_SNAPSHOT_NODES`·`STORIX_MAX_RETAINED_SNAPSHOT_NODES`·`STORIX_MAX_SNAPSHOT_BYTES`·`STORIX_MAX_RETAINED_SNAPSHOT_BYTES`)를 시작 시점에 검증한다. 이전에는 잘못된 값(`0`, `1e3`, 공백이 붙은 값, 숫자가 아닌 값)이 부팅을 통과하고 snapshot 요청에서만 500이 났다. 이제 앞자리 0이 없는 양의 10진 정수가 아니면 시작을 거부하고 메시지에 변수 이름이 나온다. 유효한 값과 빈 값의 동작은 같다.
 - 기본 compose의 `gc` 서비스가 `STORIX_MAX_RETAINED_TRASH_NODES`·`STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`·`STORIX_MAX_TOTAL_LOGICAL_BYTES`를 전달하지 않던 문제를 고쳤다. gc의 파일 만료 삭제는 휴지통이 켜진 namespace에서 항목을 휴지통으로 보내며 이 값으로 보존 상한과 휴지통 바이트 상한을 판정한다. 이전에는 `app`에 상한을 낮춰도 gc는 기본값(보존 100000 node, 기본 quota)을 썼다. 설정을 바꾼 배포는 gc 컨테이너를 다시 만들어야 적용된다. README 변수표의 읽는 곳을 `app·gc`로 고쳤다.
 - `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`·`STORIX_VFS_CHANGE_RETENTION_DAYS`는 365000(일) 초과, `STORIX_ORPHAN_GRACE_PERIOD`는 31536000000(초) 초과 값을 시작 시점에 거부한다. 이전에는 시작이 통과하고 PostgreSQL에서 약 2.4M일부터 `timestamp out of range`, 2^31 이상에서 `integer out of range`가 나서 gc 실행이 그 단계에서 끝났다. 뒤 단계(receipt·업로드 세션·change feed·휴지통 정리)가 매 주기 실행되지 않았다. 유예 시간은 9007199254740991초에서 `Invalid Date`가 됐다. 이 범위를 넘는 값을 쓰던 배포는 값을 줄여야 한다(SQLite는 오류 없이 영구 보존처럼 동작했다).
 - `openapi.yaml`의 `PATCH /api/v2/admin/namespaces/{namespaceId}/quota`(`updateNamespaceQuota`)에 `security: AdminApiKeyAuth`를 추가했다. 이전에는 선언이 없어 전역 기본값 `ApiKeyAuth`(서비스 키)로 읽혔고, 생성된 클라이언트가 관리자 키 요구를 알 수 없었다. 서버는 처음부터 `STORIX_ADMIN_API_KEY`만 받았으므로 동작은 바뀌지 않는다.
