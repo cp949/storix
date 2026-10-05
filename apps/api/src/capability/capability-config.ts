@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
+import { assertNoDuplicateJsonKeys } from '../common/json-duplicate-keys.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { CAPABILITY_ID_PATTERN } from './capability-registry.js';
 
@@ -58,9 +59,6 @@ function parseCapabilityConfig(value: unknown): CapabilityConfig {
     if (!isNamespaceId(namespaceId)) {
       throw new Error(`Invalid capability configuration: namespace ID ${namespaceId} is invalid`);
     }
-    if (Object.hasOwn(namespaceAllowedCapabilities, namespaceId)) {
-      throw new Error(`Invalid capability configuration: duplicate namespace ID ${namespaceId}`);
-    }
     namespaceAllowedCapabilities[namespaceId] = parseCapabilityList(
       capabilities,
       `namespaceAllowedCapabilities.${namespaceId}`,
@@ -98,5 +96,7 @@ export async function loadCapabilityConfig(config: ConfigService): Promise<Capab
   } catch (cause) {
     throw new Error(`Invalid capability configuration JSON at ${path}`, { cause });
   }
+  // JSON.parse는 중복 key를 마지막 값으로 덮어쓰므로 문법이 유효한 텍스트에서 따로 검사한다.
+  assertNoDuplicateJsonKeys(contents);
   return parseCapabilityConfig(value);
 }

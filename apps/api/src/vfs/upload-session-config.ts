@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
+import { assertNoDuplicateJsonKeys } from '../common/json-duplicate-keys.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import type { CapabilityConfig } from '../capability/capability-config.js';
 
@@ -126,7 +127,6 @@ export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
   const namespaces: Record<string, UploadSessionLimits> = {};
   for (const [id, row] of Object.entries(rows)) {
     if (!isNamespaceId(id)) throw new Error(`Invalid upload session namespace ID: ${id}`);
-    if (Object.hasOwn(namespaces, id)) throw new Error(`Duplicate upload session namespace ID: ${id}`);
     const parsed = limits(row, `namespaces.${id}`);
     if (
       parsed.maxStagedBytes > global.maxStagedBytes ||
@@ -165,5 +165,7 @@ export async function loadUploadSessionPolicy(
   } catch (cause) {
     throw new Error(`Invalid upload session policy JSON at ${path}`, { cause });
   }
+  // JSON.parse는 중복 key를 마지막 값으로 덮어쓰므로 문법이 유효한 텍스트에서 따로 검사한다.
+  assertNoDuplicateJsonKeys(contents);
   return parseUploadSessionPolicy(value);
 }

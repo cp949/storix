@@ -28,6 +28,15 @@ describe('upload session policy', () => {
     );
   }
 
+  it('같은 namespace ID를 두 번 적은 정책은 시작 오류다', async () => {
+    const path = join(dir, 'duplicate.json');
+    const row = '{"maxStagedBytes":1048576,"maxActiveSessions":2}';
+    await writeFile(path, `{"global":${row},"namespaces":{"${NS}":${row},"${NS}":${row}}}`);
+    await expect(
+      loadUploadSessionPolicy(new ConfigService({ STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH: path }), enabled),
+    ).rejects.toThrow(new RegExp(`Duplicate key "${NS}" at namespaces`));
+  });
+
   it('disabled capability permits an absent policy', async () => {
     await expect(
       loadUploadSessionPolicy(new ConfigService({}), {

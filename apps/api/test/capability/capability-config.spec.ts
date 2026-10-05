@@ -99,6 +99,25 @@ describe('capability 시작 설정', () => {
     ).rejects.toThrow(/capabilit|설정/i);
   });
 
+  it.each([
+    [
+      `{"globalAllowedCapabilities":[],"namespaceAllowedCapabilities":{"${NAMESPACE_ID}":["a"],"${NAMESPACE_ID}":["b"]}}`,
+      new RegExp(`Duplicate key "${NAMESPACE_ID}" at namespaceAllowedCapabilities`),
+      '같은 namespace ID를 두 번 적음',
+    ],
+    [
+      '{"globalAllowedCapabilities":["a"],"namespaceAllowedCapabilities":{},"globalAllowedCapabilities":[]}',
+      /Duplicate key "globalAllowedCapabilities" at \$/,
+      '최상위 key를 두 번 적음',
+    ],
+  ])('중복 key는 시작 오류다: %#', async (text, message, _reason) => {
+    const path = join(dir, 'duplicate.json');
+    await writeFile(path, text);
+    await expect(
+      loadCapabilityConfig(new ConfigService({ STORIX_VFS_CAPABILITIES_CONFIG_PATH: path })),
+    ).rejects.toThrow(message);
+  });
+
   it('잘못된 JSON이면 실패한다', async () => {
     const path = join(dir, 'invalid.json');
     await writeFile(path, '{');
