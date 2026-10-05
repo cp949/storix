@@ -109,6 +109,27 @@ export function registerFsMoveCopyDeleteContract(ctx: FsHttpContext) {
       expect(response.body.code).toBe('VFS_INVALID_OPERATION');
     });
 
+    it.each(['mv', 'cp'])(
+      '%s: 자기 subtree 목적지의 중간 경로가 없거나 FILE이어도 409 VFS_INVALID_OPERATION이 우선한다',
+      async (route) => {
+        const namespaceId = await ctx.createNamespace(`${route}-subtree-precedence-ns`);
+        const base = `/api/v2/namespaces/${namespaceId}/fs`;
+        await request(ctx.httpServer).post(`${base}/mkdir`).send({ path: '/a' }).expect(201);
+        await request(ctx.httpServer).post(`${base}/touch`).send({ path: '/a/f' }).expect(201);
+
+        for (const body of [
+          { source: '/a', destination: '/a/x/y' },
+          { source: '/a', destination: '/a/f/y' },
+          { source: '/a', destination: '/a/x/y', destinationParents: true },
+        ]) {
+          const response = await request(ctx.httpServer).post(`${base}/${route}`).send(body).expect(409);
+          expect(response.body.code).toBe('VFS_INVALID_OPERATION');
+        }
+        // destinationParents=true여도 중간 디렉터리를 만들지 않는다.
+        await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/a/x' }).expect(404);
+      },
+    );
+
     it('source가 root(/)이면 409 VFS_INVALID_OPERATION을 반환한다', async () => {
       const namespaceId = await ctx.createNamespace('mv-root-ns');
 

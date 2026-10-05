@@ -327,6 +327,15 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
 
     if (compareSegments(sourceSegments, destinationSegments) <= 0) {
       sourceNode = await resolveSource();
+      // 자기 subtree 지정은 목적지 중간 경로의 부재·FILE 오류보다 409가 우선한다(05-vfs-path-contract).
+      // 목적지가 source 아래이면 사전식 비교상 항상 이 분기이므로, 목적지 부모를 잠그기(만들기) 전에 판정한다.
+      if (
+        sourceNode.type === 'DIRECTORY' &&
+        destinationSegments.length >= sourceSegments.length &&
+        sourceSegments.every((segment, index) => destinationSegments[index] === segment)
+      ) {
+        throw new VfsInvalidOperationError(joinSegments(sourceSegments));
+      }
       destinationParentId = await resolveDestinationParent();
     } else {
       destinationParentId = await resolveDestinationParent();
