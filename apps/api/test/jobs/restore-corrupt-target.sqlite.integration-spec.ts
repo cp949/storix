@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -99,7 +100,7 @@ describe('SQLite 복구 대상 상태', () => {
   }, 60000);
 
   beforeEach(() => {
-    dbPath = path.join(workDir, `target-${Math.random().toString(36).slice(2)}.sqlite`);
+    dbPath = path.join(workDir, `target-${randomUUID()}.sqlite`);
   });
 
   afterAll(async () => {

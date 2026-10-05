@@ -36,7 +36,7 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
       return found;
     };
     const blob = () => ({
-      storageKey: `feed/${counter}/${Math.random()}`,
+      storageKey: `feed/${counter}/${randomUUID()}`,
       size: '0',
       mimeType: 'application/octet-stream',
       sha256: '0'.repeat(64),
