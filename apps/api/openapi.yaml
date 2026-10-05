@@ -2083,7 +2083,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '412':
-          description: cursor의 디렉터리 revision이 현재와 다름(`VFS_PRECONDITION_FAILED`). body의 `current`는 현재 디렉터리 metadata다. 조회 API라 receipt는 없다.
+          description: cursor의 디렉터리 revision이 현재와 다름(`VFS_PRECONDITION_FAILED`). 같은 경로의 디렉터리가 삭제 뒤 다시 만들어져 디렉터리 id가 바뀐 경우와 다른 디렉터리의 cursor를 받은 경우를 포함한다. body의 `current`는 현재 디렉터리 metadata다. 조회 API라 receipt는 없다.
           content:
             application/json:
               schema:
