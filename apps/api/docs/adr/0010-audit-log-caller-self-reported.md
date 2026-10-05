@@ -73,6 +73,19 @@ NestJS가 Guard를 Interceptor보다 먼저 실행하기 때문이다.
 - 상한은 프로세스 단위다. 인스턴스가 여러 개이면 인스턴스 수만큼 늘어난다.
 - 상한을 넘은 시간대의 개별 요청 ID, 경로, 시각은 `audit_log`에 없다.
 
+### 메트릭·구조화 요청 로그에 남지 않는 요청
+
+다음 요청은 `MetricsInterceptor`와 `StructuredLoggingInterceptor`에 도달하지 않는다.
+`storix_http_requests_total`과 구조화 요청 로그에 기록되지 않는다.
+
+- 인증 거부(401).
+- body-parser가 거부한 요청(잘못된 JSON, 413).
+- 라우트가 없는 요청.
+
+401은 `audit_log`와 `ApiKeyGuard`의 구조화 경고 로그로 추적한다. 인증 통과 뒤에만 요청 로그를 남기는 것은 의도다.
+401만 메트릭에 집계하면 404·body-parser 거부와 비대칭이 생기므로 집계하지 않는다.
+이 요청까지 집계하려면 아래 "누락 요청까지 기록하려면"과 같은 미들웨어 재설계가 필요하다.
+
 ### 응답 전에 연결이 끊긴 요청
 
 `status`는 응답의 `close` 시점에 정한다.
