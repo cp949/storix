@@ -17,6 +17,7 @@
 
 ### Changed
 
+- PostgreSQL `vfs_node.version`을 `integer`에서 `bigint`로 넓히고 revision 상한(`MAX_VFS_VERSION`)을 2147483647에서 2^53−1로 올렸다(마이그레이션 `WidenVfsNodeVersion1791700000023`, SQLite는 건너뜀). 모든 mutation이 조상을 root까지 올리므로 root version이 2147483647에 닿으면 그 namespace의 모든 쓰기가 409 `VFS_REVISION_EXHAUSTED`로 영구 실패했다(초당 100회 mutation이면 약 248일). 이미 발급된 revision 토큰은 그대로 유효하다. 이 마이그레이션은 `vfs_node` 테이블을 재작성하고 `ACCESS EXCLUSIVE` 락을 잡으므로 행이 많은 배포는 점검 창에서 적용한다. 2147483647을 넘는 version이 생긴 뒤에는 `down`이 `22003`으로 실패한다. 결정은 api ADR-0044다(GitHub 이슈 #41).
 - `POST /fs/rm`이 `recursive` 없이 빈 디렉터리를 삭제한다. 이전에는 비어 있어도 409 `VFS_IS_DIRECTORY`였다. 비어 있지 않은 디렉터리는 409 `VFS_DIRECTORY_NOT_EMPTY`다. OpenAPI 설명과 `POST /fs/mutations`의 `kind: delete` 동작에 맞췄다.
 - 메트릭 `storix_http_transferred_bytes_total`과 구조화 로그 `byteCount`가 요청 수신과 응답 송신 바이트의 합(HTTP 헤더 포함, 소켓 기준)을 센다. 이전에는 요청 `Content-Length`가 있으면 그 값, 없으면 응답 `Content-Length`만 셌다. 그래서 chunked 업로드는 응답 크기만, HEAD와 중간에 끊긴 다운로드는 보내지 않은 본문 길이까지 셌다.
 - 기본 compose가 `STORIX_API_KEY` 미설정을 `docker compose` 단계에서 거부하지 않는다. `app` 기동 시점에 거부한다. 메시지는 기존 `auth.module`의 것이다.

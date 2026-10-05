@@ -203,6 +203,7 @@ FILE snapshot 생성 요청의 선택 필드다. `kind: 'file'`에서만 허용�
   - 보존 예산 UPDATE·manifest·Blob ref 증가를 수행하는 `capture`보다 앞선다.
 - `rows[0].revision`(정규 인코딩 문자열)과 `sourceRevision`을 문자열로 비교한다.
   - revision은 노드 id와 version을 인코딩한다.
+  - version 컬럼은 PostgreSQL `bigint`이고 상한 `MAX_VFS_VERSION`은 `Number.MAX_SAFE_INTEGER`(2^53−1)다. 상한에 닿으면 `VFS_REVISION_EXHAUSTED`다(api ADR-0044).
   - id 또는 version이 다르면 불일치다.
 - 검사 순서: 원본 부재 404 → 원본이 디렉터리 409(`VFS_IS_DIRECTORY`) → revision 불일치 412(`current` = 같은 트랜잭션에서 다시 읽은 원본 metadata + `revision`).
 - 불일치 시 `capture`를 호출하지 않으므로 snapshot·manifest·Blob ref·보존 예산 사용량이 만들어지지 않는다.

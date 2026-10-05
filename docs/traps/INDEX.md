@@ -15,3 +15,4 @@
 | TRP-008 | 변경 노드마다 DB를 개별 조회하면 노드 수·깊이에 비례해 왕복이 늘어난다          | ACTIVE | `withMutation` 안·커밋 직전에 노드 집합을 반복하며 `findOneBy`·`UPDATE`를 노드마다 실행하는 코드를 추가·변경할 때    |
 | TRP-009 | PostgreSQL이 작은 테이블에서 만든 FK 트리거 계획을 테이블이 커진 뒤에도 쓴다    | ACTIVE | 비어 있거나 작은 `vfs_node`에 FK 트리거가 걸린 대량 INSERT(`copyNode` 등)를 PostgreSQL에서 시간 단언하거나 측정할 때 |
 | TRP-010 | TypeORM save()는 같은 밀리초의 Date 변경을 변경 없음으로 보고 UPDATE를 생략한다 | ACTIVE | Date 컬럼만 바꾼 `save()`의 변경 감지로 UPDATE·`@VersionColumn` 증가를 일으키는 코드를 쓸 때                         |
+| TRP-011 | PostgreSQL bigint는 raw SQL 결과에서 문자열이라 엔티티 transformer를 우회한다   | ACTIVE | `vfs_node.version`처럼 PostgreSQL `bigint` 컬럼을 number로 다루는 엔티티를 raw SQL로 읽을 때                         |
