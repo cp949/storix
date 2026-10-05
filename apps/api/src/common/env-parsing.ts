@@ -4,6 +4,16 @@ export const MAX_TCP_PORT = 65535;
 /** `setTimeout`이 받는 32비트 부호 있는 정수의 최댓값(ms)이다. 넘으면 타이머가 1ms 뒤에 발화한다. */
 export const MAX_TIMER_MS = 2 ** 31 - 1;
 
+/**
+ * 보존 일수 환경변수의 최댓값(약 1000년)이다. PostgreSQL은 `now() - N일`이 4713 BC보다 앞서면
+ * `timestamp out of range`로 실패하고(약 2.4M일부터) 2^31 이상은 `integer out of range`다.
+ * 실패하면 GC 실행이 그 단계에서 끝나 뒤 단계가 매 주기 돌지 않는다.
+ */
+export const MAX_RETENTION_DAYS = 365000;
+
+/** `STORIX_ORPHAN_GRACE_PERIOD`의 최댓값(초)이다. `MAX_RETENTION_DAYS`와 같은 기간이다. */
+export const MAX_GRACE_PERIOD_SECONDS = MAX_RETENTION_DAYS * 86400;
+
 const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
 
 /**

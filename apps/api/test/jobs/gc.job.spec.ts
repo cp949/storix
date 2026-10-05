@@ -48,6 +48,12 @@ describe('GcJob', () => {
     }
   });
 
+  it('change feed retention은 PG interval·timestamp 범위를 넘는 일수를 시작 시점에 거부한다', () => {
+    expect(resolveChangeFeedRetentionDays('365000')).toBe(365000);
+    for (const tooLarge of ['365001', '2500000', '2147483648'])
+      expect(() => resolveChangeFeedRetentionDays(tooLarge)).toThrow('STORIX_VFS_CHANGE_RETENTION_DAYS');
+  });
+
   describe('change feed 보존 정리', () => {
     const cursorA: ChangeFeedPruneCursor = {
       occurredAt: '2026-01-01 00:00:00+00',
@@ -467,6 +473,15 @@ describe('GcJob', () => {
     });
   });
 
+  it('orphan 유예 시간이 날짜 범위를 넘으면 GcJob 생성을 거부한다', () => {
+    const make = (value: string) =>
+      new GcJob(new PagedStorage().asBlobStorage(), new BlobRepositoryDouble().asBlobRepository(), {
+        get: (key: string) => (key === 'STORIX_ORPHAN_GRACE_PERIOD' ? value : undefined),
+      } as unknown as ConfigService);
+    expect(() => make('31536000000')).not.toThrow();
+    for (const tooLarge of ['31536000001', '9007199254740991']) expect(() => make(tooLarge)).toThrow('최대');
+  });
+
   describe('미완료 multipart upload', () => {
     const HOUR = 3600_000;
     // 유예 1시간 + 최대 업로드 2시간이면 시작 3시간이 지난 upload만 회수 대상이다.
@@ -862,6 +877,14 @@ describe('GcJob', () => {
       expect(resolveNamespaceDeletedRetentionDays('7')).toBe(7);
       for (const invalid of ['', '0', '-1', '1.5', '1e2', ' 2', '9007199254740992'])
         expect(() => resolveNamespaceDeletedRetentionDays(invalid)).toThrow();
+    });
+
+    it('보존 기간 env가 PG interval·timestamp 범위를 넘으면 시작을 거부한다', () => {
+      expect(resolveNamespaceDeletedRetentionDays('365000')).toBe(365000);
+      for (const tooLarge of ['365001', '2500000', '2147483648'])
+        expect(() => resolveNamespaceDeletedRetentionDays(tooLarge)).toThrow(
+          'STORIX_NAMESPACE_DELETED_RETENTION_DAYS',
+        );
     });
 
     it('만료 파일 삭제는 cursor를 이어 합산하고 예산이 소진되면 cursor를 저장한다', async () => {

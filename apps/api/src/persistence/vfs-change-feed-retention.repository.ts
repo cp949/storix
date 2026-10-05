@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
+import { MAX_RETENTION_DAYS } from '../common/env-parsing.js';
 import { VfsChangeEventEntity } from './entities/vfs-change-event.entity.js';
 import { VfsChangeFeedStateEntity } from './entities/vfs-change-feed-state.entity.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
@@ -13,6 +14,8 @@ export function resolveChangeFeedRetentionDays(value: string | undefined): numbe
   const days = Number(value);
   if (!Number.isSafeInteger(days))
     throw new Error('STORIX_VFS_CHANGE_RETENTION_DAYS는 안전한 정수여야 합니다');
+  if (days > MAX_RETENTION_DAYS)
+    throw new Error(`STORIX_VFS_CHANGE_RETENTION_DAYS는 ${MAX_RETENTION_DAYS} 이하여야 합니다`);
   return days;
 }
 

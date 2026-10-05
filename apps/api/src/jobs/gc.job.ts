@@ -5,7 +5,7 @@ import {
 } from './namespace-deletion.cleanup.js';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { MAX_GRACE_PERIOD_SECONDS, parsePositiveInt } from '../common/env-parsing.js';
 import { parseMaxUploadSeconds } from '../common/upload-duration.js';
 import { BlobRepository, type OrphanBlobCursor } from '../persistence/blob.repository.js';
 import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
@@ -106,7 +106,11 @@ export class GcJob {
     @Optional() private readonly idempotencyReceipts?: IdempotencyReceiptRetentionRepository,
     @Optional() private readonly namespacePurge?: NamespacePurgeRepository,
   ) {
-    this.gracePeriodSeconds = parsePositiveInt(config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'), 86400);
+    this.gracePeriodSeconds = parsePositiveInt(
+      config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'),
+      86400,
+      MAX_GRACE_PERIOD_SECONDS,
+    );
     // 정상 upload는 최대 업로드 시간 안에 끝난다. 그 뒤 orphan 유예까지 지난 upload는 소유한 요청이 없다.
     this.incompleteUploadMaxAgeSeconds =
       this.gracePeriodSeconds +

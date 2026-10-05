@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { isSqliteDataSource } from '../common/db-driver.js';
+import { MAX_RETENTION_DAYS } from '../common/env-parsing.js';
 import { DialectPlaceholders } from './dialect-placeholders.js';
 
 /** 삭제 완료 namespace의 기본 보존 기간(일). `STORIX_NAMESPACE_DELETED_RETENTION_DAYS`로 바꾼다. */
@@ -14,6 +15,8 @@ export function resolveNamespaceDeletedRetentionDays(value: string | undefined):
   const days = Number(value);
   if (!Number.isSafeInteger(days))
     throw new Error('STORIX_NAMESPACE_DELETED_RETENTION_DAYS는 안전한 정수여야 합니다');
+  if (days > MAX_RETENTION_DAYS)
+    throw new Error(`STORIX_NAMESPACE_DELETED_RETENTION_DAYS는 ${MAX_RETENTION_DAYS} 이하여야 합니다`);
   return days;
 }
 
