@@ -103,10 +103,19 @@ pnpm --filter @cp949/storix-api run restore:run
 - API 프로세스가 해당 파일을 열지 않은 상태에서만 복구한다.
 - 백업 형식은 `storix.sqlite`이며 Postgres의 `postgres.dump`와 다르다.
 - SQLite와 Postgres 간 데이터 마이그레이션 도구는 없다.
+- 복구는 `<STORIX_DB_SQLITE_PATH>.restore-tmp`에 복사한 뒤 `rename`으로 교체한다.
+  - 복사가 중간에 실패하면 기존 DB 파일을 바꾸지 않고 임시 파일을 지운다.
+  - 교체 전에 이전 `-wal`·`-shm`·`-journal`을 지운다.
+- 대상에 namespace 데이터가 없으면 `STORIX_RESTORE_FORCE` 없이 복구한다. 테이블이 없는 대상(migrate 전)도 같다.
+- `STORIX_RESTORE_FORCE=true`는 대상 DB를 열어 상태를 확인하지 않는다. 대상이 손상됐거나 SQLite 파일이 아니어도 복구한다.
+  - force 없이 손상된 대상에 복구하면 `SQLITE_CORRUPT`·`SQLITE_NOTADB`로 실패한다.
+  - 덮어써도 되는 파일인지 확인한 뒤 `STORIX_RESTORE_FORCE=true`로 다시 실행한다.
 
 ## 알려진 제약
 
 - 멀티프로세스/멀티호스트 SQLite 배포 미지원(위 배포 모델 참고).
+- `STORIX_DB_SQLITE_PATH`를 파일 단위 bind mount로 지정한 구성은 복구를 지원하지 않는다. `rename`이 `EBUSY`로 실패한다. 디렉터리 볼륨(`sqlite-data:/data`)을 쓴다.
+- compose `restore`는 `migrate`의 성공 완료에 의존한다. 손상된 DB에서 `migrate`가 먼저 실패할 때 `restore` 서비스가 시작되는지는 compose로 확인하지 않았다. 호스트 실행(`restore:run:prod`)은 `migrate`에 의존하지 않는다.
 - SQLite ↔ Postgres 간 데이터 마이그레이션 도구 없음.
 - `findRecursive`의 이름 필터는 `PRAGMA case_sensitive_like=ON`으로
   Postgres와 동일하게 대소문자를 구분한다(연결 시점에 자동 적용).

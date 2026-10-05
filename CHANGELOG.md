@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- SQLite 복구가 대상 DB 파일이 손상됐거나 migrate 전이면 `STORIX_RESTORE_FORCE=true`여도 `SQLITE_CORRUPT`·`SQLITE_NOTADB`·`no such table: namespace`로 실패해 재실행할 수 없던 문제를 수정했다. force 복구는 대상 DB 상태를 확인하지 않는다. force 없이도 테이블이 없는 대상은 비어 있는 대상으로 복구한다. 손상된 대상에 force 없이 복구하면 이전처럼 `SQLITE_CORRUPT`로 실패한다. 복구는 임시 파일(`<STORIX_DB_SQLITE_PATH>.restore-tmp`)에 복사한 뒤 `rename`으로 교체하므로 복사가 끊겨도 기존 DB가 잘린 채 남지 않는다. 이 때문에 파일 단위 bind mount로 지정한 `STORIX_DB_SQLITE_PATH`는 복구가 `EBUSY`로 실패한다.
 - 손상되거나 잘린 압축 요청 본문(`Content-Encoding: gzip`·`deflate`·`br`)이 400 `BAD_REQUEST` 대신 `Z_DATA_ERROR`·`Z_BUF_ERROR`·`ERR__ERROR_FORMAT_PADDING_N` 같은 압축 라이브러리 코드로 응답되던 문제를 수정했다. JSON·urlencoded·mutation raw 파서 단계의 오류는 이제 `code`가 `BAD_REQUEST`다. status(400)와 `message`는 그대로다. 지원하지 않는 `Content-Encoding`은 이전처럼 415 `BAD_REQUEST`다.
 - 휴지통을 quota에서 제외한 namespace에서 `maxRetainedTrashBytes`를 현재 보존량 아래로 낮춘 뒤, 휴지통 byte 증가분이 0인 삭제(0 byte 파일 `rm`, 빈 디렉터리 `rmdir`)도 413 `VFS_TRASH_LIMIT_EXCEEDED`로 거부되던 문제를 수정했다. 증가분이 0이면 초과 상태에서도 허용한다. 만료된 0 byte 파일이 live로 남던 문제도 같은 원인이었다. 증가분이 양수인 삭제는 계속 거부한다.
 - change feed checkpoint가 있는 namespace에서 깊은 경로의 mutation(put·touch·mv 등)이 깊이에 이차로 느려지던 문제를 수정했다. 조상마다 변경 전 상태를 읽으며 경로를 root까지 다시 계산해, SQLite 실측에서 깊이 800 기존 체인의 put이 323,641쿼리·10.3초였다(checkpoint 없으면 2,426쿼리). 이제 4,041쿼리·0.2초다. 이벤트 내용과 순서는 같다. PostgreSQL은 쿼리 수 단언을 포함한 통합 테스트는 통과했고 시간은 측정하지 않았다(GitHub 이슈 #43).
