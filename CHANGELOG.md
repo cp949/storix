@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- capability 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)과 upload session 정책(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)의 중복 JSON key가 조용히 마지막 값으로 적용되던 문제를 고쳤다. 같은 namespace ID를 두 번 적으면 한쪽 설정이 경고 없이 사라졌고, 코드의 중복 검사는 `JSON.parse`가 먼저 덮어써 도달할 수 없었다. 이제 같은 객체 안의 중복 key는 시작 오류다(`Duplicate key "<key>" at <경로>`). 중복 key가 있는 기존 설정 파일은 업그레이드 뒤 시작이 거부되므로 한 항목으로 합쳐야 한다.
 - `GET /fs/ls?consistency=revision`에서 같은 경로의 디렉터리가 삭제 뒤 다시 만들어지면 옛 cursor가 400 `VFS_INVALID_CURSOR`이던 문제를 고쳤다. 디렉터리 revision이 바뀐 경우와 같은 412 `VFS_PRECONDITION_FAILED`로 응답한다. 클라이언트는 첫 페이지부터 다시 열거하면 된다. 다른 디렉터리의 `rc1.` cursor도 같은 이유로 400이 아니라 412다. 형식·변조 오류의 400은 그대로다.
 - `Range` 헤더의 단위 이름이 대소문자를 구분해 `Bytes=1-2`가 416 `VFS_RANGE_NOT_SATISFIABLE`이던 문제를 고쳤다. RFC 9110 §14.1에 따라 `bytes` 단위를 대소문자 구분 없이 받는다. 알 수 없는 단위(`items=0-1`)는 이전처럼 416이다.
 - `Range` 헤더의 숫자가 309자리 이상이면 416 `VFS_RANGE_NOT_SATISFIABLE`이던 문제를 고쳤다. 308자리 이하는 end가 파일 끝으로 잘리고 suffix(`bytes=-N`)는 전체를 돌려주는데, 309자리 이상만 `Number`가 `Infinity`로 바꿔 거부했다. 이제 같은 규칙을 따른다. start가 파일 끝 밖이면 416이다.

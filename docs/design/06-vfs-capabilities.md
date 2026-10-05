@@ -12,6 +12,7 @@
 - 상대 경로는 프로세스 작업 디렉터리 기준으로 해석한다.
 - 환경 변수가 없거나 빈 문자열이면 `globalAllowedCapabilities: []`, `namespaceAllowedCapabilities: {}`를 적용한다.
 - 경로가 지정되면 파일 읽기·JSON 파싱·schema 검증 실패로 시작을 거부한다.
+- 같은 JSON 객체 안의 중복 key(같은 namespace ID를 두 번 적은 경우 포함)는 시작 오류다. 이스케이프를 해석한 key로 비교한다.
 - 운영 중 reload·설정 변경 API는 없다.
 
 ```json

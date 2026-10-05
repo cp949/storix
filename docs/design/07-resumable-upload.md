@@ -64,6 +64,7 @@
 ## 설정과 만료
 
 - `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 UTF-8 JSON은 `global`과 `namespaces`만 허용한다.
+- 같은 JSON 객체 안의 중복 key(같은 namespace ID를 두 번 적은 경우 포함)는 시작 오류다.
 - `global`에는 양수 `maxStagedBytes`(10진 문자열, signed int64 이하), 양의 안전한 정수 `maxActiveSessions`가 필수다.
 - `partSizeBytes`(기본 16777216, 최대 2147483647), `inactivitySeconds`(기본 86400), `maxLifetimeSeconds`(기본 604800)는 선택 양의 안전한 정수다.
 - 비활동 기간은 최대 수명 이하여야 한다.
