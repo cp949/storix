@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- 휴지통을 quota에서 제외한 namespace에서 `maxRetainedTrashBytes`를 현재 보존량 아래로 낮춘 뒤, 휴지통 byte 증가분이 0인 삭제(0 byte 파일 `rm`, 빈 디렉터리 `rmdir`)도 413 `VFS_TRASH_LIMIT_EXCEEDED`로 거부되던 문제를 수정했다. 증가분이 0이면 초과 상태에서도 허용한다. 만료된 0 byte 파일이 live로 남던 문제도 같은 원인이었다. 증가분이 양수인 삭제는 계속 거부한다.
 - change feed checkpoint가 있는 namespace에서 깊은 경로의 mutation(put·touch·mv 등)이 깊이에 이차로 느려지던 문제를 수정했다. 조상마다 변경 전 상태를 읽으며 경로를 root까지 다시 계산해, SQLite 실측에서 깊이 800 기존 체인의 put이 323,641쿼리·10.3초였다(checkpoint 없으면 2,426쿼리). 이제 4,041쿼리·0.2초다. 이벤트 내용과 순서는 같다. PostgreSQL은 쿼리 수 단언을 포함한 통합 테스트는 통과했고 시간은 측정하지 않았다(GitHub 이슈 #43).
 - 깊은 경로의 `mkdir -p`(`POST /fs/mkdir`의 `parents`)와 `parents=true`로 중간 디렉터리를 만드는 put·cp·mv가 깊이에 이차로 느려지던 문제를 수정했다. 새 디렉터리마다 조상 체인을 root까지 다시 조회해, SQLite 실측에서 깊이 1,000이 504,514쿼리·14.6초, 깊이 2,000이 2,009,018쿼리·57.3초였고 그동안 같은 프로세스의 다른 요청이 멈췄다. 이제 깊이 2,000이 10,018쿼리·0.46초다. 응답과 revision 증가는 같다. PostgreSQL은 측정하지 않았다(GitHub 이슈 #42).
 - namespace 생성(`POST /api/v2/namespaces`) 감사 로그의 `namespace_id`가 항상 null이던 문제를 수정했다. 이제 응답의 namespace ID를 기록한다. 같은 Idempotency-Key로 재생된 성공 응답도 같다.
