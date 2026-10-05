@@ -208,6 +208,11 @@ function fixture(
 
 const source = (value: string) => Readable.from([Buffer.from(value)]);
 
+// 상한을 넘는 초를 ms로 바꿔 setTimeout에 넘기면 1ms 뒤에 발화해 모든 조각 요청이 즉시 끊긴다.
+it('업로드 최대 지속 시간이 타이머 상한을 넘으면 생성 시점에 거부한다', () => {
+  expect(() => fixture(false, '6', '2592000')).toThrow('잘못된 정수 환경변수 값');
+});
+
 it('accepts exact non-final and final part lengths with plaintext digest', async () => {
   const f = fixture();
   expect(await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req')).toMatchObject({

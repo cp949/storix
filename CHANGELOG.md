@@ -35,6 +35,8 @@
 
 ### Fixed
 
+- 업로드 본문 수신이 5분을 넘으면 Node 기본 `requestTimeout`(300초)으로 408이 되어 연결이 끊기던 문제를 고쳤다. HTTP 서버의 `requestTimeout`을 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 24시간)에 맞춘다. 이 값은 업로드가 아닌 라우트의 본문 수신에도 적용된다. `headersTimeout`(60초)은 그대로다.
+- `STORIX_MUTATION_MAX_UPLOAD_SECONDS`가 2147483를 넘거나 `STORIX_MUTATION_LEASE_SECONDS`가 6442450을 넘으면 `setTimeout` 한도를 넘어 타이머가 1ms 뒤에 발화하던 문제를 고쳤다. 부팅이 성공한 뒤 모든 업로드가 즉시 끊기거나 lease 갱신이 연속 실행됐다. 이제 두 값을 부팅 시점에 거부한다. `STORIX_MUTATION_LEASE_SECONDS`는 이전에는 요청 시점에만 검증해, 잘못된 값(`30s` 등)으로도 부팅이 성공하고 이후 모든 mutation이 500이었다. 이제 부팅 시점에 거부한다.
 - SQLite에서 다른 트랜잭션이 게이트를 오래 쥐고 있을 때 대기 상한(30초)을 넘긴 트랜잭션 시작이, 현재 게이트를 쥔 트랜잭션에 `ROLLBACK`을 보내 그 쓰기를 모두 지우던 문제를 고쳤다. 게이트를 쥐지 않은 트랜잭션은 연결 상태를 건드리지 않는다. 쥐고 있던 쪽은 이전에 `SqliteTransactionAbortedError`(500)로 끝났다.
 - 다운로드 도중 S3 응답이 멈춘 상태에서 클라이언트가 연결을 끊으면, S3 연결과 요청 처리가 S3의 다음 chunk가 올 때까지 남던 문제를 고쳤다. 로컬 지연 서버 재현(첫 chunk 뒤 3000ms 정지, 클라이언트 200ms 중단)에서 처리 종료·소켓 close가 3016ms에서 219ms로 줄었다. S3Client에 `requestTimeout`·`socketTimeout`이 없어 완전히 멈춘 S3 응답은 여전히 끊기지 않는다.
 - capability 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)과 upload session 정책(`STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`)의 중복 JSON key가 조용히 마지막 값으로 적용되던 문제를 고쳤다. 같은 namespace ID를 두 번 적으면 한쪽 설정이 경고 없이 사라졌고, 코드의 중복 검사는 `JSON.parse`가 먼저 덮어써 도달할 수 없었다. 이제 같은 객체 안의 중복 key는 시작 오류다(`Duplicate key "<key>" at <경로>`). 중복 key가 있는 기존 설정 파일은 업그레이드 뒤 시작이 거부되므로 한 항목으로 합쳐야 한다.

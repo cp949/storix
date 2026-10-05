@@ -5,6 +5,7 @@ import { configureBodyParsers } from './common/body-parser.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
 import { parseListenPort } from './common/env-parsing.js';
 import { installGracefulShutdown, parseShutdownTimeoutMs } from './common/graceful-shutdown.js';
+import { applyUploadRequestTimeout } from './common/http-server-timeouts.js';
 import type { ErrorReporter } from './observability/error-reporter.js';
 import { ERROR_REPORTER } from './observability/observability.constants.js';
 import { AUTH_REJECT_AUDIT_LIMITER } from './audit/auth-reject-audit-limiter.js';
@@ -30,6 +31,8 @@ async function bootstrap() {
     ),
   );
   configureBodyParsers(app);
+  // Node 기본 requestTimeout(300초)이 업로드 최대 지속 시간보다 먼저 본문 수신을 끊지 않게 한다.
+  applyUploadRequestTimeout(app.getHttpServer(), process.env.STORIX_MUTATION_MAX_UPLOAD_SECONDS);
   await app.listen(port);
 }
 

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { parseMaxUploadSeconds } from '../common/upload-duration.js';
 import { resolveFileSizeLimits, resolveMaxFileSizeBytes } from '../common/resource-limit.js';
 import {
   assertExpiryWithinBounds,
@@ -108,7 +108,7 @@ export class ConditionalContentService {
     this.maxFileSizeBytes = fileSizeLimits.ceilingBytes;
     this.defaultMaxFileSizeBytes = fileSizeLimits.defaultBytes;
     this.maxUploadDurationMs =
-      parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
+      parseMaxUploadSeconds(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS')) * 1000;
     this.expiryBounds = resolveFileExpiryBounds(
       config.get<string>('STORIX_VFS_EXPIRY_MIN_SECONDS'),
       config.get<string>('STORIX_VFS_EXPIRY_MAX_SECONDS'),

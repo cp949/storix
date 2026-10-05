@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { classifyPersistenceOperation } from './persistence-failure.js';
 import { isSqliteDataSource } from '../common/db-driver.js';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { MAX_TIMER_MS, parsePositiveInt } from '../common/env-parsing.js';
 import type { MutationTx } from './vfs-node.repository.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsMutationReceiptEntity } from './entities/vfs-mutation-receipt.entity.js';
@@ -28,8 +28,14 @@ const RECEIPT_DAYS = 30;
 // 재조회 사이에 다른 요청이 행을 지우는 경합에서 claim을 다시 시도하는 최대 횟수다.
 const MAX_CLAIM_ATTEMPTS = 3;
 
+/**
+ * lease 상한(초)이다. 업로드 중 갱신 간격이 lease의 1/3이라, 그 간격(ms)이 `setTimeout` 한도를 넘지 않는 최댓값이다.
+ * 넘으면 갱신 타이머가 1ms 간격으로 돌아 DB 갱신이 연속 실행된다.
+ */
+export const MUTATION_LEASE_SECONDS_LIMIT = Math.floor((MAX_TIMER_MS * 3) / 1000);
+
 export function mutationLeaseSeconds(): number {
-  return parsePositiveInt(process.env.STORIX_MUTATION_LEASE_SECONDS, 60);
+  return parsePositiveInt(process.env.STORIX_MUTATION_LEASE_SECONDS, 60, MUTATION_LEASE_SECONDS_LIMIT);
 }
 
 function expiresAfter(now: Date, ms: number): Date {
@@ -54,7 +60,10 @@ function keyOf(
 
 @Injectable()
 export class VfsMutationReceiptRepository {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(private readonly dataSource: DataSource) {
+    // 요청 때마다 읽는 값이라 잘못된 값이 부팅을 통과하면 이후 모든 mutation이 500이 된다. 생성 시점에 한 번 검증한다.
+    mutationLeaseSeconds();
+  }
 
   private get repo() {
     return this.dataSource.getRepository(VfsMutationReceiptEntity);

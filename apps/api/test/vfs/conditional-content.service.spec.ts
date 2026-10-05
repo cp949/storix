@@ -284,6 +284,25 @@ describe('ConditionalContentService 오류 receipt', () => {
     },
   );
 
+  // 상한을 넘는 초를 ms로 바꿔 setTimeout에 넘기면 1ms 뒤에 발화해 모든 업로드가 즉시 끊긴다.
+  it('업로드 최대 지속 시간이 타이머 상한을 넘으면 생성 시점에 거부한다', () => {
+    expect(
+      () =>
+        new ConditionalContentService(
+          new PathResolver(),
+          nodes,
+          receipts,
+          { generate: () => 'object-key' } as StorageKeyGenerator,
+          { put, delete: deleteObject } as unknown as BlobStorage,
+          new ContentIngressService({ put, delete: deleteObject } as unknown as BlobStorage, null),
+          { findKnownStorageKeys } as unknown as BlobRepository,
+          {
+            get: (name: string) => (name === 'STORIX_MUTATION_MAX_UPLOAD_SECONDS' ? '2592000' : undefined),
+          } as unknown as ConfigService,
+        ),
+    ).toThrow('잘못된 정수 환경변수 값');
+  });
+
   it('평문 checksum 불일치는 object를 삭제하고 422 receipt를 body와 기대값에 결합한다', async () => {
     const expected = '0'.repeat(64);
     const result = await upload(

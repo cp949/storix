@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { CapabilityService } from '../capability/capability.service.js';
 import { DomainError } from '../common/domain-error.js';
-import { parsePositiveInt } from '../common/env-parsing.js';
+import { parseMaxUploadSeconds } from '../common/upload-duration.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
@@ -54,7 +54,7 @@ export class UploadSessionPartService {
     config: ConfigService,
   ) {
     this.maxDurationMs =
-      parsePositiveInt(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS'), 86400) * 1000;
+      parseMaxUploadSeconds(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS')) * 1000;
   }
 
   async putPart(
