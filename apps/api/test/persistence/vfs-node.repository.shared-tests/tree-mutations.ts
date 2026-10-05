@@ -107,6 +107,99 @@ export function runTreeMutationsTests(helpers: VfsNodeRepositoryTestHelpers): vo
       ).resolves.toBeTruthy();
     });
 
+    describe('휴지통 byte ceiling을 이미 넘은 상태', () => {
+      // 2 byte를 휴지통에 보존한 뒤 ceiling을 1로 낮춰 초과 상태를 만든다.
+      async function overLimitFixture(name: string) {
+        const namespace = await createNamespace(name);
+        await getDs().getRepository(NamespaceEntity).update(
+          { id: namespace.id },
+          {
+            trashEnabled: true,
+            excludeTrashFromQuota: true,
+            maxTotalLogicalBytes: '20',
+            maxRetainedTrashBytes: '10',
+          },
+        );
+        const root = (await getRepo().getRoot(namespace.id))!;
+        await getRepo().putFileContent(
+          namespace.id,
+          root.id,
+          ['first.bin'],
+          false,
+          makeBlobData({ size: '2' }),
+          null,
+          false,
+        );
+        await getRepo().removeNode(namespace.id, root.id, ['first.bin'], false, UNLIMITED);
+        await getDs()
+          .getRepository(NamespaceEntity)
+          .update({ id: namespace.id }, { maxRetainedTrashBytes: '1' });
+        return { namespaceId: namespace.id, rootId: root.id };
+      }
+
+      it('증가분이 0 byte인 FILE과 빈 DIRECTORY 삭제는 허용한다', async () => {
+        const { namespaceId, rootId } = await overLimitFixture('trash-over-zero-delta-ns');
+        await getRepo().putFileContent(
+          namespaceId,
+          rootId,
+          ['empty.bin'],
+          false,
+          makeBlobData({ size: '0' }),
+          null,
+          false,
+        );
+        await getRepo().ensureDirectory(namespaceId, rootId, ['empty-dir'], false);
+
+        await expect(
+          getRepo().removeNode(namespaceId, rootId, ['empty.bin'], false, UNLIMITED),
+        ).resolves.toBeTruthy();
+        await expect(
+          getRepo().removeNode(namespaceId, rootId, ['empty-dir'], false, UNLIMITED),
+        ).resolves.toBeTruthy();
+        expect(await getRepo().resolvePath(namespaceId, rootId, ['empty.bin'])).toBeNull();
+        expect(await getRepo().resolvePath(namespaceId, rootId, ['empty-dir'])).toBeNull();
+      });
+
+      it('증가분이 양수인 삭제는 계속 거부한다', async () => {
+        const { namespaceId, rootId } = await overLimitFixture('trash-over-positive-delta-ns');
+        await getRepo().putFileContent(
+          namespaceId,
+          rootId,
+          ['second.bin'],
+          false,
+          makeBlobData({ size: '1' }),
+          null,
+          false,
+        );
+
+        await expect(
+          getRepo().removeNode(namespaceId, rootId, ['second.bin'], false, UNLIMITED),
+        ).rejects.toMatchObject({ code: 'VFS_TRASH_LIMIT_EXCEEDED', status: 413 });
+        expect(await getRepo().resolvePath(namespaceId, rootId, ['second.bin'])).not.toBeNull();
+      });
+
+      it('만료된 0 byte FILE은 만료 삭제로 휴지통에 이동한다', async () => {
+        const { namespaceId, rootId } = await overLimitFixture('trash-over-expire-zero-ns');
+        await getRepo().putFileContent(
+          namespaceId,
+          rootId,
+          ['expiring.bin'],
+          false,
+          makeBlobData({ size: '0' }),
+          null,
+          false,
+          undefined,
+          new Date(Date.now() - 60_000),
+        );
+        const expiring = (await getRepo().resolvePath(namespaceId, rootId, ['expiring.bin']))!;
+
+        const result = await getRepo().expireNode(namespaceId, expiring.id, new Date());
+
+        expect(result).not.toBeNull();
+        expect(await getRepo().resolvePath(namespaceId, rootId, ['expiring.bin'])).toBeNull();
+      });
+    });
+
     it('quota 제외 휴지통 복원은 검사 대상 quota를 넘으면 rollback한다', async () => {
       const namespace = await createNamespace('trash-excluded-restore-quota-ns');
       await getDs()

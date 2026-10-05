@@ -165,7 +165,9 @@ export class VfsTrashRepository {
           ? BigInt(counters[0].maxRetainedTrashBytes)
           : tx.maxTotalLogicalBytes
         : quotaLimit;
-      if (nextBytes > trashByteLimit) throw new VfsTrashLimitExceededError(trashByteLimit.toString());
+      // 이미 초과한 상태에서도 증가분이 0이면 허용한다(design 14 "기존 초과 상태").
+      if (bytes > 0n && nextBytes > trashByteLimit)
+        throw new VfsTrashLimitExceededError(trashByteLimit.toString());
     }
     if (nextBytes > MAX_INT64) throw new Error('namespace trash byte counter out of int64 range');
 
