@@ -32,4 +32,4 @@ SQLite에서도 한 줄로 이어진 깊은 체인에서는 깊이 1,500 mv·cp�
   - 수정 전 SQLite에서 36,068개와 1,128,766개로 실패했다.
 - 남는 위험:
   - 변경 집합 밖의 깊은 조상은 여전히 부모를 한 단계씩 조회한다. 깊이에 선형이고 노드 수에는 곱해지지 않는다.
-  - PostgreSQL에서 통계가 없으면 `id = ? AND namespace_id = ?` 조회와 `FK_vfs_node_parent` 트리거가 O(namespace 행 수)로 계획된다. 12,000개 cp가 수정 뒤에도 PG에서 약 6.6초다. 이 TRP의 범위가 아니며 GitHub 이슈 #35가 추적한다.
+  - PostgreSQL에서 12,000개 cp가 수정 뒤에도 6.6초인 것은 `FK_vfs_node_parent` RI 계획이 작은 테이블 기준으로 캐시된 탓이다. 원인은 TRP-009다(GitHub 이슈 #35).
