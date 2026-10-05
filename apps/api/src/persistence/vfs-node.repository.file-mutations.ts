@@ -139,14 +139,18 @@ export class VfsNodeRepositoryFileMutations extends VfsNodeRepositorySnapshots {
       if (existing.type === 'DIRECTORY') {
         throw new VfsIsDirectoryError(joinSegments(segments));
       }
-      if (existing.version >= MAX_VFS_VERSION) {
+      // content는 그대로 두고 version과 updatedAt만 올린다. save()의 변경 감지에 맡기면
+      // 직전 쓰기와 같은 밀리초의 updatedAt은 변경 없음으로 보여 UPDATE와 @VersionColumn 증가가 생략된다.
+      const bumped = await nodeRepo
+        .createQueryBuilder()
+        .update(VfsNodeEntity)
+        .set({ version: () => 'version + 1', updatedAt: new Date() })
+        .where('id = :id AND version < :maxVersion', { id: existing.id, maxVersion: MAX_VFS_VERSION })
+        .execute();
+      if (bumped.affected !== 1) {
         throw new VfsRevisionExhaustedError();
       }
-      // content는 그대로 두고 updatedAt만 갱신해 diff를 발생시킨다.
-      // TypeORM은 변경된 column이 없으면 UPDATE 자체를 생략해 @VersionColumn도
-      // 증가하지 않으므로, save()만 호출해서는 touch의 "version만 올린다" 요구를 만족할 수 없다.
-      existing.updatedAt = new Date();
-      const touched = await nodeRepo.save(existing);
+      const touched = await nodeRepo.findOneByOrFail({ id: existing.id, namespaceId });
       this.markChanged(tx, touched.id, false);
       return { kind: 'replaced', node: toRecord(touched) };
     }

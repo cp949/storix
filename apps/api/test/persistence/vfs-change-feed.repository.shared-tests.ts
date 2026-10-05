@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { jest } from '@jest/globals';
 import { DataSource } from 'typeorm';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { VfsChangeFeedStateEntity } from '../../src/persistence/entities/vfs-change-feed-state.entity.js';
@@ -235,6 +236,43 @@ export function runVfsChangeFeedRepositorySharedTests(getContext: () => Context)
       ['created', '/a.b'],
     ]);
     expect(rows.filter((event) => event.path === '/a')).toHaveLength(1);
+  });
+
+  it('같은 밀리초 안에 반복한 touch도 FILE version을 올리고 파일 updated 이벤트를 기록한다', async () => {
+    const c = await setup();
+    await c.repository.touchFile(c.namespaceId, c.rootId, ['f'], false, c.blob());
+    await c.repository.createChangeFeedCheckpoint(c.namespaceId, c.rootId);
+    // new Date()만 고정한다. 드라이버가 쓰는 타이머는 실제 타이머로 둔다.
+    jest.useFakeTimers({
+      now: Date.now(),
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+    try {
+      const first = await c.repository.touchFile(c.namespaceId, c.rootId, ['f'], false, null);
+      const second = await c.repository.touchFile(c.namespaceId, c.rootId, ['f'], false, null);
+      if (first.kind !== 'replaced' || second.kind !== 'replaced') throw new Error('touch did not replace');
+      expect(second.node.version).toBe(first.node.version + 1);
+      const stored = await c.repository.resolvePath(c.namespaceId, c.rootId, ['f']);
+      expect(stored?.version).toBe(second.node.version);
+    } finally {
+      jest.useRealTimers();
+    }
+    const fileEvents = (await c.events()).filter((event) => event.path === '/f');
+    expect(fileEvents.map((event) => event.kind)).toEqual(['updated', 'updated']);
+    expect(fileEvents.at(-1)?.revision).toBe(
+      encodeRevision((await c.repository.resolvePath(c.namespaceId, c.rootId, ['f']))!),
+    );
   });
 
   it('subtree copy/move/delete는 노드별 생성, 이전 경로, tombstone을 기록한다', async () => {
