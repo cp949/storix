@@ -9,6 +9,7 @@ declare module 'express-serve-static-core' {
     startTime: number;
     auditSnapshotId?: string;
     auditTrashId?: string;
+    auditNamespaceId?: string;
   }
 }
 

@@ -160,7 +160,7 @@ describe('감사 로그 end-to-end', () => {
 
     expect(row).toMatchObject({
       operation: 'NamespaceController.create',
-      namespace_id: null,
+      namespace_id: response.body.id,
       status: 201,
       detail: { name },
     });

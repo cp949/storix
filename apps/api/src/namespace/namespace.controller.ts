@@ -6,11 +6,12 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { DomainErrorFilter } from '../common/domain-error.filter.js';
 import { StructuredLoggingInterceptor } from '../common/structured-logging.interceptor.js';
 import { CapabilityService } from '../capability/capability.service.js';
@@ -31,6 +32,7 @@ export class NamespaceController {
   async create(
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() body: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const keyErrorMessage = 'Idempotency-Key 헤더가 필요하며 255 byte 이하여야 함';
@@ -53,6 +55,8 @@ export class NamespaceController {
       idPrefix,
     );
 
+    // 재생된 성공 응답도 같은 namespace에 대한 요청이다. 오류 body에는 id가 없다.
+    if ('id' in result.body && typeof result.body.id === 'string') req.auditNamespaceId = result.body.id;
     res.status(result.status);
     return result.body;
   }

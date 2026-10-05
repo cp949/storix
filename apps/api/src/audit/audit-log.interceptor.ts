@@ -101,7 +101,8 @@ export class AuditLogInterceptor implements NestInterceptor {
   // params.id는 현재 NamespaceController(:id)만 쓰고 그 값은 항상 namespace id이므로 이 heuristic이
   // 성립한다. 앞으로 :id를 다른 의미로 쓰는 컨트롤러가 생기면 이 가정을 재검토해야 한다.
   private resolveNamespaceId(request: Request): string | null {
-    const value = request.params.namespaceId ?? request.params.id;
+    // 경로 파라미터가 없는 namespace 생성은 컨트롤러가 응답의 id를 auditNamespaceId로 넘긴다.
+    const value = request.params.namespaceId ?? request.params.id ?? request.auditNamespaceId;
     return typeof value === 'string' && isNamespaceId(value) ? value : null;
   }
 

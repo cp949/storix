@@ -16,6 +16,7 @@ function createContext(
     body?: unknown;
     headers?: Record<string, string>;
     auditSnapshotId?: string;
+    auditNamespaceId?: string;
   } = {},
 ) {
   const request = {
@@ -24,6 +25,7 @@ function createContext(
     query: options.query ?? {},
     body: options.body,
     auditSnapshotId: options.auditSnapshotId,
+    auditNamespaceId: options.auditNamespaceId,
     headers: options.headers ?? {},
   };
   const response = Object.assign(new EventEmitter(), { statusCode: 200, writableFinished: true });
@@ -202,6 +204,38 @@ describe('AuditLogInterceptor', () => {
         response.emit('close');
         expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({
           namespaceId: '22222222-2222-2222-2222-222222222222',
+        });
+        done();
+      });
+  });
+
+  it('namespace 생성처럼 경로 파라미터가 없으면 컨트롤러가 넘긴 auditNamespaceId를 기록한다', (done) => {
+    const { context, response } = createContext(
+      {},
+      { auditNamespaceId: '33333333-3333-3333-3333-333333333333' },
+    );
+    createInterceptor()
+      .intercept(context, { handle: () => of({ ok: true }) })
+      .subscribe(() => {
+        response.emit('close');
+        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({
+          namespaceId: '33333333-3333-3333-3333-333333333333',
+        });
+        done();
+      });
+  });
+
+  it('경로 파라미터의 namespaceId가 auditNamespaceId보다 우선한다', (done) => {
+    const { context, response } = createContext(
+      { namespaceId: '11111111-1111-1111-1111-111111111111' },
+      { auditNamespaceId: '33333333-3333-3333-3333-333333333333' },
+    );
+    createInterceptor()
+      .intercept(context, { handle: () => of({ ok: true }) })
+      .subscribe(() => {
+        response.emit('close');
+        expect(auditLogRepository.record.mock.calls[0][0]).toMatchObject({
+          namespaceId: '11111111-1111-1111-1111-111111111111',
         });
         done();
       });

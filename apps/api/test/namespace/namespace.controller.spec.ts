@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { CapabilityService } from '../../src/capability/capability.service.js';
 import { IdempotencyKeyRequiredError, NamespaceNotFoundError } from '../../src/namespace/namespace.errors.js';
 import { NamespaceController } from '../../src/namespace/namespace.controller.js';
@@ -53,23 +53,39 @@ describe('NamespaceController', () => {
 
   describe('POST /namespaces Idempotency-Key 길이', () => {
     const res = { status: jest.fn() } as unknown as Response;
+    const req = {} as Request;
     const body = { name: 'docs' };
 
     it('255 byte 키는 service.create로 전달한다', async () => {
       namespaceService.create.mockResolvedValue({ status: 201, body: {} } as never);
-      await controller.create('k'.repeat(255), body, res);
+      await controller.create('k'.repeat(255), body, req, res);
       expect(namespaceService.create).toHaveBeenCalledTimes(1);
     });
 
+    it('응답 body의 id를 감사 로그용 auditNamespaceId로 넘기고 오류 body면 넘기지 않는다', async () => {
+      const created = {} as Request;
+      namespaceService.create.mockResolvedValue({ status: 201, body: { id: 'ns-1' } } as never);
+      await controller.create('key', body, created, res);
+      expect(created.auditNamespaceId).toBe('ns-1');
+
+      const rejected = {} as Request;
+      namespaceService.create.mockResolvedValue({
+        status: 409,
+        body: { code: 'NAMESPACE_ALREADY_EXISTS', message: 'x' },
+      } as never);
+      await controller.create('key', body, rejected, res);
+      expect(rejected.auditNamespaceId).toBeUndefined();
+    });
+
     it('256 byte 키는 IDEMPOTENCY_KEY_REQUIRED(400)로 거절하고 service를 호출하지 않는다', async () => {
-      const error = await controller.create('k'.repeat(256), body, res).catch((e: unknown) => e);
+      const error = await controller.create('k'.repeat(256), body, req, res).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(IdempotencyKeyRequiredError);
       expect((error as IdempotencyKeyRequiredError).message).toContain('255 byte');
       expect(namespaceService.create).not.toHaveBeenCalled();
     });
 
     it('키가 없으면 생성 경로의 255 byte 안내로 거절한다', async () => {
-      const error = await controller.create(undefined, body, res).catch((e: unknown) => e);
+      const error = await controller.create(undefined, body, req, res).catch((e: unknown) => e);
       expect((error as IdempotencyKeyRequiredError).message).toBe(
         'Idempotency-Key 헤더가 필요하며 255 byte 이하여야 함',
       );
