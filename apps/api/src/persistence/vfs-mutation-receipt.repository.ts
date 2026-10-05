@@ -252,11 +252,20 @@ export class VfsMutationReceiptRepository {
     await this.repo.delete({ ...keyOf(identity), state: 'RESERVED', generation });
   }
 
+  /**
+   * 보존 기한이 지난 receipt를 오래된 것부터 최대 500개 지운다.
+   * - `COMPLETE`: 완료 시점부터 30일이 지난 행.
+   * - `RESERVED`: claim 시점부터 30일이 지났고 lease도 만료된 행. 프로세스 종료로 버려졌는데
+   *   같은 key의 재요청이 없는 claim이다. lease가 살아 있으면 owner가 갱신 중이라 남긴다.
+   */
   @classifyPersistenceOperation
   async pruneExpired(now: Date): Promise<number> {
+    const sqlite = isSqliteDataSource(this.dataSource.options);
+    const expiredCondition = `(state = 'COMPLETE' AND expires_at <= :now)
+      OR (state = 'RESERVED' AND expires_at <= :now AND lease_expires_at <= ${databaseNowExpression(sqlite)})`;
     const expired = await this.repo
       .createQueryBuilder('r')
-      .where("r.state = 'COMPLETE' AND r.expires_at <= :now", { now })
+      .where(expiredCondition, { now })
       .orderBy('r.expires_at', 'ASC')
       .take(500)
       .getMany();
@@ -269,7 +278,7 @@ export class VfsMutationReceiptRepository {
           scope: row.scope,
           key: row.idempotencyKey,
         })
-        .andWhere("state = 'COMPLETE' AND expires_at <= :now", { now })
+        .andWhere(`(${expiredCondition})`, { now })
         .execute();
     }
     return expired.length;

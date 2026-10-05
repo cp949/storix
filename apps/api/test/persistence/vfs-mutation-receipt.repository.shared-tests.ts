@@ -291,6 +291,50 @@ export function runVfsMutationReceiptSharedTests(
     expect(await receiptRepository.claim(identity, future)).toEqual({ kind: 'owner', generation: 1 });
   });
 
+  it('보존 기한과 lease가 모두 지난 버려진 RESERVED receipt만 지운다', async () => {
+    const { dataSource, receiptRepository } = getContext();
+    const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
+      randomUUID(),
+      'receipt-prune-reserved-ns',
+    );
+    const repository = dataSource.getRepository(VfsMutationReceiptEntity);
+    const abandoned = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+    const leaseAlive = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+    const retained = { namespaceId: namespace.id, scope: 'caller-1', key: randomUUID() };
+    for (const identity of [abandoned, leaseAlive, retained]) {
+      expect(await receiptRepository.claim(identity, new Date())).toEqual({
+        kind: 'owner',
+        generation: 1,
+      });
+    }
+    const past = new Date(Date.now() - 1000);
+    const setExpiresAt = (identity: typeof abandoned, expiresAt: Date) =>
+      repository.update(
+        { namespaceId: identity.namespaceId, scope: identity.scope, idempotencyKey: identity.key },
+        { expiresAt },
+      );
+    // 보존 기한과 lease가 모두 지난 행: 삭제 대상이다.
+    await setExpiresAt(abandoned, past);
+    await expireLease(dataSource, abandoned);
+    // 보존 기한은 지났지만 lease가 살아 있는 행(owner가 renew 중): 남는다.
+    await setExpiresAt(leaseAlive, past);
+    // lease만 만료되고 보존 기한 전인 행: 남는다(같은 key 재요청이 takeover한다).
+    await expireLease(dataSource, retained);
+
+    await receiptRepository.pruneExpired(new Date());
+
+    const exists = (identity: typeof abandoned) =>
+      repository.existsBy({
+        namespaceId: identity.namespaceId,
+        scope: identity.scope,
+        idempotencyKey: identity.key,
+      });
+    expect(await exists(abandoned)).toBe(false);
+    expect(await exists(leaseAlive)).toBe(true);
+    expect(await exists(retained)).toBe(true);
+    expect(await receiptRepository.claim(abandoned, new Date())).toEqual({ kind: 'owner', generation: 1 });
+  });
+
   it('does not delete a new owner while two workers reclaim an expired completed key', async () => {
     const { dataSource, receiptRepository, nodeRepository } = getContext();
     const namespace = await new NamespaceProvisioningRepository(dataSource).createWithRoot(
