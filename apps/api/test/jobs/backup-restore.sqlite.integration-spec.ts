@@ -152,4 +152,50 @@ describe('Backup/Restore SQLite 통합', () => {
       restoredNamespaceRepo.findOneBy({ name: 'sqlite-backup-fixture-ns' }),
     ).resolves.not.toBeNull();
   });
+
+  it('같은 버킷의 Storix prefix 밖 object는 백업에 들어가지 않고 force 복구 뒤에도 남는다', async () => {
+    const storageKey = `blobs/cd/${randomUUID()}`;
+    await storage.put(storageKey, Readable.from(Buffer.from('prefix-scope-blob')));
+    // 디렉터리 marker와 같은 이름의 하위 object는 prefix 없이 순회하면 백업을 실패시킨다.
+    await storage.put('shared-logs/', Readable.from(Buffer.alloc(0)));
+    await storage.put('shared-logs/app.log', Readable.from(Buffer.from('foreign-log')));
+
+    const backupResult = await new BackupJob(
+      storage,
+      backupRepository,
+      new SqliteDumpTool(makeConfig(sqliteConfig())),
+      makeConfig({ STORIX_BACKUP_DIR: backupRootDir }),
+    ).run();
+
+    await expect(fs.access(path.join(backupResult.backupDir, 'blobs', 'shared-logs'))).rejects.toThrow();
+
+    // 백업에 없는 Storix key는 force 복구가 지우고, 다른 시스템 object는 남아야 한다.
+    const strayKey = `blobs/ef/${randomUUID()}`;
+    await storage.put(strayKey, Readable.from(Buffer.from('stray-not-in-backup')));
+
+    await dataSource.destroy();
+    dataSource = new DataSource({
+      type: 'better-sqlite3',
+      database: dbPath,
+      synchronize: false,
+      entities: [NamespaceEntity, VfsNodeEntity, BlobEntity, IdempotencyKeyEntity],
+    });
+    await dataSource.initialize();
+    backupRepository = new BackupRepository(dataSource);
+
+    await new RestoreJob(
+      storage,
+      backupRepository,
+      new SqliteDumpTool(makeConfig(sqliteConfig())),
+      makeConfig({
+        STORIX_RESTORE_SOURCE_DIR: backupResult.backupDir,
+        STORIX_RESTORE_FORCE: 'true',
+      }),
+    ).run();
+
+    await expect(storage.get(strayKey)).rejects.toThrow();
+    await expect(storage.get(storageKey)).resolves.toBeDefined();
+    await expect(storage.get('shared-logs/app.log')).resolves.toBeDefined();
+    await expect(storage.get('shared-logs/')).resolves.toBeDefined();
+  });
 });

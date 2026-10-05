@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { parseBoolean } from '../common/env-parsing.js';
 import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { isStorixKey, STORIX_KEY_PREFIXES } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
 import {
@@ -12,6 +13,9 @@ import {
   RestoreTargetNotEmptyError,
   RestoreUnsupportedBackupError,
 } from './restore.errors.js';
+
+// 복구하지 않은 key를 경고에 담는 최대 개수
+const SKIPPED_KEY_SAMPLE_SIZE = 5;
 
 export interface RestoreResult {
   readonly sourceDir: string;
@@ -96,9 +100,12 @@ export class RestoreJob {
   }
 
   private async deleteObjectsNotInBackup(backupKeys: ReadonlySet<string>): Promise<void> {
-    for await (const item of this.storage.list()) {
-      if (!backupKeys.has(item.key)) {
-        await this.storage.delete(item.key);
+    // Storix prefix 안만 대상이다. 같은 버킷의 다른 시스템 object는 지우지 않는다.
+    for (const prefix of STORIX_KEY_PREFIXES) {
+      for await (const item of this.storage.list(prefix)) {
+        if (!backupKeys.has(item.key)) {
+          await this.storage.delete(item.key);
+        }
       }
     }
   }
@@ -117,10 +124,21 @@ export class RestoreJob {
 
     const filePaths = await this.listFilesRecursively(blobDir);
     const backupKeys = new Set<string>();
+    const skippedKeys: string[] = [];
     for (const filePath of filePaths) {
       const key = path.relative(blobDir, filePath).split(path.sep).join('/');
+      // 이전 버전은 버킷 전체를 미러링했다. Storix prefix 밖 key는 Storix가 만든 object가
+      // 아니므로 같은 버킷의 다른 시스템 object를 덮어쓰지 않도록 되살리지 않는다.
+      if (!isStorixKey(key)) {
+        skippedKeys.push(key);
+        continue;
+      }
       await this.storage.put(key, createReadStream(filePath));
       backupKeys.add(key);
+    }
+    if (skippedKeys.length > 0) {
+      const samples = skippedKeys.slice(0, SKIPPED_KEY_SAMPLE_SIZE).join(', ');
+      this.logger.warn(`Storix prefix 밖 key ${skippedKeys.length}건은 복구하지 않음 (예: ${samples})`);
     }
     return { restoredObjectCount: backupKeys.size, backupKeys };
   }

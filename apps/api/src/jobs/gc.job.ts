@@ -29,6 +29,7 @@ import { type GcStageContext, runBudgetedStage, runCursorStage } from './gc-stag
 import { VfsTrashRetentionRepository } from '../persistence/vfs-trash-retention.repository.js';
 import { type FileExpiryCursor, VfsFileExpiryRepository } from '../persistence/vfs-file-expiry.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { BLOB_KEY_PREFIX, UPLOAD_STAGING_KEY_PREFIX } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 
 const DELETE_CONCURRENCY = 20;
@@ -467,7 +468,7 @@ export class GcJob {
   // (StorageKeyGenerator.generate() 참고: 모든 key는 `blobs/{shard}/{uuid}` 형식).
   private async collectOrphanObjects(cutoff: Date, exhaustedStages: string[]): Promise<number> {
     let deleted = await this.collectOrphanObjectsUnder(
-      'blobs/',
+      BLOB_KEY_PREFIX,
       'orphan-objects-blobs',
       cutoff,
       exhaustedStages,
@@ -476,7 +477,7 @@ export class GcJob {
     const uploads = this.uploadSessions;
     if (uploads) {
       deleted += await this.collectOrphanObjectsUnder(
-        'upload-staging/',
+        UPLOAD_STAGING_KEY_PREFIX,
         'orphan-objects-staging',
         cutoff,
         exhaustedStages,

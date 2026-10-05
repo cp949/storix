@@ -5,6 +5,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BackupRepository } from '../persistence/backup.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { STORIX_KEY_PREFIXES } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { DB_DUMP_TOOL, type DbDumpTool } from './db-dump.tool.js';
 
@@ -67,7 +68,17 @@ export class BackupJob {
   private async mirrorObjectsToLocalDir(backupDir: string): Promise<number> {
     const blobDir = path.join(backupDir, 'blobs');
     let count = 0;
-    for await (const item of this.storage.list()) {
+    // 버킷 전체가 아니라 Storix가 만든 key의 prefix만 순회한다. 같은 버킷에 다른 시스템의
+    // object(디렉터리 marker 등)가 있어도 백업이 실패하거나 그 object를 복사하지 않는다.
+    for (const prefix of STORIX_KEY_PREFIXES) {
+      count += await this.mirrorPrefix(blobDir, prefix);
+    }
+    return count;
+  }
+
+  private async mirrorPrefix(blobDir: string, prefix: string): Promise<number> {
+    let count = 0;
+    for await (const item of this.storage.list(prefix)) {
       const destPath = path.join(blobDir, item.key);
       // Storix가 만드는 key는 항상 `blobs/{shard}/{uuid}`라 현재는 '..'가 없지만,
       // 버킷 목록은 외부 입력이므로 백업 디렉터리 밖으로 나가는 key를 막는다.
@@ -81,6 +92,11 @@ export class BackupJob {
         path.isAbsolute(relativeDest)
       ) {
         throw new Error(`object key가 백업 디렉터리를 벗어남: ${item.key}`);
+      }
+      // path.join은 `a//b`·`a/./b`·끝 슬래시를 정규화한다. 정규화된 경로로 저장하면 복구가
+      // 다른 key로 되살리므로, key와 달라지는 경우는 조용히 틀리게 두지 않고 실패시킨다.
+      if (relativeDest.split(path.sep).join('/') !== item.key) {
+        throw new Error(`object key가 경로 정규화로 달라져 백업할 수 없음: ${item.key}`);
       }
       await fs.mkdir(path.dirname(destPath), { recursive: true });
       const stream = await this.storage.get(item.key);

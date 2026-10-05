@@ -11,6 +11,7 @@ import { VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
 import type { VfsUploadPartEntity } from '../persistence/entities/vfs-upload-part.entity.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
+import { UPLOAD_STAGING_KEY_PREFIX } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
@@ -128,7 +129,7 @@ export class UploadSessionPartService {
       }
 
       // 각 예약 시도마다 독립 UUID를 생성한다. 삭제된 행을 다시 사용해도 이전 key는 재사용하지 않는다.
-      const stagingKey = `upload-staging/${randomUUID()}`;
+      const stagingKey = `${UPLOAD_STAGING_KEY_PREFIX}${randomUUID()}`;
       const reservation = this.sessions.reservePart(sessionId, index, String(expected), stagingKey, {
         global: this.policy.global,
         namespace: namespacePolicy,
