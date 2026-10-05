@@ -52,25 +52,48 @@ export interface SnapshotLimits {
   readonly maxRetainedBytes: bigint;
 }
 
-function byteLimit(namespace: string | null, env: string | undefined, fallback: bigint): bigint {
-  if (env !== undefined && env !== '' && !/^[1-9][0-9]*$/.test(env))
-    throw new Error('Invalid snapshot byte limit');
-  const global = env === undefined || env === '' ? fallback : BigInt(env);
+function globalByteLimit(name: string, env: string | undefined, fallback: bigint): bigint {
+  if (env === undefined || env === '') return fallback;
+  if (!/^[1-9][0-9]*$/.test(env)) throw new Error(`잘못된 정수 환경변수 값: ${name}=${env}`);
+  return BigInt(env);
+}
+
+/** snapshot 전역 상한 환경변수를 읽는다. 잘못된 값이면 변수 이름을 담아 던진다. */
+function readGlobalSnapshotLimits(): SnapshotLimits {
+  const read = (name: string) => process.env[name];
+  const nodes = (name: string, fallback: number) => {
+    try {
+      return parsePositiveInt(read(name), fallback);
+    } catch (error) {
+      throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  return {
+    maxNodes: nodes('STORIX_MAX_SYNC_SNAPSHOT_NODES', 1000),
+    maxBytes: globalByteLimit('STORIX_MAX_SNAPSHOT_BYTES', read('STORIX_MAX_SNAPSHOT_BYTES'), 5368709120n),
+    maxRetainedNodes: nodes('STORIX_MAX_RETAINED_SNAPSHOT_NODES', 100000),
+    maxRetainedBytes: globalByteLimit(
+      'STORIX_MAX_RETAINED_SNAPSHOT_BYTES',
+      read('STORIX_MAX_RETAINED_SNAPSHOT_BYTES'),
+      53687091200n,
+    ),
+  };
+}
+
+function narrowedBytes(namespace: string | null, global: bigint): bigint {
   return namespace === null || BigInt(namespace) > global ? global : BigInt(namespace);
 }
 
 export function resolveSnapshotLimits(namespace: NamespaceEntity): SnapshotLimits {
-  const maxNodes = parsePositiveInt(process.env.STORIX_MAX_SYNC_SNAPSHOT_NODES, 1000);
-  const maxRetainedNodes = parsePositiveInt(process.env.STORIX_MAX_RETAINED_SNAPSHOT_NODES, 100000);
+  const global = readGlobalSnapshotLimits();
   return {
-    maxNodes: Math.min(namespace.maxSyncSnapshotNodes ?? maxNodes, maxNodes),
-    maxBytes: byteLimit(namespace.maxSnapshotBytes, process.env.STORIX_MAX_SNAPSHOT_BYTES, 5368709120n),
-    maxRetainedNodes: Math.min(namespace.maxRetainedSnapshotNodes ?? maxRetainedNodes, maxRetainedNodes),
-    maxRetainedBytes: byteLimit(
-      namespace.maxRetainedSnapshotBytes,
-      process.env.STORIX_MAX_RETAINED_SNAPSHOT_BYTES,
-      53687091200n,
+    maxNodes: Math.min(namespace.maxSyncSnapshotNodes ?? global.maxNodes, global.maxNodes),
+    maxBytes: narrowedBytes(namespace.maxSnapshotBytes, global.maxBytes),
+    maxRetainedNodes: Math.min(
+      namespace.maxRetainedSnapshotNodes ?? global.maxRetainedNodes,
+      global.maxRetainedNodes,
     ),
+    maxRetainedBytes: narrowedBytes(namespace.maxRetainedSnapshotBytes, global.maxRetainedBytes),
   };
 }
 
@@ -86,7 +109,10 @@ export class VfsSnapshotRepository {
   constructor(
     private readonly dataSource: DataSource,
     private readonly blobs: BlobRepository,
-  ) {}
+  ) {
+    // 요청 때마다 읽는 값이라 잘못된 값이 부팅을 통과하면 이후 snapshot 요청이 500이 된다. 생성 시점에 한 번 검증한다.
+    readGlobalSnapshotLimits();
+  }
 
   private async fileSha256(manager: EntityManager, snapshot: VfsSnapshotEntity): Promise<string | null> {
     if (snapshot.kind === 'TREE') return null;
