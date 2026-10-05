@@ -52,7 +52,8 @@ put 도중 실패해도 기존 object가 남는다.
   - PITR(`pg_basebackup` + WAL 아카이빙)은 도입하지 않는다.
   - 단일 고객 인스턴스에서는 WAL 목적지 관리 비용이 요구에 비해 크다고 판단했다.
 - **Blob 스토리지**
-  - 기존 `BlobStorage`(S3 SDK 래퍼)로 버킷 전체를 순회한다.
+  - 기존 `BlobStorage`(S3 SDK 래퍼)로 Storix가 만드는 key의 prefix(`blobs/`, `upload-staging/`)만 순회한다.
+  - 같은 버킷의 다른 object는 백업·복구·force 삭제 대상이 아니다. GC의 스캔 범위와 같다.
   - object를 로컬 백업의 `blobs/`에 복사한다.
   - 별도 미러링 바이너리는 추가하지 않는다.
   - 기존 스토리지 통합 테스트 하네스를 사용한다.

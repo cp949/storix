@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- 백업·복구가 같은 버킷의 Storix 외 object에서 실패하거나 그 object를 삭제하던 문제를 수정했다. 백업은 버킷 전체를 순회해 `logs/` 같은 디렉터리 marker 하나로 매번 실패하고 `.partial`만 남겼다. `STORIX_RESTORE_FORCE=true` 복구는 백업에 없는 object를 버킷 전체에서 삭제했다. 이제 백업·복구·force 삭제는 Storix가 만드는 key의 prefix(`blobs/`, `upload-staging/`)만 대상으로 한다. 백업 디렉터리 구조는 같다. 이전 버전이 만든 백업에 prefix 밖 key가 있으면 복구는 되살리지 않고 경고한다. prefix 안에서 경로 정규화로 달라지는 key(`a//b`)는 다른 key로 조용히 저장하지 않고 백업을 실패시킨다.
 - 복구 잡이 이름이 `.partial`로 끝나는 백업 디렉터리를 복구하던 문제를 수정했다. 백업 잡은 모든 단계가 성공한 뒤에만 `.partial`을 뗀다. 이전에는 blob 미러 도중 실패한 `<타임스탬프>.partial/`로 복구해도 DB는 복구되고 blob은 누락된 채 "복구 완료"로 끝났다. `STORIX_RESTORE_FORCE=true`면 백업에 없는 기존 object까지 삭제했다. 이제 `RestoreIncompleteBackupError`(`RESTORE_INCOMPLETE_BACKUP`)로 DB 복구와 스토리지 접근 전에 거부한다. `.partial`을 수동으로 rename한 백업은 판별하지 못한다.
 - namespace 삭제 정리에서 `STORIX_GC_MAX_ROWS_PER_STAGE`(기본 200,000) 소진으로 orphan-blobs 단계가 멈춘 실행이 grace가 지난 남은 Blob을 `STORAGE_DELETE_FAILED`로 표시하던 문제를 수정했다. 스토리지 장애 없이 Blob이 많은 namespace(예: 30만 개)를 삭제하면 첫 GC 뒤 관리자 조회에 삭제 실패가 보였고 다음 실행에서 해제됐다. 이제 예산 소진 실행은 판정을 보류하고 `blockedReason`을 바꾸지 않는다. 실제 삭제 실패는 예산 소진 없이 끝난 실행에서 기존처럼 표시된다.
 - `STORIX_PORT`와 demo1 WAS의 `DEMO_WAS_PORT`가 정수가 아닌 값을 받아도 부팅하던 문제를 수정했다. `STORIX_PORT=3000abc`는 현재 디렉터리에 같은 이름의 UNIX socket 파일을 만들고 listen했고, `0x1F90`은 8080으로 listen했다. 이제 1~65535의 10진 정수(api의 `STORIX_PORT`는 `0` 포함)가 아니면 부팅을 거부한다. `0x1F90`·`1e3`·`5.0` 같은 표기를 쓰던 배포는 10진 정수로 바꿔야 한다. 컨테이너는 `STORIX_PORT: "3000"`으로 고정되어 영향이 없다.

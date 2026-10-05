@@ -35,7 +35,9 @@ Postgres dump 뒤에 스토리지 미러를 실행한다.
 - `STORIX_BACKUP_DIR`의 기본값은 `/backups`다.
 - Compose는 호스트의 `./backups`를 `/backups`에 마운트한다.
 - `postgres.dump`는 `pg_dump` custom format이다.
-- `blobs/`는 스토리지 버킷 전체 미러다.
+- `blobs/`는 스토리지 버킷 중 Storix prefix(`blobs/`, `upload-staging/`) 아래 object의 미러다. 로컬 경로는 `blobs/blobs/…`, `blobs/upload-staging/…`다.
+- 같은 버킷의 다른 시스템 object는 백업하지 않는다.
+- Storix prefix 안에서 경로 정규화로 key가 달라지는 object(`a//b`, 끝 슬래시)가 있으면 백업이 해당 key를 오류에 담고 실패한다. 이 object는 Storix가 만들지 않는다.
 
 완료 판정:
 
@@ -85,10 +87,12 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 
    ```txt
    위험도: 높음
-   롤백: 불가능. 대상의 기존 Postgres 데이터와 스토리지 object를 백업 시점 상태로 교체한다.
+   롤백: 불가능. 대상의 기존 Postgres 데이터와 Storix prefix 아래 스토리지 object를 백업 시점 상태로 교체한다.
    ```
 
    - 실행 순서는 Postgres 복구, 백업 object put, (force일 때) 백업에 없는 object 삭제다.
+   - force 삭제는 Storix prefix(`blobs/`, `upload-staging/`) 안의 object만 대상으로 한다. 같은 버킷의 다른 시스템 object는 지우지 않는다.
+   - 이전 버전이 만든 백업은 버킷 전체를 미러링했을 수 있다. 복구는 Storix prefix 밖 key를 되살리지 않고 건수와 예시 key를 경고로 남긴다.
    - Postgres 복구가 실패하면 스토리지 object는 변경하지 않는다. 원인을 고친 뒤 같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행한다.
    - 이름이 `.partial`로 끝나는 디렉터리는 `RestoreIncompleteBackupError`다.
    - `.partial` 검사는 DB 복구와 스토리지 접근 전에 수행한다.
