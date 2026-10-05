@@ -62,7 +62,7 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 ## 복구
 
 1. 모든 API 인스턴스와 GC를 정지한다.
-   - `pg_restore --clean`은 대상 테이블을 삭제하고 다시 만든다.
+   - Postgres 복구는 대상의 Storix 테이블을 모두 삭제하고 백업 시점 스키마로 다시 만든다.
    - single-instance Compose의 API 정지 명령은 다음과 같다.
 
    ```bash
@@ -93,7 +93,12 @@ rsync -a ./backups/ user@offsite:/backups/storix/
    - 실행 순서는 Postgres 복구, 백업 object put, (force일 때) 백업에 없는 object 삭제다.
    - force 삭제는 Storix prefix(`blobs/`, `upload-staging/`) 안의 object만 대상으로 한다. 같은 버킷의 다른 시스템 object는 지우지 않는다.
    - 이전 버전이 만든 백업은 버킷 전체를 미러링했을 수 있다. 복구는 Storix prefix 밖 key를 되살리지 않고 건수와 예시 key를 경고로 남긴다.
-   - Postgres 복구가 실패하면 스토리지 object는 변경하지 않는다. 원인을 고친 뒤 같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행한다.
+   - Postgres 복구는 `public` 스키마에서 접속 사용자(`STORIX_DB_USERNAME`)가 소유한 테이블을 모두 지운 뒤 dump를 적재한다.
+     - Storix 전용 DB를 전제로 한다. 같은 사용자가 소유한 다른 테이블도 지워진다.
+     - 백업을 만든 DB 사용자와 다른 사용자로도 복구할 수 있다. 소유자와 권한은 복구하지 않는다.
+   - Postgres 복구가 실패하면 스토리지 object는 변경하지 않는다.
+     - dump 적재는 한 트랜잭션이다. 실패하면 적재분 없이 테이블이 없는 상태로 남는다.
+     - 원인을 고친 뒤 같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행한다. 테이블이 없으면 비어 있는 대상으로 보므로 force 없이 재실행할 수 있다.
    - 이름이 `.partial`로 끝나는 디렉터리는 `RestoreIncompleteBackupError`다.
    - `.partial` 검사는 DB 복구와 스토리지 접근 전에 수행한다.
    - `.partial`을 수동으로 rename한 백업은 완료 여부를 판별하지 못한다. 이름을 바꾸기 전에 백업 로그의 `백업 완료` 줄을 확인한다.
@@ -103,7 +108,7 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 
 3. 복구가 성공하면 필요한 migration을 실행한다.
    - 백업 시점과 현재 이미지 버전이 다르면 `migrate`를 다시 실행한다.
-   - `pg_restore --clean`은 `migrations` 테이블도 백업 시점으로 되돌린다.
+   - Postgres 복구는 `migrations` 테이블도 백업 시점으로 되돌린다. 백업 이후 버전의 테이블은 남지 않으므로 `migrate`가 다시 적용한다.
 
    ```bash
    docker compose run --rm migrate

@@ -39,7 +39,20 @@ Blob의 불변성만으로 동시 GC 삭제를 막을 수는 없다.
 
 Postgres 복구가 `pg_restore` 실패 등으로 중단되면 스토리지 object는 변경하지 않는다.
 복구 전에 object를 먼저 지우면 이 실패가 빈 버킷으로 남는다.
-같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행하면 `--clean`과 put 덮어쓰기로 이어서 복구된다.
+같은 `STORIX_RESTORE_SOURCE_DIR`로 재실행하면 이어서 복구된다.
+
+1단계(Postgres 복구)는 다음 순서로 실행한다.
+
+1. `psql`로 `public` 스키마에서 접속 사용자가 소유한 테이블을 모두 지운다.
+2. `pg_restore --no-owner --no-privileges --single-transaction --exit-on-error`로 dump를 적재한다.
+
+- `pg_restore --clean`은 dump에 있는 객체만 지운다.
+  - 백업 이후 migration이 만든 테이블이 남는다.
+  - `migrations` 테이블은 백업 시점으로 돌아가므로 복구 뒤 `migrate` 재실행이 실패했다.
+- Storix 전용 DB를 전제로 한다. 같은 사용자가 소유한 다른 테이블도 지워진다.
+- `--no-owner`·`--no-privileges`로 백업을 만든 사용자와 다른 사용자로도 복구한다.
+- `pg_restore`가 실패하면 적재분은 롤백되고 테이블이 없는 상태로 남는다.
+- `hasExistingNamespaces()`는 테이블이 없으면 비어 있다고 판정한다. 그래서 재실행에 force가 필요 없다.
 
 3단계는 put이 모두 끝난 뒤에 실행한다.
 put 도중 실패해도 기존 object가 남는다.

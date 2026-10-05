@@ -29,6 +29,8 @@
 
 ### Fixed
 
+- 이전 버전에서 만든 PostgreSQL 백업을 복구한 뒤 `migrate` 재실행이 `relation … already exists`로 실패하던 문제를 수정했다. `pg_restore --clean`은 dump에 있는 테이블만 지워 백업 이후 버전의 테이블이 남았다. 이제 복구 전에 `public` 스키마에서 접속 사용자가 소유한 테이블을 모두 지운다. Storix 전용 DB를 전제로 한다. 운영 이미지는 이 단계에 `psql`을 쓴다(GitHub 이슈 #38).
+- 백업을 만든 DB 사용자와 다른 사용자로 PostgreSQL 복구를 실행하면 `pg_restore`가 소유자 변경에서 실패하고, 일부만 적재된 채 재실행도 막히던 문제를 수정했다. 이제 소유자·권한 없이 한 트랜잭션으로 적재한다. 적재가 실패하면 테이블이 없는 상태로 남고 같은 명령으로 재실행할 수 있다(GitHub 이슈 #38).
 - `GET /fs/ls`·`/fs/stat`·`/fs/exists`·`/fs/find`에서 `path`를 생략하면 namespace root 대신 400 `VFS_INVALID_PATH`가 응답되던 문제를 수정했다. OpenAPI 문서대로 생략 시 root를 대상으로 한다. 빈 값(`?path=`)은 계속 400이다(GitHub 이슈 #37).
 - 업로드 세션 완료(`POST .../fs/upload-sessions/{sessionId}/complete`)가 DB 오류로 실패하면 commit 결과가 불명확해도 최종 object를 삭제하던 문제를 수정했다. PostgreSQL commit 응답이 유실되면 반영된 파일이 지워진 object를 가리켜 데이터를 잃을 수 있었다. 이제 롤백이 확정된 4xx 도메인 오류에서만 참조 없는 object를 삭제하고, 나머지는 보존해 orphan GC에 맡긴다. 일반 업로드·조건부 업로드와 같은 규칙이다(GitHub 이슈 #36).
 - 디렉터리 이동·복사(`POST /fs/mv`, `POST /fs/cp`, `POST /fs/mutations`의 `move`·`copy`)가 하위 노드 수와 깊이에 비례해 DB 쿼리를 보내 느리던 문제를 수정했다. 커밋 직전 revision 갱신과 경로 계산이 노드마다 노드·부모 체인을 개별 조회했다. 이제 `IN` 청크로 읽고 부모 해석을 메모이즈한다. 응답의 `affectedRevisions` 내용은 같다. 실측(SQLite)에서 평평한 12,000개 cp의 쿼리가 36,068개에서 114개로, 깊이 1,500 체인 mv의 쿼리가 약 113만 개에서 25개로 줄었다. SQLite의 깊이 1,500 체인 mv·cp는 약 34초에서 각각 0.21초·0.25초로, 평평한 12,000개 cp는 1.4초에서 0.48초로 줄었다. PostgreSQL 평평한 12,000개 cp는 통계가 없는 새 DB에서 18~38초이던 것이 약 6.6초가 됐다. 남은 시간은 `vfs_node` 쿼리 계획 선택과 관련이 있는 것으로 추정하며 GitHub 이슈 #35가 추적한다(GitHub 이슈 #33·#34, TRP-008).
