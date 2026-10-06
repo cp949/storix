@@ -64,6 +64,23 @@ describe('validateSpec', () => {
     const errors = validateSpec(bad);
     assert.equal(errors.length, 2);
   });
+
+  it('managementReceiptsPerActive는 0 이상의 정수만 허용한다', () => {
+    for (const value of [1.5, Number.NaN, -1]) {
+      const errors = validateSpec({ ...defaultSpec(1000, REF), managementReceiptsPerActive: value });
+      assert.deepEqual(errors, ['managementReceiptsPerActive는 0 이상의 정수여야 한다'], String(value));
+    }
+    assert.deepEqual(validateSpec({ ...defaultSpec(1000, REF), managementReceiptsPerActive: 0 }), []);
+  });
+
+  it('blocked namespace는 유효한 선두 이벤트가 있어 이벤트 수가 만료 이벤트 수보다 커야 한다', () => {
+    const base = { ...defaultSpec(1000, REF), blockedEvery: 5, eventsPerActive: 4, expiredEventsPerDue: 3 };
+    assert.deepEqual(validateSpec(base), []);
+    const errors = validateSpec({ ...base, expiredEventsPerDue: 4 });
+    assert.deepEqual(errors, ['blockedEvery를 쓰면 eventsPerActive는 expiredEventsPerDue보다 커야 한다']);
+    // blockedEvery가 0이면 선두 유효 이벤트가 필요 없다.
+    assert.deepEqual(validateSpec({ ...base, blockedEvery: 0, expiredEventsPerDue: 4 }), []);
+  });
 });
 
 describe('적재 SQL', () => {

@@ -198,9 +198,13 @@ export function validateSpec(spec: DatasetSpec): string[] {
     errors.push('blockedEvery는 0 이상의 정수여야 한다');
   if (spec.deletedNamespaces < 0 || !Number.isSafeInteger(spec.deletedNamespaces))
     errors.push('deletedNamespaces는 0 이상의 정수여야 한다');
-  if (spec.managementReceiptsPerActive < 0) errors.push('managementReceiptsPerActive는 0 이상이어야 한다');
+  if (!Number.isSafeInteger(spec.managementReceiptsPerActive) || spec.managementReceiptsPerActive < 0)
+    errors.push('managementReceiptsPerActive는 0 이상의 정수여야 한다');
   if (spec.expiredEventsPerDue > spec.eventsPerActive)
     errors.push('expiredEventsPerDue는 eventsPerActive를 넘을 수 없다');
+  // blocked namespace는 선두 이벤트 1개가 유효하고 그 뒤 expiredEventsPerDue개가 만료라서 sql.ts가 e <= expiredEventsPerDue + 1까지만 만든다.
+  if (spec.blockedEvery > 0 && spec.expiredEventsPerDue >= spec.eventsPerActive)
+    errors.push('blockedEvery를 쓰면 eventsPerActive는 expiredEventsPerDue보다 커야 한다');
   if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(spec.seed)) errors.push('seed는 영숫자·_.:- 64자 이하여야 한다');
   if (Number.isNaN(Date.parse(spec.refTime))) errors.push('refTime이 ISO 8601이 아니다');
   if (!Number.isSafeInteger(spec.fileSizeBytes) || spec.fileSizeBytes < 0)
