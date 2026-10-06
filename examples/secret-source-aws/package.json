@@ -1,0 +1,25 @@
+{
+  "name": "storix-secret-source-aws-example",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.28.3",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --allowJs --checkJs --noEmit --module nodenext --target es2023 --types node index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "3.1146.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "typescript": "6.0.3"
+  }
+}

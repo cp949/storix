@@ -1,0 +1,74 @@
+services:
+  localstack:
+    image: localstack/localstack-pro:2026.08.2
+    environment:
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LOCALSTACK_AUTH_TOKEN이 필요하다}
+      SERVICES: secretsmanager
+      AWS_DEFAULT_REGION: us-east-1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python3 -c "import urllib.request; urllib.request.urlopen(''http://localhost:4566/_localstack/health'', timeout=2).read()"',
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  secret-init:
+    image: amazon/aws-cli@sha256:fb7ccfc7b4e3a05017e6c9ded4ba959b99af622130e211fb976c68c2f4d3f224
+    entrypoint: ["/bin/sh", "/usr/local/bin/init-secret.sh"]
+    environment:
+      STORIX_LOCALSTACK_API_KEY: ${STORIX_LOCALSTACK_API_KEY:?테스트 Secret 값이 필요하다}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+    volumes:
+      - ./docs/deployment/scenarios/aws-secrets-localstack/init-secret.sh:/usr/local/bin/init-secret.sh:ro
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  migrate:
+    image: ${STORIX_BASE_IMAGE:?기본 Storix 이미지가 필요하다}
+
+  app:
+    image: ${STORIX_APP_IMAGE:?어댑터 Storix 이미지가 필요하다}
+    ports:
+      - "127.0.0.1:${STORIX_LOCALSTACK_DEMO_PORT:?예제 포트가 필요하다}:3000"
+    environment:
+      STORIX_API_KEY: ""
+      STORIX_API_KEY_PREVIOUS: ""
+      STORIX_API_KEY_FILE: ""
+      STORIX_API_KEY_REF: aws-sm://storix/localstack/api-key
+      STORIX_API_KEY_PREVIOUS_FILE: ""
+      STORIX_API_KEY_PREVIOUS_REF: ""
+      STORIX_SECRET_ADAPTERS: storix-secret-source-aws-example
+      STORIX_SECRET_RESOLVE_TIMEOUT_MS: "10000"
+      STORIX_ENCRYPTION_MASTER_KEY: ${STORIX_EXAMPLE_MASTER_KEY:?예제 마스터 키가 필요하다}
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_EC2_METADATA_DISABLED: "true"
+      STORIX_AWS_SM_ENDPOINT: http://localstack:4566
+      STORIX_DB_DRIVER: sqlite
+      STORIX_DB_SQLITE_PATH: /data/storix.sqlite
+      STORIX_STORAGE_ACCESS_KEY: storix-example
+      STORIX_STORAGE_SECRET_KEY: storix-example-secret
+      STORIX_STORAGE_BUCKET: storix-localstack-example
+    volumes:
+      - sqlite-data:/data
+
+  gc:
+    image: ${STORIX_BASE_IMAGE:?기본 Storix 이미지가 필요하다}
+
+  backup:
+    image: ${STORIX_BASE_IMAGE:?기본 Storix 이미지가 필요하다}
+
+  restore:
+    image: ${STORIX_BASE_IMAGE:?기본 Storix 이미지가 필요하다}
+
+volumes:
+  sqlite-data:
