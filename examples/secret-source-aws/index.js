@@ -3,6 +3,7 @@ import {
   SecretsManagerClient,
 } from "@aws-sdk/client-secrets-manager";
 
+/** AWS Secrets Manager의 SecretString을 읽는 예제 어댑터다. docs/design/15-secret-sources.md "어댑터 계약"을 따른다. */
 const SCHEME_PREFIX = "aws-sm://";
 
 /** @type {{ scheme: string; resolve: (ref: string, options: { signal: AbortSignal }) => Promise<string> }} */
@@ -48,4 +49,5 @@ const awsSecretSource = {
   },
 };
 
+/** Storix SecretSource 로더가 불러올 기본 어댑터를 내보낸다. */
 export default Object.freeze(awsSecretSource);

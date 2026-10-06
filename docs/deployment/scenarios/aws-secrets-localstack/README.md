@@ -42,13 +42,15 @@ LocalStack은 AWS Secrets Manager 호환 API 흐름을 확인한다. 실제 AWS 
 정상 종료와 실패 시 스크립트가 해당 실행의 Compose project만 `down --volumes`로 정리한다. 중단 뒤 리소스가 남으면 출력된 `project` 이름을 사용해 저장소 루트에서 정리한다.
 
 ```sh
-project=storix-secret-source-localstack-<run-id>
+read -r -p '실행 출력의 project 이름: ' project
 docker ps -aq --filter "label=com.docker.compose.project=$project" | xargs -r docker rm -f
 docker volume ls -q --filter "label=com.docker.compose.project=$project" | xargs -r docker volume rm
 docker network ls -q --filter "label=com.docker.compose.project=$project" | xargs -r docker network rm
 ```
 
-`<run-id>`는 실행 출력의 `project=...`에 표시된 project 이름에서 접두어 `storix-secret-source-localstack-` 뒤에 오는 값으로 바꾼다.
+입력할 값은 실행 출력의 `project=...`에 표시된 전체 이름이다.
 
+```txt
 위험도: 낮음 (전용 project의 테스트 DB·스토리지 볼륨에 한정)
 롤백: 테스트 리소스를 다시 만들 수 있다. 삭제한 데이터 자체는 복구하지 않는다.
+```
