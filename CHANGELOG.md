@@ -38,6 +38,7 @@
 
 ### Fixed
 
+- `openapi.yaml`의 `GET /fs/ls` 200 응답을 `oneOf`에서 `anyOf`로 고쳤다. `consistency=revision` 응답(`RevisionVfsNodePage`)은 `VfsNodePage`에도 맞아서 `oneOf`를 검증하는 도구는 서버가 보낸 유효한 응답을 거부했다(JSON Schema 검증기로 확인). 서버 응답은 바뀌지 않는다. 코드 생성기는 두 형태의 합집합 타입을 만든다.
 - `.dockerignore`가 `.gitignore`의 로컬 산출물(`backups`, `apps/scale/.work`, `_works`, `_tmp`, `.worktrees`, 배포 시나리오의 `pki/generated`·`resumable/generated`, `docker-compose.override.yml`)을 빌드 컨텍스트에서 제외하지 않던 문제를 고쳤다. `apps/api/Dockerfile`의 `pruner` 단계가 `COPY . .`로 컨텍스트 전체를 복사하므로, 로컬 작업 트리에 있던 개인키·DB 백업·측정 로그가 빌드 컨텍스트와 중간 단계 캐시에 들어갔다. 최종 이미지에는 `turbo prune` 결과만 복사되어 들어가지 않는다. 같은 더미 빌드에서 전송량이 69.41MB에서 4.31MB로 줄었다. CI는 깨끗한 checkout이라 영향이 없었고 로컬 빌드만 해당했다.
 - snapshot 전역 상한 환경변수(`STORIX_MAX_SYNC_SNAPSHOT_NODES`·`STORIX_MAX_RETAINED_SNAPSHOT_NODES`·`STORIX_MAX_SNAPSHOT_BYTES`·`STORIX_MAX_RETAINED_SNAPSHOT_BYTES`)를 시작 시점에 검증한다. 이전에는 잘못된 값(`0`, `1e3`, 공백이 붙은 값, 숫자가 아닌 값)이 부팅을 통과하고 snapshot 요청에서만 500이 났다. 이제 앞자리 0이 없는 양의 10진 정수가 아니면 시작을 거부하고 메시지에 변수 이름이 나온다. 유효한 값과 빈 값의 동작은 같다.
 - 기본 compose의 `gc` 서비스가 `STORIX_MAX_RETAINED_TRASH_NODES`·`STORIX_DEFAULT_TOTAL_LOGICAL_BYTES`·`STORIX_MAX_TOTAL_LOGICAL_BYTES`를 전달하지 않던 문제를 고쳤다. gc의 파일 만료 삭제는 휴지통이 켜진 namespace에서 항목을 휴지통으로 보내며 이 값으로 보존 상한과 휴지통 바이트 상한을 판정한다. 이전에는 `app`에 상한을 낮춰도 gc는 기본값(보존 100000 node, 기본 quota)을 썼다. 설정을 바꾼 배포는 gc 컨테이너를 다시 만들어야 적용된다. README 변수표의 읽는 곳을 `app·gc`로 고쳤다.
