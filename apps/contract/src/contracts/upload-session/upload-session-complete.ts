@@ -73,12 +73,19 @@ export default defineContract({
     const last = session.partCount - 1;
     const storedLast = await ctx.client.putUploadPart(ns, session.sessionId, last, piece(last));
     assert.equal(storedLast.status, 200, storedLast.text());
-    assert.deepEqual(storedLast.json(), {
+    const { expiresAt, ...partResult } = storedLast.json<Record<string, unknown>>();
+    assert.deepEqual(partResult, {
       index: last,
       sizeBytes: String(piece(last).length),
       sha256: sha256(piece(last)),
       replayed: false,
     });
+    // 선택 필드: 갱신된 세션 비활동 만료 시각. 최대 수명을 넘지 않는다.
+    assert.equal(typeof expiresAt, 'string');
+    assert.ok(Number.isFinite(Date.parse(expiresAt as string)));
+    assert.ok(
+      Date.parse(expiresAt as string) <= Date.parse(created.json<{ maxExpiresAt: string }>().maxExpiresAt),
+    );
     const replayedLast = await ctx.client.putUploadPart(ns, session.sessionId, last, piece(last));
     assert.equal(replayedLast.status, 200);
     assert.equal(replayedLast.json<{ replayed: boolean }>().replayed, true);
