@@ -15,6 +15,7 @@ export interface UploadSessionLimits {
 // 조각 크기의 상한은 세션 테이블의 integer 컬럼이다.
 const MAX_PART_SIZE_BYTES = 2147483647;
 
+/** namespace의 필수 업로드 한도와 새 세션에 적용할 선택 조각 크기를 정의한다. */
 export interface UploadSessionNamespacePolicy extends UploadSessionLimits {
   /** 이 namespace의 새 세션에 쓰는 조각 크기. 없으면 전역 값을 쓴다. */
   readonly partSizeBytes?: number;

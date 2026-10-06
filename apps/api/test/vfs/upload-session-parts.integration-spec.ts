@@ -246,6 +246,60 @@ describe('upload parts (PostgreSQL + S3)', () => {
     await clear(id, namespaceId, [0, 1]);
   });
 
+  // 실제 commit 뒤 ACK만 잃게 한다. 다른 앱의 PUT가 갱신한 만료와 기존 staging 보존을 함께 검증한다.
+  it('commit ACK 유실 뒤 다른 조각이 갱신한 만료로 PUT를 복구하고 저장 조각과 과금을 보존한다', async () => {
+    const id = await create('/part-ack-lost.bin', '6');
+    const repo = app.get(VfsUploadSessionRepository);
+    const rows = app.get(DataSource).getRepository(VfsUploadSessionEntity);
+    const storage = app.get<BlobStorage>(BLOB_STORAGE);
+    const commit = repo.commitPart.bind(repo);
+    let committedExpiry!: Date;
+    let observedExpiry!: string;
+    const recovery = jest.spyOn(repo, 'findStoredPartWithExpiry');
+    const deletion = jest.spyOn(storage, 'delete');
+    const ackLoss = jest.spyOn(repo, 'commitPart').mockImplementationOnce(async (...args) => {
+      // 첫 갱신만 30초로 제한해 다른 PUT의 60초 갱신값과 구분한다. 실제 commit 트랜잭션은 실행한다.
+      args[5] = 30;
+      const committed = await commit(...args);
+      if (!committed) throw new Error('first part commit missing');
+      committedExpiry = committed.expiresAt;
+      const other = await put(id, 1, 'xy', second).expect(200);
+      observedExpiry = other.body.expiresAt as string;
+      throw new Error('commit acknowledgement lost');
+    });
+    try {
+      const recovered = await put(id, 0, 'abcd').expect(200);
+      expect(recovered.body).toEqual({
+        index: 0,
+        sizeBytes: '4',
+        sha256: sha('abcd'),
+        replayed: false,
+        expiresAt: observedExpiry,
+      });
+      const session = await rows.findOneByOrFail({ id });
+      expect(Date.parse(observedExpiry)).toBeGreaterThan(committedExpiry.getTime());
+      expect(recovered.body.expiresAt).toBe(session.expiresAt.toISOString());
+      expect(Date.parse(observedExpiry)).toBeLessThanOrEqual(session.maxExpiresAt.getTime());
+      const part = await repo.findPart(id, 0);
+      expect(part).toMatchObject({ state: 'STORED', digest: sha('abcd') });
+      expect(recovery).toHaveBeenCalledWith(id, 0, part!.stagingKey);
+      expect(deletion).not.toHaveBeenCalled();
+      const chunks: Buffer[] = [];
+      for await (const chunk of await storage.get(part!.stagingKey)) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from('abcd'));
+      const usage = await app
+        .get(DataSource)
+        .getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ namespaceId });
+      expect(BigInt(usage.stagedBytes)).toBe(6n);
+    } finally {
+      ackLoss.mockRestore();
+      recovery.mockRestore();
+      deletion.mockRestore();
+      await clear(id, namespaceId, [0, 1]);
+    }
+  });
+
   it('streams exact parts, replays plaintext identity, and keeps staging hidden', async () => {
     const id = await create('/parts.bin', '6');
     const maxExpiresAt = new Date(Date.now() + 30_000);
