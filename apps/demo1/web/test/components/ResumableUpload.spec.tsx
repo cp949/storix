@@ -16,7 +16,7 @@ import {
   uploadSessionStorageKey,
 } from "../../src/components/upload-session-storage";
 
-vi.mock("../api/client", async (importOriginal) => {
+vi.mock("../../src/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client")>();
   return {
     ...actual,

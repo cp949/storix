@@ -24,7 +24,7 @@ import { ErrorProvider } from "../../src/error/ErrorProvider";
 import { DocumentArchive } from "../../src/components/DocumentArchive";
 import { FolderTree } from "../../src/components/FolderTree";
 
-vi.mock("../api/client", async (importOriginal) => {
+vi.mock("../../src/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client")>();
   return {
     ...actual,
@@ -51,7 +51,9 @@ vi.mock("../api/client", async (importOriginal) => {
 // listDocuments 호출 횟수를 DocumentArchive 자체 로직에만 묶어두기 위해
 // 기본은 아무것도 렌더링하지 않는 스텁으로 대체하고, 연동 확인이 필요한
 // 테스트에서만 onNavigate를 노출하는 버튼으로 바꿔 끼운다.
-vi.mock("./FolderTree", () => ({ FolderTree: vi.fn(() => null) }));
+vi.mock("../../src/components/FolderTree", () => ({
+  FolderTree: vi.fn(() => null),
+}));
 
 function page(items: EntryPage["items"]): EntryPage {
   return { items, nextCursor: null };

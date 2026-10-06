@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listDocuments } from "../src/api/client";
 import App from "../src/App";
 
-vi.mock("./api/client", () => ({
+vi.mock("../src/api/client", () => ({
   listDocuments: vi.fn(),
   searchDocuments: vi.fn(),
   uploadDocument: vi.fn(),

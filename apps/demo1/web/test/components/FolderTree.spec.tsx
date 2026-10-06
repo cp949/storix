@@ -7,7 +7,7 @@ import { ErrorPanel } from "../../src/error/ErrorPanel";
 import { ErrorProvider } from "../../src/error/ErrorProvider";
 import { FolderTree } from "../../src/components/FolderTree";
 
-vi.mock("../api/client", async (importOriginal) => {
+vi.mock("../../src/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client")>();
   return { ...actual, listDocuments: vi.fn() };
 });
