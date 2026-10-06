@@ -38,7 +38,9 @@
 - `PUT /{sessionId}/parts/{index}`는 `application/octet-stream`과 정확한 `Content-Length`를 요구한다.
 - index는 0부터 시작한다.
 - 마지막 조각 외에는 크기가 세션의 `partSizeBytes`와 같아야 한다.
-- 성공은 `{index,sizeBytes,sha256,replayed}`이며 SHA-256은 평문 기준이다.
+- 성공은 `{index,sizeBytes,sha256,replayed,expiresAt}`이며 SHA-256은 평문 기준이다.
+- `expiresAt`은 이 요청이 갱신한 세션 비활동 만료 시각이다. `min(now + inactivitySeconds, maxExpiresAt)`이며 저장소 계층이 트랜잭션에서 실제 반영한 값을 그대로 돌려준다. 정상 저장과 동일 조각 재전송 모두 포함한다.
+- commit ACK를 잃은 PUT을 서버가 저장 확정으로 복구하면 `findStoredPartWithExpiry`가 한 조회로 읽은 세션 만료를 돌려준다. 다른 PUT이 그 사이 갱신했다면 원래 요청의 갱신값보다 늦을 수 있고, 최대 수명은 넘지 않는다.
 - 같은 index·크기·내용을 다시 보내면 바이트를 검증하고 `replayed: true`로 응답한다.
 - 다른 내용은 `409 VFS_UPLOAD_PART_CONFLICT`, 진행 중인 같은 index는 `409 VFS_UPLOAD_PART_IN_PROGRESS`다.
 - 조각별 digest와 생성 요청의 전체 파일 `sha256`은 별개다.

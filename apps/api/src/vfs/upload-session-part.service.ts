@@ -38,6 +38,8 @@ export interface UploadedPartResult {
   readonly sizeBytes: string;
   readonly sha256: string;
   readonly replayed: boolean;
+  /** 이 요청이 갱신한 뒤의 세션 비활동 만료 시각(ISO). `maxExpiresAt`을 넘지 않는다. */
+  readonly expiresAt: string;
 }
 
 @Injectable()
@@ -197,7 +199,7 @@ export class UploadSessionPartService {
     heartbeat.unref();
     let lateCleanup = false;
     let uploadSettled = false;
-    let committed = false;
+    let committed: { expiresAt: Date } | null = null;
     let commitAttempted = false;
     let commitResolved = false;
     try {
@@ -251,7 +253,13 @@ export class UploadSessionPartService {
         deadline.promise,
       ]);
       if (!committed) throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료');
-      return { index, sizeBytes: String(expected), sha256: uploaded.sha256, replayed: false };
+      return {
+        index,
+        sizeBytes: String(expected),
+        sha256: uploaded.sha256,
+        replayed: false,
+        expiresAt: committed.expiresAt.toISOString(),
+      };
     } catch (error) {
       if (committed) throw error;
       if (lateCleanup) throw error;
@@ -277,9 +285,20 @@ export class UploadSessionPartService {
           throw error;
         }
         try {
-          const persisted = await Promise.race([this.sessions.findPart(sessionId, index), deadline.promise]);
-          if (persisted?.state === 'STORED' && persisted.stagingKey === stagingKey && persisted.digest)
-            return { index, sizeBytes: String(expected), sha256: persisted.digest, replayed: false };
+          // ACK를 잃었어도 저장이 확정됐으면 성공으로 복구한다. 만료 시각은 이 조회가 읽은 값이라
+          // 다른 PUT이 그 사이 갱신했다면 이 요청의 갱신값보다 늦을 수 있다.
+          const persisted = await Promise.race([
+            this.sessions.findStoredPartWithExpiry(sessionId, index, stagingKey),
+            deadline.promise,
+          ]);
+          if (persisted?.part.digest)
+            return {
+              index,
+              sizeBytes: String(expected),
+              sha256: persisted.part.digest,
+              replayed: false,
+              expiresAt: persisted.expiresAt.toISOString(),
+            };
           await Promise.race([
             this.sessions.releasePartReservation(sessionId, index, true, stagingKey),
             deadline.promise,
@@ -339,7 +358,13 @@ export class UploadSessionPartService {
         deadline.promise,
       ]);
       if (!renewed) throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료 또는 만료');
-      return { index, sizeBytes: String(expected), sha256: hashed.sha256, replayed: true };
+      return {
+        index,
+        sizeBytes: String(expected),
+        sha256: hashed.sha256,
+        replayed: true,
+        expiresAt: renewed.expiresAt.toISOString(),
+      };
     } finally {
       clearTimeout(deadline.timer);
     }

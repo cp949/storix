@@ -1619,6 +1619,7 @@ paths:
                 sizeBytes: '4'
                 sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
                 replayed: false
+                expiresAt: '2026-09-28T00:00:00.000Z'
         '400':
           description: 잘못된 Content-Type/Length/index/조각 크기(VFS_INVALID_MUTATION_REQUEST 또는 VFS_INVALID_UPLOAD_PART)
           content:
@@ -3037,6 +3038,14 @@ components:
         sizeBytes: { type: string, pattern: '^[0-9]+$' }
         sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 평문 조각 SHA-256 }
         replayed: { type: boolean }
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            이 조각 저장 또는 동일 조각 재전송이 갱신한 뒤의 세션 비활동 만료 시각이며 `maxExpiresAt`을
+            넘지 않는다. 선택 필드다. 저장된 값은 요청이 확정한 값이다. 응답 확인(commit ACK)을 잃은 PUT을
+            서버가 저장 확정으로 복구한 경우에는 복구 조회가 읽은 세션 만료 시각을 준다. 그 사이 같은 세션의
+            다른 PUT이 만료를 갱신했다면 이 요청의 갱신값보다 늦을 수 있다.
     UploadSessionCompleteResult:
       $ref: '#/components/schemas/ConditionalContentResult'
     SnapshotRestoreRequest:

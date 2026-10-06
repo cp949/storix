@@ -174,7 +174,10 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
     if (part) {
       expect((await f.uploads.reservePart(id, 0, '7', key, caps)).kind).toBe('reserved');
       await f.storage.put(key, Readable.from('content'));
-      if (part === 'STORED') expect(await f.uploads.commitPart(id, 0, 'f'.repeat(64), null, key)).toBe(true);
+      if (part === 'STORED')
+        expect(await f.uploads.commitPart(id, 0, 'f'.repeat(64), null, key)).toMatchObject({
+          expiresAt: expect.any(Date),
+        });
     }
     return { id, key };
   }

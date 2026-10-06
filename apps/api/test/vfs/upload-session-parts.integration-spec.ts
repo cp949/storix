@@ -214,7 +214,36 @@ describe('upload parts (PostgreSQL + S3)', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const renewal = app.get(VfsUploadSessionRepository).renewSession(raceNamespaceId, id, new Date(), 60);
     await lockHeld;
-    expect(await renewal).toBe(false);
+    expect(await renewal).toBeNull();
+  });
+
+  it('조각 저장·재전송 응답의 expiresAt은 DB 만료와 같고 최대 수명을 넘지 않으며 복구 조회는 저장 확정 조각만 돌려준다', async () => {
+    const id = await create('/part-expiry.bin', '6');
+    const rows = app.get(DataSource).getRepository(VfsUploadSessionEntity);
+    const repo = app.get(VfsUploadSessionRepository);
+    const first = await put(id, 0, 'abcd').expect(200);
+    expect(first.body.expiresAt).toBe((await rows.findOneByOrFail({ id })).expiresAt.toISOString());
+    const replay = await put(id, 0, 'abcd').expect(200);
+    expect(replay.body.replayed).toBe(true);
+    expect(replay.body.expiresAt).toBe((await rows.findOneByOrFail({ id })).expiresAt.toISOString());
+
+    const stored = (await repo.findPart(id, 0))!;
+    const recovered = await repo.findStoredPartWithExpiry(id, 0, stored.stagingKey);
+    expect(recovered?.part.digest).toBe(sha('abcd'));
+    expect(recovered?.expiresAt).toEqual((await rows.findOneByOrFail({ id })).expiresAt);
+    expect(await repo.findStoredPartWithExpiry(id, 0, 'upload-staging/other')).toBeNull();
+    expect(await repo.findStoredPartWithExpiry(id, 1, stored.stagingKey)).toBeNull();
+
+    // 최대 수명에 가까운 PUT은 최대 수명으로 제한된 값을 응답한다.
+    const maxExpiresAt = new Date(Date.now() + 5000);
+    await rows.update({ id }, { expiresAt: new Date(Date.now() + 2000), maxExpiresAt });
+    const near = await put(id, 1, 'xy').expect(200);
+    expect(near.body.expiresAt).toBe(maxExpiresAt.toISOString());
+
+    // 만료된 세션의 PUT은 기존처럼 거부한다.
+    await rows.update({ id }, { expiresAt: new Date(Date.now() - 1000) });
+    expect((await put(id, 0, 'abcd').expect(409)).body.code).toBe('VFS_UPLOAD_SESSION_CLOSED');
+    await clear(id, namespaceId, [0, 1]);
   });
 
   it('streams exact parts, replays plaintext identity, and keeps staging hidden', async () => {

@@ -41,6 +41,10 @@ function fixture(
   let stallPut = false;
   let resumePut: (() => void) | null = null;
   let stallBeforeConsume = false;
+  // 저장소가 반환한 만료 시각을 테스트가 지정한다. 없으면 갱신 규칙대로 계산한다.
+  let committedExpiry: Date | null = null;
+  let recoveredExpiry: Date | null = null;
+  let recoveryLookups = 0;
   const storage = {
     async put(key: string, source: Readable) {
       if (stallBeforeConsume)
@@ -94,13 +98,30 @@ function fixture(
       rows.set(index, part);
       return { kind: 'reserved', part };
     },
-    async commitPart(_id: string, index: number, digest: string, iv: string | null, key: string) {
+    async commitPart(
+      _id: string,
+      index: number,
+      digest: string,
+      iv: string | null,
+      key: string,
+      inactivitySeconds?: number,
+    ) {
       const row = rows.get(index);
-      if (!row || row.stagingKey !== key || row.state !== 'RESERVED') return false;
+      if (!row || row.stagingKey !== key || row.state !== 'RESERVED') return null;
       Object.assign(row, { digest, encryptionIv: iv, state: 'STORED' });
+      if (inactivitySeconds !== undefined)
+        session.expiresAt = new Date(
+          Math.min(Date.now() + inactivitySeconds * 1000, session.maxExpiresAt.getTime()),
+        );
       if (commitDelayMs) await new Promise((resolve) => setTimeout(resolve, commitDelayMs));
       if (loseCommitAck) throw new Error('commit acknowledgement lost');
-      return true;
+      return { expiresAt: committedExpiry ?? session.expiresAt };
+    },
+    async findStoredPartWithExpiry(_id: string, index: number, key: string) {
+      recoveryLookups++;
+      const row = rows.get(index);
+      if (!row || row.stagingKey !== key || row.state !== 'STORED' || !row.digest) return null;
+      return { part: row, expiresAt: recoveredExpiry ?? session.expiresAt };
     },
     async releasePartReservation(_id: string, index: number, mayExist: boolean, key: string) {
       const row = rows.get(index);
@@ -129,11 +150,11 @@ function fixture(
       return true;
     },
     async renewSession(_ns: string, _id: string, now: Date, inactivitySeconds: number) {
-      if (session.expiresAt <= now || session.maxExpiresAt <= now) return false;
+      if (session.expiresAt <= now || session.maxExpiresAt <= now) return null;
       session.expiresAt = new Date(
         Math.min(now.getTime() + inactivitySeconds * 1000, session.maxExpiresAt.getTime()),
       );
-      return true;
+      return { expiresAt: session.expiresAt };
     },
   } as unknown as VfsUploadSessionRepository;
   const nodes = {
@@ -184,6 +205,13 @@ function fixture(
     setCommitDelay: (value: number) => {
       commitDelayMs = value;
     },
+    setCommittedExpiry: (value: Date) => {
+      committedExpiry = value;
+    },
+    setRecoveredExpiry: (value: Date) => {
+      recoveredExpiry = value;
+    },
+    recoveryLookups: () => recoveryLookups,
     setStallPut: (value: boolean) => {
       stallPut = value;
     },
@@ -326,7 +354,16 @@ it('rejects truncated and oversized streams without retaining a reservation', as
 
 it('replays identical plaintext and rejects different content without changing accepted object', async () => {
   const f = fixture();
-  const first = await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+  const { expiresAt, ...first } = await f.service.putPart(
+    namespaceId,
+    sessionId,
+    '0',
+    source('abcd'),
+    '4',
+    'req',
+  );
+  expect(typeof expiresAt).toBe('string');
+  // expiresAt은 재전송이 다시 갱신하는 시각이라 조각 동일성 비교에서 뺀다.
   expect(await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req2')).toMatchObject({
     ...first,
     replayed: true,
@@ -406,4 +443,44 @@ it('returns at the deadline while part commit acknowledgement remains pending', 
   );
   expect(f.rows.get(0)?.state).toBe('STORED');
   expect(f.objects.size).toBe(1);
+});
+
+describe('조각 저장 응답의 세션 만료 시각', () => {
+  it('새 조각 응답은 저장소가 반환한 만료를 그대로 담고 추가 조회로 대체하지 않는다', async () => {
+    const f = fixture();
+    const returned = new Date(Date.now() + 33_000);
+    f.setCommittedExpiry(returned);
+    const result = await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    expect(result.expiresAt).toBe(returned.toISOString());
+    expect(f.recoveryLookups()).toBe(0);
+  });
+
+  it('조각 저장은 비활동 만료를 갱신한 값을 최대 수명 안에서 응답한다', async () => {
+    const f = fixture();
+    f.session.maxExpiresAt = new Date(Date.now() + 10_000);
+    const result = await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    expect(result.expiresAt).toBe(f.session.maxExpiresAt.toISOString());
+  });
+
+  it('동일 조각 재전송 응답도 갱신된 만료를 담고 최대 수명을 넘지 않는다', async () => {
+    const f = fixture(false, '4');
+    await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    const now = Date.now();
+    f.session.expiresAt = new Date(now + 1000);
+    f.session.maxExpiresAt = new Date(now + 10_000);
+    const replay = await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'replay');
+    expect(replay.replayed).toBe(true);
+    expect(replay.expiresAt).toBe(f.session.maxExpiresAt.toISOString());
+    expect(Date.parse(replay.expiresAt)).toBeLessThanOrEqual(f.session.maxExpiresAt.getTime());
+  });
+
+  it('commit ACK를 잃은 복구는 복구 조회가 읽은 만료를 응답한다', async () => {
+    const f = fixture();
+    f.setLoseCommitAck(true);
+    const observed = new Date(Date.now() + 44_000);
+    f.setRecoveredExpiry(observed);
+    const result = await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    expect(result).toMatchObject({ sha256: sha('abcd'), replayed: false, expiresAt: observed.toISOString() });
+    expect(f.recoveryLookups()).toBe(1);
+  });
 });

@@ -239,7 +239,9 @@ describe('upload session repository (SQLite)', () => {
     expect((await repository.reservePart(other.session.id, 0, '1', 'upload-staging/c', caps)).kind).toBe(
       'limit',
     );
-    expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toBe(true);
+    expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toMatchObject({
+      expiresAt: expect.any(Date),
+    });
     expect((await repository.findForStatus(NAMESPACE, id))?.parts).toEqual([
       expect.objectContaining({ partIndex: 0, sizeBytes: '10', state: 'STORED' }),
     ]);
@@ -272,7 +274,7 @@ describe('upload session repository (SQLite)', () => {
       'reserved',
     );
     expect(await repository.claimTerminalTransition(NAMESPACE, id, 'CANCELLED', new Date())).toBe(true);
-    expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toBe(false);
+    expect(await repository.commitPart(id, 0, 'a'.repeat(64), null)).toBeNull();
     expect((await repository.reservePart(id, 0, '10', 'upload-staging/later', caps)).kind).toBe('closed');
     expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/terminal', 'RESERVED')).toBe(
       false,
@@ -394,7 +396,9 @@ describe('upload session repository (SQLite)', () => {
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
       { staged_bytes: 10 },
     ]);
-    expect(await repository.commitPart(id, 0, 'b'.repeat(64), null)).toBe(true);
+    expect(await repository.commitPart(id, 0, 'b'.repeat(64), null)).toMatchObject({
+      expiresAt: expect.any(Date),
+    });
     expect((await repository.findForStatus(NAMESPACE, id))?.parts).toEqual([
       expect.objectContaining({ partIndex: 0, stagingKey: 'upload-staging/new', state: 'STORED' }),
     ]);
@@ -423,7 +427,9 @@ describe('upload session repository (SQLite)', () => {
     expect(await repository.releasePartReservation(id, 0, true)).toBe(true);
     expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/old', 'CLEANUP')).toBe(true);
     expect((await repository.reservePart(id, 0, '10', 'upload-staging/new', caps)).kind).toBe('reserved');
-    expect(await repository.commitPart(id, 0, 'b'.repeat(64), null)).toBe(true);
+    expect(await repository.commitPart(id, 0, 'b'.repeat(64), null)).toMatchObject({
+      expiresAt: expect.any(Date),
+    });
     expect(await repository.claimTerminalTransition(NAMESPACE, id, 'CANCELLED', new Date())).toBe(true);
     expect(await repository.markStagingObjectDeleted(id, 0, 'upload-staging/old', 'CLEANUP')).toBe(false);
     expect(await db.query("SELECT staged_bytes FROM vfs_upload_usage WHERE id = 'global'")).toEqual([
@@ -459,7 +465,9 @@ describe('upload session repository (SQLite)', () => {
     if (created.kind !== 'created') throw new Error('expected creation');
     const id = created.session.id;
     const now = new Date(created.session.createdAt.getTime() + 60 * 60_000);
-    expect(await repository.renewSession(NAMESPACE, id, now, 10 * 86400)).toBe(true);
+    expect(await repository.renewSession(NAMESPACE, id, now, 10 * 86400)).toMatchObject({
+      expiresAt: expect.any(Date),
+    });
     expect((await repository.findForStatus(NAMESPACE, id))?.session.expiresAt).toEqual(
       created.session.maxExpiresAt,
     );

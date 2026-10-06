@@ -233,16 +233,16 @@ export class VfsUploadSessionRepository {
     encryptionIv: string | null,
     stagingKey?: string,
     inactivitySeconds?: number,
-  ): Promise<boolean> {
+  ): Promise<{ expiresAt: Date } | null> {
     return this.dataSource.transaction(async (manager) => {
       const sessions = manager.getRepository(VfsUploadSessionEntity);
       const session = await sessions.findOneBy({ id: sessionId });
-      if (!session) return false;
+      if (!session) return null;
       await this.lockUsage(manager, session.namespaceId);
       const current = await sessions.findOneBy({ id: sessionId });
       const now = new Date();
       if (!current || current.state !== 'OPEN' || current.expiresAt <= now || current.maxExpiresAt <= now)
-        return false;
+        return null;
       const part = await manager.getRepository(VfsUploadPartEntity).findOneBy({ sessionId, partIndex });
       if (
         !part ||
@@ -251,9 +251,11 @@ export class VfsUploadSessionRepository {
         part.leaseExpiresAt <= now ||
         (stagingKey !== undefined && part.stagingKey !== stagingKey)
       )
-        return false;
+        return null;
+      // 만료 갱신을 하지 않는 호출은 현재 저장된 만료 시각을 돌려준다.
+      let expiresAt = current.expiresAt;
       if (inactivitySeconds !== undefined) {
-        const expiresAt = new Date(
+        expiresAt = new Date(
           Math.min(now.getTime() + inactivitySeconds * 1000, current.maxExpiresAt.getTime()),
         );
         const renewed = await sessions
@@ -266,7 +268,7 @@ export class VfsUploadSessionRepository {
             now,
           })
           .execute();
-        if (renewed.affected !== 1) return false;
+        if (renewed.affected !== 1) return null;
       }
       const update = manager
         .getRepository(VfsUploadPartEntity)
@@ -281,7 +283,7 @@ export class VfsUploadSessionRepository {
       if (stagingKey !== undefined) update.andWhere('staging_key = :stagingKey', { stagingKey });
       const result = await update.execute();
       if (result.affected !== 1) throw new Error('Upload part changed during commit transaction');
-      return true;
+      return { expiresAt };
     });
   }
 
@@ -694,7 +696,7 @@ export class VfsUploadSessionRepository {
     sessionId: string,
     now: Date,
     inactivitySeconds: number,
-  ): Promise<boolean> {
+  ): Promise<{ expiresAt: Date } | null> {
     return this.dataSource.transaction(async (manager) => {
       await this.lockUsage(manager, namespaceId);
       await this.assertNamespaceActive(manager, namespaceId);
@@ -711,7 +713,7 @@ export class VfsUploadSessionRepository {
         session.expiresAt <= lockedNow ||
         session.maxExpiresAt <= lockedNow
       )
-        return false;
+        return null;
       const expiresAt = new Date(
         Math.min(lockedNow.getTime() + inactivitySeconds * 1000, session.maxExpiresAt.getTime()),
       );
@@ -729,7 +731,7 @@ export class VfsUploadSessionRepository {
           },
         )
         .execute();
-      return result.affected === 1;
+      return result.affected === 1 ? { expiresAt } : null;
     });
   }
 
@@ -751,6 +753,34 @@ export class VfsUploadSessionRepository {
   @classifyPersistenceOperation
   async findPart(sessionId: string, partIndex: number): Promise<VfsUploadPartEntity | null> {
     return this.dataSource.getRepository(VfsUploadPartEntity).findOneBy({ sessionId, partIndex });
+  }
+
+  /**
+   * commit ACK를 잃은 PUT의 복구 조회. 저장 확정(STORED)·staging key·digest를 확인하고 같은 SQL 문이 읽은
+   * 세션 만료 시각을 함께 돌려준다. 확정되지 않았으면 null이다. 만료 시각은 이 조회 시점의 값이라
+   * 다른 PUT이 그 사이에 갱신했다면 원래 요청의 갱신값보다 늦을 수 있다.
+   */
+  @classifyPersistenceOperation
+  async findStoredPartWithExpiry(
+    sessionId: string,
+    partIndex: number,
+    stagingKey: string,
+  ): Promise<{ part: VfsUploadPartEntity; expiresAt: Date } | null> {
+    const session = await this.dataSource
+      .getRepository(VfsUploadSessionEntity)
+      .createQueryBuilder('session')
+      .innerJoinAndMapOne(
+        'session.storedPart',
+        VfsUploadPartEntity,
+        'part',
+        'part.session_id = session.id AND part.part_index = :partIndex AND part.staging_key = :stagingKey AND part.state = :stored AND part.digest IS NOT NULL',
+        { partIndex, stagingKey, stored: 'STORED' },
+      )
+      .where('session.id = :sessionId', { sessionId })
+      .getOne();
+    const part = (session as (VfsUploadSessionEntity & { storedPart?: VfsUploadPartEntity }) | null)
+      ?.storedPart;
+    return session && part ? { part, expiresAt: session.expiresAt } : null;
   }
 
   @classifyPersistenceOperation

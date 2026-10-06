@@ -153,7 +153,7 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
       await app
         .get(VfsUploadSessionRepository)
         .renewSession(namespaceId, id, new Date(Date.now() + 2000), 60),
-    ).toBe(true);
+    ).toMatchObject({ expiresAt: expect.any(Date) });
     expect((await create(key).expect(201)).body).toEqual(first.body);
     const changed = await create(key, {
       path: '/different.bin',
@@ -203,7 +203,7 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
     const caps = { global: policy().global, namespace: policy().namespaces[namespaceId] };
     expect((await repo.reservePart(id, 0, '4', stagingKey, caps)).kind).toBe('reserved');
     await storage.put(stagingKey, Readable.from(Buffer.from('data')));
-    expect(await repo.commitPart(id, 0, '0'.repeat(64), null)).toBe(true);
+    expect(await repo.commitPart(id, 0, '0'.repeat(64), null)).toMatchObject({ expiresAt: expect.any(Date) });
     const orphanKey = `upload-staging/${randomUUID()}`;
     await storage.put(orphanKey, Readable.from(Buffer.from('orphan')));
     const cancelled = await request(app.getHttpServer())
@@ -254,7 +254,7 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
       [expiredId],
     );
     const repo = app.get(VfsUploadSessionRepository);
-    expect(await repo.renewSession(namespaceId, expiredId, new Date(), 60)).toBe(false);
+    expect(await repo.renewSession(namespaceId, expiredId, new Date(), 60)).toBeNull();
     const firstGc = await app.get(GcJob).run();
     expect(firstGc.expiredUploadSessions).toBe(1);
     expect((await repo.findForStatus(namespaceId, expiredId))?.session.state).toBe('EXPIRED');
