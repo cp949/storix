@@ -3483,6 +3483,15 @@ components:
                   type: string
                   pattern: '^r1\.'
                   description: 성공한 생성 또는 교체 상태의 revision. receipt 재생에서도 동일하다.
+                sha256:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+                  description: |
+                    저장된 FILE 전체 평문 바이트의 SHA-256(64자리 소문자 hex). 선택 필드다.
+                    암호화 namespace에서도 복호화한 원본 기준이다. 이 값은 반환한 revision의 콘텐츠와 같다.
+                    receipt와 완료 결과는 최초 응답을 그대로 재생하므로, 이 필드가 생기기 전에 저장된
+                    응답에는 없을 수 있다. 재생 응답을 현재 파일의 값으로 보충하지 않는다.
+                    필드가 없으면 `GET /fs/stat`의 `sha256`을 `revision`과 함께 대조해 읽는다.
         affectedRevisions:
           type: array
           items:

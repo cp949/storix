@@ -193,6 +193,47 @@ export function registerFsConditionalContentContract(ctx: FsHttpContext) {
       expect(stat.mimeType).toBe('text/plain');
     });
 
+    it('성공 resource는 평문 SHA-256을 반환하고 stat의 hash·revision과 같으며 파일 교체 뒤 재생해도 최초 값을 유지한다', async () => {
+      const namespaceId = await ctx.createNamespace('conditional-sha256');
+      const base = `/api/v2/namespaces/${namespaceId}/fs`;
+      const hashOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+      const upload = (key: string, bytes: Buffer, condition: Record<string, string>) => {
+        let call = request(ctx.httpServer)
+          .post(`${base}/content/conditional`)
+          .query({ path: '/sha.bin' })
+          .set('Idempotency-Key', key)
+          .set('X-Mutation-Scope', 'sha256')
+          .set('Content-Type', 'application/octet-stream');
+        for (const [name, value] of Object.entries(condition)) call = call.set(name, value);
+        return call.send(bytes);
+      };
+      const stat = async () =>
+        (await request(ctx.httpServer).get(`${base}/stat`).query({ path: '/sha.bin' }).expect(200)).body;
+      // 비UTF-8 바이트를 섞어 바이트 기준으로 계산하는지 확인한다.
+      const first = Buffer.from([0xff, 0xfe, 0x00, 0x80]);
+      const firstKey = randomUUID();
+      const created = await upload(firstKey, first, { 'X-If-Absent': 'true' }).expect(201);
+      expect(created.body.resource.sha256).toBe(hashOf(first));
+      expect(await stat()).toMatchObject({
+        sha256: created.body.resource.sha256,
+        revision: created.body.resource.revision,
+      });
+
+      const next = Buffer.from([0x00, 0xc3, 0x28]);
+      const replaced = await upload(randomUUID(), next, {
+        'X-If-Revision': created.body.resource.revision,
+      }).expect(200);
+      expect(replaced.body.resource.sha256).toBe(hashOf(next));
+      expect(await stat()).toMatchObject({
+        sha256: replaced.body.resource.sha256,
+        revision: replaced.body.resource.revision,
+      });
+
+      const replay = await upload(firstKey, first, { 'X-If-Absent': 'true' }).expect(201);
+      expect(replay.body).toEqual(created.body);
+      expect(replay.body.resource.sha256).toBe(hashOf(first));
+    });
+
     it('X-Expires-In 생성은 expiresAt을 응답·stat에 노출하고 만료 값은 fingerprint에 포함된다', async () => {
       const namespaceId = await ctx.createNamespace('conditional-expiry');
       const base = `/api/v2/namespaces/${namespaceId}/fs`;

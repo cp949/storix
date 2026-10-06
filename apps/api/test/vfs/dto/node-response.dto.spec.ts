@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { VfsNodeRecord } from '../../../src/persistence/vfs-node.repository.js';
 import {
   toConditionalContentResponse,
@@ -86,10 +87,18 @@ describe('toPreconditionCurrent', () => {
 describe('toConditionalContentResponse', () => {
   it('성공한 FILE 노드의 ID와 해당 version의 revision을 함께 반환한다', () => {
     const record = makeRecord({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab', type: 'FILE', version: 3 });
-    expect(toConditionalContentResponse(record, '/a')).toMatchObject({
+    expect(toConditionalContentResponse(record, '/a', 'a'.repeat(64))).toMatchObject({
       id: record.id,
       revision: encodeRevision(record),
       path: '/a',
     });
+  });
+
+  it('전체 평문 SHA-256을 sha256 필드로 반환한다', () => {
+    const record = makeRecord({ id: '0195f6a0-7c1b-7d3e-8a4f-1234567890ab', type: 'FILE', version: 3 });
+    const sha256 = createHash('sha256')
+      .update(Buffer.from([0xff, 0xfe, 0x00, 0x80]))
+      .digest('hex');
+    expect(toConditionalContentResponse(record, '/a', sha256).sha256).toBe(sha256);
   });
 });

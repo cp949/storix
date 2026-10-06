@@ -181,6 +181,60 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     expect((await complete(stale).expect(412)).body.code).toBe('VFS_PRECONDITION_FAILED');
   });
 
+  it.each([false, true])(
+    '완료 성공 resource는 평문 hash와 같은 revision을 반환한다(암호화=%s)',
+    async (encrypted) => {
+      const ns = encrypted ? context.encryptedNamespace() : context.namespace();
+      const path = `/sha-${randomUUID()}.bin`;
+      const stat = async () =>
+        (
+          await auth(api().get(`/api/v2/namespaces/${ns}/fs/stat`))
+            .query({ path })
+            .expect(200)
+        ).body;
+      const hashOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+      // 비UTF-8 바이트를 섞어 문자열 변환 없이 바이트 기준으로 계산하는지 확인한다.
+      const first = Buffer.from([0xff, 0xfe, 0x00, 0x80, 0x41, 0x42]);
+      const id = await create(path, '6', ns);
+      // 테스트 정책의 조각 크기는 4바이트다.
+      for (const [index, part] of [first.subarray(0, 4), first.subarray(4)].entries())
+        await auth(api().put(`${base(ns)}/${id}/parts/${index}`))
+          .set('Content-Type', 'application/octet-stream')
+          .send(part)
+          .expect(200);
+      const created = await complete(id, ns).expect(201);
+      expect(created.body.resource.sha256).toBe(hashOf(first));
+      expect(await stat()).toMatchObject({
+        sha256: created.body.resource.sha256,
+        revision: created.body.resource.revision,
+      });
+
+      const next = Buffer.from([0x00, 0xc3, 0x28, 0x7f]);
+      const replacementId = await create(path, '4', ns, { ifRevision: created.body.resource.revision });
+      await auth(api().put(`${base(ns)}/${replacementId}/parts/0`))
+        .set('Content-Type', 'application/octet-stream')
+        .send(next)
+        .expect(200);
+      const replaced = await complete(replacementId, ns).expect(200);
+      expect(replaced.body.resource.sha256).toBe(hashOf(next));
+      expect(await stat()).toMatchObject({
+        sha256: replaced.body.resource.sha256,
+        revision: replaced.body.resource.revision,
+      });
+
+      // 파일이 바뀐 뒤 재생해도 최초 응답의 revision과 hash를 그대로 돌려준다.
+      const replay = await complete(id, ns).expect(201);
+      expect(replay.body.resource.sha256).toBe(hashOf(first));
+      expect(replay.body.resource.revision).toBe(created.body.resource.revision);
+    },
+  );
+
+  it('0바이트 파일 완료도 빈 내용의 SHA-256을 반환한다', async () => {
+    const id = await create(`/sha-empty-${randomUUID()}.bin`, '0');
+    const done = await complete(id).expect(201);
+    expect(done.body.resource.sha256).toBe(createHash('sha256').update('').digest('hex'));
+  });
+
   it('rejects a target whose parent disappeared after creation', async () => {
     const root = `/api/v2/namespaces/${context.namespace()}/fs`;
     await auth(api().post(`${root}/mkdir`))

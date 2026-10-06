@@ -50,6 +50,7 @@
 - staging key, digest, 암호화 IV, 기대·계산 checksum은 노출하지 않는다.
 - `POST /{sessionId}/complete`는 모든 조각이 저장됐을 때만 완료하며 생성 시 고정한 조건을 다시 검사한다.
 - 최초 완료는 파일 변경에 따라 `200` 또는 `201`과 `{resource,affectedRevisions}` 및 `X-Request-Id`를 반환한다.
+- `resource.sha256`은 저장된 전체 평문 바이트의 SHA-256이며 반환한 revision의 콘텐츠와 같다. 값은 완료 결과·receipt에 응답과 함께 저장되어 재생 때 그대로 나온다. 이 필드가 생기기 전의 결과에는 없을 수 있고 현재 파일의 값으로 보충하지 않는다. `content/conditional`의 `resource`도 같다.
 - 지정한 전체 checksum이 저장 전 평문 바이트와 다르면 파일·revision 변경 없이 `422 VFS_CHECKSUM_MISMATCH`로 `FAILED`에 종결하고 최초 오류 body와 `X-Request-Id`를 저장한다.
 - 이후 완료는 최초 status, body, request ID를 재생한다.
 - 진행 중 완료는 `409 VFS_UPLOAD_SESSION_IN_PROGRESS`, 빠진 조각은 `409 VFS_UPLOAD_PARTS_INCOMPLETE`다.

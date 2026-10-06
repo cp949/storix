@@ -41,16 +41,19 @@ export function toPreconditionCurrent(record: VfsNodeRecord, path: string): VfsP
   return { ...toNodeResponse(record, path), revision: encodeRevision(record) };
 }
 
-// 조건부 콘텐츠 생성·교체 성공 resource. receipt에 고정되므로 재생 시에도 성공 상태의 revision을 반환한다.
+// 조건부 콘텐츠 생성·교체 성공 resource. receipt에 고정되므로 재생 시에도 성공 상태의 revision과 sha256을 반환한다.
+// sha256은 전체 평문 SHA-256이다. 이 필드가 생기기 전에 저장된 receipt에는 없을 수 있다.
 export interface VfsConditionalContentResourceDto extends VfsNodeResponseDto {
   readonly revision: string;
+  readonly sha256?: string;
 }
 
 export function toConditionalContentResponse(
   record: VfsNodeRecord,
   path: string,
+  sha256: string,
 ): VfsConditionalContentResourceDto {
-  return { ...toNodeResponse(record, path), revision: encodeRevision(record) };
+  return { ...toNodeResponse(record, path), revision: encodeRevision(record), sha256 };
 }
 
 // GET /fs/stat 전용 shape. 같은 읽기 트랜잭션에서 읽은 노드의 revision과 참조 Blob SHA-256을 더한다.

@@ -544,6 +544,32 @@ describe('ConditionalContentService 오류 receipt', () => {
     },
   );
 
+  it('sha256이 없는 과거 receipt를 재생해도 현재 파일의 hash로 보충하지 않는다', async () => {
+    const receipt = new VfsMutationReceiptEntity();
+    receipt.method = 'POST';
+    receipt.fingerprint = hashParts([
+      'POST',
+      'content/conditional',
+      '/x',
+      '{"ifAbsent":true}',
+      'application/octet-stream',
+      createHash('sha256').update('body').digest('hex'),
+    ]);
+    receipt.requestBodyBytes = '4';
+    receipt.responseStatus = 201;
+    receipt.responseBody = JSON.stringify({
+      resource: { path: '/x', revision: 'r1.old' },
+      affectedRevisions: [],
+    });
+    receipt.responseHeaders = JSON.stringify({ 'x-request-id': 'req-first' });
+    claim.mockResolvedValueOnce({ kind: 'complete', receipt });
+
+    const result = await upload('/x', 'true', undefined, Readable.from([Buffer.from('body')]), 'req-second');
+
+    expect(result.body).toEqual({ resource: { path: '/x', revision: 'r1.old' }, affectedRevisions: [] });
+    expect((result.body as { resource: object }).resource).not.toHaveProperty('sha256');
+  });
+
   it('완료 receipt가 있으면 body를 hash만 하고 업로드와 트랜잭션 없이 최초 응답을 재생한다', async () => {
     const receipt = new VfsMutationReceiptEntity();
     receipt.method = 'POST';

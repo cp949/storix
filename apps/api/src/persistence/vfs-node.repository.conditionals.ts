@@ -243,7 +243,7 @@ export class VfsNodeRepositoryConditionals extends VfsNodeRepositoryTrash {
     );
     return {
       status: outcome.kind === 'created' ? 201 : 200,
-      resource: toConditionalContentResponse(outcome.node, path),
+      resource: toConditionalContentResponse(outcome.node, path, blob.sha256),
     };
   }
 
