@@ -8,3 +8,12 @@ coverage
 !.env.example
 .scratch
 docs/superpowers
+_tmp
+_works
+.worktrees
+.claude/scheduled_tasks.lock
+docker-compose.override.yml
+backups
+apps/scale/.work
+docs/deployment/scenarios/**/pki/generated
+docs/deployment/scenarios/**/resumable/generated
