@@ -2061,11 +2061,11 @@ paths:
           schema: { type: string, enum: [revision] }
       responses:
         '200':
-          description: OK
+          description: '`consistency=revision`이면 `RevisionVfsNodePage`, 아니면 `VfsNodePage`다. 앞의 형태는 뒤의 형태에도 맞아서 `anyOf`로 선언한다.'
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - $ref: '#/components/schemas/VfsNodePage'
                   - $ref: '#/components/schemas/RevisionVfsNodePage'
         '400':

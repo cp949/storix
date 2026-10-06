@@ -412,6 +412,20 @@ it('FILE restore는 조건과 생성/교체/충돌 응답을 명시한다', () =
   expect(spec.components.schemas.SnapshotRestoreRequest.oneOf).toHaveLength(2);
 });
 
+it('ls 200 응답은 두 page 스키마를 anyOf로 선언한다(revision page는 기본 page에도 맞아 oneOf가 거부한다)', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const schema =
+    spec.paths['/api/v2/namespaces/{namespaceId}/fs/ls'].get.responses['200'].content['application/json']
+      .schema;
+  // RevisionVfsNodePage는 VfsNodePage에 필드를 더한 형태이고 VfsNodePage가 추가 필드를 금지하지 않는다.
+  // consistency=revision 응답이 두 스키마에 모두 맞으므로 oneOf면 검증기가 유효한 응답을 거부한다.
+  expect(schema.oneOf).toBeUndefined();
+  expect(schema.anyOf).toEqual([
+    { $ref: '#/components/schemas/VfsNodePage' },
+    { $ref: '#/components/schemas/RevisionVfsNodePage' },
+  ]);
+});
+
 it('TREE entries는 snapshot cursor와 공개 manifest page를 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
   const base = '/api/v2/namespaces/{namespaceId}/fs/snapshots';
