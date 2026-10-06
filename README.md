@@ -691,6 +691,7 @@ Capability 파일:
 - 두 필드는 모두 필수다.
 - namespace override가 없으면 `global` 한도를 쓴다.
 - namespace별 두 필수 한도는 각각 해당 전역 한도 이하여야 한다.
+- namespace 항목은 선택 필드 `partSizeBytes`(2147483647 bytes 이하의 양의 안전한 정수)를 가질 수 있다. 전역 값보다 커도 되고, 없으면 `global.partSizeBytes`를 쓴다. 세션 생성 시점의 값으로 고정한다.
 - Namespace ID는 원래 표기를 쓴다.
 - 대소문자·하이픈 변형은 정규화하지 않는다.
 - 추가 필드·잘못된 ID·잘못된 값은 시작 오류다.

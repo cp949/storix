@@ -2,7 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { loadUploadSessionPolicy } from '../../src/vfs/upload-session-config.js';
+import {
+  loadUploadSessionPolicy,
+  resolveNamespaceUploadLimits,
+  resolveNamespaceUploadPartSize,
+} from '../../src/vfs/upload-session-config.js';
 
 const NS = '123e4567-e89b-42d3-a456-426614174000';
 const enabled = {
@@ -71,6 +75,56 @@ describe('upload session policy', () => {
         maxLifetimeSeconds: 604800,
       },
       namespaces: { [NS]: { maxStagedBytes: 52428800n, maxActiveSessions: 5 } },
+    });
+  });
+
+  describe('namespace 조각 크기', () => {
+    const global = { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 };
+    const limits = { maxStagedBytes: '10', maxActiveSessions: 1 };
+
+    it('생략하면 전역 조각 크기를 사용한다', async () => {
+      const policy = (await load({ global, namespaces: { [NS]: limits } }))!;
+      expect(policy.namespaces[NS]).toEqual({ maxStagedBytes: 10n, maxActiveSessions: 1 });
+      expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(4);
+      expect(resolveNamespaceUploadPartSize(policy, '223e4567-e89b-42d3-a456-426614174000')).toBe(4);
+    });
+
+    it('전역보다 큰 namespace 값도 허용한다', async () => {
+      const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes: 64 } } }))!;
+      expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(64);
+    });
+
+    it('한도 resolver는 조각 크기를 섞지 않는다', async () => {
+      const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes: 64 } } }))!;
+      expect(resolveNamespaceUploadLimits(policy, NS)).toEqual({ maxStagedBytes: 10n, maxActiveSessions: 1 });
+    });
+
+    it.each([1, 2147483647])('경계값 %d를 허용한다', async (partSizeBytes) => {
+      const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes } } }))!;
+      expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(partSizeBytes);
+    });
+
+    it.each([0, -1, 1.5, '4', null, 2147483648, Number.MAX_SAFE_INTEGER + 1])(
+      '유효하지 않은 값 %j를 거부한다',
+      async (partSizeBytes) => {
+        await expect(load({ global, namespaces: { [NS]: { ...limits, partSizeBytes } } })).rejects.toThrow();
+      },
+    );
+
+    it('조각 크기만 있는 항목은 거부한다', async () => {
+      await expect(load({ global, namespaces: { [NS]: { partSizeBytes: 8 } } })).rejects.toThrow();
+    });
+
+    it('두 한도의 필수 여부와 전역 상한 검사는 유지한다', async () => {
+      await expect(
+        load({
+          global,
+          namespaces: { [NS]: { maxStagedBytes: '101', maxActiveSessions: 1, partSizeBytes: 8 } },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        load({ global, namespaces: { [NS]: { maxStagedBytes: '10', partSizeBytes: 8 } } }),
+      ).rejects.toThrow();
     });
   });
 

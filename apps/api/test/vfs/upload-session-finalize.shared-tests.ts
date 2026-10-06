@@ -14,6 +14,11 @@ import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
 import { expectCountersMatchRows } from '../persistence/vfs-counter-invariants.js';
 import { UploadSessionFinalizeService } from '../../src/vfs/upload-session-finalize.service.js';
+import {
+  UPLOAD_SESSION_POLICY,
+  type UploadSessionNamespacePolicy,
+  type UploadSessionPolicy,
+} from '../../src/vfs/upload-session-config.js';
 
 export interface FinalizeContext {
   app(): INestApplication;
@@ -322,6 +327,43 @@ export function registerFinalizeTests(context: FinalizeContext): void {
       await db
         .getRepository(NamespaceEntity)
         .update({ id: context.namespace() }, { maxTotalLogicalBytes: null });
+    }
+  });
+
+  it('namespace별 조각 크기로 생성·조각 저장·완료하고 정책이 바뀌어도 기존 세션은 생성 시점 값을 유지한다', async () => {
+    const ns = context.namespace();
+    const policy = context.app().get<UploadSessionPolicy>(UPLOAD_SESSION_POLICY);
+    const namespaces = policy.namespaces as Record<string, UploadSessionNamespacePolicy>;
+    const original = namespaces[ns];
+    namespaces[ns] = { ...original, partSizeBytes: 6 };
+    try {
+      const created = await auth(api().post(base(ns)))
+        .set('X-Mutation-Scope', 'part-size')
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          path: '/namespace-part-size.bin',
+          sizeBytes: '8',
+          mimeType: 'application/octet-stream',
+          ifAbsent: true,
+        })
+        .expect(201);
+      expect(created.body).toMatchObject({ partSizeBytes: 6, partCount: 2 });
+      const id = created.body.sessionId as string;
+      // 전역 조각 크기(4)로 보내면 이 namespace의 선언 크기(6)와 달라 거부한다.
+      await auth(api().put(`${base(ns)}/${id}/parts/0`))
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('abcd'))
+        .expect(400);
+      namespaces[ns] = { ...original, partSizeBytes: 2 };
+      await put(id, 0, 'abcdef');
+      await put(id, 1, 'gh');
+      await complete(id).expect(201);
+      const content = await auth(api().get(`/api/v2/namespaces/${ns}/fs/content`))
+        .query({ path: '/namespace-part-size.bin' })
+        .expect(200);
+      expect(content.body.toString()).toBe('abcdefgh');
+    } finally {
+      namespaces[ns] = original;
     }
   });
 

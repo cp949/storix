@@ -24,6 +24,7 @@ import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
 import {
   resolveNamespaceUploadLimits,
+  resolveNamespaceUploadPartSize,
   UPLOAD_SESSION_POLICY,
   type UploadSessionPolicy,
 } from './upload-session-config.js';
@@ -164,9 +165,9 @@ export class UploadSessionService {
     }
     await this.nodes.assertParentChain(namespaceId, root.id, resolved.segments);
     if (target?.type === 'DIRECTORY') throw new VfsIsDirectoryError(resolved.canonical);
-    const partCount = Number(
-      (size + BigInt(this.policy.global.partSizeBytes) - 1n) / BigInt(this.policy.global.partSizeBytes),
-    );
+    // 조각 크기는 생성 시점 정책으로 고정해 세션에 저장한다. 같은 creationKey 재생은 저장된 세션 값을 쓴다.
+    const partSizeBytes = resolveNamespaceUploadPartSize(this.policy, namespaceId);
+    const partCount = Number((size + BigInt(partSizeBytes) - 1n) / BigInt(partSizeBytes));
     if (!Number.isSafeInteger(partCount) || partCount > 2147483647) throw new VfsFileTooLargeError(maxBytes);
     const now = new Date();
     const maxExpiresAt = new Date(now.getTime() + this.policy.global.maxLifetimeSeconds * 1000);
@@ -187,7 +188,7 @@ export class UploadSessionService {
         conditionType: parsed.ifAbsent ? 'ABSENT' : 'REVISION',
         conditionRevision: parsed.ifRevision ?? null,
         fileExpiresInSeconds,
-        partSizeBytes: this.policy.global.partSizeBytes,
+        partSizeBytes,
         partCount,
         now,
         expiresAt,

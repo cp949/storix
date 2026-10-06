@@ -223,6 +223,49 @@ describe('UploadSessionService lifecycle', () => {
     expect(created.status).toBe(201);
   });
 
+  describe('namespace별 조각 크기', () => {
+    const withPartSize = (partSizeBytes?: number): UploadSessionPolicy => ({
+      global: { ...policy.global, partSizeBytes: 3, maxActiveSessions: 5 },
+      namespaces: {
+        [namespaceId]: {
+          maxStagedBytes: 1000n,
+          maxActiveSessions: 5,
+          ...(partSizeBytes === undefined ? {} : { partSizeBytes }),
+        },
+      },
+    });
+    const created = async (service: UploadSessionService, sizeBytes: string, creationKey = key) =>
+      (await service.create(namespaceId, 'scope', creationKey, { ...request, sizeBytes }, 'req')).body as {
+        sessionId: string;
+        partSizeBytes: number;
+        partCount: number;
+      };
+
+    it('namespace 조각 크기로 partCount를 계산해 세션에 저장한다', async () => {
+      const { service, sessions } = setup(withPartSize(6));
+      const body = await created(service, '8');
+      expect(body).toMatchObject({ partSizeBytes: 6, partCount: 2 });
+      expect(sessions.get(body.sessionId)).toMatchObject({ partSizeBytes: 6, partCount: 2 });
+    });
+
+    it('namespace 값이 없으면 전역 조각 크기를 쓴다', async () => {
+      const { service } = setup(withPartSize());
+      expect(await created(service, '8')).toMatchObject({ partSizeBytes: 3, partCount: 3 });
+    });
+
+    it('0바이트 파일은 조각 0개다', async () => {
+      const { service } = setup(withPartSize(6));
+      expect(await created(service, '0')).toMatchObject({ partSizeBytes: 6, partCount: 0 });
+    });
+
+    it('정책이 바뀐 뒤 같은 creationKey 재생은 저장된 세션의 조각 크기를 돌려준다', async () => {
+      const { service } = setup(withPartSize(6));
+      await created(service, '8');
+      (service as unknown as { policy: UploadSessionPolicy }).policy = withPartSize(2);
+      expect(await created(service, '8')).toMatchObject({ partSizeBytes: 6, partCount: 2 });
+    });
+  });
+
   it('replays the same creation and rejects a changed body for the same key', async () => {
     const { service } = setup();
     const first = await service.create(namespaceId, 'scope', key, request, 'first-request');

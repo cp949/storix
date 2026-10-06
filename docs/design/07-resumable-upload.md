@@ -72,6 +72,8 @@
 - 비활동 기간은 최대 수명 이하여야 한다.
 - `namespaces`는 선택 override다.
 - namespace ID 키별로 필수 `maxStagedBytes`와 `maxActiveSessions`를 갖고 각각 전역 상한 이하여야 한다.
+- namespace 항목은 선택 `partSizeBytes`(양의 안전한 정수, 최대 2147483647)를 가질 수 있다. 전역 `partSizeBytes`보다 커도 되고, 없으면 전역 값을 쓴다. `partSizeBytes`만 있는 항목은 시작 오류다.
+- 새 세션의 조각 크기는 `resolveNamespaceUploadPartSize`가 정하고 생성 시점 값으로 세션에 고정한다. 정책을 바꿔도 기존 세션의 `partSizeBytes`·`partCount`는 바뀌지 않으며 같은 생성 key의 재생도 저장된 값을 돌려준다.
 - namespace 항목이 없으면 그 namespace에는 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다.
 - 신규 namespace를 기본 활성 목록으로 켜는 배포가 namespace마다 항목을 만들지 않도록 한 규칙이다.
 - 두 업로드 서비스는 `resolveNamespaceUploadLimits`로 같은 판정을 쓴다.

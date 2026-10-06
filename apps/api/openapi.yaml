@@ -1421,7 +1421,9 @@ paths:
         최초 201 본문(state OPEN, 최초 만료 시각 포함)과 X-Request-Id를 재생한다.
         현재 상태는 GET으로 조회한다. 다른 요청은 409 MUTATION_KEY_REUSED다. 기존 세션의
         동일 요청 재생은 capability 비활성화 뒤에도 가능하다. 아래 응답 예시는
-        설명을 위해 partSizeBytes=4로 설정한 정책을 사용한다(기본 16777216 bytes).
+        설명을 위해 partSizeBytes=4로 설정한 정책을 사용한다(기본 16777216 bytes). 응답의
+        partSizeBytes는 이 namespace의 정책 값(namespace별 override가 있으면 그 값, 없으면 전역 값)을
+        생성 시점에 세션에 고정한 것이다. 조각 크기와 개수는 항상 이 응답의 값으로 계산한다.
       parameters:
         - $ref: '#/components/parameters/NamespaceId'
         - name: Idempotency-Key
