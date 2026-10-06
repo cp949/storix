@@ -34,6 +34,11 @@ export class VfsUploadSessionEntity {
   @Column({ name: 'response_status', type: 'integer', nullable: true }) responseStatus: number | null;
   @Column({ name: 'response_body', type: 'text', nullable: true }) responseBody: string | null;
   @Column({ name: 'request_id', type: 'varchar', length: 200, nullable: true }) requestId: string | null;
+  // 완료가 실패해 OPEN으로 돌아온 마지막 시도의 진단. 다음 claim과 모든 종결 전이에서 지운다.
+  @Column({ name: 'last_complete_failure_code', type: 'text', nullable: true })
+  lastCompleteFailureCode: string | null;
+  @Column({ name: 'last_complete_failure_at', type: TIMESTAMP_COLUMN_TYPE, nullable: true })
+  lastCompleteFailureAt: Date | null;
   @Column({ name: 'creation_request_id', type: 'varchar', length: 200, nullable: true })
   creationRequestId: string | null;
   @Column({ name: 'created_at', type: TIMESTAMP_COLUMN_TYPE }) createdAt: Date;

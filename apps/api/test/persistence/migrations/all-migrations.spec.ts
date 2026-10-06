@@ -40,6 +40,7 @@ describe('ALL_MIGRATIONS', () => {
       'AddNamespaceMoveLimit1791700000022',
       'WidenVfsNodeVersion1791700000023',
       'AddTrashEntryCreatedAt1791700000024',
+      'AddUploadLastCompleteFailure1791700000025',
     ]);
   });
 });

@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { DomainError } from '../common/domain-error.js';
+import { resolvePublicErrorCode } from '../common/domain-error.filter.js';
 import { isNamespaceId } from '../common/namespace-id.js';
 import { isUuid } from '../common/uuid.js';
 import { getEncrypted } from '../encryption/encrypted-content.js';
@@ -170,9 +171,13 @@ export class UploadSessionFinalizeService {
         headers: { 'x-request-id': requestId },
       };
     } catch (error) {
+      // 실패 시각과 공개 오류 코드는 catch 진입 시점에 잡는다. 정리에 걸리는 시간이 시각에 섞이지 않고,
+      // 예외 메시지·원시 DB 오류는 코드에 들어가지 않는다. HTTP 오류 응답과 같은 규칙으로 코드를 정한다.
+      const failure = { code: resolvePublicErrorCode(error), at: new Date() };
       // commit 결과가 불명확한 DB 장애에서 참조된 객체를 지우면 공개 파일이 손실된다.
       await deleteUnreferencedUpload(this.blobs, this.storage, storageKey, error);
-      await this.sessions.releaseFinalize(namespaceId, sessionId, token).catch(() => undefined);
+      // 진단 기록은 best effort다. 저장에 실패해도 원래 오류를 그대로 던진다.
+      await this.sessions.releaseFinalize(namespaceId, sessionId, token, failure).catch(() => undefined);
       throw error;
     }
   }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { jest } from '@jest/globals';
 import type { ConfigService } from '@nestjs/config';
 import type { CapabilityService } from '../../src/capability/capability.service.js';
 import type { VfsNodeRepository } from '../../src/persistence/vfs-node.repository.js';
@@ -56,6 +57,8 @@ describe('UploadSessionService lifecycle', () => {
           terminalAt: null,
           responseStatus: null,
           responseBody: null,
+          lastCompleteFailureCode: null,
+          lastCompleteFailureAt: null,
           createdAt: input.now,
           updatedAt: input.now,
           creationExpiresAt: input.expiresAt,
@@ -389,6 +392,75 @@ describe('UploadSessionService lifecycle', () => {
       parts: [{ index: 0, sizeBytes: '4' }],
     });
     expect(JSON.stringify(status)).not.toMatch(/secret|upload-staging/);
+  });
+
+  describe('상태 조회의 완료 실패 기록과 파생 만료', () => {
+    async function open() {
+      const harness = setup();
+      const created = await harness.service.create(namespaceId, 'scope', key, request, 'first');
+      const id = (created.body as { sessionId: string }).sessionId;
+      return { ...harness, id, session: harness.sessions.get(id)! };
+    }
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('실패 기록이 있는 OPEN 세션은 lastCompleteFailure를 코드와 ISO 시각으로 보여준다', async () => {
+      const { service, id, session } = await open();
+      session.lastCompleteFailureCode = 'VFS_QUOTA_EXCEEDED';
+      session.lastCompleteFailureAt = new Date('2026-10-07T00:00:00.000Z');
+      expect(await service.status(namespaceId, id)).toMatchObject({
+        state: 'OPEN',
+        lastCompleteFailure: { code: 'VFS_QUOTA_EXCEEDED', at: '2026-10-07T00:00:00.000Z' },
+      });
+    });
+
+    it('실패 기록이 없으면 lastCompleteFailure 필드를 생략한다', async () => {
+      const { service, id } = await open();
+      expect(await service.status(namespaceId, id)).not.toHaveProperty('lastCompleteFailure');
+    });
+
+    it.each(['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED', 'FINALIZING'] as const)(
+      '%s 세션에는 남은 실패 기록이 있어도 lastCompleteFailure를 보이지 않는다',
+      async (state) => {
+        const { service, id, session } = await open();
+        session.state = state;
+        session.lastCompleteFailureCode = 'VFS_PRECONDITION_FAILED';
+        session.lastCompleteFailureAt = new Date();
+        expect(await service.status(namespaceId, id)).not.toHaveProperty('lastCompleteFailure');
+      },
+    );
+
+    it.each(['expiresAt', 'maxExpiresAt'] as const)(
+      'now가 %s와 같으면 OPEN 세션에 expired: true를 준다',
+      async (field) => {
+        const { service, id, session } = await open();
+        jest.useFakeTimers({ now: session[field] });
+        expect((await service.status(namespaceId, id)).expired).toBe(true);
+      },
+    );
+
+    it('만료 시각 전의 OPEN 세션에는 expired 필드가 없다', async () => {
+      const { service, id, session } = await open();
+      jest.useFakeTimers({ now: new Date(session.expiresAt.getTime() - 1) });
+      expect(await service.status(namespaceId, id)).not.toHaveProperty('expired');
+    });
+
+    it('OPEN이 아닌 세션에는 만료 시각이 지나도 expired 필드가 없다', async () => {
+      const { service, id, session } = await open();
+      session.state = 'EXPIRED';
+      jest.useFakeTimers({ now: new Date(session.maxExpiresAt.getTime() + 1000) });
+      expect(await service.status(namespaceId, id)).not.toHaveProperty('expired');
+    });
+
+    it('조회는 세션 상태를 바꾸지 않는다', async () => {
+      const { service, id, session } = await open();
+      jest.useFakeTimers({ now: new Date(session.maxExpiresAt.getTime() + 1000) });
+      await service.status(namespaceId, id);
+      await service.status(namespaceId, id);
+      expect(session.state).toBe('OPEN');
+    });
   });
 
   it('enforces active session caps and cancels only OPEN once', async () => {

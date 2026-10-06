@@ -1505,7 +1505,8 @@ paths:
         종료된 세션은 state FAILED와 failure.code VFS_CHECKSUM_MISMATCH만 공개한다.
         종결 결과는 종결 시점부터 최소 30일 보존하며, 조각 정리가 끝나야 제거한다.
         만료 시각(expiresAt·maxExpiresAt)이 지난 OPEN 세션은 GC가 EXPIRED로 전환하기 전까지
-        state OPEN으로 보일 수 있다. 이 세션에 조각 저장·완료·취소를 요청하면 409다.
+        state OPEN으로 보일 수 있고, 이때 `expired: true`가 함께 온다. 이 세션에 조각 저장·완료·취소를 요청하면 409다.
+        완료가 실패해 OPEN으로 돌아온 세션은 `lastCompleteFailure`로 마지막 실패의 코드와 시각을 보여 준다.
         예시는 설명을 위해 전역 업로드 세션 정책의 partSizeBytes=4로 설정하고 `test` 4바이트를
         index 0에 저장한 상태다. 기본 조각 크기는 16777216 bytes다. 요청은
         `GET .../upload-sessions/33333333-3333-4333-8333-333333333333`이다.
@@ -3003,6 +3004,28 @@ components:
           required: [code]
           properties:
             code: { type: string, enum: [VFS_CHECKSUM_MISMATCH] }
+        lastCompleteFailure:
+          description: |
+            완료 요청이 claim을 얻은 뒤 실패해 세션이 OPEN으로 돌아왔을 때 마지막 실패의 진단. OPEN 상태에서만
+            존재한다. `code`는 해당 완료 응답과 같은 오류 코드이며 분류되지 않은 서버 오류는 `INTERNAL_ERROR`다.
+            예외 메시지와 내부 저장소 정보는 담지 않는다. `at`은 서버가 실패를 처리한 시각이다.
+            다음 완료 요청이 claim을 얻거나 세션이 완료·취소·만료·실패로 종결되면 사라진다. 조각 저장·재전송과
+            조회는 지우지 않는다. 기록은 best effort다. 저장에 실패하거나 완료 중 프로세스가 종료되면
+            필드가 없을 수 있고, 필드가 없다는 사실이 성공을 뜻하지 않는다. claim 이전에 거부된 요청
+            (인증·입력·조각 미완성·진행 중·종료된 세션)과 checksum `422`(`failure`)는 여기에 기록하지 않는다.
+          type: object
+          additionalProperties: false
+          required: [code, at]
+          properties:
+            code: { type: string }
+            at: { type: string, format: date-time }
+        expired:
+          description: |
+            state가 OPEN이고 이 응답을 만든 서버 시각이 `expiresAt` 또는 `maxExpiresAt` 이상일 때만 `true`다.
+            그 밖에는 필드가 없다. 조회는 상태를 전환하지 않으므로 GC가 EXPIRED로 전환하기 전의 만료 세션을
+            호출자 시계와 무관하게 판정하는 용도다. 이 세션에 조각 저장·완료를 요청하면 409다.
+          type: boolean
+          enum: [true]
     UploadPartResult:
       type: object
       additionalProperties: false

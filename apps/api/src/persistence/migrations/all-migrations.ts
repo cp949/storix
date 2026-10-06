@@ -12,6 +12,7 @@ import { WidenUploadSessionRequestId1791700000021 } from './1791700000021-WidenU
 import { AddNamespaceMoveLimit1791700000022 } from './1791700000022-AddNamespaceMoveLimit.js';
 import { WidenVfsNodeVersion1791700000023 } from './1791700000023-WidenVfsNodeVersion.js';
 import { AddTrashEntryCreatedAt1791700000024 } from './1791700000024-AddTrashEntryCreatedAt.js';
+import { AddUploadLastCompleteFailure1791700000025 } from './1791700000025-AddUploadLastCompleteFailure.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -79,4 +80,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddNamespaceMoveLimit1791700000022,
   WidenVfsNodeVersion1791700000023,
   AddTrashEntryCreatedAt1791700000024,
+  AddUploadLastCompleteFailure1791700000025,
 ];

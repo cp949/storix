@@ -325,6 +325,147 @@ export function registerFinalizeTests(context: FinalizeContext): void {
     }
   });
 
+  describe('완료 실패 기록(lastCompleteFailure)', () => {
+    const db = () => context.app().get(DataSource);
+    const status = async (id: string) => (await auth(api().get(`${base()}/${id}`)).expect(200)).body;
+    const row = (id: string) => db().getRepository(VfsUploadSessionEntity).findOneByOrFail({ id });
+
+    it('quota 413 뒤 GET이 코드·시각을 보이고 조각 재전송은 보존하며 재완료 성공 뒤에는 필드가 없다', async () => {
+      await db()
+        .getRepository(NamespaceEntity)
+        .update({ id: context.namespace() }, { maxTotalLogicalBytes: '3' });
+      try {
+        const before = Date.now();
+        const id = await create('/final-failure-quota.bin', '4');
+        await put(id, 0, 'data');
+        expect((await complete(id).expect(413)).body.code).toBe('VFS_QUOTA_EXCEEDED');
+        const failed = await status(id);
+        expect(failed).toMatchObject({ state: 'OPEN', lastCompleteFailure: { code: 'VFS_QUOTA_EXCEEDED' } });
+        expect(Date.parse(failed.lastCompleteFailure.at)).toBeGreaterThanOrEqual(before - 1000);
+        // 조각 재전송은 실패 기록을 지우지 않는다.
+        expect((await put(id, 0, 'data')).body.replayed).toBe(true);
+        expect((await status(id)).lastCompleteFailure.code).toBe('VFS_QUOTA_EXCEEDED');
+        // GET은 읽기만 한다.
+        expect((await row(id)).lastCompleteFailureCode).toBe('VFS_QUOTA_EXCEEDED');
+        await db()
+          .getRepository(NamespaceEntity)
+          .update({ id: context.namespace() }, { maxTotalLogicalBytes: null });
+        await complete(id).expect(201);
+        const done = await status(id);
+        expect(done.state).toBe('COMPLETED');
+        expect(done).not.toHaveProperty('lastCompleteFailure');
+        expect(await row(id)).toMatchObject({ lastCompleteFailureCode: null, lastCompleteFailureAt: null });
+      } finally {
+        await db()
+          .getRepository(NamespaceEntity)
+          .update({ id: context.namespace() }, { maxTotalLogicalBytes: null });
+      }
+    });
+
+    it('412 완료 실패의 코드를 기록하고 취소하면 지운다', async () => {
+      const original = await create('/final-failure-412.bin', '4');
+      await put(original, 0, 'old!');
+      const revision = (await complete(original).expect(201)).body.resource.revision as string;
+      const stale = await create('/final-failure-412.bin', '4', context.namespace(), {
+        ifRevision: revision,
+      });
+      const winner = await create('/final-failure-412.bin', '4', context.namespace(), {
+        ifRevision: revision,
+      });
+      await put(stale, 0, 'late');
+      await put(winner, 0, 'new!');
+      await complete(winner).expect(200);
+      expect((await complete(stale).expect(412)).body.code).toBe('VFS_PRECONDITION_FAILED');
+      expect((await status(stale)).lastCompleteFailure.code).toBe('VFS_PRECONDITION_FAILED');
+      await auth(api().delete(`${base()}/${stale}`)).expect(200);
+      const cancelled = await status(stale);
+      expect(cancelled.state).toBe('CANCELLED');
+      expect(cancelled).not.toHaveProperty('lastCompleteFailure');
+      expect(await row(stale)).toMatchObject({ lastCompleteFailureCode: null, lastCompleteFailureAt: null });
+    });
+
+    it('폴더 FILE 수 한도 413 실패를 VFS_FOLDER_FILE_LIMIT_EXCEEDED로 기록한다', async () => {
+      const folder = `/final-failure-folder-${randomUUID()}`;
+      await auth(api().post(`/api/v2/namespaces/${context.namespace()}/fs/mkdir`))
+        .send({ path: folder, parents: false })
+        .expect(201);
+      await db()
+        .getRepository(NamespaceEntity)
+        .update({ id: context.namespace() }, { maxFilesPerFolder: '1' });
+      try {
+        const first = await create(`${folder}/first.bin`, '1');
+        await put(first, 0, 'a');
+        await complete(first).expect(201);
+        const second = await create(`${folder}/second.bin`, '1');
+        await put(second, 0, 'b');
+        expect((await complete(second).expect(413)).body.code).toBe('VFS_FOLDER_FILE_LIMIT_EXCEEDED');
+        expect((await status(second)).lastCompleteFailure.code).toBe('VFS_FOLDER_FILE_LIMIT_EXCEEDED');
+      } finally {
+        await db()
+          .getRepository(NamespaceEntity)
+          .update({ id: context.namespace() }, { maxFilesPerFolder: null });
+      }
+    });
+
+    it('namespace live node 수 한도 413 실패를 VFS_NAMESPACE_NODE_LIMIT_EXCEEDED로 기록한다', async () => {
+      const live = (await db().getRepository(NamespaceEntity).findOneByOrFail({ id: context.namespace() }))
+        .liveNodeCount;
+      await db()
+        .getRepository(NamespaceEntity)
+        .update({ id: context.namespace() }, { maxLiveNodes: String(live) });
+      try {
+        const id = await create('/final-failure-nodes.bin', '1');
+        await put(id, 0, 'z');
+        expect((await complete(id).expect(413)).body.code).toBe('VFS_NAMESPACE_NODE_LIMIT_EXCEEDED');
+        expect((await status(id)).lastCompleteFailure.code).toBe('VFS_NAMESPACE_NODE_LIMIT_EXCEEDED');
+      } finally {
+        await db().getRepository(NamespaceEntity).update({ id: context.namespace() }, { maxLiveNodes: null });
+      }
+    });
+
+    it('다음 claim 중에는 실패 필드가 없고 GET은 상태를 바꾸지 않는다', async () => {
+      const ns = context.namespace();
+      const id = await create('/final-failure-claim.bin', '0');
+      const repo = context.app().get(VfsUploadSessionRepository);
+      const first = await repo.claimFinalize(ns, id, 60_000);
+      if (first.kind !== 'claimed') throw new Error('first claim missing');
+      expect(await repo.releaseFinalize(ns, id, first.token, { code: 'DB_BUSY', at: new Date() })).toBe(true);
+      expect((await status(id)).lastCompleteFailure.code).toBe('DB_BUSY');
+      const second = await repo.claimFinalize(ns, id, 60_000);
+      if (second.kind !== 'claimed') throw new Error('second claim missing');
+      const claimed = await status(id);
+      expect(claimed.state).toBe('FINALIZING');
+      expect(claimed).not.toHaveProperty('lastCompleteFailure');
+      expect(await row(id)).toMatchObject({ lastCompleteFailureCode: null, lastCompleteFailureAt: null });
+      // 회수된 이전 token의 늦은 실패 기록은 새 claim을 덮지 않는다.
+      expect(await repo.releaseFinalize(ns, id, first.token, { code: 'STALE', at: new Date() })).toBe(false);
+      expect(await row(id)).toMatchObject({ state: 'FINALIZING', lastCompleteFailureCode: null });
+      expect(await repo.releaseFinalize(ns, id, second.token, { code: 'DB_BUSY', at: new Date() })).toBe(
+        true,
+      );
+      await complete(id).expect(201);
+    });
+
+    it('만료로 전이한 세션에는 실패 기록이 남지 않는다', async () => {
+      const ns = context.namespace();
+      const id = await create('/final-failure-expire.bin', '0');
+      const repo = context.app().get(VfsUploadSessionRepository);
+      const claim = await repo.claimFinalize(ns, id, 60_000);
+      if (claim.kind !== 'claimed') throw new Error('claim missing');
+      await repo.releaseFinalize(ns, id, claim.token, { code: 'DB_BUSY', at: new Date() });
+      await db()
+        .getRepository(VfsUploadSessionEntity)
+        .update({ id }, { expiresAt: new Date(Date.now() - 1000) });
+      expect((await status(id)).expired).toBe(true);
+      expect(await repo.claimTerminalTransition(ns, id, 'EXPIRED', new Date())).toBe(true);
+      const expired = await status(id);
+      expect(expired.state).toBe('EXPIRED');
+      expect(expired).not.toHaveProperty('lastCompleteFailure');
+      expect(expired).not.toHaveProperty('expired');
+      expect(await row(id)).toMatchObject({ lastCompleteFailureCode: null, lastCompleteFailureAt: null });
+    });
+  });
+
   it('releases a failed final object write and completes on retry', async () => {
     const id = await create('/final-storage-retry.bin', '4');
     await put(id, 0, 'data');
@@ -422,8 +563,9 @@ export function registerFinalizeTests(context: FinalizeContext): void {
           repo.fenceFinalize(manager, ns, id, first.token, new Date(), new Date(Date.now() + 60_000)),
         ),
     ).rejects.toThrow('claim lost');
-    expect(await repo.releaseFinalize(ns, id, first.token)).toBe(false);
-    expect(await repo.releaseFinalize(ns, id, second.token)).toBe(true);
+    const failure = { code: 'INTERNAL_ERROR', at: new Date() };
+    expect(await repo.releaseFinalize(ns, id, first.token, failure)).toBe(false);
+    expect(await repo.releaseFinalize(ns, id, second.token, failure)).toBe(true);
     await complete(id).expect(201);
   });
 

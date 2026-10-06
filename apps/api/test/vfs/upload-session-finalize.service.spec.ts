@@ -10,7 +10,8 @@ import type { StorageKeyGenerator } from '../../src/storage/storage-key-generato
 import { PathResolver } from '../../src/vfs/path-resolver.js';
 import { UploadSessionFinalizeService } from '../../src/vfs/upload-session-finalize.service.js';
 import { ContentIngressService } from '../../src/vfs/content-ingress.service.js';
-import { VfsChecksumMismatchError } from '../../src/vfs/vfs.errors.js';
+import { StorageFailureError } from '../../src/common/storage-failure.errors.js';
+import { VfsChecksumMismatchError, VfsQuotaExceededError } from '../../src/vfs/vfs.errors.js';
 
 describe('UploadSessionFinalizeService', () => {
   it('rejects missing parts before publishing a final object', async () => {
@@ -238,7 +239,11 @@ describe('UploadSessionFinalizeService', () => {
     const finalKey = 'blobs/final';
 
     // withMutation이 mutationError를 던지는 서비스를 만든다. lookup은 Blob 참조 조회 결과다.
-    function setup(mutationError: unknown, lookup: () => Promise<Set<string>>) {
+    function setup(
+      mutationError: unknown,
+      lookup: () => Promise<Set<string>>,
+      release: (...args: unknown[]) => Promise<boolean> = async () => true,
+    ) {
       const deleted: string[] = [];
       const storage = {
         // 본문을 끝까지 소비한다.
@@ -260,7 +265,7 @@ describe('UploadSessionFinalizeService', () => {
           },
         }),
         renewFinalize: async () => true,
-        releaseFinalize: async () => true,
+        releaseFinalize: release,
       } as unknown as VfsUploadSessionRepository;
       const nodes = {
         getRoot: async () => ({ id: 'root' }),
@@ -282,6 +287,76 @@ describe('UploadSessionFinalizeService', () => {
       );
       return { service, deleted };
     }
+
+    it('catch 시각과 공개 오류 코드만 실패 기록으로 저장한다', async () => {
+      const release = jest.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+      const error = new VfsQuotaExceededError('10', '10');
+      const { service } = setup(error, async () => new Set(), release);
+      const before = Date.now();
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+      const failure = release.mock.calls[0][3] as { code: string; at: Date };
+      expect(failure.code).toBe('VFS_QUOTA_EXCEEDED');
+      expect(failure.at.getTime()).toBeGreaterThanOrEqual(before);
+      expect(failure.at.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('분류되지 않은 서버 오류는 메시지 없이 INTERNAL_ERROR 코드만 기록한다', async () => {
+      const release = jest.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+      const { service } = setup(
+        new Error('password=secret host=db.internal'),
+        async () => new Set(),
+        release,
+      );
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toThrow();
+      expect(JSON.stringify(release.mock.calls[0][3])).not.toMatch(/secret|db\.internal/);
+      expect((release.mock.calls[0][3] as { code: string }).code).toBe('INTERNAL_ERROR');
+    });
+
+    it.each(['ENOTFOUND', '23503', 'SQLITE_CONSTRAINT_FOREIGNKEY'])(
+      '500 오류의 원시 code %s는 HTTP 응답과 같이 INTERNAL_ERROR로 기록한다',
+      async (rawCode) => {
+        const release = jest.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+        const error = Object.assign(new Error('raw failure'), { code: rawCode });
+        const { service } = setup(error, async () => new Set(), release);
+        await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+        expect((release.mock.calls[0][3] as { code: string }).code).toBe('INTERNAL_ERROR');
+      },
+    );
+
+    it('저장소 실패 오류는 HTTP 응답과 같은 공개 코드로 기록한다', async () => {
+      const release = jest.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+      const error = new StorageFailureError('Storage failure', { cause: new Error('s3 broke') });
+      const { service } = setup(error, async () => new Set(), release);
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+      expect((release.mock.calls[0][3] as { code: string }).code).toBe(error.code);
+    });
+
+    it('실패 기록 저장이 실패해도 원래 오류를 그대로 던진다', async () => {
+      const error = new VfsQuotaExceededError('10', '10');
+      const { service } = setup(
+        error,
+        async () => new Set(),
+        async () => {
+          throw new Error('release failed');
+        },
+      );
+      await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toBe(error);
+    });
+
+    it.each(['incomplete', 'busy', 'closed'] as const)(
+      'claim 전 %s 오류는 실패 기록을 남기지 않는다',
+      async (kind) => {
+        const release = jest.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+        const { service } = setup(new Error('unused'), async () => new Set(), release);
+        (
+          service as unknown as { sessions: { claimFinalize: () => Promise<unknown> } }
+        ).sessions.claimFinalize = async () => ({ kind });
+        await expect(service.complete(randomUUID(), randomUUID(), 'request')).rejects.toMatchObject({
+          status: 409,
+        });
+        expect(release).not.toHaveBeenCalled();
+      },
+    );
 
     it('commit 결과가 불명확한 5xx 오류면 참조가 보이지 않아도 최종 object를 보존한다', async () => {
       const error = new Error('Connection terminated unexpectedly');

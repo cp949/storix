@@ -5,6 +5,7 @@ import { AddUploadCreationExpiry1791700000001 } from '../../src/persistence/migr
 import { AddUploadCreationRequestId1791700000003 } from '../../src/persistence/migrations/1791700000003-AddUploadCreationRequestId.js';
 import { AddUploadPartLease1791700000004 } from '../../src/persistence/migrations/1791700000004-AddUploadPartLease.js';
 import { AddUploadChecksumFailure1791700000005 } from '../../src/persistence/migrations/1791700000005-AddUploadChecksumFailure.js';
+import { AddUploadLastCompleteFailure1791700000025 } from '../../src/persistence/migrations/1791700000025-AddUploadLastCompleteFailure.js';
 
 describe('upload session migration (SQLite)', () => {
   let db: DataSource;
@@ -174,6 +175,61 @@ describe('upload session migration (SQLite)', () => {
     const columns = (await db.query('PRAGMA table_info(vfs_upload_session)')) as Array<{ name: string }>;
     expect(columns.map((column) => column.name)).not.toContain('creation_expires_at');
     expect(columns.map((column) => column.name)).toContain('expires_at');
+    await runner.release();
+  });
+
+  it('완료 실패 진단 컬럼은 기존 세션·조각을 유지하며 up/down/up이 가역이다', async () => {
+    const migration = new AddUploadLastCompleteFailure1791700000025();
+    const runner = db.createQueryRunner();
+    const namespaceId = '123e4567-e89b-42d3-a456-426614174025';
+    const sessionId = '223e4567-e89b-42d3-a456-426614174025';
+    const names = async () =>
+      ((await db.query('PRAGMA table_info(vfs_upload_session)')) as Array<{ name: string }>).map(
+        (column) => column.name,
+      );
+    await migration.down(runner);
+    expect(await names()).not.toContain('last_complete_failure_code');
+    await db.query('INSERT INTO namespace (id, name) VALUES (?, ?)', [namespaceId, 'last-failure']);
+    await db.query(
+      `INSERT INTO vfs_upload_session
+      (id, namespace_id, scope, creation_key, fingerprint, target_path, size_bytes, mime_type,
+       condition_type, part_size_bytes, part_count, state, expires_at, max_expires_at, created_at, updated_at)
+      VALUES (?, ?, 'scope', ?, ?, '/file', 4, 'text/plain', 'ABSENT', 4, 1, 'OPEN', ?, ?, ?, ?)`,
+      [
+        sessionId,
+        namespaceId,
+        '323e4567-e89b-42d3-a456-426614174025',
+        'a'.repeat(64),
+        '2026-09-27 01:00:00',
+        '2026-09-28 00:00:00',
+        '2026-09-27 00:00:00',
+        '2026-09-27 00:00:00',
+      ],
+    );
+    await db.query(
+      `INSERT INTO vfs_upload_part
+      (session_id, part_index, size_bytes, staging_key, digest, state, created_at, updated_at)
+      VALUES (?, 0, 4, 'upload-staging/k', ?, 'STORED', ?, ?)`,
+      [sessionId, 'b'.repeat(64), '2026-09-27 00:00:00', '2026-09-27 00:00:00'],
+    );
+    await migration.up(runner);
+    expect(
+      await db.query('SELECT last_complete_failure_code, last_complete_failure_at FROM vfs_upload_session'),
+    ).toEqual([{ last_complete_failure_code: null, last_complete_failure_at: null }]);
+    await db.query(
+      "UPDATE vfs_upload_session SET last_complete_failure_code = 'VFS_QUOTA_EXCEEDED', last_complete_failure_at = '2026-09-27 00:00:01'",
+    );
+    await migration.down(runner);
+    expect(await names()).not.toContain('last_complete_failure_code');
+    expect(await names()).not.toContain('last_complete_failure_at');
+    expect(await db.query('SELECT id, state FROM vfs_upload_session')).toEqual([
+      { id: sessionId, state: 'OPEN' },
+    ]);
+    expect(await db.query('SELECT part_index FROM vfs_upload_part')).toEqual([{ part_index: 0 }]);
+    await migration.up(runner);
+    expect(await names()).toEqual(
+      expect.arrayContaining(['last_complete_failure_code', 'last_complete_failure_at']),
+    );
     await runner.release();
   });
 

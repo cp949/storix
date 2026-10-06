@@ -153,6 +153,8 @@ export class VfsUploadSessionRepository {
         terminalAt: null,
         responseStatus: null,
         responseBody: null,
+        lastCompleteFailureCode: null,
+        lastCompleteFailureAt: null,
         requestId: input.requestId ?? null,
         creationRequestId: input.requestId ?? null,
         createdAt: input.now,
@@ -440,6 +442,8 @@ export class VfsUploadSessionRepository {
           terminalAt: now,
           leaseExpiresAt: null,
           leaseToken: null,
+          lastCompleteFailureCode: null,
+          lastCompleteFailureAt: null,
           updatedAt: now,
         })
         .where('id = :sessionId AND namespace_id = :namespaceId AND state = :expected', {
@@ -497,7 +501,14 @@ export class VfsUploadSessionRepository {
       const claimed = await sessions
         .createQueryBuilder()
         .update()
-        .set({ state: 'FINALIZING', leaseToken: token, leaseExpiresAt, updatedAt: claimNow })
+        .set({
+          state: 'FINALIZING',
+          leaseToken: token,
+          leaseExpiresAt,
+          lastCompleteFailureCode: null,
+          lastCompleteFailureAt: null,
+          updatedAt: claimNow,
+        })
         .where(
           'id = :sessionId AND namespace_id = :namespaceId AND state = :state AND expires_at > :now AND max_expires_at > :now',
           { sessionId, namespaceId, state: 'OPEN', now: claimNow },
@@ -589,6 +600,8 @@ export class VfsUploadSessionRepository {
         state: 'COMPLETED',
         leaseToken: null,
         leaseExpiresAt: null,
+        lastCompleteFailureCode: null,
+        lastCompleteFailureAt: null,
         terminalAt: now,
         responseStatus: status,
         responseBody: body,
@@ -626,6 +639,8 @@ export class VfsUploadSessionRepository {
           state: 'FAILED',
           leaseToken: null,
           leaseExpiresAt: null,
+          lastCompleteFailureCode: null,
+          lastCompleteFailureAt: null,
           terminalAt: now,
           responseStatus: 422,
           responseBody: body,
@@ -644,12 +659,25 @@ export class VfsUploadSessionRepository {
   }
 
   @classifyPersistenceOperation
-  async releaseFinalize(namespaceId: string, sessionId: string, token: string): Promise<boolean> {
+  async releaseFinalize(
+    namespaceId: string,
+    sessionId: string,
+    token: string,
+    failure: { code: string; at: Date },
+  ): Promise<boolean> {
+    // OPEN 복귀와 실패 진단 저장은 한 UPDATE다. token이 다르면(회수된 늦은 작업자) 둘 다 적용하지 않는다.
     const result = await this.dataSource
       .getRepository(VfsUploadSessionEntity)
       .createQueryBuilder()
       .update()
-      .set({ state: 'OPEN', leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() })
+      .set({
+        state: 'OPEN',
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastCompleteFailureCode: failure.code,
+        lastCompleteFailureAt: failure.at,
+        updatedAt: new Date(),
+      })
       .where('id = :sessionId AND namespace_id = :namespaceId AND state = :state AND lease_token = :token', {
         sessionId,
         namespaceId,

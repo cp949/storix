@@ -60,6 +60,15 @@ export function resolveErrorCode(exception: unknown, status: number): string {
   return 'BAD_REQUEST';
 }
 
+// 응답 본문에 싣는 공개 오류 코드. 500은 저장소 실패만 고유 코드를 쓰고 나머지는 INTERNAL_ERROR로 숨긴다.
+// 원시 DB·네트워크 오류의 code(SQLSTATE, errno 등)는 내부 정보이므로 공개하지 않는다.
+// HTTP 응답과 업로드 세션의 완료 실패 기록이 같은 규칙을 쓴다.
+export function resolvePublicErrorCode(exception: unknown): string {
+  const status = resolveErrorStatus(exception);
+  if (status === 500) return exception instanceof StorageFailureError ? exception.code : 'INTERNAL_ERROR';
+  return resolveErrorCode(exception, status);
+}
+
 export function resolveErrorPath(exception: unknown): string | undefined {
   const path = (exception as DomainErrorShape)?.path;
   return typeof path === 'string' ? path : undefined;
@@ -149,7 +158,7 @@ export class DomainErrorFilter implements ExceptionFilter {
 
     if (status === 500) {
       response.status(500).json({
-        code: exception instanceof StorageFailureError ? exception.code : 'INTERNAL_ERROR',
+        code: resolvePublicErrorCode(exception),
         message: exception instanceof StorageFailureError ? 'Storage failure' : INTERNAL_ERROR_MESSAGE,
         requestId: request.requestId,
       });

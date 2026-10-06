@@ -217,8 +217,20 @@ export class UploadSessionService {
     const found = await this.sessions.findForStatus(namespaceId, sessionId);
     if (!found) throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const { session, parts } = found;
+    // 만료 판정은 조회 처리 중 한 번 잡은 서버 시각으로 한다. GET은 상태를 전환하지 않는다.
+    const now = new Date();
+    const expired = session.state === 'OPEN' && (session.expiresAt <= now || session.maxExpiresAt <= now);
     return {
       ...response(session),
+      ...(expired ? { expired: true as const } : {}),
+      ...(session.state === 'OPEN' && session.lastCompleteFailureCode && session.lastCompleteFailureAt
+        ? {
+            lastCompleteFailure: {
+              code: session.lastCompleteFailureCode,
+              at: session.lastCompleteFailureAt.toISOString(),
+            },
+          }
+        : {}),
       path: session.targetPath,
       sizeBytes: String(session.sizeBytes),
       mimeType: session.mimeType,

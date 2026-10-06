@@ -57,6 +57,7 @@
 - `DELETE /{sessionId}`는 OPEN 세션을 취소하고 현재 세션 상태 본문을 반환한다.
 - 만료 시각이 지난 OPEN 세션의 취소는 GC 전이라도 EXPIRED로 전환하고 `409 VFS_UPLOAD_SESSION_CLOSED`다. 조각 저장·완료와 같은 판정이다.
 - `GET /{sessionId}`는 상태를 전환하지 않는다. GC 전환 전의 만료 세션은 `state: OPEN`과 지난 만료 시각을 함께 반환한다.
+- `state: OPEN`이고 조회 처리 중 한 번 잡은 서버 시각이 `expiresAt` 또는 `maxExpiresAt` 이상이면 파생 필드 `expired: true`가 붙는다. 그 밖에는 필드가 없다. 호출자 시계와 무관한 판정이다.
 - 반복 취소는 같은 종결 상태를 반환한다.
 - 완료·취소·만료·실패 중 다른 종결 상태로의 전이는 `409 VFS_UPLOAD_SESSION_CLOSED`다.
 - 없는 세션과 다른 namespace의 세션은 `404 VFS_UPLOAD_SESSION_NOT_FOUND`다.
@@ -112,6 +113,10 @@
 - 해당 트랜잭션은 조건부 경로 검사, 논리 quota, Node/Blob/revision, 사용량과 완료 결과를 함께 커밋한다.
 - checksum 불일치는 공개 파일을 만들지 않고 FAILED 상태·422 완료 결과·활성 세션 수 감소를 한 DB transaction에서 확정한다.
 - 그 밖의 실패한 완료는 공개 파일을 만들지 않고 소유한 claim만 OPEN으로 돌린다.
+- OPEN 복귀와 같은 UPDATE가 마지막 실패의 `{code, at}`을 세션에 저장한다. `code`는 HTTP 오류 응답과 같은 규칙으로 정하며 분류되지 않은 서버 오류는 `INTERNAL_ERROR`다. `at`은 오류 처리에 들어간 서버 시각이다. 예외 메시지와 내부 저장소 정보는 저장하지 않는다.
+- token이 일치할 때만 저장하므로 회수된 이전 작업자의 늦은 실패는 새 claim의 상태를 덮지 못한다.
+- 실패 정보는 `GET /{sessionId}`의 `lastCompleteFailure`로 `OPEN` 상태에서만 노출한다. 다음 claim 획득과 완료·취소·만료·FAILED 종결 전이가 지우고, 조각 저장·재전송과 조회는 지우지 않는다.
+- 기록은 best effort다. 저장 실패나 프로세스 종료에는 필드가 없을 수 있다. 필드 부재는 성공을 뜻하지 않으며, stale lease 회수는 실패 코드를 추정해 만들지 않는다.
 - 커밋 결과가 불확실한 경우 참조 가능성이 있는 최종 객체는 보존하여 orphan GC에 맡긴다.
 - 늦은 작업자는 회수된 claim으로 공개할 수 없다.
 - 취소는 OPEN만 claim하므로 완료와 취소 중 한 종결 상태만 이긴다.
