@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- AWS Secrets Manager `SecretString`을 읽는 독립 SecretSource 어댑터 예제, 실제 LocalStack 실행 시나리오, AWS 역할·권한 설정 가이드를 추가했다. AWS SDK는 Storix 코어와 기본 이미지에 포함하지 않는다.
+
 ## [1.2.0] - 2026-10-06
 
 ### Added

@@ -16,6 +16,7 @@ const masterKey =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const skipBuild = process.argv.includes("--skip-build");
 
+/** 저장된 LocalStack 인증 토큰을 출력하지 않고 읽는다. */
 function readAuthToken() {
   const configured = process.env.LOCALSTACK_AUTH_TOKEN;
   if (configured) return configured;
@@ -29,6 +30,7 @@ function readAuthToken() {
   return result.stdout.replace(/\r?\n$/, "");
 }
 
+/** 명령을 제한 시간 안에 실행하고 결과를 반환한다. */
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -46,6 +48,7 @@ function run(command, args, options = {}) {
   };
 }
 
+/** 검증 출력에 테스트 비밀값이 없는지 확인한다. */
 function assertNoSecretOutput(output, token, phase) {
   assert.equal(
     output.includes(apiKey),
@@ -64,6 +67,7 @@ function assertNoSecretOutput(output, token, phase) {
   );
 }
 
+/** LocalStack 예제에 필요한 환경만 구성한다. */
 function cleanComposeEnvironment(token) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) {
@@ -93,6 +97,7 @@ function cleanComposeEnvironment(token) {
   return env;
 }
 
+/** 전용 Compose project의 파일 인자를 만든다. */
 function composeArgs(project, emptyEnvPath) {
   return [
     "--project-name",
@@ -110,6 +115,7 @@ function composeArgs(project, emptyEnvPath) {
   ];
 }
 
+/** 실행 뒤 전용 project의 컨테이너와 볼륨이 정리됐는지 확인한다. */
 function assertNoProjectResources(project) {
   const containers = run("docker", [
     "ps",
@@ -131,6 +137,7 @@ function assertNoProjectResources(project) {
   assert.equal(volumes.stdout.trim(), "", "전용 project 볼륨이 남았다");
 }
 
+/** Secret 초기화 직후 SIGTERM을 보내 정리 trap을 확인한다. */
 function interruptAfterSecretInit() {
   return new Promise((resolve, reject) => {
     const child = spawn(

@@ -619,6 +619,8 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 compose에서 파일로 전달하는 절차는 [단일 호스트 private 배포](docs/deployment/scenarios/single-host-private/README.md)의 "비밀값 파일 전달"을 따른다.
 규칙의 상세는 `docs/design/15-secret-sources.md`다.
 
+AWS Secrets Manager 어댑터 사용자 이미지와 LocalStack 실행 예제는 [LocalStack 예제](docs/deployment/scenarios/aws-secrets-localstack/README.md)를 따른다. 실제 AWS 역할·IAM·KMS 설정 예시는 [AWS Secrets Manager 가이드](docs/guides/aws-secrets-manager-secret-source.md)에 있다.
+
 ### 재개 업로드 활성화
 
 `resumable-upload`는 기본 비활성이다.
@@ -803,6 +805,7 @@ pnpm --filter @cp949/storix-api test:integration   # testcontainers — Docker/P
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 릴리즈, 멀티 인스턴스): `docs/deployment/`
 - 선택형 배포 시나리오와 실제 설정: `docs/deployment/scenarios/`
+- AWS Secrets Manager 비밀값 전달: [LocalStack 실행 예제](docs/deployment/scenarios/aws-secrets-localstack/README.md), [AWS 운영 설정 가이드](docs/guides/aws-secrets-manager-secret-source.md)
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`
 - 변경 이력: `CHANGELOG.md`

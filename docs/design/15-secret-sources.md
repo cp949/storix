@@ -223,7 +223,7 @@ export interface SecretSource {
 - 실행 중 비밀값 교체는 지원하지 않는다.
 - 마스터 키 로테이션과 envelope 암호화는 지원하지 않는다(api ADR-0009).
 - 함께 띄우는 백엔드 컨테이너(Postgres, VersityGW)의 비밀값 전달은 코어 범위 밖이다. 시나리오 문서가 안내한다.
-- 첫 실제 통신형 어댑터는 포함하지 않는다.
+- 제공자 어댑터는 코어와 기본 이미지에 포함하지 않는다. AWS Secrets Manager 예제 어댑터와 LocalStack 실행 시나리오는 `examples/secret-source-aws/`와 `docs/deployment/scenarios/aws-secrets-localstack/`에 둔다. AWS 운영 설정은 `docs/guides/aws-secrets-manager-secret-source.md`를 따른다.
 
 ## 검증
 

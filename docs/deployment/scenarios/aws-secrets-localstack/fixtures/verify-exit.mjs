@@ -39,6 +39,7 @@ const childEnvironment = {
   STORIX_API_KEY_PREVIOUS_REF: "",
 };
 
+/** 지연 Secret 조회로 잡 프로세스의 timeout 종료와 연결 중단을 확인한다. */
 function runJob(name, entrypoint) {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [entrypoint], {
@@ -66,6 +67,7 @@ function runJob(name, entrypoint) {
   });
 }
 
+/** HTTP fixture 연결 종료를 제한 시간 안에 기다린다. */
 async function withTimeout(promise, milliseconds) {
   let timer;
   try {

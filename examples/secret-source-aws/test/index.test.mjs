@@ -1,3 +1,7 @@
+/**
+ * AWS Secrets Manager 어댑터를 로컬 HTTP fixture와 node:test로 검증한다.
+ * 어댑터 계약은 docs/design/15-secret-sources.md "어댑터 계약"을 따른다.
+ */
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
@@ -36,6 +40,7 @@ afterEach(async () => {
   previousEnvironment.clear();
 });
 
+/** 로컬 AWS 호환 API fixture를 시작한다. */
 async function startFixture(handler) {
   server = createServer(async (request, response) => {
     let body = "";
@@ -53,6 +58,7 @@ async function startFixture(handler) {
   process.env.STORIX_AWS_SM_ENDPOINT = endpoint;
 }
 
+/** AWS 호환 응답을 fixture 요청자에게 반환한다. */
 function respond(response, status, value, headers = {}) {
   response.writeHead(status, {
     "content-type": "application/x-amz-json-1.1",
@@ -62,6 +68,7 @@ function respond(response, status, value, headers = {}) {
   response.end(JSON.stringify(value));
 }
 
+/** 예제 어댑터의 기본 export를 불러온다. */
 async function loadAdapter() {
   return (await import("../index.js")).default;
 }
