@@ -1,5 +1,4 @@
 // 소비자 기대: 업로드 세션 완료와 조건부 콘텐츠 저장의 성공 응답은 저장된 파일 전체의 평문 SHA-256과 revision을 함께 알리고, 이 값이 이후 stat과 같으며, 파일이 바뀐 뒤 같은 요청을 재전송해도 최초 응답의 값을 그대로 돌려준다.
-// 대응 요구사항: RQ-004(바이트 무손실 보존), RQ-008(revision 조건부 전체 교체), RQ-011(변경 요청의 멱등성).
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';

@@ -1,5 +1,4 @@
 // 소비자 기대: 재개 업로드는 조각을 순서와 무관하게 저장·재전송할 수 있고, 모든 조각이 모인 뒤 완료할 때만 파일이 한 번에 공개되며, 같은 요청의 반복은 최초 결과를 재생하고 생성·완료 시점의 조건이 지켜진다.
-// 대응 요구사항: RQ-004(바이트 무손실), RQ-005(조건부 생성), RQ-008(revision 조건 교체), RQ-009(원자적 저장), RQ-011(변경 요청의 멱등성).
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { defineContract } from '../../define-contract.ts';

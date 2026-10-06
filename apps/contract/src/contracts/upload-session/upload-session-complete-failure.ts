@@ -1,5 +1,4 @@
 // 소비자 기대: 업로드 세션 완료가 저장 한도 초과로 실패하면 세션은 OPEN으로 돌아가 조각을 유지하고, 조회가 마지막 실패의 코드와 시각을 알리며, 한도를 해소한 재완료가 성공하면 실패 정보가 사라진다.
-// 대응 요구사항: RQ-009(원자적 파일 저장), RQ-017(크기 및 저장량 한도).
 import assert from 'node:assert/strict';
 import { defineContract } from '../../define-contract.ts';
 
