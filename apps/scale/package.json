@@ -10,7 +10,7 @@
   "scripts": {
     "scale": "node src/cli.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test \"src/**/*.spec.ts\""
+    "test": "node --test \"test/**/*.spec.ts\""
   },
   "devDependencies": {
     "@types/node": "22.20.5",

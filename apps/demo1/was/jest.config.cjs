@@ -5,7 +5,7 @@ module.exports = {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   transform: { '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.json' }] },
-  testRegex: 'src/.*\\.spec\\.ts$',
+  testRegex: 'test/.*\\.spec\\.ts$',
   moduleFileExtensions: ['js', 'json', 'ts'],
   setupFiles: ['<rootDir>/test/unit-env.setup.cjs'],
   collectCoverageFrom: ['src/**/*.(t|j)s'],
