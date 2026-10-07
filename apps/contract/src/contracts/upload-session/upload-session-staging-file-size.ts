@@ -65,7 +65,8 @@ export default defineContract({
     assert.equal(afterRetry.activeSessions, afterAccepted.activeSessions + 1);
     assert.equal(afterRetry.stagedBytes, afterAccepted.stagedBytes);
 
-    await ctx.client.mkdir(namespaceId, '/staging-directory');
+    const directory = await ctx.client.mkdir(namespaceId, '/staging-directory');
+    assert.equal(directory.status, 201, directory.text());
     for (const path of ['/staging-directory', '/staging-missing/child.bin']) {
       const oversized = await create(String(cap + 1n), path, randomUUID());
       assert.equal(oversized.status, 413, `${path}: ${oversized.text()}`);
