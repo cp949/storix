@@ -28,6 +28,7 @@ import {
   UPLOAD_SESSION_POLICY,
   type UploadSessionPolicy,
 } from './upload-session-config.js';
+import { assertUploadSessionFileFitsStaging } from './upload-session-file-size.policy.js';
 import {
   VfsInvalidMutationRequestError,
   VfsInvalidExpiryError,
@@ -147,6 +148,11 @@ export class UploadSessionService {
     );
     const size = BigInt(parsed.sizeBytes);
     if (size > BigInt(maxBytes)) throw new VfsFileTooLargeError(maxBytes);
+    assertUploadSessionFileFitsStaging(
+      size,
+      this.policy.global.maxStagedBytes,
+      namespacePolicy.maxStagedBytes,
+    );
     // 완료 시점의 putConditionalContent와 같은 순서·오류로 판정한다.
     // 대상 조건(412·404) → 조상 경로(404·409 VFS_NOT_DIRECTORY) → DIRECTORY 대상(409) 순서다.
     const target = await this.nodes.resolvePath(namespaceId, root.id, resolved.segments);

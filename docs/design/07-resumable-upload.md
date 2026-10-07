@@ -21,6 +21,11 @@
 생성·재생 규칙:
 
 - `sizeBytes`는 0도 허용하는 10진 문자열이다.
+- 새 세션은 기존 파일 크기 상한을 먼저 검사한다. 그 뒤 파일 크기를 전역·namespace `maxStagedBytes` 중 작은 값과 비교한다.
+- staging 상한을 넘으면 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`로 거부한다. 이 검사는 세션·creation key·사용량을 저장하지 않는다.
+- 같은 creation key의 기존 요청은 현재 정책 검사보다 먼저 재생한다. 거절된 요청은 key를 점유하지 않으므로 정책을 높인 뒤 같은 요청과 key로 재평가할 수 있다.
+- 생성 성공은 staging 공간 확보나 업로드 완료를 보장하지 않는다. 생성 시 누적 staging 사용량을 검사하거나 공간을 예약하지 않는다.
+- staging 초과 413에는 `Retry-After`가 없다. 한도가 바뀌지 않으면 대기만으로 해결되지 않는다.
 - 선택적 `sha256`은 저장 전 전체 평문 파일 바이트의 SHA-256을 정확히 64자리 소문자 hex로 쓴다.
 - `ENCRYPTED` namespace도 평문 기준이다.
 - 잘못된 값은 세션 생성 전에 `400 VFS_INVALID_CHECKSUM`으로 거부한다.

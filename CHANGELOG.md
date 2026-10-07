@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- 새 재개 업로드 세션의 파일 크기가 전역·namespace staging 상한 중 작은 값을 넘으면 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`로 거부한다. 거절은 세션·key·사용량을 저장하지 않으며 staging 공간을 예약하지 않는다.
+
 - storage PUT 운영 CLI의 설정 모듈 누락으로 시작하지 못하는 오류를 수정했다. manifest stdout에서 build·진단 출력을 분리했다. writer 종료 확인 근거를 DB에 보존하며, gateway worker 종료를 회수 승인 조건으로 요구하지 않는다. 추가 migration `1791700000027`이 nullable 근거 컬럼을 추가한다.
 - multipart GC가 upload 나이만으로 abort하지 않는다. 온라인 PUT의 durable 소유권, 실행 종료 확인, key별 회수 claim을 확인한다. 미등록 key와 owner 조회 오류는 보류한다. 관리자 종료 확인·기존 multipart manifest CLI를 추가했다. 결정은 api ADR-0045다.
 

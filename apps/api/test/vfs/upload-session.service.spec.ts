@@ -33,11 +33,13 @@ describe('UploadSessionService lifecycle', () => {
     namespaces: { [namespaceId]: { maxStagedBytes: 1000n, maxActiveSessions: 1 } },
   };
 
-  function setup(activePolicy: UploadSessionPolicy = policy) {
+  function setup(activePolicy: UploadSessionPolicy = policy, maxFileSizeBytes = '8') {
     let expiryMax = '2592000';
+    let createSessionCalls = 0;
     const sessions = new Map<string, VfsUploadSessionEntity>();
     const repo = {
       createSession: async (input: CreateUploadSessionInput) => {
+        createSessionCalls++;
         const existing = [...sessions.values()].find(
           (row) => row.creationKey === input.creationKey && row.scope === input.scope,
         );
@@ -107,7 +109,7 @@ describe('UploadSessionService lifecycle', () => {
     };
     const nodes = {
       getRoot: async () => ({ id: 'root' }),
-      getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { maxFileSizeBytes: '8' } }),
+      getRootWithLimits: async () => ({ root: { id: 'root' }, limits: { maxFileSizeBytes } }),
       resolvePath: async (_ns: string, _root: string, segments: string[]) => {
         for (let i = 1; i < segments.length; i++)
           if (nodeAt(segments.slice(0, i))?.type !== 'DIRECTORY') return null;
@@ -137,7 +139,7 @@ describe('UploadSessionService lifecycle', () => {
       {
         get: (name: string) =>
           name === 'STORIX_MAX_FILE_SIZE_BYTES'
-            ? '8'
+            ? maxFileSizeBytes
             : name === 'STORIX_VFS_EXPIRY_MAX_SECONDS'
               ? expiryMax
               : undefined,
@@ -146,6 +148,7 @@ describe('UploadSessionService lifecycle', () => {
     return {
       service,
       sessions,
+      getCreateSessionCalls: () => createSessionCalls,
       setEnabled: (value: boolean) => {
         enabled = value;
       },
@@ -221,6 +224,108 @@ describe('UploadSessionService lifecycle', () => {
     const { service } = setup({ global: policy.global, namespaces: {} });
     const created = await service.create(namespaceId, 'scope', key, request, 'req-1');
     expect(created.status).toBe(201);
+  });
+
+  describe('세션 생성 staging 파일 크기 admission', () => {
+    const withStagingCap = (globalCap: bigint, namespaceCap = globalCap): UploadSessionPolicy => ({
+      global: { ...policy.global, maxStagedBytes: globalCap, partSizeBytes: 4, maxActiveSessions: 5 },
+      namespaces: {
+        [namespaceId]: { maxStagedBytes: namespaceCap, maxActiveSessions: 5 },
+      },
+    });
+
+    it('기존 파일 상한 검사 뒤 staging 초과를 거절하고 저장소를 호출하지 않는다', async () => {
+      const { service, sessions, getCreateSessionCalls } = setup(withStagingCap(8n), '16');
+      await expect(
+        service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE', status: 413 });
+      expect(sessions.size).toBe(0);
+      expect(getCreateSessionCalls()).toBe(0);
+    });
+
+    it('파일 상한 오류가 staging 오류보다 먼저 발생한다', async () => {
+      const { service } = setup(withStagingCap(6n), '8');
+      await expect(
+        service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_FILE_TOO_LARGE', status: 413 });
+      await expect(
+        service.create(namespaceId, 'scope', randomUUID(), { ...request, sizeBytes: '7' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE', status: 413 });
+    });
+
+    it('거절된 key는 정책 상향 뒤 같은 요청으로 새 세션을 만든다', async () => {
+      const { service, sessions } = setup(withStagingCap(8n), '16');
+      await expect(
+        service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE' });
+      (service as unknown as { policy: UploadSessionPolicy }).policy = withStagingCap(10n);
+      expect(
+        (await service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'r')).status,
+      ).toBe(201);
+      expect(sessions.size).toBe(1);
+    });
+
+    it('정책 하향 뒤 동일 요청 재생은 새 한도 검사보다 먼저 처리한다', async () => {
+      const { service } = setup(withStagingCap(8n), '16');
+      const original = await service.create(
+        namespaceId,
+        'scope',
+        key,
+        { ...request, sizeBytes: '8' },
+        'first',
+      );
+      (service as unknown as { policy: UploadSessionPolicy }).policy = withStagingCap(6n);
+      const replay = await service.create(
+        namespaceId,
+        'scope',
+        key,
+        { ...request, sizeBytes: '8' },
+        'second',
+      );
+      expect(replay.body).toEqual(original.body);
+      await expect(
+        service.create(namespaceId, 'scope', randomUUID(), { ...request, sizeBytes: '8' }, 'third'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE' });
+    });
+
+    it('크기 초과는 경로 오류보다 먼저 처리하고 한도 이내는 기존 경로 오류를 유지한다', async () => {
+      const { service, setParentExists } = setup(withStagingCap(8n), '16');
+      setParentExists(false);
+      await expect(
+        service.create(namespaceId, 'scope', key, { ...request, sizeBytes: '9' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE', status: 413 });
+      await expect(
+        service.create(namespaceId, 'scope', randomUUID(), { ...request, sizeBytes: '8' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_NODE_NOT_FOUND', status: 404 });
+    });
+
+    it('크기 초과는 기존 대상 조건·디렉터리 오류보다 먼저 처리한다', async () => {
+      const { service, tree } = setup(withStagingCap(8n), '16');
+      const dir = {
+        id: randomUUID(),
+        name: 'dir',
+        type: 'DIRECTORY' as const,
+        size: null,
+        mimeType: null,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        expiresAt: null,
+        version: 1,
+      };
+      tree.set('parent/dir', dir);
+      await expect(
+        service.create(namespaceId, 'scope', key, { ...request, path: '/parent/dir', sizeBytes: '9' }, 'r'),
+      ).rejects.toMatchObject({ code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE', status: 413 });
+      await expect(
+        service.create(
+          namespaceId,
+          'scope',
+          randomUUID(),
+          { ...request, path: '/parent/dir', sizeBytes: '8' },
+          'r',
+        ),
+      ).rejects.toMatchObject({ code: 'VFS_PRECONDITION_FAILED', status: 412 });
+    });
   });
 
   describe('namespace별 조각 크기', () => {

@@ -47,6 +47,10 @@ describe('upload parts (SQLite + S3)', () => {
   let viewOverrideId: string;
   let viewGlobalId: string;
   let viewDisabledId: string;
+  let admissionGlobalId: string;
+  let admissionOverrideId: string;
+  let admissionFullId: string;
+  let admissionHighPolicyApp: INestApplication;
 
   function policy(): UploadSessionPolicy {
     return {
@@ -65,11 +69,13 @@ describe('upload parts (SQLite + S3)', () => {
         [shaId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
         [shaEncryptedId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
         [viewOverrideId]: { maxStagedBytes: 6n, maxActiveSessions: 3, partSizeBytes: 2 },
+        [admissionOverrideId]: { maxStagedBytes: 6n, maxActiveSessions: 8 },
+        [admissionFullId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
       },
     };
   }
 
-  async function bootstrap(enabled: boolean) {
+  async function bootstrap(enabled: boolean, namespaceCaps: Record<string, bigint> = {}) {
     const builder = Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
@@ -92,10 +98,26 @@ describe('upload parts (SQLite + S3)', () => {
             [shaEncryptedId]: ['resumable-upload'],
             [viewOverrideId]: ['resumable-upload'],
             [viewGlobalId]: ['resumable-upload'],
+            [admissionGlobalId]: ['resumable-upload'],
+            [admissionOverrideId]: ['resumable-upload'],
+            [admissionFullId]: ['resumable-upload'],
           },
         }),
       );
-      builder.overrideProvider(UPLOAD_SESSION_POLICY).useValue(policy());
+      const basePolicy = policy();
+      const namespaces: Record<string, UploadSessionPolicy['namespaces'][string]> = {
+        ...basePolicy.namespaces,
+      };
+      for (const [id, maxStagedBytes] of Object.entries(namespaceCaps)) {
+        namespaces[id] = {
+          ...(namespaces[id] ?? {
+            maxActiveSessions: basePolicy.global.maxActiveSessions,
+          }),
+          maxStagedBytes,
+        };
+      }
+      const uploadPolicy: UploadSessionPolicy = { ...basePolicy, namespaces };
+      builder.overrideProvider(UPLOAD_SESSION_POLICY).useValue(uploadPolicy);
     }
     const moduleRef = await builder.compile();
     const next = moduleRef.createNestApplication({ bodyParser: false });
@@ -203,7 +225,14 @@ describe('upload parts (SQLite + S3)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'upload-parts-sha-encrypted', encryptionPolicy: 'ENCRYPTED' })
       .expect(201);
-    const names = ['upload-parts-view-override', 'upload-parts-view-global', 'upload-parts-view-disabled'];
+    const names = [
+      'upload-parts-view-override',
+      'upload-parts-view-global',
+      'upload-parts-view-disabled',
+      'upload-parts-admission-global',
+      'upload-parts-admission-override',
+      'upload-parts-admission-full',
+    ];
     const viewIds: string[] = [];
     for (const name of names) {
       const created = await http()
@@ -216,6 +245,7 @@ describe('upload parts (SQLite + S3)', () => {
       viewIds.push(created.body.id as string);
     }
     [viewOverrideId, viewGlobalId, viewDisabledId] = viewIds;
+    [admissionGlobalId, admissionOverrideId, admissionFullId] = viewIds.slice(3);
     shaId = shaPlain.body.id as string;
     shaEncryptedId = shaEncrypted.body.id as string;
     namespaceId = plain.body.id as string;
@@ -225,10 +255,12 @@ describe('upload parts (SQLite + S3)', () => {
     await app.close();
     app = await bootstrap(true);
     second = await bootstrap(true);
+    admissionHighPolicyApp = await bootstrap(true, { [admissionOverrideId]: 8n });
   }, 180000);
 
   afterAll(async () => {
     if (second) await second.close();
+    if (admissionHighPolicyApp) await admissionHighPolicyApp.close();
     if (app) await app.close();
     if (migrations?.isInitialized) await migrations.destroy();
     if (s3Container) await s3Container.stop();
@@ -238,6 +270,153 @@ describe('upload parts (SQLite + S3)', () => {
   });
 
   // 전역 staged 한도(8바이트)를 쓰므로 앞선 테스트가 남기는 사용량이 없도록 첫 테스트보다 앞에 둔다.
+
+  describe('세션 생성 staging 파일 크기 admission', () => {
+    /** admission 요청 뒤 실제 세션·creation key·global/namespace usage 값을 읽는다. */
+    async function snapshot(ns: string, key: string, target = app) {
+      const dataSource = target.get(DataSource);
+      const usage = dataSource.getRepository(VfsUploadUsageEntity);
+      const [global, namespace] = await Promise.all([
+        usage.findOneBy({ id: 'global' }),
+        usage.findOneBy({ id: `ns:${ns}` }),
+      ]);
+      return {
+        sessionCount: await dataSource.getRepository(VfsUploadSessionEntity).countBy({ namespaceId: ns }),
+        keySessionId:
+          (await target.get(VfsUploadSessionRepository).findByCreationKey(ns, 'admission', key))?.id ?? null,
+        global: {
+          activeSessions: String(global?.activeSessions ?? '0'),
+          stagedBytes: String(global?.stagedBytes ?? '0'),
+        },
+        namespace: {
+          activeSessions: String(namespace?.activeSessions ?? '0'),
+          stagedBytes: String(namespace?.stagedBytes ?? '0'),
+        },
+      };
+    }
+
+    function postCreate(ns: string, key: string, path: string, size: string, target = app) {
+      return http(target)
+        .post(base(ns))
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('X-Mutation-Scope', 'admission')
+        .set('Idempotency-Key', key)
+        .send({ path, sizeBytes: size, mimeType: 'application/octet-stream', ifAbsent: true });
+    }
+
+    it('전역 한도에서 0·7·8바이트를 허용하고 9바이트는 상태 변경 없이 거절한다', async () => {
+      const createdIds: string[] = [];
+      for (const size of ['0', '7', '8']) {
+        const key = randomUUID();
+        const response = await postCreate(
+          admissionGlobalId,
+          key,
+          `/admission-global-${size}.bin`,
+          size,
+        ).expect(201);
+        createdIds.push(response.body.sessionId as string);
+      }
+      const key = randomUUID();
+      const before = await snapshot(admissionGlobalId, key);
+      const rejected = await postCreate(admissionGlobalId, key, '/admission-global-9.bin', '9').expect(413);
+      expect(rejected.body).toMatchObject({
+        code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE',
+        message: '파일 크기(9 bytes)가 staging 상한(8 bytes)을 초과함',
+        requestId: expect.any(String),
+      });
+      expect(rejected.headers).not.toHaveProperty('retry-after');
+      expect(await snapshot(admissionGlobalId, key)).toEqual(before);
+      for (const id of createdIds) await clear(id, admissionGlobalId, []);
+    });
+
+    it('namespace override는 더 작은 6바이트 한도를 적용하고 override가 없으면 전역 한도를 쓴다', async () => {
+      const six = await postCreate(
+        admissionOverrideId,
+        randomUUID(),
+        '/admission-override-6.bin',
+        '6',
+      ).expect(201);
+      const rejectedKey = randomUUID();
+      const before = await snapshot(admissionOverrideId, rejectedKey);
+      const rejected = await postCreate(
+        admissionOverrideId,
+        rejectedKey,
+        '/admission-override-7.bin',
+        '7',
+      ).expect(413);
+      expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
+      expect(rejected.body.message).toBe('파일 크기(7 bytes)가 staging 상한(6 bytes)을 초과함');
+      expect(rejected.headers).not.toHaveProperty('retry-after');
+      expect(await snapshot(admissionOverrideId, rejectedKey)).toEqual(before);
+      await clear(six.body.sessionId as string, admissionOverrideId, []);
+    });
+
+    it('정책 상향 재기동 뒤 거절된 key를 같은 요청으로 생성한다', async () => {
+      const key = randomUUID();
+      const before = await snapshot(admissionOverrideId, key);
+      await postCreate(admissionOverrideId, key, '/admission-policy-raised.bin', '7').expect(413);
+      expect(await snapshot(admissionOverrideId, key)).toEqual(before);
+      const created = await postCreate(
+        admissionOverrideId,
+        key,
+        '/admission-policy-raised.bin',
+        '7',
+        admissionHighPolicyApp,
+      ).expect(201);
+      await clear(created.body.sessionId as string, admissionOverrideId, []);
+    });
+
+    it('정책 하향 재기동 뒤 기존 요청은 재생하고 새 key의 같은 크기는 거절한다', async () => {
+      const key = randomUUID();
+      const original = await postCreate(
+        admissionOverrideId,
+        key,
+        '/admission-policy-lowered.bin',
+        '8',
+        admissionHighPolicyApp,
+      ).expect(201);
+      const replay = await postCreate(admissionOverrideId, key, '/admission-policy-lowered.bin', '8').expect(
+        201,
+      );
+      expect(replay.body.sessionId).toBe(original.body.sessionId);
+      const rejectedKey = randomUUID();
+      const before = await snapshot(admissionOverrideId, rejectedKey);
+      const rejected = await postCreate(
+        admissionOverrideId,
+        rejectedKey,
+        '/admission-policy-lowered-new.bin',
+        '8',
+      ).expect(413);
+      expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
+      expect(await snapshot(admissionOverrideId, rejectedKey)).toEqual(before);
+      await clear(original.body.sessionId as string, admissionOverrideId, []);
+    });
+
+    it('staging 사용량이 가득 차도 새 세션 생성은 공간을 예약하지 않는다', async () => {
+      const full = await postCreate(admissionFullId, randomUUID(), '/admission-full.bin', '8').expect(201);
+      try {
+        await put(full.body.sessionId as string, 0, 'abcd', app, admissionFullId).expect(200);
+        await put(full.body.sessionId as string, 1, 'efgh', app, admissionFullId).expect(200);
+        const before = await snapshot(admissionFullId, randomUUID());
+        expect(before.global.stagedBytes).toBe('8');
+        expect(before.namespace.stagedBytes).toBe('8');
+        const created = await postCreate(
+          admissionFullId,
+          randomUUID(),
+          '/admission-full-small.bin',
+          '1',
+        ).expect(201);
+        const after = await snapshot(admissionFullId, randomUUID());
+        expect(BigInt(after.global.activeSessions)).toBe(BigInt(before.global.activeSessions) + 1n);
+        expect(BigInt(after.namespace.activeSessions)).toBe(BigInt(before.namespace.activeSessions) + 1n);
+        expect(after.global.stagedBytes).toBe(before.global.stagedBytes);
+        expect(after.namespace.stagedBytes).toBe(before.namespace.stagedBytes);
+        await clear(created.body.sessionId as string, admissionFullId, []);
+      } finally {
+        await clear(full.body.sessionId as string, admissionFullId, [0, 1]);
+      }
+    });
+  });
 
   describe('조각 X-Content-Sha256', () => {
     /** 조각 본문과 SHA-256 헤더를 함께 전송한다. */

@@ -172,7 +172,7 @@ info:
     | `MUTATION_KEY_REUSED` | 409 | 기존 mutation receipt와 fingerprint가 다름; 기존 receipt를 변경하지 않음 | 새 key | 없음 |
     | `IDEMPOTENCY_KEY_REUSED` | 422 | namespace idempotency key에 다른 본문이 저장되어 있음 | 새 key | 없음 |
     | `VFS_PRECONDITION_FAILED` | 412 | 저장된 최초 충돌 응답 재생 | 최신 revision/조건으로 새 key | 없음 |
-    | `VFS_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key | 없음 |
+    | `VFS_FILE_TOO_LARGE`, `VFS_UPLOAD_STAGING_FILE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key; 세션 생성 staging 초과는 정책 상향 뒤 같은 key로 재평가 | 없음 |
     | `VFS_PRECONDITION_REQUIRED` | 428 | 저장된 조건부 오류는 재생 | 조건을 추가한 뒤 새 key | 없음 |
     | `VFS_INVALID_RANGE`, `VFS_RANGE_NOT_SATISFIABLE` | 416 | 조회를 다시 평가 | range 입력을 고친 뒤 조회 재시도 | 없음 |
     | `DB_BUSY` | 503 | 같은 key로 재시도; receipt 없음 | 해당 없음 | 통상 `1` |
@@ -1417,6 +1417,10 @@ paths:
         생성 뒤 고정된다. 0-byte 파일은 조각 없이 완료한다. 부모 디렉터리는 존재해야 한다.
         파일 크기는 namespace 적용 상한과 전역 기본 5 GiB 상한 중 낮은 값을 따르고,
         생성 JSON에는 16 KiB 본문 한도가 적용된다.
+        같은 생성 key 재생을 먼저 처리한다. 새 세션은 파일 상한 검사 뒤 유효 staging 상한(전역·namespace 중 작은 값)을
+        검사하며, 초과하면 세션을 저장하지 않고 413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE를 반환한다.
+        이 판정은 staging 공간을 예약하거나 업로드 완료를 보장하지 않는다. 응답에 Retry-After가 없으며,
+        정책 상향 뒤 같은 요청과 key로 재평가할 수 있다.
         선택적 `expiresInSeconds`는 `ifAbsent: true`와 함께만 허용한다. 생성 시 기본
         60~2592000초 범위(설정 상한 최대 2147483647초)를 검사하고 세션에 고정한다.
         FILE의 만료 시각은 업로드 완료 커밋의 DB 시각 + 초다. 값은 생성 요청의
@@ -1480,7 +1484,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
         '413':
-          description: VFS_FILE_TOO_LARGE 또는 JSON 본문 크기 초과
+          description: VFS_FILE_TOO_LARGE, VFS_UPLOAD_STAGING_FILE_TOO_LARGE 또는 JSON 본문 크기 초과. staging 상한 초과는 세션을 저장하지 않으며 Retry-After가 없다. 새 정책에서 같은 요청과 key로 재평가한다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
