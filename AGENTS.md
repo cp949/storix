@@ -4,6 +4,8 @@
 
 Issues live as GitHub issues in this repo. Use the `gh` CLI for all operations. Design specs and implementation plans are not issues (see `docs/agents/rubber-workflow.md`). Register only items worth tracking; criteria in `docs/agents/issue-tracker.md`.
 
+관련 이슈가 있는 작업은 완료 시 `docs/agents/issue-tracker.md`의 "작업 완료와 자동 종료" 절차를 수행한다.
+
 ### Triage labels
 
 Five canonical roles, label strings equal to their names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), all registered on `cp949/storix`. See `docs/agents/triage-labels.md`.
