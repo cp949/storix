@@ -81,6 +81,27 @@
 - 없는 세션과 다른 namespace의 세션은 `404 VFS_UPLOAD_SESSION_NOT_FOUND`다.
 - 상태·취소에는 capability gate가 없다.
 
+정책 변경과 staging 진단:
+
+- 기존 세션의 `partSizeBytes`·`partCount`는 생성 당시 값으로 유지한다.
+- 새 조각 예약에는 현재 전역·namespace staging 한도 중 작은 값을 적용한다.
+- 한도 하향은 이미 확보한 예약과 저장된 조각을 취소하거나 차감하지 않는다.
+- 저장된 조각의 동일 내용 재전송은 현재 staging 한도와 무관하게 처리한다.
+- 모든 조각이 저장된 세션의 완료는 staging 한도 초과만으로 거부하지 않는다.
+- GET은 OPEN이며 만료되지 않았고 정책이 있을 때 `staging`을 반환한다. capability 상태와 무관하다.
+- `staging.maxStagedBytes`는 현재 적용 한도의 10진 문자열이다.
+- `staging.status`는 `PARTS_STORED`, `PARTS_IN_PROGRESS`, `FILE_TOO_LARGE`, `WITHIN_LIMIT` 중 하나다.
+- 조각 상태와 세션은 한 DB statement snapshot으로 읽는다. GET은 세션 상태·만료·사용량을 바꾸지 않는다.
+- 저장 완료된 모든 index가 있으면 `PARTS_STORED`다. 그 다음 누락 index 모두에 유효 lease가 있으면 `PARTS_IN_PROGRESS`다.
+- 그 밖에 전체 파일 크기가 현재 한도를 넘으면 `FILE_TOO_LARGE`다. 나머지는 `WITHIN_LIMIT`다.
+- `PARTS_IN_PROGRESS`는 저장 성공을 보장하지 않는다. 만료된 lease는 worker 종료 증거가 아니다.
+- `WITHIN_LIMIT`은 공간 확보·quota admission·PUT·완료 성공을 보장하지 않는다.
+- 실제 새 예약 직전 전체 파일 크기가 한도를 넘으면 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`다.
+- 전체 파일 크기는 한도 이하지만 현재 사용량이 부족하면 `413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`다.
+- 두 오류에는 `Retry-After`가 없다. 한도 변경 뒤 같은 세션과 index로 재평가한다.
+- staging 한도를 유지하려면 기존 세션을 취소하고 허용 가능한 파일 크기로 새 세션을 만든다. 취소는 객체 삭제 전 공간 반환을 보장하지 않는다.
+- 정책 파일 변경은 서버 재시작 뒤 적용한다. 새 조각 크기만 줄여도 전체 파일이 staging 한도를 넘는 문제는 해결되지 않는다.
+
 ## 설정과 만료
 
 - `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH`의 UTF-8 JSON은 `global`과 `namespaces`만 허용한다.

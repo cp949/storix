@@ -24,11 +24,15 @@
 - 계약 파일은 `default export`로 계약을 내보낸다. 파일을 추가하면 실행 대상이 된다.
 - `run(ctx)`는 `node:assert/strict`로 검증하고 위반 시 throw한다.
 - `ctx.signal`은 CLI의 실행 취소 신호다. `ctx.client`는 HTTP 요청과 응답 본문 대기에 같은 신호를 전달한다.
-- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다.
+- `ctx`는 `baseUrl`, `apiKey`, `adminKey`(관리자 API 호출용, 서비스 key로는 인증되지 않는다), `client`(공개 HTTP 클라이언트), `createNamespace(options?)`, `server.restart()`, `server.restartWithUploadSessionLimits()`, `blobStorage`(`stop()`·`start()`·`deleteAllObjects()`)를 제공한다.
   - 프로필이 capability를 허용하면 `createNamespace()`는 그 capability가 켜진 namespace를 주고, `withoutCapabilities: true`를 주면 허용되지 않은 새 namespace를 API로 만든다.
   - `accessPolicy`를 주면(`'PRIVATE'` 포함) 사전 준비 풀을 쓰지 않고 namespace를 API로 만든다.
   - `'PUBLIC'`이면 공개 조회가 열리고, 어느 쪽이든 선택 capability는 꺼진 상태다.
   - `server.restart()`는 같은 포트·env·DB로 서버를 다시 띄우며, 재시작 뒤 지속성·멱등성 재생을 검증하는 계약만 쓴다.
+  - `server.restartWithUploadSessionLimits()`는 `resumable-upload` 프로필의 준비된 namespace 한도만 바꾼 뒤 같은 서버를 재시작한다.
+  - 변경 한도는 전역 한도 이하여야 한다. 조각 크기는 staging 한도 이하의 양의 정수여야 한다.
+  - 러너는 계약이 끝나거나 실패하면 다음 계약 전에 해당 프로필의 baseline 정책을 파일에 복원하고 서버를 재시작한다.
+  - 취소 중에는 복구 서버를 새로 띄우지 않고 기존 shutdown을 수행한다.
   - `blobStorage`는 VersityGW 컨테이너를 멈추거나 되살리고 버킷 객체를 지우며 저장 장애 계약(`contracts/storage/`)만 쓴다.
   - `deleteAllObjects()`는 버킷 전체를 지우므로 계약은 자기 namespace의 파일만 다루고 앞 계약이 만든 파일에 기대지 않는다.
   - 컨테이너는 고정 호스트 포트로 띄운다(`docker stop` 뒤 `start`에서 임의 포트는 바뀐다). 러너는 계약이 끝날 때마다 멈춘 저장소를 되살리므로 실패한 계약이 뒤 계약을 막지 않는다.
@@ -115,6 +119,7 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
     4. 서버를 재시작한다.
   - 조각 크기는 4바이트로 줄여 짧은 본문으로 여러 조각을 만든다.
   - 값은 `src/runner/profiles.ts`의 `UPLOAD_SESSION_POLICY`가 정한다.
+  - 정책을 변경하는 계약은 공개 서버 API로 동작을 확인하고 계약 종료 전에 baseline 정책으로 복원한다.
 
 ## 실행 옵션
 

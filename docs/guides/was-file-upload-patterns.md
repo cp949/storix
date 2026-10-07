@@ -236,6 +236,26 @@ DB commit 전에 파일을 삭제하면 rollback 후 업무 레코드가 삭제�
 세션 만료는 **완료 전 업로드 세션**에 적용한다.
 완료된 FILE의 만료는 별도 `expiresInSeconds` 입력으로 지정한다.
 
+### staging 정책이 바뀐 기존 세션
+
+세션 조회의 선택 필드 `staging`은 현재 한도와 조각 상태를 진단한다.
+`WITHIN_LIMIT`은 다음 조각 예약을 보장하지 않는다.
+다른 세션이나 정리 대기 객체가 staging 공간을 사용할 수 있다.
+
+새 조각 PUT이 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`를 반환하면 같은 세션의 새 조각은 현재 한도로 거부된 것이다.
+오류에는 `Retry-After`가 없다.
+정책 파일의 namespace `maxStagedBytes`를 파일 전체 크기 이상으로 올리고 서버를 재시작하면 같은 세션을 이어서 쓸 수 있다.
+정책 파일의 조각 크기는 staging 한도 이하여야 한다.
+기존 세션의 조각 크기는 바뀌지 않는다.
+
+기존 한도를 유지하려면 세션을 취소하고 허용 가능한 크기로 새 세션을 만든다.
+새 creation key를 사용한다.
+세션 취소는 staging 객체 삭제가 끝날 때까지 사용량을 반환하지 않을 수 있다.
+`VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`가 반복되면 미정착 예약 복구 절차를 확인한다.
+
+저장된 조각 재전송과 모든 조각이 저장된 세션의 완료는 staging 한도 하향만으로 거부되지 않는다.
+전체 파일 크기가 한도 이하여도 다른 예약으로 공간이 부족하면 새 조각 예약은 실패할 수 있다.
+
 참조:
 
 - API 형식: [OpenAPI](../../apps/api/openapi.yaml).

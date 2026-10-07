@@ -10,6 +10,7 @@
 
 ### Added
 
+- 재개 업로드 세션 `GET`에 현재 staging 한도와 조각 진행 상태를 담은 선택 필드 `staging`을 추가했다. 진단은 OPEN·미만료 세션에서 정책이 있을 때 제공하며 PUT·완료 성공을 보장하지 않는다.
 - `GET /api/v2/namespaces/{id}` 응답에 재개 업로드 정책·사용량 블록 `uploadSessions`를 선택으로 추가했다. `partSizeBytes`·`inactivitySeconds`·`maxLifetimeSeconds`·`maxStagedBytes`·`maxActiveSessions`(namespace 값, 없으면 전역 값)와 `stagedBytes`·`activeSessions`(호출 시점 사용량)를 준다. namespace가 `ACTIVE`이고 `resumable-upload`가 활성이며 정책이 있을 때만 나온다. `stagedBytes`는 예약과 정착을 구분하지 않고 admission 판정이 아니다.
 - 재개 업로드 조각 `PUT`이 선택 요청 헤더 `X-Content-Sha256`(조각 평문 SHA-256)을 받는다. 본문 해시가 헤더와 다르면 조각을 저장하지 않고 `422 VFS_PART_CHECKSUM_MISMATCH`로 응답하며 같은 index를 다시 보낼 수 있다. 형식 오류는 본문 소비 전 `400 VFS_INVALID_CHECKSUM`이다. 헤더가 없으면 동작이 같다.
 - 업로드 세션 완료와 `content/conditional` 성공 응답의 `resource`에 전체 평문 `sha256`을 선택 필드로 추가했다. 반환한 `revision`의 콘텐츠와 같은 값이다. 이 필드가 생기기 전에 저장된 응답을 재생할 때는 없을 수 있다.
@@ -20,6 +21,7 @@
 
 ### Fixed
 
+- staging 한도 하향 뒤 기존 세션의 새 조각 예약은 전체 파일 크기를 검사해 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`로 거부한다. 저장된 조각 재전송과 모든 조각 저장 뒤 완료는 허용하며, 기존 예약·세션 만료는 변경하지 않는다.
 - 새 재개 업로드 세션의 파일 크기가 전역·namespace staging 상한 중 작은 값을 넘으면 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`로 거부한다. 거절은 세션·key·사용량을 저장하지 않으며 staging 공간을 예약하지 않는다.
 
 - storage PUT 운영 CLI의 설정 모듈 누락으로 시작하지 못하는 오류를 수정했다. manifest stdout에서 build·진단 출력을 분리했다. writer 종료 확인 근거를 DB에 보존하며, gateway worker 종료를 회수 승인 조건으로 요구하지 않는다. 추가 migration `1791700000027`이 nullable 근거 컬럼을 추가한다.
