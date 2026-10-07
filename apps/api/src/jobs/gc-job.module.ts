@@ -6,8 +6,11 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { StoragePutOwnershipRepository } from '../persistence/storage-put-ownership.repository.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { STORAGE_PUT_EXECUTION_ID } from '../storage/online-storage.module.js';
+import { BLOB_STORAGE } from '../storage/storage.constants.js';
+import type { BlobStorage } from '../storage/blob-storage.js';
 import { GcJob } from './gc.job.js';
 import { GcLock } from './gc-lock.js';
+import { OwnedMultipartCleanup } from './owned-multipart-cleanup.js';
 
 // job별로 모듈을 분리한다 — NestFactory.createApplicationContext는 import된
 // 모듈의 모든 provider를 즉시(eager) 생성하므로, 한 모듈에 세 job을 묶으면
@@ -26,6 +29,15 @@ import { GcLock } from './gc-lock.js';
         return executionId;
       },
       inject: [StoragePutOwnershipRepository],
+    },
+    {
+      provide: OwnedMultipartCleanup,
+      useFactory: (
+        storage: BlobStorage,
+        ownership: StoragePutOwnershipRepository,
+        executionId: string,
+      ): OwnedMultipartCleanup => new OwnedMultipartCleanup(storage, ownership, executionId),
+      inject: [BLOB_STORAGE, StoragePutOwnershipRepository, STORAGE_PUT_EXECUTION_ID],
     },
     GcJob,
     GcLock,

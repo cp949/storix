@@ -47,6 +47,21 @@ export function runStoragePutOwnershipRepositorySharedTests(
     await expect(repository.beginPut(key, executionId, randomUUID())).resolves.toEqual(expect.any(String));
   });
 
+  it('다른 claimId로 해제해도 현재 GC claim 동안 새 PUT를 거부한다', async () => {
+    const attemptId = randomUUID();
+    const key = `blobs/${testRunId}/claim-owner`;
+    await repository.beginPut(key, executionId, attemptId);
+    await repository.settlePut(attemptId);
+    const claimA = randomUUID();
+
+    expect(await repository.claimForGc(key, claimA, executionId)).toEqual({ kind: 'claimed' });
+    await repository.releaseGcClaim(key, randomUUID());
+
+    await expect(repository.beginPut(key, executionId, randomUUID())).rejects.toThrow('storage key 회수 중');
+    await repository.releaseGcClaim(key, claimA);
+    await expect(repository.beginPut(key, executionId, randomUUID())).resolves.toEqual(expect.any(String));
+  });
+
   it('확인된 종료 실행의 미정착 PUT는 GC claim을 허용한다', async () => {
     const key = `upload-staging/${testRunId}/stopped`;
     await repository.beginPut(key, executionId, randomUUID());

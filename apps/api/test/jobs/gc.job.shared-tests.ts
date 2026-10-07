@@ -5,6 +5,7 @@ import { Logger } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { DataSource, IsNull } from 'typeorm';
 import { GcJob } from '../../src/jobs/gc.job.js';
+import { OwnedMultipartCleanup } from '../../src/jobs/owned-multipart-cleanup.js';
 import { BlobRepository } from '../../src/persistence/blob.repository.js';
 import { GcCursorRepository } from '../../src/persistence/gc-cursor.repository.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
@@ -592,6 +593,131 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await expect(storage.get(orphanKey)).rejects.toThrow();
   });
 
+  it('abort가 pending인 동안 실제 DB claim이 새 PUT를 막고 정착 뒤 허용한다', async () => {
+    const { dataSource } = getContext();
+    const ownership = new StoragePutOwnershipRepository(dataSource);
+    const writerExecutionId = randomUUID();
+    const gcExecutionId = randomUUID();
+    await ownership.registerExecution(writerExecutionId);
+    await ownership.registerExecution(gcExecutionId);
+    const key = `blobs/${randomUUID()}`;
+    const attemptId = await ownership.beginPut(key, writerExecutionId);
+    await ownership.settlePut(attemptId);
+
+    let resolveAbort!: () => void;
+    let signalAbortStarted!: () => void;
+    const abortStarted = new Promise<void>((resolve) => (signalAbortStarted = resolve));
+    const cleanup = new OwnedMultipartCleanup(
+      {
+        abortIncompleteUpload: async () =>
+          new Promise<void>((resolve) => {
+            resolveAbort = resolve;
+            signalAbortStarted();
+          }),
+      },
+      ownership,
+      gcExecutionId,
+    );
+    const result = cleanup.abort(key, 'deferred-upload');
+    await abortStarted;
+
+    try {
+      await expect(ownership.beginPut(key, writerExecutionId)).rejects.toThrow('storage key 회수 중');
+    } finally {
+      resolveAbort();
+      await result;
+    }
+    await expect(result).resolves.toBe(true);
+    await expect(ownership.beginPut(key, writerExecutionId)).resolves.toEqual(expect.any(String));
+  });
+
+  it('abort 실패 뒤 실제 DB claim을 해제해 새 PUT를 허용한다', async () => {
+    const { dataSource } = getContext();
+    const ownership = new StoragePutOwnershipRepository(dataSource);
+    const writerExecutionId = randomUUID();
+    const gcExecutionId = randomUUID();
+    await ownership.registerExecution(writerExecutionId);
+    await ownership.registerExecution(gcExecutionId);
+    const key = `blobs/${randomUUID()}`;
+    const attemptId = await ownership.beginPut(key, writerExecutionId);
+    await ownership.settlePut(attemptId);
+    const cleanup = new OwnedMultipartCleanup(
+      { abortIncompleteUpload: async () => Promise.reject(new Error('injected abort failure')) },
+      ownership,
+      gcExecutionId,
+    );
+
+    await expect(cleanup.abort(key, 'failed-upload')).resolves.toBe(false);
+    await expect(ownership.beginPut(key, writerExecutionId)).resolves.toEqual(expect.any(String));
+  });
+
+  it('release 실패 뒤 실제 DB claim을 유지하고 GC 성공 집계를 보존한다', async () => {
+    const { dataSource, storage, blobRepository } = getContext();
+    const ownership = new StoragePutOwnershipRepository(dataSource);
+    const writerExecutionId = randomUUID();
+    const gcExecutionId = randomUUID();
+    await ownership.registerExecution(writerExecutionId);
+    await ownership.registerExecution(gcExecutionId);
+    const key = `blobs/${randomUUID()}`;
+    const attemptId = await ownership.beginPut(key, writerExecutionId);
+    await ownership.settlePut(attemptId);
+    const upload = { key, uploadId: 'release-failure-upload', initiated: new Date(Date.now() - 60_000) };
+    const controlledStorage = new Proxy(storage, {
+      get(target, property) {
+        if (property === 'listIncompleteUploadsPage') {
+          return async (prefix: string) => ({ items: prefix === 'blobs/' ? [upload] : [], next: null });
+        }
+        if (property === 'abortIncompleteUpload') return async () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const release = ownership.releaseGcClaim.bind(ownership);
+    const claim = ownership.claimForGc.bind(ownership);
+    let capturedClaimId: string | undefined;
+    ownership.claimForGc = async (claimKey, claimId, executionId) => {
+      const result = await claim(claimKey, claimId, executionId);
+      if (claimKey === key && result.kind === 'claimed') capturedClaimId = claimId;
+      return result;
+    };
+    ownership.releaseGcClaim = async (claimKey, claimId) => {
+      if (claimKey === key) throw new Error('injected release failure');
+      await release(claimKey, claimId);
+    };
+    const config = {
+      get: (name: string) =>
+        name === 'STORIX_ORPHAN_GRACE_PERIOD' || name === 'STORIX_MUTATION_MAX_UPLOAD_SECONDS'
+          ? '1'
+          : undefined,
+    } as unknown as ConfigService;
+
+    try {
+      const cleanup = new OwnedMultipartCleanup(controlledStorage, ownership, gcExecutionId);
+      const result = await new GcJob(
+        controlledStorage,
+        blobRepository,
+        config,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        cleanup,
+      ).run();
+
+      expect(result.abortedIncompleteUploads).toBe(1);
+      await expect(ownership.beginPut(key, writerExecutionId)).rejects.toThrow('storage key 회수 중');
+    } finally {
+      ownership.claimForGc = claim;
+      ownership.releaseGcClaim = release;
+      if (capturedClaimId) await release(key, capturedClaimId);
+    }
+  });
+
   it('시작 뒤 최대 업로드 시간과 유예가 지난 미완료 multipart upload만 abort하고 Storix 밖 prefix는 건드리지 않는다', async () => {
     const { client, storage, blobRepository } = getContext();
     const bucket = (storage as unknown as { bucket: string }).bucket;
@@ -687,8 +813,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       undefined,
       undefined,
       undefined,
-      ownership,
-      gcExecutionId,
+      new OwnedMultipartCleanup(storage, ownership, gcExecutionId),
     ).run();
 
     expect(result.abortedIncompleteUploads).toBe(1);
@@ -722,8 +847,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
       undefined,
       undefined,
       undefined,
-      ownership,
-      gcExecutionId,
+      new OwnedMultipartCleanup(storage, ownership, gcExecutionId),
     ).run();
     expect(recovery.abortedIncompleteUploads).toBeGreaterThanOrEqual(3);
     expect(await remaining('blobs/')).not.toContain(activeOldKey);

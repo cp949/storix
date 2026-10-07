@@ -33,9 +33,7 @@ import { type FileExpiryCursor, VfsFileExpiryRepository } from '../persistence/v
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_KEY_PREFIX, UPLOAD_STAGING_KEY_PREFIX } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
-import { StoragePutOwnershipRepository } from '../persistence/storage-put-ownership.repository.js';
-import { STORAGE_PUT_EXECUTION_ID } from '../storage/online-storage.module.js';
-import { randomUUID } from 'node:crypto';
+import { OwnedMultipartCleanup } from './owned-multipart-cleanup.js';
 
 const DELETE_CONCURRENCY = 20;
 const CLEANUP_BATCH_SIZE = 500;
@@ -95,6 +93,7 @@ export class GcJob {
   private readonly changeRetentionDays: number;
   private readonly stageBudgetLimit: number;
   private readonly namespaceDeletedRetentionDays: number;
+  private readonly multipartCleanup: OwnedMultipartCleanup;
 
   constructor(
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
@@ -109,12 +108,10 @@ export class GcJob {
     @Optional() private readonly gcCursors?: GcCursorRepository,
     @Optional() private readonly idempotencyReceipts?: IdempotencyReceiptRetentionRepository,
     @Optional() private readonly namespacePurge?: NamespacePurgeRepository,
-    @Optional()
-    @Inject(StoragePutOwnershipRepository)
-    private readonly putOwnership?: StoragePutOwnershipRepository,
-    @Optional() @Inject(STORAGE_PUT_EXECUTION_ID) private readonly executionId?: string,
+    @Optional() multipartCleanup?: OwnedMultipartCleanup,
     @Optional() private readonly stagingCleanup?: UploadStagingCleanup,
   ) {
+    this.multipartCleanup = multipartCleanup ?? new OwnedMultipartCleanup(storage);
     if (uploadSessions && !stagingCleanup)
       throw new Error('UploadStagingCleanup required when upload sessions are configured');
     this.gracePeriodSeconds = parsePositiveInt(
@@ -632,7 +629,7 @@ export class GcJob {
         for (let i = 0; i < stale.length; i += DELETE_CONCURRENCY) {
           const chunk = stale.slice(i, i + DELETE_CONCURRENCY);
           const results = await Promise.allSettled(
-            chunk.map((upload) => this.abortOwnedIncompleteUpload(upload.key, upload.uploadId)),
+            chunk.map((upload) => this.multipartCleanup.abort(upload.key, upload.uploadId)),
           );
           results.forEach((result, index) => {
             if (result.status === 'fulfilled' && result.value) {
@@ -649,36 +646,6 @@ export class GcJob {
       },
     );
     return aborted;
-  }
-
-  private async abortOwnedIncompleteUpload(key: string, uploadId: string): Promise<boolean> {
-    if (!this.putOwnership || !this.executionId) {
-      this.logger.warn(`소유권 확인기가 없어 미완료 multipart upload abort 보류: ${key} (${uploadId})`);
-      return false;
-    }
-    const claimId = randomUUID();
-    let claimed = false;
-    try {
-      const result = await this.putOwnership.claimForGc(key, claimId, this.executionId);
-      if (result.kind !== 'claimed') {
-        this.logger.warn(`multipart 소유권 ${result.kind} 상태로 abort 보류: ${key} (${uploadId})`);
-        return false;
-      }
-      claimed = true;
-      await this.storage.abortIncompleteUpload(key, uploadId);
-      return true;
-    } catch (error) {
-      this.logger.error(`multipart 소유권 확인 또는 abort 실패: ${key} (${uploadId})`, error);
-      return false;
-    } finally {
-      if (claimed) {
-        try {
-          await this.putOwnership.releaseGcClaim(key, claimId);
-        } catch (error) {
-          this.logger.error(`multipart GC claim 해제 실패: ${key} (${claimId})`, error);
-        }
-      }
-    }
   }
 
   private async deleteKeysInChunks(keys: string[]): Promise<number> {

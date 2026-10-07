@@ -62,7 +62,6 @@ export function runNamespaceDeletionCleanupTests(getContext: () => GcJobTestCont
       undefined,
       undefined,
       undefined,
-      undefined,
       new UploadStagingCleanup(c.storage, uploads),
     );
     return { ...c, uploads, repository, cleanup, deletion, job };

@@ -1,8 +1,16 @@
 import { UploadStagingCleanup } from '../../src/vfs/upload-staging-cleanup.js';
 import { jest } from '@jest/globals';
-import { Logger } from '@nestjs/common';
+import { Logger, type Provider } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { MODULE_METADATA } from '@nestjs/common/constants.js';
 import type { ConfigService } from '@nestjs/config';
 import { GcJob } from '../../src/jobs/gc.job.js';
+import { GcJobModule } from '../../src/jobs/gc-job.module.js';
+import { OwnedMultipartCleanup } from '../../src/jobs/owned-multipart-cleanup.js';
+import { StoragePutOwnershipRepository } from '../../src/persistence/storage-put-ownership.repository.js';
+import type { StoragePutGcClaimResult } from '../../src/persistence/storage-put-ownership.repository.js';
+import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
+import { STORAGE_PUT_EXECUTION_ID } from '../../src/storage/online-storage.module.js';
 import type { OrphanBlobPageRow } from '../../src/persistence/blob.repository.js';
 import { BlobRepositoryDouble, PagedStorage } from './gc-doubles.js';
 import type { VfsMutationReceiptRepository } from '../../src/persistence/vfs-mutation-receipt.repository.js';
@@ -491,13 +499,15 @@ describe('GcJob', () => {
       extra: Record<string, string> = {},
       cursors?: GcCursorRepository,
       ownership: {
-        claimForGc: (...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>;
-        releaseGcClaim: (...args: string[]) => Promise<void>;
+        claimForGc: (key: string, claimId: string, executionId: string) => Promise<StoragePutGcClaimResult>;
+        releaseGcClaim: (key: string, claimId: string) => Promise<void>;
       } = {
         claimForGc: jest
-          .fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>()
+          .fn<(key: string, claimId: string, executionId: string) => Promise<StoragePutGcClaimResult>>()
           .mockResolvedValue({ kind: 'claimed' }),
-        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockResolvedValue(undefined),
+        releaseGcClaim: jest
+          .fn<(key: string, claimId: string) => Promise<void>>()
+          .mockResolvedValue(undefined),
       },
     ) {
       const values: Record<string, string> = {
@@ -519,8 +529,7 @@ describe('GcJob', () => {
         cursors,
         undefined,
         undefined,
-        ownership as never,
-        'gc-execution',
+        new OwnedMultipartCleanup(storage.asBlobStorage(), ownership, 'gc-execution'),
       );
     }
 
@@ -543,6 +552,88 @@ describe('GcJob', () => {
       ]);
     });
 
+    it('cutoff와 같은 시각의 upload는 abort하지 않는다', async () => {
+      const now = new Date('2026-10-08T00:00:00.000Z');
+      jest.useFakeTimers().setSystemTime(now);
+      try {
+        const cutoff = new Date(now.getTime() - 3 * HOUR);
+        const storage = new PagedStorage().withIncompleteUploads([
+          { key: 'blobs/ab/before', uploadId: 'u1', initiated: new Date(cutoff.getTime() - 1) },
+          { key: 'blobs/ab/equal', uploadId: 'u2', initiated: cutoff },
+          { key: 'blobs/ab/after', uploadId: 'u3', initiated: new Date(cutoff.getTime() + 1) },
+        ]);
+
+        const result = await makeJob(storage).run();
+
+        expect(result.abortedIncompleteUploads).toBe(1);
+        expect(storage.aborted).toEqual([{ key: 'blobs/ab/before', uploadId: 'u1' }]);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('claim 해제가 실패해도 abort 성공을 집계하고 남은 claim 오류를 기록한다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'blobs/ab/release-fails', uploadId: 'u1', initiated: ago(5) },
+      ]);
+      const releaseError = new Error('release failed');
+      const ownership = {
+        claimForGc: jest
+          .fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>()
+          .mockResolvedValue({ kind: 'claimed' }),
+        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockRejectedValue(releaseError),
+      };
+      const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const result = await makeJob(storage, {}, undefined, ownership).run();
+
+        expect(result.abortedIncompleteUploads).toBe(1);
+        expect(storage.aborted).toEqual([{ key: 'blobs/ab/release-fails', uploadId: 'u1' }]);
+        expect(log).toHaveBeenCalledWith(
+          expect.stringMatching(/^multipart GC claim 해제 실패:/),
+          releaseError,
+        );
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('GcJobModule의 cleanup factory에 저장소와 실행 식별자를 연결한다', async () => {
+      const providers: Provider[] = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, GcJobModule) ?? [];
+      const cleanupProvider = providers.find(
+        (provider) =>
+          typeof provider === 'object' && 'provide' in provider && provider.provide === OwnedMultipartCleanup,
+      );
+      expect(cleanupProvider).toBeDefined();
+
+      const storage = { abortIncompleteUpload: jest.fn(async () => undefined) };
+      const ownership = {
+        claimForGc: jest
+          .fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>()
+          .mockResolvedValue({ kind: 'claimed' }),
+        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+      const testingModule = await Test.createTestingModule({
+        providers: [
+          cleanupProvider!,
+          { provide: BLOB_STORAGE, useValue: storage },
+          { provide: StoragePutOwnershipRepository, useValue: ownership },
+          { provide: STORAGE_PUT_EXECUTION_ID, useValue: 'registered-gc-execution' },
+        ],
+      }).compile();
+      try {
+        const cleanup = testingModule.get(OwnedMultipartCleanup);
+        await expect(cleanup.abort('blobs/ns/file', 'upload-1')).resolves.toBe(true);
+        expect(ownership.claimForGc).toHaveBeenCalledWith(
+          'blobs/ns/file',
+          expect.any(String),
+          'registered-gc-execution',
+        );
+      } finally {
+        await testingModule.close();
+      }
+    });
+
     it('Storix가 만드는 key prefix 밖은 조회하지 않는다', async () => {
       const storage = new PagedStorage().withIncompleteUploads([
         { key: 'other/foreign', uploadId: 'u1', initiated: ago(100) },
@@ -556,6 +647,28 @@ describe('GcJob', () => {
         'blobs/',
         'upload-staging/',
       ]);
+    });
+
+    it('cleanup dependency가 없는 직접 생성은 오래된 후보를 보류한다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'blobs/ab/old', uploadId: 'u1', initiated: ago(5) },
+      ]);
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const result = await new GcJob(
+          storage.asBlobStorage(),
+          new BlobRepositoryDouble().asBlobRepository(),
+          makeConfig(3600),
+        ).run();
+
+        expect(result.abortedIncompleteUploads).toBe(0);
+        expect(storage.aborted).toEqual([]);
+        expect(warn).toHaveBeenCalledWith(
+          '소유권 확인기가 없어 미완료 multipart upload abort 보류: blobs/ab/old (u1)',
+        );
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('소유권 조회가 실패하면 key를 abort하지 않고 다음 후보를 처리한다', async () => {
@@ -701,7 +814,6 @@ describe('GcJob', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         new UploadStagingCleanup(storage.asBlobStorage(), uploads as unknown as VfsUploadSessionRepository),
       ).run();
     } finally {
@@ -774,7 +886,6 @@ describe('GcJob', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       new UploadStagingCleanup(storage.asBlobStorage(), uploads as unknown as VfsUploadSessionRepository),
     );
     const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -839,7 +950,6 @@ describe('GcJob', () => {
         deps.cursors,
         deps.idempotency as unknown as IdempotencyReceiptRetentionRepository,
         deps.purge as unknown as NamespacePurgeRepository,
-        undefined,
         undefined,
         new UploadStagingCleanup(
           (deps.storage ?? new PagedStorage()).asBlobStorage(),
