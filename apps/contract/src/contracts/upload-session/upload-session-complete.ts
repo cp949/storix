@@ -124,11 +124,13 @@ export default defineContract({
       sizeBytes: string;
       condition: unknown;
       parts: Array<Record<string, unknown>>;
+      staging: { maxStagedBytes: string; status: string };
     }>();
     assert.equal(state.state, 'OPEN');
     assert.equal(state.path, '/big.bin');
     assert.equal(state.sizeBytes, String(data.length));
     assert.deepEqual(state.condition, { ifAbsent: true });
+    assert.deepEqual(state.staging, { maxStagedBytes: '1048576', status: 'PARTS_STORED' });
     // 조각 배열의 정렬 순서는 명세에 없어 index로 정렬해 비교한다.
     assert.deepEqual(
       [...state.parts].sort((a, b) => Number(a.index) - Number(b.index)),
@@ -151,6 +153,7 @@ export default defineContract({
         'path',
         'sessionId',
         'sizeBytes',
+        'staging',
         'state',
       ],
       '내부 저장 정보를 노출했다',
