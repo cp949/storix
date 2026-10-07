@@ -35,7 +35,9 @@ export interface UploadSessionsConfig {
     readonly maxActiveSessions: number;
     readonly partSizeBytes: number;
   };
-  readonly namespaces: Readonly<Record<string, { maxStagedBytes: string; maxActiveSessions: number }>>;
+  readonly namespaces: Readonly<
+    Record<string, { maxStagedBytes: string; maxActiveSessions: number; partSizeBytes?: number }>
+  >;
 }
 
 /** 전역 정책을 각 namespace에도 같은 한도로 적용하는 세션 정책 설정을 만든다. */

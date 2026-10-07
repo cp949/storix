@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createContractContext } from '../../src/runner/context.ts';
 
-const server = { restart: async () => {} };
+const server = { restart: async () => {}, restartWithUploadSessionLimits: async () => {} };
 const blobStorage = {
   stop: async () => {},
   start: async () => {},
@@ -121,6 +121,29 @@ describe('계약 컨텍스트의 관리자 key', () => {
   });
 });
 
+describe('계약 컨텍스트의 업로드 정책 제어', () => {
+  it('준비 서버의 정책 변경을 전달하고 취소 뒤에는 호출하지 않는다', async () => {
+    const received: unknown[] = [];
+    const ctx = createContractContext({
+      baseUrl: 'http://127.0.0.1:1',
+      apiKey: 'key',
+      adminKey: 'admin',
+      server: {
+        restart: async () => {},
+        restartWithUploadSessionLimits: async (limits) => {
+          received.push(limits);
+        },
+      },
+      blobStorage,
+      contractId: 'sample',
+      signal: new AbortController().signal,
+    });
+    const limits = { namespaceId: 'namespace', maxStagedBytes: '8', partSizeBytes: 2 };
+    await ctx.server.restartWithUploadSessionLimits(limits);
+    assert.deepEqual(received, [limits]);
+  });
+});
+
 // 취소 이후 풀 소비와 HTTP·서버·blob 제어를 모두 막는다.
 describe('계약 컨텍스트의 취소', () => {
   it('client 요청에 실행 신호를 전달한다', async () => {
@@ -162,6 +185,9 @@ describe('계약 컨텍스트의 취소', () => {
           async restart() {
             effects.push('restart');
           },
+          async restartWithUploadSessionLimits() {
+            effects.push('upload-policy');
+          },
         },
         blobStorage: {
           async stop() {
@@ -188,6 +214,7 @@ describe('계약 컨텍스트의 취소', () => {
       () => ctx.createNamespace({ withoutCapabilities: true }),
       () => ctx.client.request('POST', '/namespace'),
       () => ctx.server.restart(),
+      () => ctx.server.restartWithUploadSessionLimits({ namespaceId: 'id', maxStagedBytes: '8' }),
       () => ctx.blobStorage.stop(),
       () => ctx.blobStorage.start(),
       () => ctx.blobStorage.deleteAllObjects(),

@@ -218,6 +218,13 @@ export interface NamespaceInfo {
 export interface ContractServer {
   /** 같은 포트·env·DB로 서버를 종료 후 다시 기동한다. 재시작 뒤 지속성·재생을 검증하는 계약이 쓴다. */
   restart(): Promise<void>;
+
+  /** 준비한 namespace의 staging 한도를 바꾸고 같은 DB·주소로 재시작한다. */
+  restartWithUploadSessionLimits(input: {
+    readonly namespaceId: string;
+    readonly maxStagedBytes: string;
+    readonly partSizeBytes?: number;
+  }): Promise<void>;
 }
 
 /**

@@ -114,6 +114,142 @@ function result(contract: Contract, passed = true): ContractResult {
 
 // 외부 프로세스 없이 lifecycle을 실행해 결과 실패와 운영 오류의 처리 차이를 고정한다.
 describe('프로파일 실행 lifecycle', () => {
+  it('업로드 정책이 없는 프로파일은 정책 재시작 요청을 명시적으로 거부한다', async () => {
+    const current = fixture('default');
+    current.dependencies.runContract = async (contract, context) => {
+      await assert.rejects(
+        () =>
+          context.server.restartWithUploadSessionLimits({
+            namespaceId: 'prepared',
+            maxStagedBytes: '8',
+          }),
+        /현재 프로파일에는 업로드 세션 정책이 없다/,
+      );
+      return result(contract);
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.error, undefined);
+    assert.equal(outcome.contracts[0]?.passed, true);
+    assert.equal(current.events.includes('restart'), false);
+  });
+
+  it('계약별 업로드 정책을 재시작으로 적용하고 계약 종료 전에 기준 정책으로 복원한다', async () => {
+    const current = fixture('resumable-upload');
+    const writes: { path: string; value: Record<string, unknown> }[] = [];
+    current.dependencies.writeCapabilitiesConfig = async (path, contents) => {
+      writes.push({ path, value: JSON.parse(contents) as Record<string, unknown> });
+    };
+    current.dependencies.provisionCapabilityNamespaces = async (input) => {
+      await input.prepareRestart?.([{ id: 'prepared', name: 'prepared' }]);
+      await input.restart();
+      return [{ id: 'prepared', name: 'prepared' }];
+    };
+    current.dependencies.runContract = async (contract, context) => {
+      current.events.push(`contract:${contract.id}`);
+      if (contract.id === 'first') {
+        await assert.rejects(
+          () =>
+            context.server.restartWithUploadSessionLimits({
+              namespaceId: 'unknown',
+              maxStagedBytes: '8',
+            }),
+          /준비하지 않은 namespace ID/,
+        );
+        await assert.rejects(
+          () =>
+            context.server.restartWithUploadSessionLimits({
+              namespaceId: 'prepared',
+              maxStagedBytes: '8',
+              partSizeBytes: 9,
+            }),
+          /staging 한도 이하/,
+        );
+        await context.server.restartWithUploadSessionLimits({
+          namespaceId: 'prepared',
+          maxStagedBytes: '8',
+          partSizeBytes: 2,
+        });
+      }
+      return result(contract);
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.contracts.length, 2);
+    const policyWrites = writes.filter((entry) =>
+      entry.path.endsWith('resumable-upload.upload-sessions.json'),
+    );
+    assert.equal(policyWrites.length, 4);
+    const changed = policyWrites[2].value.namespaces as Record<
+      string,
+      { maxStagedBytes: string; partSizeBytes: number }
+    >;
+    assert.deepEqual(changed.prepared, {
+      maxStagedBytes: '8',
+      maxActiveSessions: 100,
+      partSizeBytes: 2,
+    });
+    assert.equal((policyWrites[2].value.global as { maxStagedBytes: string }).maxStagedBytes, '1048576');
+    assert.deepEqual(policyWrites[3].value, policyWrites[1].value);
+    assert.deepEqual(
+      current.events.filter((event) => event === 'restart'),
+      ['restart', 'restart', 'restart'],
+    );
+    assert.ok(
+      current.events.indexOf('restart', current.events.indexOf('contract:first')) <
+        current.events.indexOf('contract:second'),
+    );
+  });
+
+  it('정책을 바꾼 계약이 실패해도 다음 계약 전에 baseline을 복원한다', async () => {
+    const current = fixture('resumable-upload');
+    const writes: Record<string, unknown>[] = [];
+    current.dependencies.writeCapabilitiesConfig = async (path, contents) => {
+      if (path.endsWith('resumable-upload.upload-sessions.json'))
+        writes.push(JSON.parse(contents) as Record<string, unknown>);
+    };
+    current.dependencies.provisionCapabilityNamespaces = async (input) => {
+      await input.prepareRestart?.([{ id: 'prepared', name: 'prepared' }]);
+      await input.restart();
+      return [{ id: 'prepared', name: 'prepared' }];
+    };
+    current.dependencies.runContract = async (contract, context) => {
+      await context.server.restartWithUploadSessionLimits({ namespaceId: 'prepared', maxStagedBytes: '8' });
+      if (contract.id === 'first') throw new Error('계약 실행 실패');
+      return result(contract);
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.ok(outcome.error instanceof Error);
+    assert.equal(writes.length, 4);
+    assert.deepEqual(writes[3], writes[1]);
+    assert.equal(current.events.filter((event) => event === 'server-stop').length, 1);
+  });
+
+  it('baseline 복원 실패 뒤에는 다음 계약을 실행하지 않고 lifecycle 오류로 반환한다', async () => {
+    const current = fixture('resumable-upload');
+    let policyWrites = 0;
+    current.dependencies.writeCapabilitiesConfig = async (path) => {
+      if (!path.endsWith('resumable-upload.upload-sessions.json')) return;
+      policyWrites += 1;
+      if (policyWrites === 4) throw new Error('baseline 복원 실패');
+    };
+    current.dependencies.provisionCapabilityNamespaces = async (input) => {
+      await input.prepareRestart?.([{ id: 'prepared', name: 'prepared' }]);
+      await input.restart();
+      return [{ id: 'prepared', name: 'prepared' }];
+    };
+    current.dependencies.runContract = async (contract, context) => {
+      current.events.push(`contract:${contract.id}`);
+      await context.server.restartWithUploadSessionLimits({ namespaceId: 'prepared', maxStagedBytes: '8' });
+      return result(contract);
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal((outcome.error as Error).message, 'baseline 복원 실패');
+    assert.deepEqual(
+      current.events.filter((event) => event.startsWith('contract:')),
+      ['contract:first'],
+    );
+    assert.equal(current.events.at(-1), 'server-stop');
+  });
+
   it('계약 실패 결과 뒤에도 다음 계약을 실행하고 서버를 종료한다', async () => {
     const current = fixture();
     current.dependencies.runContract = async (contract) => {

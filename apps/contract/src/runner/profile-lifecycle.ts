@@ -12,6 +12,7 @@ import { CLEANUP_TIMEOUT_MS, cleanupError, withCleanupTimeout } from './cleanup.
 import { prepareSqliteDatabase, type DatabaseHandle } from './database.ts';
 import { preparePostgresDatabase, type PostgresHandle } from './postgres.ts';
 import { PROFILE_CAPABILITIES, PROFILE_ENV, UPLOAD_SESSION_POLICY } from './profiles.ts';
+import type { UploadSessionsConfig } from './provision.ts';
 import {
   EMPTY_CAPABILITIES_CONFIG,
   buildUploadSessionsConfig,
@@ -156,6 +157,10 @@ export async function runProfileLifecycle(
   const cleanupErrors: Error[] = [];
   let executionFailed = false;
   let executionError: unknown;
+  let uploadSessionsBaseline: UploadSessionsConfig | undefined;
+  let activeUploadSessionsConfig: UploadSessionsConfig | undefined;
+  let uploadSessionNamespaceIds = new Set<string>();
+  let uploadSessionPolicyChanged = false;
   try {
     input.signal.throwIfAborted();
     // 계약별 namespace 생성에 필요한 수보다 여유 있게 준비한다.
@@ -173,15 +178,13 @@ export async function runProfileLifecycle(
             prepareRestart: async (namespaces) => {
               if (!needsUploadSessions) return;
               input.signal.throwIfAborted();
-              await deps.writeCapabilitiesConfig(
-                uploadSessionsConfigPath,
-                JSON.stringify(
-                  buildUploadSessionsConfig(
-                    UPLOAD_SESSION_POLICY,
-                    namespaces.map((namespace) => namespace.id),
-                  ),
-                ),
-              );
+              uploadSessionNamespaceIds = new Set(namespaces.map((namespace) => namespace.id));
+              const baseline = buildUploadSessionsConfig(UPLOAD_SESSION_POLICY, [
+                ...uploadSessionNamespaceIds,
+              ]);
+              uploadSessionsBaseline = structuredClone(baseline);
+              activeUploadSessionsConfig = structuredClone(baseline);
+              await deps.writeCapabilitiesConfig(uploadSessionsConfigPath, JSON.stringify(baseline));
             },
             restart: async () => {
               input.signal.throwIfAborted();
@@ -192,23 +195,80 @@ export async function runProfileLifecycle(
     input.signal.throwIfAborted();
     for (const contract of input.contracts) {
       if (input.signal.aborted) break;
-      const result = await deps.runContract(
-        contract,
-        createContractContext({
-          signal: input.signal,
-          baseUrl: server.baseUrl,
-          apiKey,
-          adminKey,
-          server: { restart: () => server.restart() },
-          blobStorage: {
-            stop: () => input.blob.interrupt(),
-            start: () => input.blob.resume(),
-            deleteAllObjects: () => input.blob.deleteAllObjects(),
-          },
-          contractId: contract.id,
-          provisioned,
-        }),
-      );
+      let result: ContractResult;
+      try {
+        result = await deps.runContract(
+          contract,
+          createContractContext({
+            signal: input.signal,
+            baseUrl: server.baseUrl,
+            apiKey,
+            adminKey,
+            server: {
+              restart: () => server.restart(),
+              restartWithUploadSessionLimits: async ({ namespaceId, maxStagedBytes, partSizeBytes }) => {
+                if (!activeUploadSessionsConfig || !uploadSessionsBaseline)
+                  throw new Error('현재 프로파일에는 업로드 세션 정책이 없다.');
+                if (!uploadSessionNamespaceIds.has(namespaceId))
+                  throw new Error(`준비하지 않은 namespace ID다: ${namespaceId}`);
+                if (!/^[1-9][0-9]*$/.test(maxStagedBytes))
+                  throw new Error('maxStagedBytes는 양수 10진 문자열이어야 한다.');
+                const max = BigInt(maxStagedBytes);
+                if (max > 9223372036854775807n)
+                  throw new Error('maxStagedBytes는 signed int64 이하여야 한다.');
+                if (max > BigInt(activeUploadSessionsConfig.global.maxStagedBytes))
+                  throw new Error('namespace maxStagedBytes는 전역 한도를 넘을 수 없다.');
+                if (
+                  partSizeBytes !== undefined &&
+                  (!Number.isSafeInteger(partSizeBytes) ||
+                    partSizeBytes <= 0 ||
+                    partSizeBytes > 2147483647 ||
+                    BigInt(partSizeBytes) > max)
+                )
+                  throw new Error('partSizeBytes는 staging 한도 이하의 양의 안전한 정수여야 한다.');
+                const effectivePartSize =
+                  partSizeBytes ??
+                  activeUploadSessionsConfig.namespaces[namespaceId]?.partSizeBytes ??
+                  activeUploadSessionsConfig.global.partSizeBytes;
+                if (BigInt(effectivePartSize) > max)
+                  throw new Error('유효 partSizeBytes는 staging 한도 이하여야 한다.');
+                const changed: UploadSessionsConfig = {
+                  ...activeUploadSessionsConfig,
+                  namespaces: {
+                    ...activeUploadSessionsConfig.namespaces,
+                    [namespaceId]: {
+                      ...activeUploadSessionsConfig.namespaces[namespaceId],
+                      maxStagedBytes,
+                      ...(partSizeBytes === undefined ? {} : { partSizeBytes }),
+                    },
+                  },
+                };
+                await deps.writeCapabilitiesConfig(uploadSessionsConfigPath, JSON.stringify(changed));
+                activeUploadSessionsConfig = changed;
+                uploadSessionPolicyChanged = true;
+                await server.restart();
+              },
+            },
+            blobStorage: {
+              stop: () => input.blob.interrupt(),
+              start: () => input.blob.resume(),
+              deleteAllObjects: () => input.blob.deleteAllObjects(),
+            },
+            contractId: contract.id,
+            provisioned,
+          }),
+        );
+      } finally {
+        if (uploadSessionPolicyChanged && !input.signal.aborted && uploadSessionsBaseline) {
+          await deps.writeCapabilitiesConfig(
+            uploadSessionsConfigPath,
+            JSON.stringify(uploadSessionsBaseline),
+          );
+          await server.restart();
+          activeUploadSessionsConfig = structuredClone(uploadSessionsBaseline);
+          uploadSessionPolicyChanged = false;
+        }
+      }
       results.push(result);
       // 저장소를 멈춘 계약 뒤에도 다음 계약이 같은 저장소를 사용할 수 있게 한다.
       if (!input.signal.aborted) await input.blob.ensureRunning();

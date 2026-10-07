@@ -9,7 +9,7 @@ const fakeContext: ContractContext = {
   apiKey: 'test-key',
   adminKey: 'test-admin-key',
   client: {} as ContractContext['client'],
-  server: { restart: async () => {} },
+  server: { restart: async () => {}, restartWithUploadSessionLimits: async () => {} },
   blobStorage: { stop: async () => {}, start: async () => {}, deleteAllObjects: async () => {} },
   createNamespace: async () => ({ id: 'id', name: 'name' }),
 };

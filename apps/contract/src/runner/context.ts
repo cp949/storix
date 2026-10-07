@@ -76,7 +76,14 @@ export function createContractContext(
     apiKey: input.apiKey,
     adminKey: input.adminKey,
     client,
-    server: { restart: () => control(() => input.server.restart()) },
+    server: {
+      restart: () => control(() => input.server.restart()),
+      restartWithUploadSessionLimits: (limits: {
+        readonly namespaceId: string;
+        readonly maxStagedBytes: string;
+        readonly partSizeBytes?: number;
+      }) => control(() => input.server.restartWithUploadSessionLimits(limits)),
+    },
     blobStorage: {
       stop: () => control(() => input.blobStorage.stop()),
       start: () => control(() => input.blobStorage.start()),
