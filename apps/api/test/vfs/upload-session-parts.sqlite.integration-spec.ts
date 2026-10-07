@@ -271,6 +271,7 @@ describe('upload parts (SQLite + S3)', () => {
 
   // 전역 staged 한도(8바이트)를 쓰므로 앞선 테스트가 남기는 사용량이 없도록 첫 테스트보다 앞에 둔다.
 
+  // 실제 HTTP와 SQLite 상태를 대조해 크기 초과 거절의 무변경·재생·공간 미예약을 고정한다.
   describe('세션 생성 staging 파일 크기 admission', () => {
     /** admission 요청 뒤 실제 세션·creation key·global/namespace usage 값을 읽는다. */
     async function snapshot(ns: string, key: string, target = app) {
@@ -295,6 +296,7 @@ describe('upload parts (SQLite + S3)', () => {
       };
     }
 
+    /** 같은 mutation scope로 지정한 서버의 세션 생성 정책을 호출한다. */
     function postCreate(ns: string, key: string, path: string, size: string, target = app) {
       return http(target)
         .post(base(ns))

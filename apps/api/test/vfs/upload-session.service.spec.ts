@@ -226,7 +226,9 @@ describe('UploadSessionService lifecycle', () => {
     expect(created.status).toBe(201);
   });
 
+  // 가짜 저장소로 검사 순서·재생 우선·거절 시 저장소 미호출을 고정한다.
   describe('세션 생성 staging 파일 크기 admission', () => {
+    /** 파일 상한과 독립적으로 전역·namespace staging 한도를 설정한다. */
     const withStagingCap = (globalCap: bigint, namespaceCap = globalCap): UploadSessionPolicy => ({
       global: { ...policy.global, maxStagedBytes: globalCap, partSizeBytes: 4, maxActiveSessions: 5 },
       namespaces: {
