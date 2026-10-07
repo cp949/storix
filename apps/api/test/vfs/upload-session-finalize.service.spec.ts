@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from '../../src/vfs/upload-staging-cleanup.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
@@ -35,6 +36,7 @@ describe('UploadSessionFinalizeService', () => {
       null,
       new ContentIngressService(storage, null),
       { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
+      new UploadStagingCleanup(storage, sessions),
     );
     await expect(service.complete(namespaceId, sessionId, 'request')).rejects.toMatchObject({
       code: 'VFS_UPLOAD_PARTS_INCOMPLETE',
@@ -137,6 +139,7 @@ describe('UploadSessionFinalizeService', () => {
       null,
       new ContentIngressService(storage, null),
       { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
+      new UploadStagingCleanup(storage, sessions),
     );
     const first = await service.complete(namespaceId, sessionId, 'first-request');
     expect(final).toBe('abcdefgh');
@@ -219,6 +222,7 @@ describe('UploadSessionFinalizeService', () => {
       null,
       new ContentIngressService(storage, null),
       { findKnownStorageKeys: async () => new Set<string>() } as unknown as BlobRepository,
+      new UploadStagingCleanup(storage, sessions),
     );
     try {
       const pending = service.complete(namespaceId, sessionId, 'request');
@@ -284,6 +288,7 @@ describe('UploadSessionFinalizeService', () => {
         null,
         new ContentIngressService(storage, null),
         blobs,
+        new UploadStagingCleanup(storage, sessions),
       );
       return { service, deleted };
     }

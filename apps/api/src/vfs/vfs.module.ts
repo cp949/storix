@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from './upload-staging-cleanup.js';
 import { VfsSnapshotService } from './vfs-snapshot.service.js';
 import { VfsSnapshotController } from './vfs-snapshot.controller.js';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
@@ -35,6 +36,7 @@ import { ContentIngressService } from './content-ingress.service.js';
     VfsTrashController,
   ],
   providers: [
+    UploadStagingCleanup,
     VfsSnapshotService,
     VfsService,
     ContentService,

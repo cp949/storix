@@ -216,6 +216,39 @@ PUT 정착과 예약량 해제:
 - GC는 key를 반복 정리하지만 과금 해제 근거는 만들지 않는다.
 - 이 정리에는 GC 잡 실행이 필요하다.
 
+### staging 정리 module
+
+[`UploadStagingCleanup`](../../apps/api/src/vfs/upload-staging-cleanup.ts)은 다음 정리를 담당한다.
+
+- PUT 정착 후 예약 정리.
+- 만료 예약 재시도.
+- 종결 세션의 저장 조각 정리.
+- tombstone 정리.
+
+caller는 정확한 `sessionId`·`partIndex`·`stagingKey` 또는 tombstone key와 정리 의도를 전달한다.
+저장 조각·tombstone 정리에서 module은 다음 순서를 관리한다.
+
+1. DELETE 전 정착 snapshot 또는 조각 state를 관측한다.
+2. storage DELETE를 실행한다.
+3. 조건부 정산을 수행한다.
+
+- `deleted`는 storage DELETE의 성공 확인이다. `accountingRecorded`는 DB 변경 적용 여부다.
+- `refundedBytes`는 해당 DB transaction이 실제로 반환한 바이트의 정확한 10진 문자열이다. DELETE가 성공해도 정착 증거가 부족하면 `'0'`이다.
+- tombstone은 DELETE 전에 관측한 non-null `putSettledAt`이 usage 잠금 후 현재 값과 일치할 때만 과금을 반환한다.
+- DELETE 중 PUT가 정착하면 다음 DELETE가 정착을 관측한 뒤 반환할 수 있다.
+- DELETE 실패는 원래 오류를 포함한 `delete-failed` 결과다. 정착한 예약은 실패 뒤에도 정착 기록·CLEANUP·재과금을 기록한다.
+- DB 오류는 caller에 전달한다. 상세 결과는 transaction commit 뒤 반환하며 사후 사용량 조회로 계산하지 않는다.
+- 만료 예약 재시도의 `AbortSignal`은 deadline 뒤 다음 I/O 시작을 막는다. 진행 중 I/O를 취소하거나 PUT 정착을 입증하지 않는다.
+- GC의 `deletedStagingObjects`는 `deleted` 결과의 `accountingRecorded`가 참이면 증가한다. 반환 바이트가 `'0'`인 적용도 포함한다.
+
+[`VfsUploadSessionRepository`](../../apps/api/src/persistence/vfs-upload-session.repository.ts)는 다음을 담당한다.
+
+- global → namespace 순서의 usage 잠금.
+- 세대·state 재확인.
+- 과금 변경과 상세 결과의 원자 확정.
+
+module은 DB 잠금 밖에서 storage DELETE를 실행한다.
+
 온라인 PUT와 multipart GC 소유권은 [api ADR-0045](../../apps/api/docs/adr/0045-gc-incomplete-multipart-upload.md)를 따른다.
 part lease 만료는 storage worker 종료 근거가 아니다.
 GC는 `key + uploadId` abort 뒤에도 staging 예약량을 정산하지 않는다.

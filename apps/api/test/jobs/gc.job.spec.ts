@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from '../../src/vfs/upload-staging-cleanup.js';
 import { jest } from '@jest/globals';
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
@@ -673,6 +674,11 @@ describe('GcJob', () => {
         ]),
       findExpiredReservedParts: async () => [],
       findCleanupTombstones: async () => [],
+      findCleanupPart: async () => ({ state: 'CLEANUP' as const }),
+      markStagingObjectDeletedDetailed: async () => ({
+        applied: await uploads.markStagingObjectDeleted(),
+        refundedBytes: '0',
+      }),
       markStagingObjectDeleted: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
       findKnownStagingKeys: async (keys: readonly string[]) =>
         new Set(keys.filter((key) => ['upload-staging/active', 'upload-staging/cleanup'].includes(key))),
@@ -687,6 +693,16 @@ describe('GcJob', () => {
         makeConfig(3600),
         undefined,
         uploads as unknown as VfsUploadSessionRepository,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        new UploadStagingCleanup(storage.asBlobStorage(), uploads as unknown as VfsUploadSessionRepository),
       ).run();
     } finally {
       log.mockRestore();
@@ -722,6 +738,16 @@ describe('GcJob', () => {
           .slice(0, batchSize),
       findExpiredReservedParts: async () => [],
       findCleanupTombstones: async () => [],
+      findCleanupPart: async (sessionId: string, partIndex: number, stagingKey: string) => {
+        const part = all.find(
+          (p) => p.sessionId === sessionId && p.partIndex === partIndex && p.stagingKey === stagingKey,
+        );
+        return part ? { state: part.state } : null;
+      },
+      markStagingObjectDeletedDetailed: async (sessionId: string, partIndex: number) => ({
+        applied: await uploads.markStagingObjectDeleted(sessionId, partIndex),
+        refundedBytes: '0',
+      }),
       markStagingObjectDeleted: async (_sessionId: string, partIndex: number) => {
         marked.push(partIndex);
         return true;
@@ -740,6 +766,16 @@ describe('GcJob', () => {
       makeConfig(3600),
       undefined,
       uploads as unknown as VfsUploadSessionRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      new UploadStagingCleanup(storage.asBlobStorage(), uploads as unknown as VfsUploadSessionRepository),
     );
     const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     try {
@@ -775,6 +811,8 @@ describe('GcJob', () => {
         retireExpiredPartReservation: async () => true,
         findCleanupParts: async () => [],
         findCleanupTombstones: async () => [],
+        findCleanupPart: async () => ({ state: 'CLEANUP' as const }),
+        markStagingObjectDeletedDetailed: async () => ({ applied: true, refundedBytes: '0' }),
         markStagingObjectDeleted: async () => true,
         markTombstoneDeleted: async () => true,
         findKnownStagingKeys: async () => new Set<string>(),
@@ -801,6 +839,12 @@ describe('GcJob', () => {
         deps.cursors,
         deps.idempotency as unknown as IdempotencyReceiptRetentionRepository,
         deps.purge as unknown as NamespacePurgeRepository,
+        undefined,
+        undefined,
+        new UploadStagingCleanup(
+          (deps.storage ?? new PagedStorage()).asBlobStorage(),
+          deps.uploads as unknown as VfsUploadSessionRepository,
+        ),
       );
     }
 
@@ -1030,4 +1074,17 @@ describe('GcJob', () => {
       expect(settle.mock.calls.map((call) => call[2])).toEqual([null, 'ns-9']);
     });
   });
+});
+
+it('upload sessions가 있는데 staging cleanup이 없으면 시작 시점에 거부한다', () => {
+  expect(
+    () =>
+      new GcJob(
+        new PagedStorage().asBlobStorage(),
+        new BlobRepositoryDouble().asBlobRepository(),
+        { get: () => undefined } as unknown as ConfigService,
+        undefined,
+        {} as VfsUploadSessionRepository,
+      ),
+  ).toThrow('UploadStagingCleanup required when upload sessions are configured');
 });

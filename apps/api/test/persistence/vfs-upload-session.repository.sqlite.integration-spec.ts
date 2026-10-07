@@ -485,4 +485,104 @@ describe('upload session repository (SQLite)', () => {
     ).toBe(1);
     expect(await repository.findForStatus(NAMESPACE, id)).toBeNull();
   });
+  /** 기존 생성·예약 경로로 상세 정산용 4바이트 예약을 만든다. */
+  async function detailedReservation(key = 'upload-staging/detailed') {
+    const created = await repository.createSession({ ...input(), sizeBytes: '4', partSizeBytes: 4 }, caps);
+    if (created.kind !== 'created') throw new Error('expected creation');
+    const id = created.session.id;
+    expect((await repository.reservePart(id, 0, '4', key, caps)).kind).toBe('reserved');
+    return { id, key };
+  }
+
+  /** global과 namespace 사용량을 정확한 문자열로 검사한다. */
+  async function expectStaged(bytes: string) {
+    expect((await repository.readNamespaceUsage(NAMESPACE)).stagedBytes).toBe(bytes);
+    expect(
+      await db.query("SELECT CAST(staged_bytes AS TEXT) AS value FROM vfs_upload_usage WHERE id = 'global'"),
+    ).toEqual([{ value: bytes }]);
+  }
+
+  /** 예약을 만료·retire하여 PUT 미정착 tombstone을 만든다. */
+  async function retire(id: string, key: string) {
+    await db
+      .getRepository(VfsUploadPartEntity)
+      .update({ sessionId: id, partIndex: 0 }, { leaseExpiresAt: new Date(0) });
+    expect(await repository.retireExpiredPartReservation(id, 0, key)).toBe(true);
+  }
+
+  it('정착 증거 없는 tombstone 삭제는 기록만 적용하고 반환 바이트는 0이다', async () => {
+    const { id, key } = await detailedReservation();
+    await retire(id, key);
+    expect(await repository.markTombstoneDeletedDetailed(key, null)).toEqual({
+      applied: true,
+      refundedBytes: '0',
+    });
+    await expectStaged('4');
+    expect((await repository.findCleanupTombstone(key))?.putSettledAt).toBeNull();
+  });
+
+  it('같은 정착을 관측한 tombstone 재삭제는 4바이트를 한 번만 반환한다', async () => {
+    const { id, key } = await detailedReservation();
+    await retire(id, key);
+    expect(await repository.releasePartReservationDetailed(id, 0, true, key)).toEqual({
+      applied: true,
+      refundedBytes: '0',
+    });
+    const observed = await repository.findCleanupTombstone(key);
+    expect(observed?.putSettledAt).toBeInstanceOf(Date);
+    expect(await repository.markTombstoneDeletedDetailed(key, observed!.putSettledAt)).toEqual({
+      applied: true,
+      refundedBytes: '4',
+    });
+    expect(await repository.markTombstoneDeletedDetailed(key, observed!.putSettledAt)).toEqual({
+      applied: false,
+      refundedBytes: '0',
+    });
+    await expectStaged('0');
+  });
+
+  it('이전 key 정산은 새 예약의 4바이트를 보존한다', async () => {
+    const { id, key } = await detailedReservation();
+    await retire(id, key);
+    await repository.markTombstoneDeleted(key, null);
+    expect((await repository.reservePart(id, 0, '4', 'upload-staging/new-detailed', caps)).kind).toBe(
+      'reserved',
+    );
+    const before = await repository.findPart(id, 0);
+    expect(await repository.releasePartReservationDetailed(id, 0, false, key)).toEqual({
+      applied: true,
+      refundedBytes: '4',
+    });
+    expect(await repository.findPart(id, 0)).toEqual(before);
+    await expectStaged('4');
+  });
+
+  it('정리 결과가 반환 바이트를 확정하기 전에 DB 실패하면 성공 결과를 반환하지 않는다', async () => {
+    const { id, key } = await detailedReservation();
+    await db.query(
+      "CREATE TRIGGER fail_usage BEFORE UPDATE ON vfs_upload_usage BEGIN SELECT RAISE(ABORT, 'usage failure'); END",
+    );
+    await expect(repository.releasePartReservationDetailed(id, 0, false, key)).rejects.toThrow();
+    expect((await repository.findPart(id, 0))?.state).toBe('RESERVED');
+    await expectStaged('4');
+  });
+
+  it('늦은 PUT의 DELETED 조각 재과금은 반환 바이트가 0이다', async () => {
+    const { id, key } = await detailedReservation();
+    expect(await repository.releasePartReservationDetailed(id, 0, true, key)).toEqual({
+      applied: true,
+      refundedBytes: '0',
+    });
+    expect(await repository.findCleanupPart(id, 0, key)).toEqual({ state: 'CLEANUP' });
+    expect(await repository.markStagingObjectDeletedDetailed(id, 0, key, 'CLEANUP')).toEqual({
+      applied: true,
+      refundedBytes: '4',
+    });
+    await expectStaged('0');
+    expect(await repository.releasePartReservationDetailed(id, 0, true, key)).toEqual({
+      applied: true,
+      refundedBytes: '0',
+    });
+    await expectStaged('4');
+  });
 });

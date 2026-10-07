@@ -13,6 +13,15 @@ import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
 // staging_key 대조 질의 한 번에 넣는 key 수. SQLite 변수 제한을 피하려고 두 드라이버 모두 청크로 나눈다.
 const KEY_LOOKUP_CHUNK_SIZE = 1000;
 
+/** usage 잠금과 조건부 변경을 수행한 transaction의 확정 결과다. */
+export interface UploadStagingAccountingResult {
+  /** 기존 boolean 정산 연산과 동일한 변경 적용 여부다. */
+  readonly applied: boolean;
+
+  /** 실제 차감한 바이트의 10진 문자열이다. 정착 기록·재과금·보류는 '0'이다. */
+  readonly refundedBytes: string;
+}
+
 export interface UploadSessionCaps {
   readonly global: { readonly maxStagedBytes: bigint; readonly maxActiveSessions: number };
   readonly namespace: { readonly maxStagedBytes: bigint; readonly maxActiveSessions: number };
@@ -388,43 +397,66 @@ export class VfsUploadSessionRepository {
     objectMayExist = false,
     stagingKey?: string,
   ): Promise<boolean> {
+    return (await this.releasePartReservationAccounting(sessionId, partIndex, objectMayExist, stagingKey))
+      .applied;
+  }
+
+  @classifyPersistenceOperation
+  async releasePartReservationDetailed(
+    sessionId: string,
+    partIndex: number,
+    objectMayExist: boolean,
+    stagingKey: string,
+  ): Promise<UploadStagingAccountingResult> {
+    return this.releasePartReservationAccounting(sessionId, partIndex, objectMayExist, stagingKey);
+  }
+
+  private async releasePartReservationAccounting(
+    sessionId: string,
+    partIndex: number,
+    objectMayExist: boolean,
+    stagingKey?: string,
+  ): Promise<UploadStagingAccountingResult> {
     return this.dataSource.transaction(async (manager) => {
       const session = await manager.getRepository(VfsUploadSessionEntity).findOneBy({ id: sessionId });
-      if (!session) return false;
+      if (!session) return { applied: false, refundedBytes: '0' };
       const usage = await this.lockUsage(manager, session.namespaceId);
       const repo = manager.getRepository(VfsUploadPartEntity);
       const part = await repo.findOneBy({ sessionId, partIndex });
       if (!part || (stagingKey !== undefined && part.stagingKey !== stagingKey)) {
-        if (stagingKey === undefined) return false;
+        if (stagingKey === undefined) return { applied: false, refundedBytes: '0' };
         const tombstones = manager.getRepository(VfsUploadStagingCleanupEntity);
         const old = await tombstones.findOneBy({ stagingKey, sessionId, partIndex });
-        if (!old) return false;
+        if (!old) return { applied: false, refundedBytes: '0' };
         if (objectMayExist) {
           await tombstones.update({ stagingKey }, { putSettledAt: new Date() });
         } else {
           await tombstones.delete({ stagingKey });
           await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(old.sizeBytes));
+          return { applied: true, refundedBytes: String(old.sizeBytes) };
         }
-        return true;
+        return { applied: true, refundedBytes: '0' };
       }
       if (part.state === 'DELETED') {
-        if (!objectMayExist || stagingKey === undefined || part.objectDeletedAt === null) return false;
+        if (!objectMayExist || stagingKey === undefined || part.objectDeletedAt === null)
+          return { applied: false, refundedBytes: '0' };
         const restored = await repo.update(
           { sessionId, partIndex, stagingKey, state: 'DELETED' },
           { state: 'CLEANUP', objectDeletedAt: null, updatedAt: new Date() },
         );
-        if (restored.affected !== 1) return false;
+        if (restored.affected !== 1) return { applied: false, refundedBytes: '0' };
         await this.changeUsage(manager, usage, 'stagedBytes', BigInt(part.sizeBytes));
-        return true;
+        return { applied: true, refundedBytes: '0' };
       }
-      if (part.state !== 'RESERVED') return false;
+      if (part.state !== 'RESERVED') return { applied: false, refundedBytes: '0' };
       if (objectMayExist)
         await repo.update({ sessionId, partIndex }, { state: 'CLEANUP', updatedAt: new Date() });
       else {
         await repo.delete({ sessionId, partIndex });
         await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(part.sizeBytes));
+        return { applied: true, refundedBytes: String(part.sizeBytes) };
       }
-      return true;
+      return { applied: true, refundedBytes: '0' };
     });
   }
 
@@ -873,6 +905,38 @@ export class VfsUploadSessionRepository {
   }
 
   @classifyPersistenceOperation
+  async findCleanupTombstone(stagingKey: string): Promise<{ readonly putSettledAt: Date | null } | null> {
+    const row = await this.dataSource
+      .getRepository(VfsUploadStagingCleanupEntity)
+      .findOne({ where: { stagingKey }, select: { stagingKey: true, putSettledAt: true } });
+    return row ? { putSettledAt: row.putSettledAt } : null;
+  }
+
+  @classifyPersistenceOperation
+  async findCleanupPart(
+    sessionId: string,
+    partIndex: number,
+    stagingKey: string,
+  ): Promise<{ readonly state: 'STORED' | 'CLEANUP' } | null> {
+    const part = await this.dataSource
+      .getRepository(VfsUploadPartEntity)
+      .createQueryBuilder('part')
+      .innerJoin(VfsUploadSessionEntity, 'session', 'session.id = part.session_id')
+      .select(['part.sessionId', 'part.partIndex', 'part.state'])
+      .where(
+        'part.session_id = :sessionId AND part.part_index = :partIndex AND part.staging_key = :stagingKey',
+        { sessionId, partIndex, stagingKey },
+      )
+      .andWhere('(part.state = :cleanup OR (session.state IN (:...states) AND part.state = :stored))', {
+        cleanup: 'CLEANUP',
+        states: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'],
+        stored: 'STORED',
+      })
+      .getOne();
+    return part && (part.state === 'STORED' || part.state === 'CLEANUP') ? { state: part.state } : null;
+  }
+
+  @classifyPersistenceOperation
   async findCleanupParts(
     after: Pick<VfsUploadPartEntity, 'sessionId' | 'partIndex'> | null = null,
     batchSize = 500,
@@ -940,13 +1004,21 @@ export class VfsUploadSessionRepository {
 
   @classifyPersistenceOperation
   async markTombstoneDeleted(stagingKey: string, observedPutSettledAt: Date | null): Promise<boolean> {
+    return (await this.markTombstoneDeletedDetailed(stagingKey, observedPutSettledAt)).applied;
+  }
+
+  @classifyPersistenceOperation
+  async markTombstoneDeletedDetailed(
+    stagingKey: string,
+    observedPutSettledAt: Date | null,
+  ): Promise<UploadStagingAccountingResult> {
     return this.dataSource.transaction(async (manager) => {
       const tombstones = manager.getRepository(VfsUploadStagingCleanupEntity);
       const old = await tombstones.findOneBy({ stagingKey });
-      if (!old) return false;
+      if (!old) return { applied: false, refundedBytes: '0' };
       const usage = await this.lockUsage(manager, old.namespaceId);
       const current = await tombstones.findOneBy({ stagingKey });
-      if (!current) return false;
+      if (!current) return { applied: false, refundedBytes: '0' };
       if (
         observedPutSettledAt !== null &&
         current.putSettledAt !== null &&
@@ -954,10 +1026,11 @@ export class VfsUploadSessionRepository {
       ) {
         await tombstones.delete({ stagingKey });
         await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(current.sizeBytes));
+        return { applied: true, refundedBytes: String(current.sizeBytes) };
       } else {
         await tombstones.update({ stagingKey }, { deletedAt: new Date() });
       }
-      return true;
+      return { applied: true, refundedBytes: '0' };
     });
   }
 
@@ -994,25 +1067,39 @@ export class VfsUploadSessionRepository {
     stagingKey: string,
     expectedState: VfsUploadPartState,
   ): Promise<boolean> {
-    if (expectedState === 'DELETED' || expectedState === 'RESERVED') return false;
+    return (await this.markStagingObjectDeletedDetailed(sessionId, partIndex, stagingKey, expectedState))
+      .applied;
+  }
+
+  @classifyPersistenceOperation
+  async markStagingObjectDeletedDetailed(
+    sessionId: string,
+    partIndex: number,
+    stagingKey: string,
+    expectedState: VfsUploadPartState,
+  ): Promise<UploadStagingAccountingResult> {
+    if (expectedState === 'DELETED' || expectedState === 'RESERVED')
+      return { applied: false, refundedBytes: '0' };
     return this.dataSource.transaction(async (manager) => {
       const sessions = manager.getRepository(VfsUploadSessionEntity);
       const session = await sessions.findOneBy({ id: sessionId });
-      if (!session) return false;
+      if (!session) return { applied: false, refundedBytes: '0' };
       const usage = await this.lockUsage(manager, session.namespaceId);
       const currentSession = await sessions.findOneBy({ id: sessionId });
-      if (!currentSession) return false;
+      if (!currentSession) return { applied: false, refundedBytes: '0' };
       const repo = manager.getRepository(VfsUploadPartEntity);
       const part = await repo.findOneBy({ sessionId, partIndex });
-      if (!part || part.state !== expectedState || part.stagingKey !== stagingKey) return false;
-      if (currentSession.state === 'OPEN' && expectedState !== 'CLEANUP') return false;
+      if (!part || part.state !== expectedState || part.stagingKey !== stagingKey)
+        return { applied: false, refundedBytes: '0' };
+      if (currentSession.state === 'OPEN' && expectedState !== 'CLEANUP')
+        return { applied: false, refundedBytes: '0' };
       const deleted = await repo.update(
         { sessionId, partIndex, stagingKey, state: expectedState },
         { state: 'DELETED', objectDeletedAt: new Date(), updatedAt: new Date() },
       );
-      if (deleted.affected !== 1) return false;
+      if (deleted.affected !== 1) return { applied: false, refundedBytes: '0' };
       await this.changeUsage(manager, usage, 'stagedBytes', -BigInt(part.sizeBytes));
-      return true;
+      return { applied: true, refundedBytes: String(part.sizeBytes) };
     });
   }
 

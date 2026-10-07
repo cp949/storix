@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from './upload-staging-cleanup.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -44,6 +45,7 @@ export class UploadSessionFinalizeService {
     @Inject(MASTER_KEY) private readonly masterKey: Buffer | null,
     private readonly contentIngress: ContentIngressService,
     private readonly blobs: BlobRepository,
+    private readonly stagingCleanup: UploadStagingCleanup,
   ) {}
 
   async complete(namespaceId: string, rawSessionId: string, requestId: string): Promise<MutationHttpResult> {
@@ -111,13 +113,11 @@ export class UploadSessionFinalizeService {
         // failed delete or accounting update remains visible to the regular GC.
         for (const part of parts) {
           try {
-            await this.storage.delete(part.stagingKey);
-            await this.sessions.markStagingObjectDeleted(
+            await this.stagingCleanup.cleanupStoredPart({
               sessionId,
-              part.partIndex,
-              part.stagingKey,
-              'STORED',
-            );
+              partIndex: part.partIndex,
+              stagingKey: part.stagingKey,
+            });
           } catch {
             // The FAILED result is already committed; retry cleanup in GC.
           }

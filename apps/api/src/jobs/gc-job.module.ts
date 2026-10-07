@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from '../vfs/upload-staging-cleanup.js';
 import { NamespaceDeletionCleanup } from './namespace-deletion.cleanup.js';
 import { Logger, Module } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -15,6 +16,7 @@ import { GcLock } from './gc-lock.js';
 @Module({
   imports: [PersistenceModule, StorageModule],
   providers: [
+    UploadStagingCleanup,
     {
       provide: STORAGE_PUT_EXECUTION_ID,
       useFactory: async (ownership: StoragePutOwnershipRepository): Promise<string> => {

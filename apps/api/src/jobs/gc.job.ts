@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from '../vfs/upload-staging-cleanup.js';
 import {
   NamespaceDeletionCleanup,
   type NamespaceDeletionPage,
@@ -112,7 +113,10 @@ export class GcJob {
     @Inject(StoragePutOwnershipRepository)
     private readonly putOwnership?: StoragePutOwnershipRepository,
     @Optional() @Inject(STORAGE_PUT_EXECUTION_ID) private readonly executionId?: string,
+    @Optional() private readonly stagingCleanup?: UploadStagingCleanup,
   ) {
+    if (uploadSessions && !stagingCleanup)
+      throw new Error('UploadStagingCleanup required when upload sessions are configured');
     this.gracePeriodSeconds = parsePositiveInt(
       config.get<string>('STORIX_ORPHAN_GRACE_PERIOD'),
       86400,
@@ -304,16 +308,9 @@ export class GcJob {
         const parts = await uploads.findCleanupParts(after, CLEANUP_BATCH_SIZE);
         for (const part of parts) {
           try {
-            await this.storage.delete(part.stagingKey);
-            if (
-              await uploads.markStagingObjectDeleted(
-                part.sessionId,
-                part.partIndex,
-                part.stagingKey,
-                part.state,
-              )
-            )
-              deleted++;
+            const result = await this.stagingCleanup!.cleanupStoredPart(part);
+            if (result.kind === 'delete-failed') throw result.error;
+            if (result.kind === 'deleted' && result.accountingRecorded) deleted++;
           } catch (error) {
             this.logger.error(`staging object 삭제 실패: ${part.stagingKey}`, error);
           }
@@ -337,10 +334,9 @@ export class GcJob {
         const old = await uploads.findCleanupTombstones(after, CLEANUP_BATCH_SIZE);
         for (const part of old) {
           try {
-            await this.storage.delete(part.stagingKey);
-            // The observed PUT settlement belongs to this delete attempt. A PUT
-            // settling while delete is in flight needs another delete before refund.
-            if (await uploads.markTombstoneDeleted(part.stagingKey, part.putSettledAt)) deleted++;
+            const result = await this.stagingCleanup!.cleanupTombstone(part.stagingKey);
+            if (result.kind === 'delete-failed') throw result.error;
+            if (result.kind === 'deleted' && result.accountingRecorded) deleted++;
           } catch (error) {
             this.logger.error(`stale staging object 삭제 실패: ${part.stagingKey}`, error);
           }

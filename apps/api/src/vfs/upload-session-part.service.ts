@@ -1,3 +1,4 @@
+import { UploadStagingCleanup } from './upload-staging-cleanup.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
@@ -56,6 +57,7 @@ export class UploadSessionPartService {
     @Inject(BLOB_STORAGE) private readonly storage: BlobStorage,
     private readonly contentIngress: ContentIngressService,
     config: ConfigService,
+    private readonly stagingCleanup: UploadStagingCleanup,
   ) {
     this.maxDurationMs =
       parseMaxUploadSeconds(config.get<string>('STORIX_MUTATION_MAX_UPLOAD_SECONDS')) * 1000;
@@ -126,14 +128,16 @@ export class UploadSessionPartService {
         existing?.state === 'RESERVED' &&
         (!existing.leaseExpiresAt || existing.leaseExpiresAt <= new Date())
       ) {
-        const retired = await Promise.race([
-          this.sessions.retireExpiredPartReservation(sessionId, index, existing.stagingKey),
+        const cleanup = await Promise.race([
+          this.stagingCleanup.cleanupExpiredReservation(
+            { sessionId, partIndex: index, stagingKey: existing.stagingKey },
+            deadline.signal,
+          ),
           deadline.promise,
         ]);
-        if (!retired)
+        if (cleanup.kind === 'skipped')
           throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
-        await Promise.race([this.storage.delete(existing.stagingKey), deadline.promise]);
-        await Promise.race([this.sessions.markTombstoneDeleted(existing.stagingKey, null), deadline.promise]);
+        if (cleanup.kind === 'delete-failed') throw cleanup.error;
       } else if (existing && existing.state !== 'DELETED') {
         throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
       }
@@ -396,26 +400,25 @@ export class UploadSessionPartService {
     timer: NodeJS.Timeout;
     promise: Promise<never>;
     expired: () => boolean;
+    signal: AbortSignal;
   } {
+    const controller = new AbortController();
     let expired = false;
     let timer!: NodeJS.Timeout;
     const promise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         expired = true;
         const error = new Error('upload part duration exceeded');
+        controller.abort(error);
         source.destroy(error);
         reject(error);
       }, this.maxDurationMs);
     });
     timer.unref();
-    return { timer, promise, expired: () => expired };
+    return { timer, promise, expired: () => expired, signal: controller.signal };
   }
 
   private async cleanupReservation(sessionId: string, index: number, key: string): Promise<void> {
-    const deleted = await this.storage.delete(key).then(
-      () => true,
-      () => false,
-    );
-    await this.sessions.releasePartReservation(sessionId, index, !deleted, key);
+    await this.stagingCleanup.cleanupSettledReservation({ sessionId, partIndex: index, stagingKey: key });
   }
 }

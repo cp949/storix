@@ -1,3 +1,5 @@
+import { UploadStagingCleanup } from '../../src/vfs/upload-staging-cleanup.js';
+import { jest } from '@jest/globals';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ConfigService } from '@nestjs/config';
@@ -32,6 +34,9 @@ function fixture(
     }
   >();
   const retired = new Map<string, boolean>();
+  let beforePutSettles: (() => Promise<void>) | null = null;
+  let beforeRetire: (() => Promise<void>) | null = null;
+  let beforeDelete: (() => Promise<void>) | null = null;
   let failPut = false;
   let failDelete = false;
   let loseCommitAck = false;
@@ -53,6 +58,7 @@ function fixture(
         });
       const chunks: Buffer[] = [];
       for await (const chunk of source) chunks.push(Buffer.from(chunk as Buffer));
+      await beforePutSettles?.();
       if (stallPut)
         await new Promise<void>((resolve) => {
           finishPut = resolve;
@@ -61,6 +67,7 @@ function fixture(
       if (failPut) throw new Error('put uncertain');
     },
     async delete(key: string) {
+      await beforeDelete?.();
       if (deleteDelayMs) await new Promise((resolve) => setTimeout(resolve, deleteDelayMs));
       if (failDelete) throw new Error('delete unavailable');
       objects.delete(key);
@@ -154,6 +161,7 @@ function fixture(
       return true;
     },
     async retireExpiredPartReservation(_id: string, index: number, key: string) {
+      await beforeRetire?.();
       const row = rows.get(index);
       if (!row || row.stagingKey !== key || row.state !== 'RESERVED' || row.leaseExpiresAt > new Date())
         return false;
@@ -174,6 +182,14 @@ function fixture(
       return { expiresAt: session.expiresAt };
     },
   } as unknown as VfsUploadSessionRepository;
+  repo.releasePartReservationDetailed = async (id, index, mayExist, key) => ({
+    applied: await repo.releasePartReservation(id, index, mayExist, key),
+    refundedBytes: '0',
+  });
+  repo.markTombstoneDeletedDetailed = async (key, observed) => ({
+    applied: await repo.markTombstoneDeleted(key, observed),
+    refundedBytes: '0',
+  });
   const nodes = {
     async getRoot() {
       return { id: 'root' };
@@ -201,10 +217,21 @@ function fixture(
     storage,
     new ContentIngressService(storage, Buffer.alloc(32, 7)),
     new ConfigService(durationSeconds ? { STORIX_MUTATION_MAX_UPLOAD_SECONDS: durationSeconds } : {}),
+    new UploadStagingCleanup(storage, repo),
   );
   return {
     service,
     session,
+    retired,
+    setBeforePutSettles: (hook: () => Promise<void>) => {
+      beforePutSettles = hook;
+    },
+    setBeforeRetire: (hook: () => Promise<void>) => {
+      beforeRetire = hook;
+    },
+    setBeforeDelete: (hook: () => Promise<void>) => {
+      beforeDelete = hook;
+    },
     objects,
     rows,
     setFailPut: (value: boolean) => {
@@ -628,4 +655,121 @@ describe('조각 X-Content-Sha256 검증', () => {
       sha256: sha('abcd'),
     });
   });
+});
+
+/** 타이머 경과와 저장소·repository 정착 순서를 sleep 없이 고정한다. */
+function deadlineGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+/** 이전 세대의 만료 예약과 남은 객체를 준비한다. */
+function expiredPart(f: ReturnType<typeof fixture>) {
+  const key = 'upload-staging/expired-deadline';
+  f.rows.set(0, {
+    sizeBytes: '4',
+    stagingKey: key,
+    digest: null,
+    encryptionIv: null,
+    state: 'RESERVED',
+    leaseExpiresAt: new Date(0),
+  });
+  f.objects.set(key, Buffer.from('old!'));
+  return key;
+}
+
+it('retire 대기 중 deadline 후 DELETE를 시작하지 않는다', async () => {
+  jest.useFakeTimers();
+  try {
+    const f = fixture(false, '4', '1');
+    const key = expiredPart(f);
+    const started = deadlineGate();
+    const finish = deadlineGate();
+    f.setBeforeRetire(async () => {
+      started.resolve();
+      await finish.promise;
+    });
+    const body = source('abcd');
+    body.on('error', () => undefined);
+    const request = f.service.putPart(namespaceId, sessionId, '0', body, '4', 'req');
+    const rejected = expect(request).rejects.toThrow('upload part duration exceeded');
+    await started.promise;
+    await jest.advanceTimersByTimeAsync(1000);
+    await rejected;
+    finish.resolve();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(f.objects.get(key)?.toString()).toBe('old!');
+    expect(f.retired.get(key)).toBe(false);
+    expect(f.rows.size).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('DELETE 대기 중 deadline 후 mark와 새 PUT를 시작하지 않는다', async () => {
+  jest.useFakeTimers();
+  try {
+    const f = fixture(false, '4', '1');
+    const key = expiredPart(f);
+    const started = deadlineGate();
+    const finish = deadlineGate();
+    f.setBeforeDelete(async () => {
+      started.resolve();
+      await finish.promise;
+    });
+    const body = source('abcd');
+    body.on('error', () => undefined);
+    const request = f.service.putPart(namespaceId, sessionId, '0', body, '4', 'req');
+    const rejected = expect(request).rejects.toThrow('upload part duration exceeded');
+    await started.promise;
+    await jest.advanceTimersByTimeAsync(1000);
+    await rejected;
+    finish.resolve();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(f.objects.size).toBe(0);
+    expect(f.retired.get(key)).toBe(false);
+    expect(f.rows.size).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('deadline 이후 정착한 PUT 정리는 끝까지 수행한다', async () => {
+  jest.useFakeTimers();
+  try {
+    const f = fixture(false, '4', '1');
+    const putStarted = deadlineGate();
+    const putFinish = deadlineGate();
+    const deleteStarted = deadlineGate();
+    const deleteFinish = deadlineGate();
+    f.setBeforePutSettles(async () => {
+      putStarted.resolve();
+      await putFinish.promise;
+    });
+    f.setBeforeDelete(async () => {
+      deleteStarted.resolve();
+      await deleteFinish.promise;
+    });
+    const body = source('abcd');
+    body.on('error', () => undefined);
+    const request = f.service.putPart(namespaceId, sessionId, '0', body, '4', 'req');
+    const rejected = expect(request).rejects.toThrow('upload part duration exceeded');
+    await putStarted.promise;
+    await jest.advanceTimersByTimeAsync(1000);
+    await rejected;
+    expect(f.rows.get(0)?.state).toBe('RESERVED');
+    putFinish.resolve();
+    await deleteStarted.promise;
+    expect(f.objects.size).toBe(1);
+    expect(f.rows.get(0)?.state).toBe('RESERVED');
+    deleteFinish.resolve();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(f.objects.size).toBe(0);
+    expect(f.rows.size).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
 });
