@@ -23,6 +23,7 @@ import {
 import { parseSha256Header } from './sha256-header.js';
 import { VfsNamespaceNotFoundError, VfsPartChecksumMismatchError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
+import { UploadSessionStagingFileTooLargeError } from './upload-session-file-size.policy.js';
 
 class UploadPartError extends DomainError {
   constructor(
@@ -184,6 +185,14 @@ export class UploadSessionPartService {
     if (reserved.kind === 'limit') {
       clearTimeout(deadline.timer);
       throw new UploadPartError('VFS_UPLOAD_STAGING_LIMIT_EXCEEDED', 413, '임시 저장량 상한 초과');
+    }
+    if (reserved.kind === 'file-too-large') {
+      clearTimeout(deadline.timer);
+      const maxStagedBytes =
+        this.policy.global.maxStagedBytes < namespacePolicy.maxStagedBytes
+          ? this.policy.global.maxStagedBytes
+          : namespacePolicy.maxStagedBytes;
+      throw new UploadSessionStagingFileTooLargeError(BigInt(session.sizeBytes), maxStagedBytes);
     }
     if (reserved.kind === 'closed') {
       clearTimeout(deadline.timer);

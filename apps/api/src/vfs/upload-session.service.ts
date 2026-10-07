@@ -29,6 +29,7 @@ import {
   type UploadSessionPolicy,
 } from './upload-session-config.js';
 import { assertUploadSessionFileFitsStaging } from './upload-session-file-size.policy.js';
+import { assessUploadSessionStaging } from './upload-session-staging.policy.js';
 import {
   VfsInvalidMutationRequestError,
   VfsInvalidExpiryError,
@@ -221,12 +222,18 @@ export class UploadSessionService {
       throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     // 발급 ID는 소문자다. 대문자 입력은 DB 비교 방식과 무관하게 같은 세션으로 다룬다.
     const sessionId = rawSessionId.toLowerCase();
-    const found = await this.sessions.findForStatus(namespaceId, sessionId);
+    const found = await this.sessions.findStatusSnapshot(namespaceId, sessionId);
     if (!found) throw new UploadSessionError('VFS_UPLOAD_SESSION_NOT_FOUND', 404, '업로드 세션 없음');
     const { session, parts } = found;
     // 만료 판정은 조회 처리 중 한 번 잡은 서버 시각으로 한다. GET은 상태를 전환하지 않는다.
     const now = new Date();
     const expired = session.state === 'OPEN' && (session.expiresAt <= now || session.maxExpiresAt <= now);
+    const namespacePolicy = this.policy ? resolveNamespaceUploadLimits(this.policy, namespaceId) : null;
+    const maxStagedBytes = namespacePolicy
+      ? this.policy!.global.maxStagedBytes < namespacePolicy.maxStagedBytes
+        ? this.policy!.global.maxStagedBytes
+        : namespacePolicy.maxStagedBytes
+      : null;
     return {
       ...response(session),
       ...(expired ? { expired: true as const } : {}),
@@ -250,7 +257,20 @@ export class UploadSessionService {
                 : { expiresInSeconds: session.fileExpiresInSeconds }),
             }
           : { ifRevision: session.conditionRevision },
-      parts: parts.map((part) => ({ index: part.partIndex, sizeBytes: String(part.sizeBytes) })),
+      parts: parts
+        .filter((part) => part.state === 'STORED')
+        .map((part) => ({ index: part.partIndex, sizeBytes: String(part.sizeBytes) })),
+      ...(session.state === 'OPEN' && !expired && maxStagedBytes !== null
+        ? {
+            staging: assessUploadSessionStaging({
+              sizeBytes: BigInt(session.sizeBytes),
+              partCount: session.partCount,
+              parts,
+              maxStagedBytes,
+              now,
+            }),
+          }
+        : {}),
       ...(session.state === 'COMPLETED' && session.responseBody
         ? { result: JSON.parse(session.responseBody) as unknown }
         : {}),

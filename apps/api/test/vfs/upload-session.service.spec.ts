@@ -88,6 +88,24 @@ describe('UploadSessionService lifecycle', () => {
             }
           : null;
       },
+      findStatusSnapshot: async (_ns: string, id: string) => {
+        const session = sessions.get(id);
+        return session
+          ? {
+              session,
+              parts: [
+                {
+                  partIndex: 0,
+                  sizeBytes: '4',
+                  digest: 'secret',
+                  stagingKey: 'upload-staging/private',
+                  state: 'STORED',
+                  leaseExpiresAt: null,
+                },
+              ],
+            }
+          : null;
+      },
       claimTerminalTransition: async (_ns: string, id: string, next: VfsUploadSessionState) => {
         const session = sessions.get(id);
         if (!session || session.state !== 'OPEN') return false;
@@ -540,8 +558,18 @@ describe('UploadSessionService lifecycle', () => {
       path: '/parent/file.bin',
       sizeBytes: '4',
       parts: [{ index: 0, sizeBytes: '4' }],
+      staging: { maxStagedBytes: '1000', status: 'PARTS_STORED' },
     });
     expect(JSON.stringify(status)).not.toMatch(/secret|upload-staging/);
+  });
+
+  it('만료되거나 정책이 없는 세션에는 staging 진단을 생략한다', async () => {
+    const { service, sessions } = setup();
+    const created = await service.create(namespaceId, 'scope', key, request, 'first');
+    const id = (created.body as { sessionId: string }).sessionId;
+    const session = sessions.get(id)!;
+    session.expiresAt = new Date(Date.now() - 1);
+    expect(await service.status(namespaceId, id)).not.toHaveProperty('staging');
   });
 
   describe('상태 조회의 완료 실패 기록과 파생 만료', () => {

@@ -83,10 +83,27 @@ function fixture(
     async findPart(_id: string, index: number) {
       return rows.get(index) ?? null;
     },
-    async reservePart(_id: string, index: number, size: string, key: string) {
+    async reservePart(
+      _id: string,
+      index: number,
+      size: string,
+      key: string,
+      caps?: {
+        global: { maxStagedBytes: bigint };
+        namespace: { maxStagedBytes: bigint };
+      },
+    ) {
       const existing = rows.get(index);
       if (existing && existing.state !== 'DELETED') return { kind: 'exists', part: existing };
       if ([...retired.values()].some((deleted) => !deleted)) return { kind: 'in-progress' };
+      if (
+        caps &&
+        BigInt(session.sizeBytes) >
+          (caps.global.maxStagedBytes < caps.namespace.maxStagedBytes
+            ? caps.global.maxStagedBytes
+            : caps.namespace.maxStagedBytes)
+      )
+        return { kind: 'file-too-large' };
       const part = {
         sizeBytes: size,
         stagingKey: key,
@@ -256,6 +273,19 @@ it('accepts exact non-final and final part lengths with plaintext digest', async
     replayed: false,
   });
   expect([...f.objects.keys()].every((key) => /^upload-staging\/[0-9a-f-]{36}$/.test(key))).toBe(true);
+});
+
+it('현재 staging 한도를 넘는 기존 세션의 새 조각 예약을 파일 크기 오류로 거부한다', async () => {
+  const f = fixture(false, '6', undefined, 4, 4n);
+  await expect(
+    f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req'),
+  ).rejects.toMatchObject({
+    status: 413,
+    code: 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE',
+    message: '파일 크기(6 bytes)가 staging 상한(4 bytes)을 초과함',
+  });
+  expect(f.rows.size).toBe(0);
+  expect(f.objects.size).toBe(0);
 });
 
 it('rejects invalid index and declared length before reserving', async () => {

@@ -47,7 +47,7 @@ export type CreateUploadSessionResult =
 export type ReserveUploadPartResult =
   | { readonly kind: 'reserved'; readonly part: VfsUploadPartEntity }
   | { readonly kind: 'exists'; readonly part: VfsUploadPartEntity }
-  | { readonly kind: 'limit' | 'closed' | 'invalid' | 'in-progress' };
+  | { readonly kind: 'limit' | 'closed' | 'invalid' | 'in-progress' | 'file-too-large' };
 
 interface UsageCounters {
   readonly id: string;
@@ -199,7 +199,12 @@ export class VfsUploadSessionRepository {
       if (pendingDeletes !== 0) return { kind: 'in-progress' };
       // 삭제된 행을 교체해도 같은 객체 key를 재사용하면 과거 GC 콜백과 구별할 수 없다.
       if (existing?.stagingKey === stagingKey) return { kind: 'invalid' };
-      if (partIndex >= session.partCount) return { kind: 'invalid' };
+      if (partIndex >= current.partCount) return { kind: 'invalid' };
+      const effectiveMaxStagedBytes =
+        caps.global.maxStagedBytes < caps.namespace.maxStagedBytes
+          ? caps.global.maxStagedBytes
+          : caps.namespace.maxStagedBytes;
+      if (BigInt(current.sizeBytes) > effectiveMaxStagedBytes) return { kind: 'file-too-large' };
       if (
         BigInt(usage[0].stagedBytes) + amount > caps.global.maxStagedBytes ||
         BigInt(usage[1].stagedBytes) + amount > caps.namespace.maxStagedBytes
@@ -748,6 +753,27 @@ export class VfsUploadSessionRepository {
       .getRepository(VfsUploadPartEntity)
       .find({ where: { sessionId, state: 'STORED' }, order: { partIndex: 'ASC' } });
     return { session, parts: parts.map((part) => ({ ...part, sizeBytes: String(part.sizeBytes) })) };
+  }
+
+  /** 세션과 모든 조각을 한 SQL statement snapshot에서 읽는다. */
+  @classifyPersistenceOperation
+  async findStatusSnapshot(
+    namespaceId: string,
+    sessionId: string,
+  ): Promise<{ session: VfsUploadSessionEntity; parts: VfsUploadPartEntity[] } | null> {
+    const result = await this.dataSource
+      .getRepository(VfsUploadSessionEntity)
+      .createQueryBuilder('session')
+      .leftJoinAndMapMany('session.statusParts', VfsUploadPartEntity, 'part', 'part.session_id = session.id')
+      .where('session.id = :sessionId AND session.namespace_id = :namespaceId', { sessionId, namespaceId })
+      .orderBy('part.part_index', 'ASC')
+      .getOne();
+    if (!result) return null;
+    const mapped = result as VfsUploadSessionEntity & { statusParts?: VfsUploadPartEntity[] };
+    return {
+      session: result,
+      parts: (mapped.statusParts ?? []).map((part) => ({ ...part, sizeBytes: String(part.sizeBytes) })),
+    };
   }
 
   @classifyPersistenceOperation
