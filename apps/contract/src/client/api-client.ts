@@ -257,9 +257,17 @@ export function createApiClient(
       });
     },
 
-    putUploadPart(namespaceId: string, sessionId: string, index: number, bytes: Buffer) {
+    putUploadPart(
+      namespaceId: string,
+      sessionId: string,
+      index: number,
+      bytes: Buffer,
+      options: { sha256?: string } = {},
+    ) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
+      if (options.sha256 !== undefined) headers['X-Content-Sha256'] = options.sha256;
       return request('PUT', uploadSessionUrl(namespaceId, `/${sessionId}/parts/${index}`), {
-        headers: { 'Content-Type': 'application/octet-stream' },
+        headers,
         body: bytes,
       });
     },

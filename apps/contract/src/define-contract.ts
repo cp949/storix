@@ -190,7 +190,13 @@ export interface ApiClient {
   createUploadSession(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
 
   /** `PUT /fs/upload-sessions/{id}/parts/{index}`로 조각 하나를 저장한다. */
-  putUploadPart(namespaceId: string, sessionId: string, index: number, bytes: Buffer): Promise<ApiResponse>;
+  putUploadPart(
+    namespaceId: string,
+    sessionId: string,
+    index: number,
+    bytes: Buffer,
+    options?: { sha256?: string },
+  ): Promise<ApiResponse>;
 
   /** `GET /fs/upload-sessions/{id}`로 세션 상태를 읽는다. */
   getUploadSession(namespaceId: string, sessionId: string): Promise<ApiResponse>;
