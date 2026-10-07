@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { defaultSpec } from '../../src/dataset/spec.ts';
-import { ensureObjects, expectedObjectCounts, planObjects, removeAllObjects } from '../../src/dataset/objects.ts';
+import {
+  ensureObjects,
+  expectedObjectCounts,
+  planObjects,
+  removeAllObjects,
+} from '../../src/dataset/objects.ts';
 
 const REF = '2026-10-02T00:00:00.000Z';
 

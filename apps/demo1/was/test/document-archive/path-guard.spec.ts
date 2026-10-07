@@ -1,4 +1,7 @@
-import { DocumentPathEscapesRootError, ExternalPathResolutionError } from '../../src/document-archive/document-archive.errors.js';
+import {
+  DocumentPathEscapesRootError,
+  ExternalPathResolutionError,
+} from '../../src/document-archive/document-archive.errors.js';
 import { resolveExternalPath, resolveInternalPath } from '../../src/document-archive/path-guard.js';
 
 describe('resolveInternalPath', () => {

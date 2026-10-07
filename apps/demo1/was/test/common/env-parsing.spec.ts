@@ -1,4 +1,9 @@
-import { MAX_TCP_PORT, parseOptionalString, parsePositiveInt, requireEnv } from '../../src/common/env-parsing.js';
+import {
+  MAX_TCP_PORT,
+  parseOptionalString,
+  parsePositiveInt,
+  requireEnv,
+} from '../../src/common/env-parsing.js';
 
 describe('env-parsing', () => {
   describe('parsePositiveInt', () => {
