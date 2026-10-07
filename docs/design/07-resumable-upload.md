@@ -43,6 +43,17 @@
 - commit ACK를 잃은 PUT을 서버가 저장 확정으로 복구하면 `findStoredPartWithExpiry`가 한 조회로 읽은 세션 만료를 돌려준다. 다른 PUT이 그 사이 갱신했다면 원래 요청의 갱신값보다 늦을 수 있고, 최대 수명은 넘지 않는다.
 - 같은 index·크기·내용을 다시 보내면 바이트를 검증하고 `replayed: true`로 응답한다.
 - 다른 내용은 `409 VFS_UPLOAD_PART_CONFLICT`, 진행 중인 같은 index는 `409 VFS_UPLOAD_PART_IN_PROGRESS`다.
+- 선택 요청 헤더 `X-Content-Sha256`은 이 조각 평문의 SHA-256(64자리 소문자 hex)이다. 암호화 namespace도 평문 기준이다.
+  - 형식 검증은 `content/conditional`과 같은 `parseSha256Header`를 쓴다.
+  - 형식 오류는 세션 조회와 본문 소비 전에 `400 VFS_INVALID_CHECKSUM`이다.
+  - 판정 순서는 ① 헤더 ≠ 본문 해시 → `422 VFS_PART_CHECKSUM_MISMATCH`, ② 본문 해시 ≠ 저장된 조각 → `409 VFS_UPLOAD_PART_CONFLICT`, ③ 모두 일치 → 저장 또는 `replayed: true`다.
+  - 재생 경로도 같은 순서다. 헤더 비교가 항상 먼저다.
+  - 422는 조각을 저장하지 않는다. staging key를 `cleanupReservation`으로 지우고 예약량을 해제하며, 세션 비활동 만료를 갱신하지 않는다.
+  - 422 뒤 같은 index를 올바른 내용으로 다시 보낼 수 있다. 저장된 조각은 교체할 수 없는 것(409)과 다르다.
+  - 완료 시 전체 해시 불일치 `VFS_CHECKSUM_MISMATCH`와 코드가 다르다.
+  - 한계: 본문을 먼저 해시한 뒤 저장하지 않는다. 스트리밍 구조라 불일치 요청은 staging PUT을 한 번 낭비한다.
+  - 응답 메시지는 고정 문구이며 digest를 싣지 않는다.
+  - 검증: `test/vfs/upload-session-part.service.spec.ts`, `test/vfs/upload-session-parts.integration-spec.ts`(PostgreSQL), `test/vfs/upload-session-parts.sqlite.integration-spec.ts`(SQLite).
 - 조각별 digest와 생성 요청의 전체 파일 `sha256`은 별개다.
 
 상태·완료·취소:
@@ -81,6 +92,28 @@
 - 두 업로드 서비스는 `resolveNamespaceUploadLimits`로 같은 판정을 쓴다.
 - 잘못된 Namespace ID, 알 수 없는 필드, 잘못된 값은 시작 오류다.
 - 설정은 프로세스 시작 때 읽고 자동 reload하지 않는다.
+
+정책·사용량 조회:
+
+- `GET /api/v2/namespaces/{id}`는 선택 블록 `uploadSessions`를 돌려준다. 전역 서비스 key로 읽는다.
+- 블록은 `NamespaceUploadSessionsReader`가 만든다. 컨트롤러 `findOne`이 `NamespaceService.findById` 결과에 합친다. create·list·관리자 PATCH 응답과 receipt 재생 본문에는 없다.
+- 필드와 값은 다음과 같다.
+
+| 필드                                      | 값                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| `partSizeBytes`                           | 새 세션에 적용할 조각 크기. `resolveNamespaceUploadPartSize`가 정한다 |
+| `inactivitySeconds`, `maxLifetimeSeconds` | 전역 값. namespace override가 없다                                    |
+| `maxStagedBytes`, `maxActiveSessions`     | `resolveNamespaceUploadLimits`가 정한 namespace 값 또는 전역 값       |
+| `stagedBytes`, `activeSessions`           | `readNamespaceUsage`가 읽은 `vfs_upload_usage` 값                     |
+
+- 바이트 한도·사용량(`maxStagedBytes`, `stagedBytes`)은 int64 문자열이다. 조각 크기·초·개수는 정수다.
+- 다음 중 하나면 블록을 생략하고 사용량을 읽지 않는다.
+  - namespace가 `ACTIVE`가 아니다.
+  - `resumable-upload`가 비활성이다. 비활성 namespace에 남은 세션의 사용량은 이 조회로 알 수 없다.
+  - 업로드 세션 정책이 없다.
+- `stagedBytes`는 정착하지 않은 예약량과 정착한 조각을 구분하지 않는다.
+- 사용량은 호출 시점 읽기이고 admission 판정이 아니다. 블록을 읽은 뒤에도 조각 PUT이 `413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`를 받을 수 있다.
+- 검증: `test/namespace/namespace-upload-sessions.reader.spec.ts`, `test/namespace/namespace.controller.spec.ts`, `test/vfs/upload-session-parts.integration-spec.ts`(PostgreSQL), `test/vfs/upload-session-parts.sqlite.integration-spec.ts`(SQLite).
 
 세션 수명과 요청 한도:
 

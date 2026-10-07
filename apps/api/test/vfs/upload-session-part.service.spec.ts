@@ -484,3 +484,118 @@ describe('조각 저장 응답의 세션 만료 시각', () => {
     expect(f.recoveryLookups()).toBe(1);
   });
 });
+
+// X-Content-Sha256 조각 검증. 판정 순서는 docs/design/07-resumable-upload.md "공개 계약".
+// 헤더 ≠ 본문 해시(422)가 항상 먼저이고, 그다음이 본문 ≠ 저장 조각(409), 모두 같으면 재생이다.
+describe('조각 X-Content-Sha256 검증', () => {
+  it('헤더가 본문 해시와 같으면 저장한다', async () => {
+    const f = fixture();
+    expect(
+      await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('abcd')),
+    ).toMatchObject({ index: 0, sha256: sha('abcd'), replayed: false });
+    expect(f.rows.get(0)?.state).toBe('STORED');
+  });
+
+  it('헤더 형식이 틀리면 본문을 소비하기 전에 400으로 거부한다', async () => {
+    const f = fixture();
+    const body = source('abcd');
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', body, '4', 'req', sha('abcd').toUpperCase()),
+    ).rejects.toMatchObject({ status: 400, code: 'VFS_INVALID_CHECKSUM' });
+    expect(body.readableFlowing).toBeNull();
+    expect(f.rows.size).toBe(0);
+  });
+
+  it('세션이 없어도 형식 오류는 404보다 먼저 400이다', async () => {
+    const f = fixture();
+    await expect(
+      f.service.putPart(namespaceId, randomUUID(), '0', source('abcd'), '4', 'req', 'xyz'),
+    ).rejects.toMatchObject({ status: 400, code: 'VFS_INVALID_CHECKSUM' });
+  });
+
+  it('헤더가 본문 해시와 다르면 422로 거부하고 staging 객체와 예약을 해제한다', async () => {
+    const f = fixture();
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('wxyz')),
+    ).rejects.toMatchObject({ status: 422, code: 'VFS_PART_CHECKSUM_MISMATCH' });
+    expect(f.objects.size).toBe(0);
+    expect(f.rows.size).toBe(0);
+  });
+
+  it('422 메시지에 기대·실제 digest를 싣지 않는다', async () => {
+    const f = fixture();
+    const error = await f.service
+      .putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('wxyz'))
+      .catch((e: Error) => e);
+    expect((error as Error).message).not.toContain(sha('abcd'));
+    expect((error as Error).message).not.toContain(sha('wxyz'));
+  });
+
+  it('422 뒤 같은 index에 올바른 내용을 재전송하면 저장된다', async () => {
+    const f = fixture();
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('wxyz')),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(
+      await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('abcd')),
+    ).toMatchObject({ sha256: sha('abcd'), replayed: false });
+  });
+
+  it('422는 세션 비활동 만료를 갱신하지 않는다', async () => {
+    const f = fixture();
+    const before = f.session.expiresAt.getTime();
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('wxyz')),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(f.session.expiresAt.getTime()).toBe(before);
+  });
+
+  it('암호화 namespace에서도 헤더는 평문 해시와 비교한다', async () => {
+    const f = fixture(true);
+    expect(
+      await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('abcd')),
+    ).toMatchObject({ sha256: sha('abcd') });
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '1', source('xy'), '2', 'req', sha('abcd')),
+    ).rejects.toMatchObject({ status: 422, code: 'VFS_PART_CHECKSUM_MISMATCH' });
+  });
+
+  it('재생 경로: 헤더가 본문 해시와 다르면 저장된 조각과 같은 본문이어도 422다', async () => {
+    const f = fixture();
+    await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('wxyz')),
+    ).rejects.toMatchObject({ status: 422, code: 'VFS_PART_CHECKSUM_MISMATCH' });
+  });
+
+  it('재생 경로: 본문이 헤더와 같지만 저장된 조각과 다르면 409다', async () => {
+    const f = fixture();
+    await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('wxyz'), '4', 'req', sha('wxyz')),
+    ).rejects.toMatchObject({ status: 409, code: 'VFS_UPLOAD_PART_CONFLICT' });
+  });
+
+  it('재생 경로: 헤더·본문·저장 조각이 모두 같으면 replayed다', async () => {
+    const f = fixture();
+    await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    expect(
+      await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req', sha('abcd')),
+    ).toMatchObject({ replayed: true, sha256: sha('abcd') });
+  });
+
+  it('재생 경로: 헤더와 본문이 모두 저장 조각과 다르면 422가 409보다 우선한다', async () => {
+    const f = fixture();
+    await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req');
+    await expect(
+      f.service.putPart(namespaceId, sessionId, '0', source('wxyz'), '4', 'req', sha('abcd')),
+    ).rejects.toMatchObject({ status: 422, code: 'VFS_PART_CHECKSUM_MISMATCH' });
+  });
+
+  it('헤더가 없으면 지금과 같이 동작한다', async () => {
+    const f = fixture();
+    expect(await f.service.putPart(namespaceId, sessionId, '0', source('abcd'), '4', 'req')).toMatchObject({
+      sha256: sha('abcd'),
+    });
+  });
+});

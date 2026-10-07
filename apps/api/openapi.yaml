@@ -300,6 +300,12 @@ paths:
     get:
       operationId: getNamespace
       summary: Namespace 단건 조회
+      description: |
+        전역 서비스 Bearer key로 인증한다. namespace가 ACTIVE이고 `resumable-upload`가 활성이며
+        업로드 세션 정책이 있으면 `uploadSessions` 블록을 함께 반환한다. 그 밖에는 블록이 없다.
+        블록의 사용량은 호출 시점에 읽은 값이다. 정확한 admission 판정이 아니므로 블록을 읽은 뒤에도
+        조각 PUT이 `413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`를 받을 수 있다.
+        create·list·관리자 PATCH 응답에는 이 블록이 없다.
       parameters:
         - name: id
           in: path
@@ -314,7 +320,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Namespace'
+                $ref: '#/components/schemas/NamespaceDetail'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1588,6 +1594,14 @@ paths:
         읽어 검증하고 replayed=true를 반환한다. 성공한 저장·재전송은 비활동 만료를
         최대 수명 이내에서 갱신한다. 조각 요청은 생성의 Idempotency-Key를 쓰지 않는다.
         각 조각 요청은 STORIX_MUTATION_MAX_UPLOAD_SECONDS(기본 86400초) 안에 끝나야 한다.
+        선택 헤더 `X-Content-Sha256`은 이 조각 평문의 SHA-256이다. ENCRYPTED namespace도
+        평문 기준이다. 형식 오류는 본문 소비 전에 400 VFS_INVALID_CHECKSUM이다. 본문 해시가
+        헤더와 다르면 조각을 저장하지 않고 422 VFS_PART_CHECKSUM_MISMATCH로 응답하며,
+        staging 객체와 예약량을 해제하므로 같은 index를 올바른 내용으로 다시 보낼 수 있다.
+        헤더 비교가 저장된 조각과의 비교보다 먼저다. 재전송에서도 본문 해시가 헤더와 다르면
+        422이고, 헤더와 같지만 저장된 조각과 다르면 409 VFS_UPLOAD_PART_CONFLICT다.
+        완료 시 전체 해시 불일치(422 VFS_CHECKSUM_MISMATCH)와 코드가 다르다.
+        본문을 먼저 해시한 뒤 저장하지 않으므로 불일치 요청은 staging PUT을 한 번 낭비한다.
         아래 예시는 partSizeBytes=4로 설정한 세션의 index 0에 ASCII `test`(4 bytes)를
         `PUT .../upload-sessions/33333333-3333-4333-8333-333333333333/parts/0`으로
         보내는 요청과 응답이다. 기본 조각 크기는 16777216 bytes다.
@@ -1602,6 +1616,11 @@ paths:
           in: header
           required: true
           schema: { type: integer, minimum: 0, example: 4 }
+        - name: X-Content-Sha256
+          in: header
+          required: false
+          description: 이 조각 평문 바이트의 SHA-256. ENCRYPTED namespace도 평문 기준.
+          schema: { type: string, pattern: '^[0-9a-f]{64}$' }
       requestBody:
         required: true
         content:
@@ -1621,7 +1640,7 @@ paths:
                 replayed: false
                 expiresAt: '2026-09-28T00:00:00.000Z'
         '400':
-          description: 잘못된 Content-Type/Length/index/조각 크기(VFS_INVALID_MUTATION_REQUEST 또는 VFS_INVALID_UPLOAD_PART)
+          description: 잘못된 Content-Type/Length/index/조각 크기(VFS_INVALID_MUTATION_REQUEST 또는 VFS_INVALID_UPLOAD_PART) 또는 잘못된 X-Content-Sha256(VFS_INVALID_CHECKSUM)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1634,6 +1653,11 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '413':
           description: VFS_UPLOAD_STAGING_LIMIT_EXCEEDED 또는 스트림 초과(VFS_FILE_TOO_LARGE). 정착 여부가 불명확한 이전 staging PUT 예약량은 자동 해제되지 않으므로 이 오류가 반복될 수 있다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: X-Content-Sha256이 본문 평문 해시와 다름(VFS_PART_CHECKSUM_MISMATCH). 조각은 저장되지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3274,6 +3298,52 @@ components:
           type: string
           nullable: true
           enum: [UPLOAD_SETTLEMENT_UNKNOWN, STORAGE_DELETE_FAILED, DATA_INCONSISTENT, null]
+    NamespaceDetail:
+      description: 단건 조회 응답. Namespace 필드에 재개 업로드 정책·사용량 블록이 선택으로 더해진다.
+      allOf:
+        - $ref: '#/components/schemas/Namespace'
+        - type: object
+          properties:
+            uploadSessions: { $ref: '#/components/schemas/NamespaceUploadSessions' }
+    NamespaceUploadSessions:
+      type: object
+      description: |
+        namespace의 재개 업로드 정책과 사용량. ACTIVE namespace에서 `resumable-upload`가 활성이고
+        정책이 있을 때만 단건 조회에 나온다. `stagedBytes`는 정착하지 않은 예약량을 따로 구분하지 않는다.
+        사용량은 호출 시점 읽기다.
+      required:
+        [
+          partSizeBytes,
+          inactivitySeconds,
+          maxLifetimeSeconds,
+          maxStagedBytes,
+          maxActiveSessions,
+          stagedBytes,
+          activeSessions,
+        ]
+      properties:
+        partSizeBytes:
+          type: integer
+          minimum: 1
+          description: 새 세션에 적용할 조각 크기. namespace 값이 있으면 그 값, 없으면 전역 값이다.
+        inactivitySeconds:
+          type: integer
+          minimum: 1
+          description: 전역 값. namespace override는 없다.
+        maxLifetimeSeconds:
+          type: integer
+          minimum: 1
+          description: 전역 값. namespace override는 없다.
+        maxStagedBytes:
+          type: string
+          pattern: '^[0-9]+$'
+          description: staging 상한 바이트. namespace 값이 있으면 그 값, 없으면 전역 값이다.
+        maxActiveSessions:
+          type: integer
+          minimum: 1
+          description: 동시 진행 세션 상한. namespace 값이 있으면 그 값, 없으면 전역 값이다.
+        stagedBytes: { type: string, pattern: '^[0-9]+$', description: 이 namespace의 staging 사용량 바이트. }
+        activeSessions: { type: integer, minimum: 0, description: 이 namespace에서 진행 중인 세션 수. }
     Namespace:
       type: object
       required: [id, name, encryptionPolicy, accessPolicy, status, limits, quota, createdAt, updatedAt]

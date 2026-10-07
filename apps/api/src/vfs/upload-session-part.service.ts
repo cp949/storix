@@ -20,7 +20,8 @@ import {
   UPLOAD_SESSION_POLICY,
   type UploadSessionPolicy,
 } from './upload-session-config.js';
-import { VfsNamespaceNotFoundError } from './vfs.errors.js';
+import { parseSha256Header } from './sha256-header.js';
+import { VfsNamespaceNotFoundError, VfsPartChecksumMismatchError } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
 
 class UploadPartError extends DomainError {
@@ -66,7 +67,10 @@ export class UploadSessionPartService {
     source: Readable,
     contentLength: string | undefined,
     _requestId: string,
+    rawExpectedSha256?: string,
   ): Promise<UploadedPartResult> {
+    // 형식 오류는 세션 조회와 본문 소비 전에 400으로 거부한다.
+    const expectedSha256 = parseSha256Header(rawExpectedSha256);
     if (!isNamespaceId(namespaceId)) throw new VfsNamespaceNotFoundError(namespaceId);
     await requireRoot(this.nodes, namespaceId);
     if (!isUuid(rawSessionId))
@@ -111,6 +115,7 @@ export class UploadSessionPartService {
         index,
         existing,
         this.policy.global.inactivitySeconds,
+        expectedSha256,
       );
 
     const deadline = this.durationDeadline(source);
@@ -168,6 +173,7 @@ export class UploadSessionPartService {
           index,
           reserved.part,
           this.policy.global.inactivitySeconds,
+          expectedSha256,
         );
       throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
     }
@@ -234,6 +240,9 @@ export class UploadSessionPartService {
       }
       if (uploaded.size !== expected)
         throw new UploadPartError('VFS_INVALID_UPLOAD_PART', 400, '실제 조각 크기 불일치');
+      // 헤더와 다르면 저장하지 않는다. 아래 catch가 staging 객체를 지우고 예약을 해제한다.
+      if (expectedSha256 !== undefined && uploaded.sha256 !== expectedSha256)
+        throw new VfsPartChecksumMismatchError();
       const encryptionIv = uploaded.encryptionIv?.toString('hex') ?? null;
       commitAttempted = true;
       committed = await Promise.race([
@@ -340,6 +349,7 @@ export class UploadSessionPartService {
     index: number,
     existing: VfsUploadPartEntity,
     inactivitySeconds: number,
+    expectedSha256: string | undefined,
   ): Promise<UploadedPartResult> {
     const deadline = this.durationDeadline(source);
     try {
@@ -351,6 +361,9 @@ export class UploadSessionPartService {
           throw new UploadPartError('VFS_UPLOAD_PART_CONFLICT', 409, '기존 조각과 크기 불일치');
         throw error;
       }
+      // 판정 순서: 헤더 ≠ 본문 해시(422)가 저장된 조각과의 비교(409)보다 먼저다.
+      if (expectedSha256 !== undefined && hashed.sha256 !== expectedSha256)
+        throw new VfsPartChecksumMismatchError();
       if (hashed.size !== expected || hashed.sha256 !== existing.digest)
         throw new UploadPartError('VFS_UPLOAD_PART_CONFLICT', 409, '기존 조각과 내용 불일치');
       const renewed = await Promise.race([

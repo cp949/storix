@@ -26,10 +26,10 @@ import { hashParts, identityOf, MutationHttpResult } from './mutation.service.js
 import { normalizeMimeType } from './mime.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
+import { parseSha256Header } from './sha256-header.js';
 import { decodeRevision } from './revision.js';
 import {
   VfsChecksumMismatchError,
-  VfsInvalidChecksumError,
   VfsInvalidExpiryError,
   VfsInvalidMutationRequestError,
   VfsPreconditionRequiredError,
@@ -129,9 +129,7 @@ export class ConditionalContentService {
     expectedSha256?: string,
     expiresIn?: string,
   ): Promise<MutationHttpResult> {
-    if (expectedSha256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSha256)) {
-      throw new VfsInvalidChecksumError();
-    }
+    parseSha256Header(expectedSha256);
     // 만료 입력의 형식·조건 조합은 checksum처럼 본문 소비·receipt 생성 전에 검증한다.
     // 새 파일을 만드는 X-If-Absent: true 요청에서만 받는다.
     // 설정 범위는 env로 바뀔 수 있어 같은 키 재시도의 재생을 막지 않도록 receipt 처리 뒤(parseError)에 판정한다.

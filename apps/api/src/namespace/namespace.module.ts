@@ -13,6 +13,7 @@ import { NamespaceTrashPolicyController } from './namespace-trash-policy.control
 import { NamespaceTrashPolicyService } from './namespace-trash-policy.service.js';
 import { NamespaceSettingsController } from './namespace-settings.controller.js';
 import { NamespaceSettingsService } from './namespace-settings.service.js';
+import { NamespaceUploadSessionsReader } from './namespace-upload-sessions.reader.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Module({
@@ -27,6 +28,7 @@ import { NamespaceService } from './namespace.service.js';
   providers: [
     NamespaceDeletionService,
     NamespaceService,
+    NamespaceUploadSessionsReader,
     NamespaceQuotaService,
     NamespaceTrashPolicyService,
     NamespaceSettingsService,

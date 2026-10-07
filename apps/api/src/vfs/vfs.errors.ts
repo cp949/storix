@@ -56,6 +56,16 @@ export class VfsChecksumMismatchError extends DomainError {
   }
 }
 
+/** 재개 업로드 조각 PUT의 `X-Content-Sha256`이 본문 평문 해시와 다르다. 완료 시 전체 해시 불일치(`VFS_CHECKSUM_MISMATCH`)와 구분한다. */
+export class VfsPartChecksumMismatchError extends DomainError {
+  readonly code = 'VFS_PART_CHECKSUM_MISMATCH';
+  readonly status = 422;
+
+  constructor() {
+    super('조각 checksum 불일치');
+  }
+}
+
 export class VfsPreconditionRequiredError extends DomainError {
   readonly code = 'VFS_PRECONDITION_REQUIRED';
   readonly status = 428;

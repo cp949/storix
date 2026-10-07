@@ -224,6 +224,38 @@ describe('openapi.yaml ↔ 컨트롤러 라우트 정합성', () => {
   });
 });
 
+it('namespace 단건 조회는 NamespaceDetail을 응답하고 uploadSessions 필드를 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  expect(
+    spec.paths['/api/v2/namespaces/{id}'].get.responses['200'].content['application/json'].schema,
+  ).toEqual({
+    $ref: '#/components/schemas/NamespaceDetail',
+  });
+  expect(spec.components.schemas.NamespaceDetail.allOf).toEqual(
+    expect.arrayContaining([{ $ref: '#/components/schemas/Namespace' }]),
+  );
+  const block = spec.components.schemas.NamespaceUploadSessions;
+  expect(block.required).toEqual([
+    'partSizeBytes',
+    'inactivitySeconds',
+    'maxLifetimeSeconds',
+    'maxStagedBytes',
+    'maxActiveSessions',
+    'stagedBytes',
+    'activeSessions',
+  ]);
+  expect(block.properties.maxStagedBytes.type).toBe('string');
+  expect(block.properties.stagedBytes.type).toBe('string');
+  expect(block.properties.partSizeBytes.type).toBe('integer');
+  // YAML flow mapping의 쉼표가 설명을 잘라 스키마 키를 만드는 회귀를 막는다.
+  for (const field of ['maxStagedBytes', 'maxActiveSessions']) {
+    expect(Object.keys(block.properties[field])).not.toContain('없으면 전역 값이다.');
+    expect(block.properties[field].description).toMatch(/없으면 전역 값/);
+  }
+  // create·list·PATCH가 공유하는 Namespace에는 블록이 없다.
+  expect(spec.components.schemas.Namespace.properties).not.toHaveProperty('uploadSessions');
+});
+
 it('재개 업로드의 다섯 operation과 필수 헤더·응답 스키마를 명시한다', () => {
   const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
   const base = '/api/v2/namespaces/{namespaceId}/fs/upload-sessions';
@@ -259,6 +291,19 @@ it('재개 업로드의 다섯 operation과 필수 헤더·응답 스키마를 �
     expect(pattern.test('application/octet-stream')).toBe(true);
     expect(pattern.test('invalid mime')).toBe(false);
   }
+  const partPut = spec.paths[`${base}/{sessionId}/parts/{index}`].put;
+  expect(partPut.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: 'X-Content-Sha256',
+        in: 'header',
+        required: false,
+        schema: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+      }),
+    ]),
+  );
+  expect(partPut.responses['400'].description).toContain('VFS_INVALID_CHECKSUM');
+  expect(partPut.responses['422'].description).toContain('VFS_PART_CHECKSUM_MISMATCH');
   expect(spec.paths[`${base}/{sessionId}/parts/{index}`].put.requestBody.content).toHaveProperty(
     'application/octet-stream',
   );

@@ -17,6 +17,7 @@ import { StructuredLoggingInterceptor } from '../common/structured-logging.inter
 import { CapabilityService } from '../capability/capability.service.js';
 import { parseCreateNamespaceRequest } from './dto/create-namespace.dto.js';
 import { IdempotencyKeyRequiredError, NamespaceNotFoundError } from './namespace.errors.js';
+import { NamespaceUploadSessionsReader } from './namespace-upload-sessions.reader.js';
 import { NamespaceService } from './namespace.service.js';
 
 @Controller('api/v2/namespaces')
@@ -26,6 +27,7 @@ export class NamespaceController {
   constructor(
     private readonly namespaceService: NamespaceService,
     private readonly capabilityService: CapabilityService,
+    private readonly uploadSessionsReader: NamespaceUploadSessionsReader,
   ) {}
 
   @Post()
@@ -61,9 +63,12 @@ export class NamespaceController {
     return result.body;
   }
 
+  // `uploadSessions`는 이 조회에만 붙는다. create·PATCH 응답과 receipt 재생 본문에는 없다.
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.namespaceService.findById(id);
+  async findOne(@Param('id') id: string) {
+    const namespace = await this.namespaceService.findById(id);
+    const uploadSessions = await this.uploadSessionsReader.read(namespace.id, namespace.status);
+    return uploadSessions ? { ...namespace, uploadSessions } : namespace;
   }
 
   @Get(':id/capabilities')

@@ -50,11 +50,20 @@ export class UploadSessionController {
     @Param('index') index: string,
     @Headers('content-type') contentType: string | undefined,
     @Headers('content-length') contentLength: string | undefined,
+    @Headers('x-content-sha256') expectedSha256: string | undefined,
     @Req() req: Request,
   ) {
     if (contentType?.split(';')[0].trim().toLowerCase() !== 'application/octet-stream')
       throw new VfsInvalidMutationRequestError();
-    return this.parts.putPart(namespaceId, sessionId, index, req, contentLength, req.requestId);
+    return this.parts.putPart(
+      namespaceId,
+      sessionId,
+      index,
+      req,
+      contentLength,
+      req.requestId,
+      expectedSha256,
+    );
   }
 
   @Post()

@@ -10,11 +10,17 @@
 
 ### Added
 
+- `GET /api/v2/namespaces/{id}` 응답에 재개 업로드 정책·사용량 블록 `uploadSessions`를 선택으로 추가했다. `partSizeBytes`·`inactivitySeconds`·`maxLifetimeSeconds`·`maxStagedBytes`·`maxActiveSessions`(namespace 값, 없으면 전역 값)와 `stagedBytes`·`activeSessions`(호출 시점 사용량)를 준다. namespace가 `ACTIVE`이고 `resumable-upload`가 활성이며 정책이 있을 때만 나온다. `stagedBytes`는 예약과 정착을 구분하지 않고 admission 판정이 아니다.
+- 재개 업로드 조각 `PUT`이 선택 요청 헤더 `X-Content-Sha256`(조각 평문 SHA-256)을 받는다. 본문 해시가 헤더와 다르면 조각을 저장하지 않고 `422 VFS_PART_CHECKSUM_MISMATCH`로 응답하며 같은 index를 다시 보낼 수 있다. 형식 오류는 본문 소비 전 `400 VFS_INVALID_CHECKSUM`이다. 헤더가 없으면 동작이 같다.
 - 업로드 세션 완료와 `content/conditional` 성공 응답의 `resource`에 전체 평문 `sha256`을 선택 필드로 추가했다. 반환한 `revision`의 콘텐츠와 같은 값이다. 이 필드가 생기기 전에 저장된 응답을 재생할 때는 없을 수 있다.
 - 업로드 세션 `GET`에 `lastCompleteFailure: {code, at}`와 `expired`를 선택 필드로 추가했다. 완료가 claim 뒤 실패해 `OPEN`으로 돌아오면 마지막 실패 코드와 시각을, 만료 시각이 지난 `OPEN` 세션에는 서버 시각 기준 `expired: true`를 준다. 실패 기록은 best effort다. 마이그레이션 `1791700000025`가 nullable 컬럼 두 개를 추가한다.
 - 재개 업로드 정책 JSON의 `namespaces.<id>`에 선택 필드 `partSizeBytes`를 추가했다. 없으면 전역 값을 쓰고, 세션 생성 시점 값으로 고정한다.
 - 조각 `PUT`의 `200` 응답에 세션 비활동 만료 시각 `expiresAt`을 선택 필드로 추가했다. 저장·재전송이 갱신한 뒤의 값이며 `maxExpiresAt`을 넘지 않는다.
 - AWS Secrets Manager `SecretString`을 읽는 독립 SecretSource 어댑터 예제, 실제 LocalStack 실행 시나리오, AWS 역할·권한 설정 가이드를 추가했다. AWS SDK는 Storix 코어와 기본 이미지에 포함하지 않는다.
+
+### Fixed
+
+- `uploadSessions`의 OpenAPI 한도 필드 설명이 YAML 키로 분리되는 오류를 수정했다.
 
 ## [1.2.0] - 2026-10-06
 

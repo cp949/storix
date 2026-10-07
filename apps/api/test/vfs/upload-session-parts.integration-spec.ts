@@ -38,6 +38,13 @@ describe('upload parts (PostgreSQL + S3)', () => {
   let encryptedId: string;
   let raceNamespaceId: string;
   let failureNamespaceId: string;
+  // X-Content-Sha256 테스트 전용. 앞선 테스트가 남긴 staged 사용량의 영향을 받지 않는다.
+  let shaId: string;
+  let shaEncryptedId: string;
+  // uploadSessions 조회 테스트 전용: override 있음 / 전역 정책 사용 / capability 비활성.
+  let viewOverrideId: string;
+  let viewGlobalId: string;
+  let viewDisabledId: string;
 
   function policy(): UploadSessionPolicy {
     return {
@@ -53,6 +60,9 @@ describe('upload parts (PostgreSQL + S3)', () => {
         [encryptedId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
         [raceNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
         [failureNamespaceId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [shaId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [shaEncryptedId]: { maxStagedBytes: 8n, maxActiveSessions: 8 },
+        [viewOverrideId]: { maxStagedBytes: 6n, maxActiveSessions: 3, partSizeBytes: 2 },
       },
     };
   }
@@ -76,6 +86,10 @@ describe('upload parts (PostgreSQL + S3)', () => {
             [encryptedId]: ['resumable-upload'],
             [raceNamespaceId]: ['resumable-upload'],
             [failureNamespaceId]: ['resumable-upload'],
+            [shaId]: ['resumable-upload'],
+            [shaEncryptedId]: ['resumable-upload'],
+            [viewOverrideId]: ['resumable-upload'],
+            [viewGlobalId]: ['resumable-upload'],
           },
         }),
       );
@@ -179,6 +193,33 @@ describe('upload parts (PostgreSQL + S3)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ name: 'upload-parts-failure' })
       .expect(201);
+    const shaPlain = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts-sha' })
+      .expect(201);
+    const shaEncrypted = await http()
+      .post('/api/v2/namespaces')
+      .set('Authorization', `Bearer ${API_KEY}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'upload-parts-sha-encrypted', encryptionPolicy: 'ENCRYPTED' })
+      .expect(201);
+    const names = ['upload-parts-view-override', 'upload-parts-view-global', 'upload-parts-view-disabled'];
+    const viewIds: string[] = [];
+    for (const name of names) {
+      const created = await http()
+        .post('/api/v2/namespaces')
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ name })
+        .expect(201);
+      expect(created.body).not.toHaveProperty('uploadSessions');
+      viewIds.push(created.body.id as string);
+    }
+    [viewOverrideId, viewGlobalId, viewDisabledId] = viewIds;
+    shaId = shaPlain.body.id as string;
+    shaEncryptedId = shaEncrypted.body.id as string;
     namespaceId = plain.body.id as string;
     encryptedId = encrypted.body.id as string;
     raceNamespaceId = race.body.id as string;
@@ -195,6 +236,159 @@ describe('upload parts (PostgreSQL + S3)', () => {
     await Promise.all([postgres?.stop(), s3Container?.stop()]);
     for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
     Object.assign(process.env, previous);
+  });
+
+  // 전역 staged 한도(8바이트)를 쓰므로 앞선 테스트가 남기는 사용량이 없도록 첫 테스트보다 앞에 둔다.
+
+  describe('조각 X-Content-Sha256', () => {
+    /** 조각 본문과 SHA-256 헤더를 함께 전송한다. */
+    function putWithSha(id: string, index: number, body: string, header: string, ns = shaId) {
+      return put(id, index, body, app, ns).set('X-Content-Sha256', header);
+    }
+    /** DB에 반영된 namespace staging 사용량을 읽는다. */
+    async function stagedBytes(ns: string) {
+      const usage = await app
+        .get(DataSource)
+        .getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ namespaceId: ns });
+      return BigInt(usage.stagedBytes);
+    }
+
+    it('헤더가 다르면 422로 거부하고 staging 객체·예약량을 해제한 뒤 같은 index를 올바른 내용으로 재전송할 수 있다', async () => {
+      const id = await create('/part-sha-mismatch.bin', '4', shaId);
+      const storage = app.get<BlobStorage>(BLOB_STORAGE);
+      const putSpy = jest.spyOn(storage, 'put');
+      const before = await stagedBytes(shaId);
+      try {
+        const rejected = await putWithSha(id, 0, 'abcd', sha('wxyz')).expect(422);
+        expect(rejected.body.code).toBe('VFS_PART_CHECKSUM_MISMATCH');
+        const stagingKey = putSpy.mock.calls[0][0];
+        await expect(storage.get(stagingKey)).rejects.toBeDefined();
+        expect(await app.get(VfsUploadSessionRepository).findPart(id, 0)).toBeNull();
+        expect(await stagedBytes(shaId)).toBe(before);
+        const stored = await putWithSha(id, 0, 'abcd', sha('abcd')).expect(200);
+        expect(stored.body).toMatchObject({ index: 0, sha256: sha('abcd'), replayed: false });
+      } finally {
+        putSpy.mockRestore();
+        await clear(id, shaId, [0]);
+      }
+    });
+
+    it('헤더 형식이 틀리면 본문을 저장하지 않고 400이다', async () => {
+      const id = await create('/part-sha-format.bin', '4', shaId);
+      try {
+        const rejected = await putWithSha(id, 0, 'abcd', sha('abcd').toUpperCase()).expect(400);
+        expect(rejected.body.code).toBe('VFS_INVALID_CHECKSUM');
+        expect(await app.get(VfsUploadSessionRepository).findPart(id, 0)).toBeNull();
+      } finally {
+        await clear(id, shaId, [0]);
+      }
+    });
+
+    it('재생 경로는 헤더 불일치 422, 조각 불일치 409, 모두 일치 재생 순서로 판정한다', async () => {
+      const id = await create('/part-sha-replay.bin', '4', shaId);
+      try {
+        await putWithSha(id, 0, 'abcd', sha('abcd')).expect(200);
+        const mismatch = await putWithSha(id, 0, 'abcd', sha('wxyz')).expect(422);
+        expect(mismatch.body.code).toBe('VFS_PART_CHECKSUM_MISMATCH');
+        const conflict = await putWithSha(id, 0, 'wxyz', sha('wxyz')).expect(409);
+        expect(conflict.body.code).toBe('VFS_UPLOAD_PART_CONFLICT');
+        const both = await putWithSha(id, 0, 'wxyz', sha('abcd')).expect(422);
+        expect(both.body.code).toBe('VFS_PART_CHECKSUM_MISMATCH');
+        expect((await putWithSha(id, 0, 'abcd', sha('abcd')).expect(200)).body.replayed).toBe(true);
+      } finally {
+        await clear(id, shaId, [0]);
+      }
+    });
+
+    it('암호화 namespace는 평문 해시로 비교한다', async () => {
+      const id = await create('/part-sha-encrypted.bin', '4', shaEncryptedId);
+      try {
+        await putWithSha(id, 0, 'data', sha('wxyz'), shaEncryptedId).expect(422);
+        const stored = await putWithSha(id, 0, 'data', sha('data'), shaEncryptedId).expect(200);
+        expect(stored.body.sha256).toBe(sha('data'));
+      } finally {
+        await clear(id, shaEncryptedId, [0]);
+      }
+    });
+  });
+
+  // GET namespaces/{id}의 uploadSessions 블록. 전역 staged 한도를 쓰는 PUT이 있으므로 앞선 테스트의 잔여 사용량이 없도록 앞에 둔다.
+  // 각 전용 namespace의 정책과 사용량을 HTTP 응답으로 검증한다.
+  describe('namespace 조회의 uploadSessions', () => {
+    /** 전역 서비스 key로 namespace 단건 조회를 요청한다. */
+    function getNamespace(ns: string) {
+      return http().get(`/api/v2/namespaces/${ns}`).set('Authorization', `Bearer ${API_KEY}`).expect(200);
+    }
+
+    it('namespace override가 없으면 전역 정책과 현재 사용량을 돌려주고 조각 업로드 뒤 사용량이 반영된다', async () => {
+      const empty = await getNamespace(viewGlobalId);
+      expect(empty.body.uploadSessions).toEqual({
+        partSizeBytes: 4,
+        inactivitySeconds: 60,
+        maxLifetimeSeconds: 120,
+        maxStagedBytes: '8',
+        maxActiveSessions: 8,
+        stagedBytes: '0',
+        activeSessions: 0,
+      });
+      const id = await create('/view-usage.bin', '4', viewGlobalId);
+      try {
+        expect((await getNamespace(viewGlobalId)).body.uploadSessions).toMatchObject({
+          stagedBytes: '0',
+          activeSessions: 1,
+        });
+        await put(id, 0, 'abcd', app, viewGlobalId).expect(200);
+        expect((await getNamespace(viewGlobalId)).body.uploadSessions).toMatchObject({
+          stagedBytes: '4',
+          activeSessions: 1,
+        });
+      } finally {
+        await clear(id, viewGlobalId, [0]);
+      }
+      expect((await getNamespace(viewGlobalId)).body.uploadSessions).toMatchObject({
+        stagedBytes: '0',
+        activeSessions: 0,
+      });
+    });
+
+    it('namespace override가 있으면 조각 크기와 한도가 그 값이고 새 세션의 조각 크기와 같다', async () => {
+      const { uploadSessions } = (await getNamespace(viewOverrideId)).body;
+      expect(uploadSessions).toMatchObject({
+        partSizeBytes: 2,
+        maxStagedBytes: '6',
+        maxActiveSessions: 3,
+        inactivitySeconds: 60,
+        maxLifetimeSeconds: 120,
+      });
+      const created = await http()
+        .post(base(viewOverrideId))
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('X-Mutation-Scope', 'parts')
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          path: '/view-part-size.bin',
+          sizeBytes: '4',
+          mimeType: 'application/octet-stream',
+          ifAbsent: true,
+        })
+        .expect(201);
+      expect(created.body.partSizeBytes).toBe(uploadSessions.partSizeBytes);
+      await clear(created.body.sessionId, viewOverrideId, []);
+    });
+
+    it('resumable-upload가 비활성인 namespace는 uploadSessions를 생략한다', async () => {
+      const response = await getNamespace(viewDisabledId);
+      expect(response.body).not.toHaveProperty('uploadSessions');
+    });
+
+    it('목록 조회의 항목에는 uploadSessions가 없다', async () => {
+      const list = await http()
+        .get('/api/v2/namespaces')
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(200);
+      for (const item of list.body as object[]) expect(item).not.toHaveProperty('uploadSessions');
+    });
   });
 
   it('does not renew an expired session after waiting for its PostgreSQL row lock', async () => {

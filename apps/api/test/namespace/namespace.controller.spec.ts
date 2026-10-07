@@ -4,6 +4,7 @@ import { CapabilityService } from '../../src/capability/capability.service.js';
 import { IdempotencyKeyRequiredError, NamespaceNotFoundError } from '../../src/namespace/namespace.errors.js';
 import { NamespaceController } from '../../src/namespace/namespace.controller.js';
 import { NamespaceService } from '../../src/namespace/namespace.service.js';
+import { NamespaceUploadSessionsReader } from '../../src/namespace/namespace-upload-sessions.reader.js';
 
 describe('NamespaceController', () => {
   const namespaceService = {
@@ -13,6 +14,9 @@ describe('NamespaceController', () => {
   const capabilityService = {
     listEnabled: jest.fn<CapabilityService['listEnabled']>(),
   };
+  const uploadSessionsReader = {
+    read: jest.fn<NamespaceUploadSessionsReader['read']>(),
+  };
   let controller: NamespaceController;
 
   beforeEach(() => {
@@ -20,7 +24,44 @@ describe('NamespaceController', () => {
     controller = new NamespaceController(
       namespaceService as unknown as NamespaceService,
       capabilityService as unknown as CapabilityService,
+      uploadSessionsReader as unknown as NamespaceUploadSessionsReader,
     );
+  });
+
+  it('GET 조회에 uploadSessions 블록이 있으면 namespace 응답에 합친다', async () => {
+    const namespace = { id: 'namespace-id', status: 'ACTIVE' } as Awaited<
+      ReturnType<NamespaceService['findById']>
+    >;
+    const block = {
+      partSizeBytes: 4,
+      inactivitySeconds: 60,
+      maxLifetimeSeconds: 120,
+      maxStagedBytes: '8',
+      maxActiveSessions: 8,
+      stagedBytes: '0',
+      activeSessions: 0,
+    };
+    namespaceService.findById.mockResolvedValue(namespace);
+    uploadSessionsReader.read.mockResolvedValue(block);
+
+    await expect(controller.findOne('namespace-id')).resolves.toEqual({
+      ...namespace,
+      uploadSessions: block,
+    });
+    expect(uploadSessionsReader.read).toHaveBeenCalledWith('namespace-id', 'ACTIVE');
+  });
+
+  it('GET 조회에 uploadSessions 블록이 없으면 namespace 응답을 그대로 돌려준다', async () => {
+    const namespace = { id: 'namespace-id', status: 'ACTIVE' } as Awaited<
+      ReturnType<NamespaceService['findById']>
+    >;
+    namespaceService.findById.mockResolvedValue(namespace);
+    uploadSessionsReader.read.mockResolvedValue(null);
+
+    const result = await controller.findOne('namespace-id');
+
+    expect(result).toBe(namespace);
+    expect(result).not.toHaveProperty('uploadSessions');
   });
 
   it('ACTIVE namespace의 활성 capability를 반환하고 응답 캐시를 막는다', async () => {
