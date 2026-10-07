@@ -563,13 +563,30 @@ describe('UploadSessionService lifecycle', () => {
     expect(JSON.stringify(status)).not.toMatch(/secret|upload-staging/);
   });
 
-  it('만료되거나 정책이 없는 세션에는 staging 진단을 생략한다', async () => {
+  it('만료된 세션에는 staging 진단을 생략한다', async () => {
     const { service, sessions } = setup();
     const created = await service.create(namespaceId, 'scope', key, request, 'first');
     const id = (created.body as { sessionId: string }).sessionId;
     const session = sessions.get(id)!;
     session.expiresAt = new Date(Date.now() - 1);
     expect(await service.status(namespaceId, id)).not.toHaveProperty('staging');
+  });
+
+  it('정책이 제거된 기존 세션에는 staging 진단을 생략한다', async () => {
+    const { service, sessions } = setup();
+    const created = await service.create(namespaceId, 'scope', key, request, 'first');
+    const id = (created.body as { sessionId: string }).sessionId;
+    (service as unknown as { policy: UploadSessionPolicy | null }).policy = null;
+    expect(sessions.get(id)?.state).toBe('OPEN');
+    expect(await service.status(namespaceId, id)).not.toHaveProperty('staging');
+  });
+
+  it('capability를 비활성화해도 기존 세션의 staging 진단은 제공한다', async () => {
+    const { service, setEnabled } = setup();
+    const created = await service.create(namespaceId, 'scope', key, request, 'first');
+    const id = (created.body as { sessionId: string }).sessionId;
+    setEnabled(false);
+    expect(await service.status(namespaceId, id)).toHaveProperty('staging');
   });
 
   describe('상태 조회의 완료 실패 기록과 파생 만료', () => {

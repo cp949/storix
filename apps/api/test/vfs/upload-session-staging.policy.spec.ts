@@ -1,3 +1,5 @@
+/** 현재 staging 진단의 경계와 큰 조각 수에서의 연산량을 실제 순수 함수로 검증한다. */
+import { jest } from '@jest/globals';
 import { assessUploadSessionStaging } from '../../src/vfs/upload-session-staging.policy.js';
 
 describe('업로드 세션 staging 진단', () => {
@@ -36,11 +38,40 @@ describe('업로드 세션 staging 진단', () => {
       assessUploadSessionStaging({
         sizeBytes: 10n,
         partCount: 2,
-        parts: [{ partIndex: 1, state: 'RESERVED', leaseExpiresAt: now }],
+        parts: [
+          { partIndex: 0, state: 'STORED', leaseExpiresAt: null },
+          { partIndex: 1, state: 'RESERVED', leaseExpiresAt: now },
+        ],
         maxStagedBytes: 8n,
         now,
       }).status,
     ).toBe('FILE_TOO_LARGE');
+  });
+
+  it('최대 조각 수에서도 미저장 index 전체를 열거하지 않는다', () => {
+    const originalHas = Set.prototype.has;
+    let lookups = 0;
+    // 기존 결함을 OOM 없이 재현한다. 소수의 실제 행을 진단할 때 전체 index 탐색을 차단한다.
+    const has = jest.spyOn(Set.prototype, 'has').mockImplementation(function (this: Set<unknown>, value) {
+      if (++lookups > 16) throw new Error('미저장 index 전체 탐색');
+      return originalHas.call(this, value);
+    });
+    let result;
+    try {
+      result = assessUploadSessionStaging({
+        sizeBytes: 2147483647n,
+        partCount: 2147483647,
+        parts: [
+          { partIndex: 0, state: 'STORED', leaseExpiresAt: null },
+          { partIndex: 1, state: 'RESERVED', leaseExpiresAt: new Date(now.getTime() + 1) },
+        ],
+        maxStagedBytes: 2147483647n,
+        now,
+      });
+    } finally {
+      has.mockRestore();
+    }
+    expect(result).toEqual({ maxStagedBytes: '2147483647', status: 'WITHIN_LIMIT' });
   });
 
   it('모든 조각이 저장됐으면 현재 staging 한도를 넘겨도 저장 완료로 진단한다', () => {

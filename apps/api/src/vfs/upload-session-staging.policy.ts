@@ -57,13 +57,14 @@ export function assessUploadSessionStaging(
     if (part.state === 'RESERVED' && part.leaseExpiresAt && part.leaseExpiresAt > input.now)
       reserved.add(part.partIndex);
   }
-  const missing: number[] = [];
-  for (let index = 0; index < input.partCount; index++) {
-    if (!stored.has(index)) missing.push(index);
+  // 조각 수는 int32 최대까지 가능하다. 실제 행의 유효 index만 세고 미저장 범위를 열거하지 않는다.
+  let reservedMissing = 0;
+  for (const index of reserved) {
+    if (!stored.has(index)) reservedMissing++;
   }
   let status: UploadSessionStagingStatus;
-  if (missing.length === 0) status = 'PARTS_STORED';
-  else if (missing.every((index) => reserved.has(index))) status = 'PARTS_IN_PROGRESS';
+  if (stored.size === input.partCount) status = 'PARTS_STORED';
+  else if (stored.size + reservedMissing === input.partCount) status = 'PARTS_IN_PROGRESS';
   else if (input.sizeBytes > input.maxStagedBytes) status = 'FILE_TOO_LARGE';
   else status = 'WITHIN_LIMIT';
   return { maxStagedBytes: input.maxStagedBytes.toString(), status };

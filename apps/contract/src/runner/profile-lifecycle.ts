@@ -243,9 +243,10 @@ export async function runProfileLifecycle(
                     },
                   },
                 };
+                // 쓰기가 일부만 반영되고 실패해도 계약 종료 시 baseline 복원을 시도한다.
+                uploadSessionPolicyChanged = true;
                 await deps.writeCapabilitiesConfig(uploadSessionsConfigPath, JSON.stringify(changed));
                 activeUploadSessionsConfig = changed;
-                uploadSessionPolicyChanged = true;
                 await server.restart();
               },
             },
@@ -258,6 +259,8 @@ export async function runProfileLifecycle(
             provisioned,
           }),
         );
+        // 복원 실패로 suite가 중단돼도 이미 완료한 계약 결과는 집계에 남긴다.
+        results.push(result);
       } finally {
         if (uploadSessionPolicyChanged && !input.signal.aborted && uploadSessionsBaseline) {
           await deps.writeCapabilitiesConfig(
@@ -269,7 +272,6 @@ export async function runProfileLifecycle(
           uploadSessionPolicyChanged = false;
         }
       }
-      results.push(result);
       // 저장소를 멈춘 계약 뒤에도 다음 계약이 같은 저장소를 사용할 수 있게 한다.
       if (!input.signal.aborted) await input.blob.ensureRunning();
     }

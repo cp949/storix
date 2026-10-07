@@ -244,10 +244,55 @@ describe('프로파일 실행 lifecycle', () => {
     const outcome = await runProfileLifecycle(current.input, current.dependencies);
     assert.equal((outcome.error as Error).message, 'baseline 복원 실패');
     assert.deepEqual(
+      outcome.contracts.map((entry) => entry.id),
+      ['first'],
+    );
+    assert.deepEqual(
       current.events.filter((event) => event.startsWith('contract:')),
       ['contract:first'],
     );
     assert.equal(current.events.at(-1), 'server-stop');
+  });
+
+  it('정책 파일 쓰기가 일부 반영된 뒤 실패해도 다음 계약 전에 baseline을 복원한다', async () => {
+    const current = fixture('resumable-upload');
+    let policyWrites = 0;
+    let policy = '';
+    let baseline = '';
+    current.dependencies.writeCapabilitiesConfig = async (path, contents) => {
+      if (!path.endsWith('resumable-upload.upload-sessions.json')) return;
+      policyWrites += 1;
+      if (policyWrites === 2) baseline = contents;
+      if (policyWrites === 3) {
+        policy = contents.slice(0, 10);
+        throw new Error('정책 파일 부분 쓰기 실패');
+      }
+      policy = contents;
+    };
+    current.dependencies.provisionCapabilityNamespaces = async (input) => {
+      await input.prepareRestart?.([{ id: 'prepared', name: 'prepared' }]);
+      await input.restart();
+      return [{ id: 'prepared', name: 'prepared' }];
+    };
+    current.dependencies.runContract = async (contract, context) => {
+      if (contract.id === 'first') {
+        await assert.rejects(
+          context.server.restartWithUploadSessionLimits({ namespaceId: 'prepared', maxStagedBytes: '8' }),
+          /정책 파일 부분 쓰기 실패/,
+        );
+        return result(contract, false);
+      }
+      assert.equal(policy, baseline, '다음 계약은 손상된 정책을 읽지 않는다');
+      return result(contract);
+    };
+    const outcome = await runProfileLifecycle(current.input, current.dependencies);
+    assert.equal(outcome.error, undefined);
+    assert.deepEqual(
+      outcome.contracts.map((entry) => entry.passed),
+      [false, true],
+    );
+    assert.equal(policyWrites, 4);
+    assert.equal(policy, baseline);
   });
 
   it('계약 실패 결과 뒤에도 다음 계약을 실행하고 서버를 종료한다', async () => {

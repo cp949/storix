@@ -244,14 +244,20 @@ DB commit 전에 파일을 삭제하면 rollback 후 업무 레코드가 삭제�
 
 새 조각 PUT이 `413 VFS_UPLOAD_STAGING_FILE_TOO_LARGE`를 반환하면 같은 세션의 새 조각은 현재 한도로 거부된 것이다.
 오류에는 `Retry-After`가 없다.
-정책 파일의 namespace `maxStagedBytes`를 파일 전체 크기 이상으로 올리고 서버를 재시작하면 같은 세션을 이어서 쓸 수 있다.
+정책 파일의 전역 `maxStagedBytes`와 적용되는 namespace `maxStagedBytes`가 모두 파일 전체 크기 이상이어야 한다.
+namespace 한도는 전역 한도를 넘을 수 없다.
+전역 한도가 부족하면 전역 한도도 올린다.
+정책을 수정한 뒤 서버를 재시작한다.
+세션이 만료되지 않았고 예약에 필요한 여유 공간이 있으면 같은 세션을 이어서 쓸 수 있다.
 정책 파일의 조각 크기는 staging 한도 이하여야 한다.
 기존 세션의 조각 크기는 바뀌지 않는다.
 
 기존 한도를 유지하려면 세션을 취소하고 허용 가능한 크기로 새 세션을 만든다.
 새 creation key를 사용한다.
 세션 취소는 staging 객체 삭제가 끝날 때까지 사용량을 반환하지 않을 수 있다.
-`VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`가 반복되면 미정착 예약 복구 절차를 확인한다.
+`VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`가 반복되면 namespace 사용량과 정리 대기 객체를 확인한다.
+미정착 예약은 취소·시간 경과·multipart abort만으로 차감하지 않는다.
+자동 정산 경로는 없다. 오프라인 복구 수단은 [GitHub 이슈 #53](https://github.com/cp949/storix/issues/53)에서 별도로 추적한다.
 
 저장된 조각 재전송과 모든 조각이 저장된 세션의 완료는 staging 한도 하향만으로 거부되지 않는다.
 전체 파일 크기가 한도 이하여도 다른 예약으로 공간이 부족하면 새 조각 예약은 실패할 수 있다.

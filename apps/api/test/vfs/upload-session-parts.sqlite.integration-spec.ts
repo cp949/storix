@@ -791,9 +791,23 @@ describe('upload parts (SQLite + S3)', () => {
     await clear(id, namespaceId, [0, 1]);
   });
 
-  it('GET 진단은 예약 worker의 시작과 저장 완료를 같은 snapshot 상태로 보여준다', async () => {
-    const id = await create('/diagnosis-progress.bin', '4', raceNamespaceId);
-    const storage = app.get<BlobStorage>(BLOB_STORAGE);
+  it('한도 축소 뒤에도 기존 예약 worker와 사용량을 유지하고 같은 snapshot으로 진단한다', async () => {
+    const id = (
+      await http(admissionHighPolicyApp)
+        .post(base(admissionOverrideId))
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('X-Mutation-Scope', 'parts')
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          path: '/diagnosis-progress-lowered.bin',
+          sizeBytes: '8',
+          mimeType: 'application/octet-stream',
+          ifAbsent: true,
+        })
+        .expect(201)
+    ).body.sessionId as string;
+    await put(id, 0, 'abcd', admissionHighPolicyApp, admissionOverrideId).expect(200);
+    const storage = admissionHighPolicyApp.get<BlobStorage>(BLOB_STORAGE);
     const originalPut = storage.put.bind(storage);
     let entered!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -811,27 +825,54 @@ describe('upload parts (SQLite + S3)', () => {
         await originalPut(key, stream, type);
       })
       .mockImplementation(originalPut);
+    let pending: Promise<{ status: number }> | undefined;
     try {
-      const pending = put(id, 0, 'data', app, raceNamespaceId).then((response) => response);
+      pending = put(id, 1, 'efgh', admissionHighPolicyApp, admissionOverrideId).then((response) => response);
       await started;
+      const repo = app.get(VfsUploadSessionRepository);
+      const reserved = await repo.findPart(id, 1);
+      expect(reserved?.state).toBe('RESERVED');
+      const usage = await app
+        .get(DataSource)
+        .getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${admissionOverrideId}` });
+      expect(String(usage.stagedBytes)).toBe('8');
       const inProgress = await http()
-        .get(`${base(raceNamespaceId)}/${id}`)
+        .get(`${base(admissionOverrideId)}/${id}`)
         .set('Authorization', `Bearer ${API_KEY}`)
         .expect(200);
-      expect(inProgress.body.staging).toEqual({ maxStagedBytes: '8', status: 'PARTS_IN_PROGRESS' });
-      expect(inProgress.body.parts).toEqual([]);
+      expect(inProgress.body.staging).toEqual({ maxStagedBytes: '6', status: 'PARTS_IN_PROGRESS' });
+      expect(inProgress.body.parts).toEqual([{ index: 0, sizeBytes: '4' }]);
+      const retry = await put(id, 1, 'efgh', app, admissionOverrideId).expect(409);
+      expect(retry.body.code).toBe('VFS_UPLOAD_PART_IN_PROGRESS');
+      expect(await repo.findPart(id, 1)).toEqual(reserved);
+      const afterRetry = await app
+        .get(DataSource)
+        .getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${admissionOverrideId}` });
+      expect(String(afterRetry.stagedBytes)).toBe('8');
       resume();
       expect((await pending).status).toBe(200);
       const stored = await http()
-        .get(`${base(raceNamespaceId)}/${id}`)
+        .get(`${base(admissionOverrideId)}/${id}`)
         .set('Authorization', `Bearer ${API_KEY}`)
         .expect(200);
-      expect(stored.body.staging).toEqual({ maxStagedBytes: '8', status: 'PARTS_STORED' });
-      expect(stored.body.parts).toEqual([{ index: 0, sizeBytes: '4' }]);
+      expect(stored.body.staging).toEqual({ maxStagedBytes: '6', status: 'PARTS_STORED' });
+      expect(stored.body.parts).toEqual([
+        { index: 0, sizeBytes: '4' },
+        { index: 1, sizeBytes: '4' },
+      ]);
+      expect((await repo.findPart(id, 1))?.stagingKey).toBe(reserved?.stagingKey);
+      const afterStored = await app
+        .get(DataSource)
+        .getRepository(VfsUploadUsageEntity)
+        .findOneByOrFail({ id: `ns:${admissionOverrideId}` });
+      expect(String(afterStored.stagedBytes)).toBe('8');
     } finally {
       resume();
+      await pending;
       spy.mockRestore();
-      await clear(id, raceNamespaceId, [0]);
+      await clear(id, admissionOverrideId, [0, 1]);
     }
   });
 
