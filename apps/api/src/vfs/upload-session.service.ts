@@ -22,14 +22,13 @@ import { hashParts, identityOf, type MutationHttpResult } from './mutation.servi
 import { PathResolver } from './path-resolver.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
 import { encodeRevision } from './revision.js';
+import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
 import {
-  resolveNamespaceUploadLimits,
-  resolveNamespaceUploadPartSize,
-  UPLOAD_SESSION_POLICY,
-  type UploadSessionPolicy,
-} from './upload-session-config.js';
-import { assertUploadSessionFileFitsStaging } from './upload-session-file-size.policy.js';
-import { assessUploadSessionStaging } from './upload-session-staging.policy.js';
+  assessNewUploadFile,
+  diagnoseUploadSessionStaging,
+  planNewUploadSession,
+  resolveUploadSessionPolicy,
+} from './upload-session-policy.js';
 import {
   VfsInvalidMutationRequestError,
   VfsInvalidExpiryError,
@@ -37,6 +36,7 @@ import {
   VfsNodeNotFoundError,
   VfsPreconditionFailedError,
   VfsNamespaceNotFoundError,
+  UploadSessionStagingFileTooLargeError,
 } from './vfs.errors.js';
 
 class UploadSessionError extends DomainError {
@@ -141,19 +141,27 @@ export class UploadSessionService {
     }
     if (!this.policy)
       throw new UploadSessionError('VFS_FEATURE_DISABLED', 409, 'Upload session policy missing');
-    const namespacePolicy = resolveNamespaceUploadLimits(this.policy, namespaceId);
+    const projection = resolveUploadSessionPolicy(this.policy, namespaceId);
     const maxBytes = resolveMaxFileSizeBytes(
       limits.maxFileSizeBytes,
       this.globalMaxFileSizeBytes,
       this.defaultMaxFileSizeBytes,
     );
     const size = BigInt(parsed.sizeBytes);
-    if (size > BigInt(maxBytes)) throw new VfsFileTooLargeError(maxBytes);
-    assertUploadSessionFileFitsStaging(
-      size,
-      this.policy.global.maxStagedBytes,
-      namespacePolicy.maxStagedBytes,
-    );
+    const fileAssessment = assessNewUploadFile({
+      sizeBytes: size,
+      maxFileSizeBytes: maxBytes,
+      policy: projection,
+    });
+    if (fileAssessment.kind === 'file-too-large') {
+      throw new VfsFileTooLargeError(fileAssessment.maxFileSizeBytes);
+    }
+    if (fileAssessment.kind === 'staging-file-too-large') {
+      throw new UploadSessionStagingFileTooLargeError(
+        fileAssessment.sizeBytes,
+        fileAssessment.maxStagedBytes,
+      );
+    }
     // 완료 시점의 putConditionalContent와 같은 순서·오류로 판정한다.
     // 대상 조건(412·404) → 조상 경로(404·409 VFS_NOT_DIRECTORY) → DIRECTORY 대상(409) 순서다.
     const target = await this.nodes.resolvePath(namespaceId, root.id, resolved.segments);
@@ -173,14 +181,9 @@ export class UploadSessionService {
     await this.nodes.assertParentChain(namespaceId, root.id, resolved.segments);
     if (target?.type === 'DIRECTORY') throw new VfsIsDirectoryError(resolved.canonical);
     // 조각 크기는 생성 시점 정책으로 고정해 세션에 저장한다. 같은 creationKey 재생은 저장된 세션 값을 쓴다.
-    const partSizeBytes = resolveNamespaceUploadPartSize(this.policy, namespaceId);
-    const partCount = Number((size + BigInt(partSizeBytes) - 1n) / BigInt(partSizeBytes));
-    if (!Number.isSafeInteger(partCount) || partCount > 2147483647) throw new VfsFileTooLargeError(maxBytes);
     const now = new Date();
-    const maxExpiresAt = new Date(now.getTime() + this.policy.global.maxLifetimeSeconds * 1000);
-    const expiresAt = new Date(
-      Math.min(now.getTime() + this.policy.global.inactivitySeconds * 1000, maxExpiresAt.getTime()),
-    );
+    const plan = planNewUploadSession({ sizeBytes: size, policy: projection, now });
+    if (plan.kind === 'part-count-overflow') throw new VfsFileTooLargeError(maxBytes);
     const outcome = await this.sessions.createSession(
       {
         id: randomUUID(),
@@ -195,14 +198,14 @@ export class UploadSessionService {
         conditionType: parsed.ifAbsent ? 'ABSENT' : 'REVISION',
         conditionRevision: parsed.ifRevision ?? null,
         fileExpiresInSeconds,
-        partSizeBytes,
-        partCount,
+        partSizeBytes: plan.partSizeBytes,
+        partCount: plan.partCount,
         now,
-        expiresAt,
-        maxExpiresAt,
+        expiresAt: plan.expiresAt,
+        maxExpiresAt: plan.maxExpiresAt,
         requestId,
       },
-      { global: this.policy.global, namespace: namespacePolicy },
+      projection.caps,
     );
     if (outcome.kind === 'conflict')
       throw new UploadSessionError('MUTATION_KEY_REUSED', 409, '다른 요청에 사용한 mutation key');
@@ -227,16 +230,21 @@ export class UploadSessionService {
     const { session, parts } = found;
     // 만료 판정은 조회 처리 중 한 번 잡은 서버 시각으로 한다. GET은 상태를 전환하지 않는다.
     const now = new Date();
-    const expired = session.state === 'OPEN' && (session.expiresAt <= now || session.maxExpiresAt <= now);
-    const namespacePolicy = this.policy ? resolveNamespaceUploadLimits(this.policy, namespaceId) : null;
-    const maxStagedBytes = namespacePolicy
-      ? this.policy!.global.maxStagedBytes < namespacePolicy.maxStagedBytes
-        ? this.policy!.global.maxStagedBytes
-        : namespacePolicy.maxStagedBytes
-      : null;
+    const diagnosis = diagnoseUploadSessionStaging({
+      session: {
+        state: session.state,
+        sizeBytes: BigInt(session.sizeBytes),
+        partCount: session.partCount,
+        expiresAt: session.expiresAt,
+        maxExpiresAt: session.maxExpiresAt,
+      },
+      parts,
+      policy: this.policy ? resolveUploadSessionPolicy(this.policy, namespaceId) : null,
+      now,
+    });
     return {
       ...response(session),
-      ...(expired ? { expired: true as const } : {}),
+      ...(diagnosis.expired ? { expired: true as const } : {}),
       ...(session.state === 'OPEN' && session.lastCompleteFailureCode && session.lastCompleteFailureAt
         ? {
             lastCompleteFailure: {
@@ -260,15 +268,12 @@ export class UploadSessionService {
       parts: parts
         .filter((part) => part.state === 'STORED')
         .map((part) => ({ index: part.partIndex, sizeBytes: String(part.sizeBytes) })),
-      ...(session.state === 'OPEN' && !expired && maxStagedBytes !== null
+      ...(diagnosis.staging
         ? {
-            staging: assessUploadSessionStaging({
-              sizeBytes: BigInt(session.sizeBytes),
-              partCount: session.partCount,
-              parts,
-              maxStagedBytes,
-              now,
-            }),
+            staging: {
+              maxStagedBytes: diagnosis.staging.maxStagedBytes.toString(),
+              status: diagnosis.staging.status,
+            },
           }
         : {}),
       ...(session.state === 'COMPLETED' && session.responseBody

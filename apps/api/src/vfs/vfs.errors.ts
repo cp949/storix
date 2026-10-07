@@ -66,6 +66,19 @@ export class VfsPartChecksumMismatchError extends DomainError {
   }
 }
 
+/** staging 한도를 넘는 새 업로드 세션을 나타낸다. */
+export class UploadSessionStagingFileTooLargeError extends DomainError {
+  readonly code = 'VFS_UPLOAD_STAGING_FILE_TOO_LARGE';
+  readonly status = 413;
+
+  constructor(
+    readonly sizeBytes: bigint,
+    readonly maxStagedBytes: bigint,
+  ) {
+    super(`파일 크기(${sizeBytes} bytes)가 staging 상한(${maxStagedBytes} bytes)을 초과함`);
+  }
+}
+
 export class VfsPreconditionRequiredError extends DomainError {
   readonly code = 'VFS_PRECONDITION_REQUIRED';
   readonly status = 428;

@@ -3,12 +3,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CapabilityService } from '../capability/capability.service.js';
 import { VfsUploadSessionRepository } from '../persistence/vfs-upload-session.repository.js';
-import {
-  resolveNamespaceUploadLimits,
-  resolveNamespaceUploadPartSize,
-  UPLOAD_SESSION_POLICY,
-  type UploadSessionPolicy,
-} from '../vfs/upload-session-config.js';
+import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from '../vfs/upload-session-config.js';
+import { resolveUploadSessionPolicy } from '../vfs/upload-session-policy.js';
 
 /** `GET /api/v2/namespaces/{id}` 응답의 `uploadSessions` 블록. 바이트 한도·사용량은 int64 문자열이다. */
 export interface NamespaceUploadSessionsDto {
@@ -57,14 +53,14 @@ export class NamespaceUploadSessionsReader {
   async read(namespaceId: string, status: string): Promise<NamespaceUploadSessionsDto | null> {
     if (status !== 'ACTIVE' || !this.policy) return null;
     if (!this.capabilities.isEnabled(namespaceId, 'resumable-upload')) return null;
-    const limits = resolveNamespaceUploadLimits(this.policy, namespaceId);
+    const projection = resolveUploadSessionPolicy(this.policy, namespaceId);
     const usage = await this.sessions.readNamespaceUsage(namespaceId);
     return {
-      partSizeBytes: resolveNamespaceUploadPartSize(this.policy, namespaceId),
-      inactivitySeconds: this.policy.global.inactivitySeconds,
-      maxLifetimeSeconds: this.policy.global.maxLifetimeSeconds,
-      maxStagedBytes: limits.maxStagedBytes.toString(),
-      maxActiveSessions: limits.maxActiveSessions,
+      partSizeBytes: projection.partSizeBytes,
+      inactivitySeconds: projection.inactivitySeconds,
+      maxLifetimeSeconds: projection.maxLifetimeSeconds,
+      maxStagedBytes: projection.caps.namespace.maxStagedBytes.toString(),
+      maxActiveSessions: projection.caps.namespace.maxActiveSessions,
       stagedBytes: usage.stagedBytes,
       activeSessions: Number(usage.activeSessions),
     };

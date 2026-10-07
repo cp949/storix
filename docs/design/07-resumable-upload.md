@@ -119,10 +119,11 @@
 - 기본 조각 크기와 namespace 상속값도 검사한다. 설정 파일에 명시한 namespace는 capability 비활성 여부와 관계없이 검사한다. 값이 같으면 허용한다.
 - 초과 설정은 시작 오류다. 오류에는 정책 파일 경로, scope, 유효 조각 크기와 staging 한도, 조각 크기의 기본값·상속 출처를 표시한다.
 - 조각 크기를 staging 한도 이하로 낮추거나 staging 한도를 정책에 맞게 높여야 한다. 이 검사는 업로드 완료 가능성을 보장하지 않는다.
-- 새 세션의 조각 크기는 `resolveNamespaceUploadPartSize`가 정하고 생성 시점 값으로 세션에 고정한다. 정책을 바꿔도 기존 세션의 `partSizeBytes`·`partCount`는 바뀌지 않으며 같은 생성 key의 재생도 저장된 값을 돌려준다.
+- 새 세션의 조각 크기는 정책 projection이 정하고 생성 시점 값으로 세션에 고정한다. 정책을 바꿔도 기존 세션의 `partSizeBytes`·`partCount`는 바뀌지 않으며 같은 생성 key의 재생도 저장된 값을 돌려준다.
 - namespace 항목이 없으면 그 namespace에는 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다.
 - 신규 namespace를 기본 활성 목록으로 켜는 배포가 namespace마다 항목을 만들지 않도록 한 규칙이다.
-- 두 업로드 서비스는 `resolveNamespaceUploadLimits`로 같은 판정을 쓴다.
+- 정책 해석 module은 정확한 namespace ID key로 override를 찾는다. 항목이 없으면 전역 제한을 상속한다.
+- effective staging 한도는 전역·namespace `maxStagedBytes` 중 작은 값이다. usage admission은 두 cap을 각각 검사한다.
 - 잘못된 Namespace ID, 알 수 없는 필드, 잘못된 값은 시작 오류다.
 - 설정은 프로세스 시작 때 읽고 자동 reload하지 않는다.
 
@@ -132,12 +133,12 @@
 - 블록은 `NamespaceUploadSessionsReader`가 만든다. 컨트롤러 `findOne`이 `NamespaceService.findById` 결과에 합친다. create·list·관리자 PATCH 응답과 receipt 재생 본문에는 없다.
 - 필드와 값은 다음과 같다.
 
-| 필드                                      | 값                                                                    |
-| ----------------------------------------- | --------------------------------------------------------------------- |
-| `partSizeBytes`                           | 새 세션에 적용할 조각 크기. `resolveNamespaceUploadPartSize`가 정한다 |
-| `inactivitySeconds`, `maxLifetimeSeconds` | 전역 값. namespace override가 없다                                    |
-| `maxStagedBytes`, `maxActiveSessions`     | `resolveNamespaceUploadLimits`가 정한 namespace 값 또는 전역 값       |
-| `stagedBytes`, `activeSessions`           | `readNamespaceUsage`가 읽은 `vfs_upload_usage` 값                     |
+| 필드                                      | 값                                                   |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `partSizeBytes`                           | 새 세션에 적용할 조각 크기. 정책 projection이 정한다 |
+| `inactivitySeconds`, `maxLifetimeSeconds` | 전역 값. namespace override가 없다                   |
+| `maxStagedBytes`, `maxActiveSessions`     | 정책 projection의 namespace 값 또는 전역 상속값      |
+| `stagedBytes`, `activeSessions`           | `readNamespaceUsage`가 읽은 `vfs_upload_usage` 값    |
 
 - 바이트 한도·사용량(`maxStagedBytes`, `stagedBytes`)은 int64 문자열이다. 조각 크기·초·개수는 정수다.
 - 다음 중 하나면 블록을 생략하고 사용량을 읽지 않는다.
@@ -147,6 +148,18 @@
 - `stagedBytes`는 정착하지 않은 예약량과 정착한 조각을 구분하지 않는다.
 - 사용량은 호출 시점 읽기이고 admission 판정이 아니다. 블록을 읽은 뒤에도 조각 PUT이 `413 VFS_UPLOAD_STAGING_LIMIT_EXCEEDED`를 받을 수 있다.
 - 검증: `test/namespace/namespace-upload-sessions.reader.spec.ts`, `test/namespace/namespace.controller.spec.ts`, `test/vfs/upload-session-parts.integration-spec.ts`(PostgreSQL), `test/vfs/upload-session-parts.sqlite.integration-spec.ts`(SQLite).
+
+### 정책 해석 module
+
+`upload-session-config.ts`는 설정을 파싱·검증하고 정책을 주입한다. namespace별 제한 선택과 적용 조건은 `upload-session-policy.ts`가 순수 값으로 판정한다.
+
+- `resolveUploadSessionPolicy`는 정확한 namespace key를 조회해 전역 cap, namespace cap, effective staging 한도, 조각 크기와 만료 기간을 함께 projection한다.
+- `assessNewUploadFile`은 일반 파일 크기 상한을 먼저 검사하고 staging 적합성을 검사한다. 세션 생성은 이 판정 뒤 경로 조건을 확인한다.
+- `planNewUploadSession`은 경로 조건 확인 뒤 조각 수와 고정 만료 시각을 계산한다. 이 분리로 기존 오류 순서와 시각 캡처 위치를 유지한다.
+- `diagnoseUploadSessionStaging`은 한 DB snapshot과 한 번 캡처한 시각으로 GET의 `expired`·`staging` 파생값을 판정한다. capability gate는 이 함수의 입력이 아니다.
+- `assessUploadPartAdmission`은 repository가 usage 잠금과 세션 재조회, 기존 조각·cleanup·index 검사를 끝낸 뒤 호출한다. 전체 파일 크기를 먼저 검사하고 전역·namespace usage를 각각 검사한다.
+- 실제 part row와 usage counter 변경은 같은 transaction에 남는다. GET 진단은 저장 공간이나 admission을 보장하지 않는다.
+- module은 HTTP DTO, `DomainError`, repository, Entity, 파일 I/O, clock을 소유하지 않는다. caller는 결과를 기존 HTTP 오류와 DTO로 변환한다.
 
 세션 수명과 요청 한도:
 

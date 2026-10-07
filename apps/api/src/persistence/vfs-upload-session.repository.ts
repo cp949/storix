@@ -9,6 +9,7 @@ import { VfsUploadPartEntity, type VfsUploadPartState } from './entities/vfs-upl
 import { VfsUploadStagingCleanupEntity } from './entities/vfs-upload-staging-cleanup.entity.js';
 import { VfsUploadSessionEntity, type VfsUploadSessionState } from './entities/vfs-upload-session.entity.js';
 import { VfsUploadUsageEntity } from './entities/vfs-upload-usage.entity.js';
+import { assessUploadPartAdmission } from '../vfs/upload-session-policy.js';
 
 // staging_key 대조 질의 한 번에 넣는 key 수. SQLite 변수 제한을 피하려고 두 드라이버 모두 청크로 나눈다.
 const KEY_LOOKUP_CHUNK_SIZE = 1000;
@@ -209,16 +210,17 @@ export class VfsUploadSessionRepository {
       // 삭제된 행을 교체해도 같은 객체 key를 재사용하면 과거 GC 콜백과 구별할 수 없다.
       if (existing?.stagingKey === stagingKey) return { kind: 'invalid' };
       if (partIndex >= current.partCount) return { kind: 'invalid' };
-      const effectiveMaxStagedBytes =
-        caps.global.maxStagedBytes < caps.namespace.maxStagedBytes
-          ? caps.global.maxStagedBytes
-          : caps.namespace.maxStagedBytes;
-      if (BigInt(current.sizeBytes) > effectiveMaxStagedBytes) return { kind: 'file-too-large' };
-      if (
-        BigInt(usage[0].stagedBytes) + amount > caps.global.maxStagedBytes ||
-        BigInt(usage[1].stagedBytes) + amount > caps.namespace.maxStagedBytes
-      )
-        return { kind: 'limit' };
+      const admission = assessUploadPartAdmission({
+        sizeBytes: BigInt(current.sizeBytes),
+        amountBytes: amount,
+        caps,
+        usage: {
+          globalStagedBytes: BigInt(usage[0].stagedBytes),
+          namespaceStagedBytes: BigInt(usage[1].stagedBytes),
+        },
+      });
+      if (admission.kind === 'file-too-large') return { kind: 'file-too-large' };
+      if (admission.kind === 'limit') return { kind: 'limit' };
       if (existing) await parts.delete({ sessionId, partIndex, state: 'DELETED' });
       const part = parts.create({
         sessionId,

@@ -16,15 +16,15 @@ import { UPLOAD_STAGING_KEY_PREFIX } from '../storage/storage-key-prefixes.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
 import { VfsFileTooLargeError } from '../storage/storage.errors.js';
 import { requireRoot, requireRootWithLimits } from './require-root.js';
-import {
-  resolveNamespaceUploadLimits,
-  UPLOAD_SESSION_POLICY,
-  type UploadSessionPolicy,
-} from './upload-session-config.js';
+import { UPLOAD_SESSION_POLICY, type UploadSessionPolicy } from './upload-session-config.js';
+import { resolveUploadSessionPolicy } from './upload-session-policy.js';
 import { parseSha256Header } from './sha256-header.js';
-import { VfsNamespaceNotFoundError, VfsPartChecksumMismatchError } from './vfs.errors.js';
+import {
+  VfsNamespaceNotFoundError,
+  VfsPartChecksumMismatchError,
+  UploadSessionStagingFileTooLargeError,
+} from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
-import { UploadSessionStagingFileTooLargeError } from './upload-session-file-size.policy.js';
 
 class UploadPartError extends DomainError {
   constructor(
@@ -92,7 +92,7 @@ export class UploadSessionPartService {
       throw new UploadPartError('VFS_UPLOAD_SESSION_CLOSED', 409, '업로드 세션 종료 또는 만료');
     this.capabilities.requireEnabled(namespaceId, 'resumable-upload');
     if (!this.policy) throw new UploadPartError('VFS_FEATURE_DISABLED', 409, '업로드 세션 정책 없음');
-    const namespacePolicy = resolveNamespaceUploadLimits(this.policy, namespaceId);
+    const projection = resolveUploadSessionPolicy(this.policy, namespaceId);
     const expected =
       index === session.partCount - 1
         ? Number(BigInt(session.sizeBytes) - BigInt(index) * BigInt(session.partSizeBytes))
@@ -117,7 +117,7 @@ export class UploadSessionPartService {
         expected,
         index,
         existing,
-        this.policy.global.inactivitySeconds,
+        projection.inactivitySeconds,
         expectedSha256,
       );
 
@@ -145,8 +145,7 @@ export class UploadSessionPartService {
       // 각 예약 시도마다 독립 UUID를 생성한다. 삭제된 행을 다시 사용해도 이전 key는 재사용하지 않는다.
       const stagingKey = `${UPLOAD_STAGING_KEY_PREFIX}${randomUUID()}`;
       const reservation = this.sessions.reservePart(sessionId, index, String(expected), stagingKey, {
-        global: this.policy.global,
-        namespace: namespacePolicy,
+        ...projection.caps,
       });
       try {
         reserved = await Promise.race([reservation, deadline.promise]);
@@ -177,7 +176,7 @@ export class UploadSessionPartService {
           expected,
           index,
           reserved.part,
-          this.policy.global.inactivitySeconds,
+          projection.inactivitySeconds,
           expectedSha256,
         );
       throw new UploadPartError('VFS_UPLOAD_PART_IN_PROGRESS', 409, '조각 저장 또는 정리 진행 중');
@@ -192,11 +191,10 @@ export class UploadSessionPartService {
     }
     if (reserved.kind === 'file-too-large') {
       clearTimeout(deadline.timer);
-      const maxStagedBytes =
-        this.policy.global.maxStagedBytes < namespacePolicy.maxStagedBytes
-          ? this.policy.global.maxStagedBytes
-          : namespacePolicy.maxStagedBytes;
-      throw new UploadSessionStagingFileTooLargeError(BigInt(session.sizeBytes), maxStagedBytes);
+      throw new UploadSessionStagingFileTooLargeError(
+        BigInt(session.sizeBytes),
+        projection.effectiveMaxStagedBytes,
+      );
     }
     if (reserved.kind === 'closed') {
       clearTimeout(deadline.timer);
@@ -266,7 +264,7 @@ export class UploadSessionPartService {
             uploaded.sha256,
             encryptionIv,
             stagingKey,
-            this.policy.global.inactivitySeconds,
+            projection.inactivitySeconds,
           )
           .then((result) => {
             commitResolved = true;

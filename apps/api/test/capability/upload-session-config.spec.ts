@@ -1,7 +1,5 @@
-import {
-  parseUploadSessionPolicy,
-  resolveNamespaceUploadLimits,
-} from '../../src/vfs/upload-session-config.js';
+import { parseUploadSessionPolicy } from '../../src/vfs/upload-session-config.js';
+import { resolveUploadSessionPolicy } from '../../src/vfs/upload-session-policy.js';
 
 const NS = '123e4567-e89b-42d3-a456-426614174000';
 const GLOBAL = { maxStagedBytes: '1000', maxActiveSessions: 10, partSizeBytes: 4 };
@@ -26,17 +24,19 @@ describe('업로드 세션 정책', () => {
       global: GLOBAL,
       namespaces: { [NS]: { maxStagedBytes: '500', maxActiveSessions: 2 } },
     });
-    expect(resolveNamespaceUploadLimits(policy, NS)).toEqual({
+    expect(resolveUploadSessionPolicy(policy, NS).caps.namespace).toEqual({
       maxStagedBytes: 500n,
       maxActiveSessions: 2,
     });
-    expect(resolveNamespaceUploadLimits(policy, NS.toUpperCase())).toEqual({
+    expect(resolveUploadSessionPolicy(policy, NS.toUpperCase()).caps.namespace).toEqual({
       maxStagedBytes: 1000n,
       maxActiveSessions: 10,
     });
-    expect(resolveNamespaceUploadLimits(policy, '123e4567-e89b-42d3-a456-426614174001')).toEqual({
-      maxStagedBytes: 1000n,
-      maxActiveSessions: 10,
-    });
+    expect(resolveUploadSessionPolicy(policy, '123e4567-e89b-42d3-a456-426614174001').caps.namespace).toEqual(
+      {
+        maxStagedBytes: 1000n,
+        maxActiveSessions: 10,
+      },
+    );
   });
 });

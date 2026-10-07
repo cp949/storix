@@ -98,26 +98,6 @@ function limits(value: unknown, name: string): UploadSessionLimits {
   };
 }
 
-/**
- * namespace의 업로드 세션 한도를 돌려준다. namespace 항목이 있으면 그 값이고 없으면 전역 한도다.
- * 두 업로드 서비스가 같은 규칙을 쓴다.
- */
-export function resolveNamespaceUploadLimits(
-  policy: UploadSessionPolicy,
-  namespaceId: string,
-): UploadSessionLimits {
-  const row = policy.namespaces[namespaceId] ?? policy.global;
-  return { maxStagedBytes: row.maxStagedBytes, maxActiveSessions: row.maxActiveSessions };
-}
-
-/**
- * namespace의 새 세션에 적용할 조각 크기를 돌려준다. namespace 항목에 값이 있으면 그 값이고 없으면 전역 값이다.
- * 세션은 생성 시점의 값을 저장하므로 이 값을 바꿔도 기존 세션의 조각 크기는 바뀌지 않는다.
- */
-export function resolveNamespaceUploadPartSize(policy: UploadSessionPolicy, namespaceId: string): number {
-  return policy.namespaces[namespaceId]?.partSizeBytes ?? policy.global.partSizeBytes;
-}
-
 export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
   const root = object(value, ['global', 'namespaces'], ['global', 'namespaces'], 'root');
   const globalRow = object(
