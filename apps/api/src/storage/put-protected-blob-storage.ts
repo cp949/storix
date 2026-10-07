@@ -1,3 +1,4 @@
+/** storage PUT 시작 전 소유권을 확정하고 실제 Promise 정착을 기록한다. 규칙은 api ADR-0045다. */
 import { Logger } from '@nestjs/common';
 import type { Readable } from 'node:stream';
 import type {

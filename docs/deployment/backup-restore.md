@@ -14,7 +14,7 @@ Compose 명령은 실제 배포의 `-f` 조합을 사용한다.
 PUT 소유권 schema를 처음 적용할 때 다음 순서를 따른다.
 
 1. 모든 API writer와 GC를 중단한다.
-2. API 프로세스뿐 아니라 VersityGW 등 storage worker의 진행 중 요청도 끝났는지 외부에서 확인한다.
+2. 각 API·GC의 실제 writer 실행이 종료됐는지 외부에서 확인한다. 부모 `pnpm` 종료만으로 자식 `node` 종료를 판정하지 않는다.
 3. API migration을 실행한다.
 
    ```bash
@@ -26,15 +26,15 @@ PUT 소유권 schema를 처음 적용할 때 다음 순서를 따른다.
 
 이전 버전이 만든 multipart에는 소유권 행이 없다.
 새 GC는 해당 upload의 자동 abort를 보류한다.
-기존 multipart는 모든 writer와 GC를 중단한 유지보수 시간에 `storage-put:list-legacy`로 목록을 만들고 운영자가 확인한 manifest만 `storage-put:abort-legacy`로 회수한다.
+기존 multipart는 모든 writer와 GC를 중단한 유지보수 시간에 `storage-put:admin list-legacy`로 목록을 만들고 운영자가 확인한 manifest만 `storage-put:admin abort-legacy`로 회수한다.
 CLI 명령은 api ADR-0045와 `apps/api` 패키지의 `storage-put:admin` 스크립트를 따른다.
 
 유지보수 예:
 
 ```bash
-pnpm --filter @cp949/storix-api storage-put:admin -- list-legacy > /tmp/storix-legacy-multipart.json
+pnpm --silent --filter @cp949/storix-api storage-put:admin list-legacy > /tmp/storix-legacy-multipart.json
 cat /tmp/storix-legacy-multipart.json
-pnpm --filter @cp949/storix-api storage-put:admin -- abort-legacy \
+pnpm --silent --filter @cp949/storix-api storage-put:admin abort-legacy \
   --manifest /tmp/storix-legacy-multipart.json \
   --sha256 "$(jq -r .sha256 /tmp/storix-legacy-multipart.json)" \
   --all-writers-and-gc-stopped
@@ -47,14 +47,21 @@ writer와 GC는 abort 명령이 끝날 때까지 중단 상태를 유지한다.
 프로세스 종료 확인은 로그의 실제 실행 식별자를 사용한다.
 
 ```bash
-pnpm --filter @cp949/storix-api storage-put:admin -- confirm-stopped <execution-id> \
-  --writer-and-storage-worker-stopped
+pnpm --silent --filter @cp949/storix-api storage-put:admin confirm-stopped <execution-id> \
+  --writer-stopped --evidence "실제 writer 실행 식별자와 컨테이너 incarnation의 종료를 확인한 운영 기록"
 ```
 
-명령 실행자는 해당 API·GC 실행과 그 storage worker가 끝났음을 외부에서 확인해야 한다.
+명령 실행자는 해당 API·GC의 실제 writer 실행이 끝났음을 외부에서 확인해야 한다.
+`--evidence`에는 확인한 실행·컨테이너 incarnation과 확인 방법 또는 운영 기록 참조를 적는다.
+CLI는 확인 시각과 최초 확인 근거를 DB에 보존한다.
 CLI는 프로세스 종료 상태를 자동 감지하지 않는다.
+writer 종료 확인은 gateway worker 종료나 staging 예약량 해제를 뜻하지 않는다.
+`list-legacy`의 stdout은 JSON manifest만 포함한다. build와 진단 출력은 stderr로 보낸다.
 
-schema migration을 되돌리면 PUT 소유권 기록도 제거된다.
+추가 migration `1791700000027`은 기존 실행 행에 nullable `stopped_confirmation_evidence` 컬럼을 추가한다.
+기존 종료 확인 행은 CLI로 근거를 보충할 수 있다.
+이 migration을 되돌리면 확인 근거가 삭제된다.
+소유권 schema migration `1791700000026`을 되돌리면 PUT 소유권 기록도 제거된다.
 활성 writer가 있을 때 migration을 되돌리지 않는다.
 롤백 뒤에는 기존 upload가 owner unknown으로 처리되어 자동 회수가 보류된다.
 

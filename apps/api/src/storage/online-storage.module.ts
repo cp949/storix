@@ -1,3 +1,8 @@
+/**
+ * 온라인 PUT에 durable 소유권 래퍼를 제공한다.
+ * - 실행 식별자는 API 실행마다 새로 만든다.
+ * - 규칙은 api ADR-0045다.
+ */
 import { Logger, Module } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { BlobStorage } from './blob-storage.js';

@@ -14,6 +14,7 @@ import { WidenVfsNodeVersion1791700000023 } from './1791700000023-WidenVfsNodeVe
 import { AddTrashEntryCreatedAt1791700000024 } from './1791700000024-AddTrashEntryCreatedAt.js';
 import { AddUploadLastCompleteFailure1791700000025 } from './1791700000025-AddUploadLastCompleteFailure.js';
 import { AddStoragePutOwnership1791700000026 } from './1791700000026-AddStoragePutOwnership.js';
+import { AddStoragePutStopEvidence1791700000027 } from './1791700000027-AddStoragePutStopEvidence.js';
 import { MigrationInterface } from 'typeorm';
 import { AddAuditLog1789200000000 } from './1789200000000-AddAuditLog.js';
 import { AddBlobZeroSince1788800000000 } from './1788800000000-AddBlobZeroSince.js';
@@ -83,4 +84,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddTrashEntryCreatedAt1791700000024,
   AddUploadLastCompleteFailure1791700000025,
   AddStoragePutOwnership1791700000026,
+  AddStoragePutStopEvidence1791700000027,
 ];

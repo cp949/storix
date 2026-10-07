@@ -1,3 +1,8 @@
+/**
+ * PUT 시도와 GC claim을 영속 기록한다.
+ * - 실행 종료와 storage worker 종료는 구분한다.
+ * - 규칙은 api ADR-0045다.
+ */
 import { Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +13,10 @@ export type StoragePutGcClaimResult =
   { readonly kind: 'unknown' } | { readonly kind: 'protected' } | { readonly kind: 'claimed' };
 
 interface AttemptOwnerRow {
+  /** PUT Promise가 정착했는지 나타내는 저장 상태다. */
   readonly state: string;
+
+  /** 운영자가 writer 실행 종료를 확인한 시각이다. */
   readonly stoppedConfirmedAt: Date | string | null;
 }
 
@@ -69,10 +77,11 @@ export class StoragePutOwnershipRepository {
   }
 
   /** 관리자가 외부에서 실행 종료를 확인한 근거를 기록한다. */
-  async confirmExecutionStopped(executionId: string): Promise<boolean> {
+  async confirmExecutionStopped(executionId: string, evidence: string): Promise<boolean> {
+    if (!evidence?.trim()) throw new Error('writer 종료 확인 근거가 필요함');
     await this.dataSource.query(
-      `UPDATE storage_put_execution SET stopped_confirmed_at = CURRENT_TIMESTAMP WHERE execution_id = ${this.sqlite ? '?' : '$1'} AND stopped_confirmed_at IS NULL`,
-      [executionId],
+      `UPDATE storage_put_execution SET stopped_confirmed_at = COALESCE(stopped_confirmed_at, CURRENT_TIMESTAMP), stopped_confirmation_evidence = ${this.sqlite ? '?' : '$1'} WHERE execution_id = ${this.sqlite ? '?' : '$2'} AND stopped_confirmation_evidence IS NULL`,
+      [evidence.trim(), executionId],
     );
     const rows = (await this.dataSource.query(
       `SELECT stopped_confirmed_at AS "stoppedConfirmedAt" FROM storage_put_execution WHERE execution_id = ${this.sqlite ? '?' : '$1'}`,
@@ -81,7 +90,7 @@ export class StoragePutOwnershipRepository {
     return rows.length > 0 && rows[0].stoppedConfirmedAt !== null;
   }
 
-  /** 등록된 소유자와 종료 확인을 잠근 뒤 multipart abort 구간의 key claim을 얻는다. */
+  /** key 행을 잠그고 소유자와 종료 확인을 조회한 뒤 multipart abort 구간의 claim을 얻는다. */
   async claimForGc(key: string, claimId: string, executionId: string): Promise<StoragePutGcClaimResult> {
     return this.dataSource.transaction(async (manager) => {
       const ph = this.sqlite ? '?' : '$1';

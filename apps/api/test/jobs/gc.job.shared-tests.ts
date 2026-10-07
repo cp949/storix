@@ -705,7 +705,9 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     await activePut;
     await storage.delete(activeOldKey);
     ownership.claimForGc = realClaim;
-    expect(await ownership.confirmExecutionStopped(writerExecutionId)).toBe(true);
+    expect(
+      await ownership.confirmExecutionStopped(writerExecutionId, '테스트 writer 실행 종료를 확인함'),
+    ).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 2200));
     const recovery = await new GcJob(
       storage,

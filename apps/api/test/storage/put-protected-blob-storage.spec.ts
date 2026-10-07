@@ -1,3 +1,4 @@
+/** 가짜 DB·storage로 PUT 시작 전 등록과 성공·실패 정착을 검증한다. 규칙은 api ADR-0045다. */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';

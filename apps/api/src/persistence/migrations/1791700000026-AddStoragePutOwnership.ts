@@ -1,3 +1,4 @@
+/** storage PUT 소유권과 key별 GC claim의 영속 테이블을 만든다. 규칙은 api ADR-0045다. */
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** 온라인 storage PUT 소유권과 key별 GC claim을 SQLite·PostgreSQL에 저장한다. */

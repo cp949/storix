@@ -419,6 +419,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'AddTrashEntryCreatedAt1791700000024',
       'AddUploadLastCompleteFailure1791700000025',
       'AddStoragePutOwnership1791700000026',
+      'AddStoragePutStopEvidence1791700000027',
     ]);
   });
 

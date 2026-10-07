@@ -1,3 +1,4 @@
+/** PostgreSQL 16에서 PUT 소유권 전이와 동시 회수 배제를 검증한다. 규칙은 api ADR-0045다. */
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { DataSource } from 'typeorm';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
@@ -27,5 +28,8 @@ describe('StoragePutOwnershipRepository (Postgres)', () => {
     await container.stop();
   });
 
-  runStoragePutOwnershipRepositorySharedTests(() => new StoragePutOwnershipRepository(dataSource));
+  runStoragePutOwnershipRepositorySharedTests(
+    () => new StoragePutOwnershipRepository(dataSource),
+    () => dataSource,
+  );
 });

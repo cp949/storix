@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- storage PUT 운영 CLI의 설정 모듈 누락으로 시작하지 못하는 오류를 수정했다. manifest stdout에서 build·진단 출력을 분리했다. writer 종료 확인 근거를 DB에 보존하며, gateway worker 종료를 회수 승인 조건으로 요구하지 않는다. 추가 migration `1791700000027`이 nullable 근거 컬럼을 추가한다.
 - multipart GC가 upload 나이만으로 abort하지 않는다. 온라인 PUT의 durable 소유권, 실행 종료 확인, key별 회수 claim을 확인한다. 미등록 key와 owner 조회 오류는 보류한다. 관리자 종료 확인·기존 multipart manifest CLI를 추가했다. 결정은 api ADR-0045다.
 
 - 재개 업로드 정책에서 전역 또는 namespace의 유효 조각 크기가 같은 범위의 `maxStagedBytes`를 넘으면 서버 시작을 거부한다. 기본 조각 크기·namespace 상속값·비활성 namespace도 검사하며, 오류에 정책 경로와 값의 출처를 표시한다. 기존 설정은 조각 크기를 낮추거나 staging 한도를 높여야 할 수 있다.

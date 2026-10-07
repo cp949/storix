@@ -1,3 +1,4 @@
+/** 실제 SQLite에서 PUT 소유권 전이와 key 회수 배제를 검증한다. 규칙은 api ADR-0045다. */
 import { DataSource } from 'typeorm';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { StoragePutOwnershipRepository } from '../../src/persistence/storage-put-ownership.repository.js';
@@ -25,5 +26,8 @@ describe('StoragePutOwnershipRepository (SQLite)', () => {
 
   afterAll(async () => dataSource.destroy());
 
-  runStoragePutOwnershipRepositorySharedTests(() => new StoragePutOwnershipRepository(dataSource));
+  runStoragePutOwnershipRepositorySharedTests(
+    () => new StoragePutOwnershipRepository(dataSource),
+    () => dataSource,
+  );
 });

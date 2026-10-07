@@ -35,7 +35,8 @@ heartbeat나 업무 lease 만료도 storage PUT Promise의 정착을 증명하�
 - multipart의 age cutoff는 후보를 줄이는 조건으로만 쓴다. worker 종료 증거로 쓰지 않는다.
 - `abort` 성공, `NoSuchUpload`, multipart 목록 부재는 resumable staging 예약량 해제 근거가 아니다.
 - SQLite는 단일 writer 전제를 따른다. PostgreSQL은 여러 API와 독립 GC의 key claim 경합을 지원한다.
-- `confirm-stopped` 운영 CLI는 관리자가 실제 writer와 storage worker 종료를 외부에서 확인한 실행 식별자만 기록한다.
+- `confirm-stopped` 운영 CLI는 관리자가 실제 writer 실행 종료를 외부에서 확인한 실행 식별자를 기록한다.
+- 종료 확인 시각과 최초 확인 근거를 DB에 보존한다. gateway worker 종료 확인으로 해석하지 않는다.
 - CLI 확인은 자동 감지가 아니라 관리자 attestation이다.
 - 실행 식별자는 API·GC 시작 로그에 출력한다. 공개 HTTP API는 추가하지 않는다.
 - backup은 owner 기록을 DB dump에 보존한다. restore는 API·GC 중단 전제를 유지한다.
@@ -48,14 +49,14 @@ heartbeat나 업무 lease 만료도 storage PUT Promise의 정착을 증명하�
 ## 배포 전환
 
 - schema migration을 적용하기 전에 기존 API writer와 GC를 모두 중단한다.
-- gateway의 진행 중 요청·worker도 외부에서 종료됐음을 확인한다.
+- 부모 `pnpm` 종료만으로 자식 writer `node` 종료를 판정하지 않는다.
 - 새 API·GC를 시작한 뒤 시작 로그의 실행 식별자를 보존한다.
 - migration 전 multipart는 owner unknown이므로 자동 GC가 회수하지 않는다.
 - legacy upload 회수는 전체 writer·GC가 중단된 유지보수 절차로 수행한다.
 
 ## 한계
 
-- 관리자가 실행 또는 gateway worker 종료를 잘못 확인하면 활성 upload를 보호하지 못할 수 있다.
+- 관리자가 실제 writer 실행 종료를 잘못 확인하면 활성 upload를 보호하지 못할 수 있다.
 - owner unknown 및 종료 확인되지 않은 multipart는 저장 공간 회수가 지연된다.
 - process 종료만으로 gateway worker 종료를 증명하지 않는다.
 - 기록 테이블은 자동 정리하지 않아 행이 계속 증가한다.

@@ -1,3 +1,4 @@
+/** 가짜 storage와 owner 조회로 legacy 목록과 승인 digest를 검증한다. 규칙은 api ADR-0045다. */
 import { describe, expect, it, jest } from '@jest/globals';
 import type { StoragePutOwnershipRepository } from '../../src/persistence/storage-put-ownership.repository.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
