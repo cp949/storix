@@ -51,6 +51,7 @@ describe('upload parts (SQLite + S3)', () => {
   let admissionOverrideId: string;
   let admissionFullId: string;
   let admissionHighPolicyApp: INestApplication;
+  let admissionGlobalLowPolicyApp: INestApplication;
 
   function policy(): UploadSessionPolicy {
     return {
@@ -75,7 +76,11 @@ describe('upload parts (SQLite + S3)', () => {
     };
   }
 
-  async function bootstrap(enabled: boolean, namespaceCaps: Record<string, bigint> = {}) {
+  async function bootstrap(
+    enabled: boolean,
+    namespaceCaps: Record<string, bigint> = {},
+    globalMaxStagedBytes?: bigint,
+  ) {
     const builder = Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
@@ -104,7 +109,26 @@ describe('upload parts (SQLite + S3)', () => {
           },
         }),
       );
-      const basePolicy = policy();
+      const originalPolicy = policy();
+      const basePolicy: UploadSessionPolicy =
+        globalMaxStagedBytes === undefined
+          ? originalPolicy
+          : {
+              ...originalPolicy,
+              global: { ...originalPolicy.global, maxStagedBytes: globalMaxStagedBytes },
+              namespaces: Object.fromEntries(
+                Object.entries(originalPolicy.namespaces).map(([id, limits]) => [
+                  id,
+                  {
+                    ...limits,
+                    maxStagedBytes:
+                      limits.maxStagedBytes < globalMaxStagedBytes
+                        ? limits.maxStagedBytes
+                        : globalMaxStagedBytes,
+                  },
+                ]),
+              ),
+            };
       const namespaces: Record<string, UploadSessionPolicy['namespaces'][string]> = {
         ...basePolicy.namespaces,
       };
@@ -256,11 +280,13 @@ describe('upload parts (SQLite + S3)', () => {
     app = await bootstrap(true);
     second = await bootstrap(true);
     admissionHighPolicyApp = await bootstrap(true, { [admissionOverrideId]: 8n });
+    admissionGlobalLowPolicyApp = await bootstrap(true, {}, 4n);
   }, 180000);
 
   afterAll(async () => {
     if (second) await second.close();
     if (admissionHighPolicyApp) await admissionHighPolicyApp.close();
+    if (admissionGlobalLowPolicyApp) await admissionGlobalLowPolicyApp.close();
     if (app) await app.close();
     if (migrations?.isInitialized) await migrations.destroy();
     if (s3Container) await s3Container.stop();
@@ -392,6 +418,87 @@ describe('upload parts (SQLite + S3)', () => {
       expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
       expect(await snapshot(admissionOverrideId, rejectedKey)).toEqual(before);
       await clear(original.body.sessionId as string, admissionOverrideId, []);
+    });
+
+    it('기존 세션은 하향 정책에서 새 예약을 거부하고 정책 복원 뒤 이어서 저장한다', async () => {
+      const id = (
+        await postCreate(
+          admissionOverrideId,
+          randomUUID(),
+          '/admission-existing-session.bin',
+          '8',
+          admissionHighPolicyApp,
+        ).expect(201)
+      ).body.sessionId as string;
+      try {
+        await put(id, 0, 'abcd', admissionHighPolicyApp, admissionOverrideId).expect(200);
+        const status = await http()
+          .get(`${base(admissionOverrideId)}/${id}`)
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(200);
+        expect(status.body.staging).toEqual({ maxStagedBytes: '6', status: 'FILE_TOO_LARGE' });
+        await put(id, 0, 'abcd', app, admissionOverrideId).expect(200);
+        const beforeReject = await app
+          .get(DataSource)
+          .getRepository(VfsUploadSessionEntity)
+          .findOneByOrFail({ id });
+        const rejected = await put(id, 1, 'efgh', app, admissionOverrideId).expect(413);
+        expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
+        const after = await app.get(DataSource).getRepository(VfsUploadSessionEntity).findOneByOrFail({ id });
+        expect(after.state).toBe(beforeReject.state);
+        expect(after.expiresAt).toEqual(beforeReject.expiresAt);
+        await put(id, 1, 'efgh', admissionHighPolicyApp, admissionOverrideId).expect(200);
+        const storedStatus = await http()
+          .get(`${base(admissionOverrideId)}/${id}`)
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(200);
+        expect(storedStatus.body.staging.status).toBe('PARTS_STORED');
+      } finally {
+        const current = await app.get(DataSource).getRepository(VfsUploadSessionEntity).findOneBy({ id });
+        if (current?.state === 'OPEN') await clear(id, admissionOverrideId, [0, 1]);
+      }
+    });
+
+    it('전역 한도 하향은 namespace override가 커도 사용량이 0인 기존 세션을 거부한다', async () => {
+      const id = await create('/admission-global-lowered.bin', '8', admissionGlobalId);
+      const key = randomUUID();
+      const before = await snapshot(admissionGlobalId, key);
+      expect(before.global.stagedBytes).toBe('0');
+      try {
+        const status = await http(admissionGlobalLowPolicyApp)
+          .get(`${base(admissionGlobalId)}/${id}`)
+          .set('Authorization', `Bearer ${API_KEY}`)
+          .expect(200);
+        expect(status.body.staging).toEqual({ maxStagedBytes: '4', status: 'FILE_TOO_LARGE' });
+        const rejected = await put(id, 0, 'abcd', admissionGlobalLowPolicyApp, admissionGlobalId).expect(413);
+        expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
+        expect(await snapshot(admissionGlobalId, key)).toEqual(before);
+        await put(id, 0, 'abcd', app, admissionGlobalId).expect(200);
+        await put(id, 1, 'efgh', app, admissionGlobalId).expect(200);
+      } finally {
+        const current = await app.get(DataSource).getRepository(VfsUploadSessionEntity).findOneBy({ id });
+        if (current?.state === 'OPEN') await clear(id, admissionGlobalId, [0, 1]);
+      }
+    });
+
+    it('파일 크기는 한도 이하여도 기존 사용량 초과는 사용량 오류로 유지한다', async () => {
+      const occupied = await create('/admission-usage-5.bin', '5', admissionFullId);
+      const next = await create('/admission-usage-next-4.bin', '6', admissionFullId);
+      try {
+        await put(occupied, 0, 'abcd', app, admissionFullId).expect(200);
+        await put(occupied, 1, 'e', app, admissionFullId).expect(200);
+        const before = await app
+          .get(DataSource)
+          .getRepository(VfsUploadUsageEntity)
+          .findOneByOrFail({ id: `ns:${admissionFullId}` });
+        expect(String(before.stagedBytes)).toBe('5');
+        const rejected = await put(next, 0, 'wxyz', app, admissionFullId).expect(413);
+        expect(rejected.body.code).toBe('VFS_UPLOAD_STAGING_LIMIT_EXCEEDED');
+        expect(rejected.body.code).not.toBe('VFS_UPLOAD_STAGING_FILE_TOO_LARGE');
+      } finally {
+        await clear(occupied, admissionFullId, [0, 1]);
+        await clear(next, admissionFullId, []);
+      }
     });
 
     it('staging 사용량이 가득 차도 새 세션 생성은 공간을 예약하지 않는다', async () => {
@@ -682,6 +789,50 @@ describe('upload parts (SQLite + S3)', () => {
       /^upload-staging\/[0-9a-f-]{36}$/,
     );
     await clear(id, namespaceId, [0, 1]);
+  });
+
+  it('GET 진단은 예약 worker의 시작과 저장 완료를 같은 snapshot 상태로 보여준다', async () => {
+    const id = await create('/diagnosis-progress.bin', '4', raceNamespaceId);
+    const storage = app.get<BlobStorage>(BLOB_STORAGE);
+    const originalPut = storage.put.bind(storage);
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let resume!: () => void;
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const spy = jest
+      .spyOn(storage, 'put')
+      .mockImplementationOnce(async (key, stream, type) => {
+        entered();
+        await released;
+        await originalPut(key, stream, type);
+      })
+      .mockImplementation(originalPut);
+    try {
+      const pending = put(id, 0, 'data', app, raceNamespaceId).then((response) => response);
+      await started;
+      const inProgress = await http()
+        .get(`${base(raceNamespaceId)}/${id}`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(200);
+      expect(inProgress.body.staging).toEqual({ maxStagedBytes: '8', status: 'PARTS_IN_PROGRESS' });
+      expect(inProgress.body.parts).toEqual([]);
+      resume();
+      expect((await pending).status).toBe(200);
+      const stored = await http()
+        .get(`${base(raceNamespaceId)}/${id}`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .expect(200);
+      expect(stored.body.staging).toEqual({ maxStagedBytes: '8', status: 'PARTS_STORED' });
+      expect(stored.body.parts).toEqual([{ index: 0, sizeBytes: '4' }]);
+    } finally {
+      resume();
+      spy.mockRestore();
+      await clear(id, raceNamespaceId, [0]);
+    }
   });
 
   it('enforces one shared byte cap across app instances and preserves the accepted same-index object', async () => {
