@@ -26,6 +26,7 @@ describe('main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', () =>
     rmSync(workDir, { recursive: true, force: true });
   });
 
+  /** 임시 SQLite와 정책 파일을 준비하고 자식 프로세스가 호스트의 정책·DB·포트 설정을 상속하지 않게 한다. */
   function preparePolicyBoot(policy: unknown): {
     readonly env: NodeJS.ProcessEnv;
     readonly policyPath: string;

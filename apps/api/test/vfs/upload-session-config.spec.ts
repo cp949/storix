@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
+import type { CapabilityConfig } from '../../src/capability/capability-config.js';
 import {
   loadUploadSessionPolicy,
   resolveNamespaceUploadLimits,
@@ -23,7 +24,8 @@ describe('upload session policy', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function load(value: unknown, capabilities = enabled) {
+  /** 임시 정책 파일을 실제 loader로 읽고 지정한 capability 설정에 대한 검증 결과를 돌려준다. */
+  async function load(value: unknown, capabilities: CapabilityConfig = enabled) {
     const path = join(dir, 'upload.json');
     await writeFile(path, JSON.stringify(value));
     return loadUploadSessionPolicy(
@@ -98,6 +100,7 @@ describe('upload session policy', () => {
   });
 
   it('기본 조각 크기도 전역 staging 한도와 비교한다', async () => {
+    // 문서의 기본 조각 크기가 바뀌면 실패하도록 기대값을 리터럴로 고정한다.
     await expect(
       load({ global: { maxStagedBytes: '1048576', maxActiveSessions: 10 }, namespaces: {} }),
     ).rejects.toThrow(/16777216.*default/);
@@ -159,6 +162,7 @@ describe('upload session policy', () => {
     });
 
     it('기본 전역 조각 크기의 namespace 상속 출처를 표시한다', async () => {
+      // 기본값 변경이 상속 경로에도 반영되는지 확인하도록 기대값을 리터럴로 고정한다.
       await expect(
         load({
           global: { maxStagedBytes: '33554432', maxActiveSessions: 2 },
@@ -174,7 +178,7 @@ describe('upload session policy', () => {
             global: { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 },
             namespaces: { [NS]: { maxStagedBytes: '10', maxActiveSessions: 1, partSizeBytes: 64 } },
           },
-          { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NS]: [] } },
+          { globalAllowedCapabilities: ['resumable-upload'], namespaceAllowedCapabilities: { [NS]: [] } },
         ),
       ).rejects.toThrow(/partSizeBytes=64/);
     });
@@ -186,7 +190,7 @@ describe('upload session policy', () => {
             global: { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 },
             namespaces: { [NS]: { maxStagedBytes: '10', maxActiveSessions: 1, partSizeBytes: 64 } },
           },
-          { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NS]: [] } },
+          { globalAllowedCapabilities: [], namespaceAllowedCapabilities: {} },
         ),
       ).rejects.toThrow(/partSizeBytes=64/);
     });
