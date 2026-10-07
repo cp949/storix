@@ -5,7 +5,7 @@ import { RequestContextMiddleware } from '../common/request-context.middleware.j
 import { CapabilityModule } from '../capability/capability.module.js';
 import { EncryptionModule } from '../encryption/encryption.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { StorageModule } from '../storage/storage.module.js';
+import { OnlineStorageModule } from '../storage/online-storage.module.js';
 import { ContentService } from './content.service.js';
 import { FsController } from './fs.controller.js';
 import { PathResolver } from './path-resolver.js';
@@ -25,7 +25,7 @@ import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { ContentIngressService } from './content-ingress.service.js';
 
 @Module({
-  imports: [PersistenceModule, StorageModule, EncryptionModule, CapabilityModule],
+  imports: [PersistenceModule, OnlineStorageModule, EncryptionModule, CapabilityModule],
   controllers: [
     FsController,
     PublicFsController,

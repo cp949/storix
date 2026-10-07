@@ -1,7 +1,10 @@
 import { NamespaceDeletionCleanup } from './namespace-deletion.cleanup.js';
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PersistenceModule } from '../persistence/persistence.module.js';
+import { StoragePutOwnershipRepository } from '../persistence/storage-put-ownership.repository.js';
 import { StorageModule } from '../storage/storage.module.js';
+import { STORAGE_PUT_EXECUTION_ID } from '../storage/online-storage.module.js';
 import { GcJob } from './gc.job.js';
 import { GcLock } from './gc-lock.js';
 
@@ -11,7 +14,21 @@ import { GcLock } from './gc-lock.js';
 // 그쪽 전용 env var(STORIX_BACKUP_DIR, STORIX_RESTORE_SOURCE_DIR) 부재로 부팅이 실패한다.
 @Module({
   imports: [PersistenceModule, StorageModule],
-  providers: [GcJob, GcLock, NamespaceDeletionCleanup],
+  providers: [
+    {
+      provide: STORAGE_PUT_EXECUTION_ID,
+      useFactory: async (ownership: StoragePutOwnershipRepository): Promise<string> => {
+        const executionId = randomUUID();
+        await ownership.registerExecution(executionId);
+        new Logger('StoragePutExecution').log(`GC 실행 식별자: ${executionId}`);
+        return executionId;
+      },
+      inject: [StoragePutOwnershipRepository],
+    },
+    GcJob,
+    GcLock,
+    NamespaceDeletionCleanup,
+  ],
   exports: [GcJob, GcLock],
 })
 export class GcJobModule {}

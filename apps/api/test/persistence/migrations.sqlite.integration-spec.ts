@@ -418,6 +418,7 @@ describe('마이그레이션 체인 (SQLite)', () => {
       'WidenVfsNodeVersion1791700000023',
       'AddTrashEntryCreatedAt1791700000024',
       'AddUploadLastCompleteFailure1791700000025',
+      'AddStoragePutOwnership1791700000026',
     ]);
   });
 

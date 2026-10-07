@@ -27,7 +27,8 @@
     "backup:run": "pnpm build && node dist/backup-main.js",
     "backup:run:prod": "node dist/backup-main.js",
     "restore:run": "pnpm build && node dist/restore-main.js",
-    "restore:run:prod": "node dist/restore-main.js"
+    "restore:run:prod": "node dist/restore-main.js",
+    "storage-put:admin": "pnpm build && node dist/storage/storage-put-admin.main.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",

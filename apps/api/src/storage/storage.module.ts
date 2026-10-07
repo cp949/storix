@@ -3,7 +3,13 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAX_TCP_PORT, parseBoolean, parseOptionalString, parsePositiveInt } from '../common/env-parsing.js';
-import { BLOB_STORAGE, STORAGE_BUCKET, STORAGE_CLIENT, STORAGE_PUBLIC_CLIENT } from './storage.constants.js';
+import {
+  BLOB_STORAGE,
+  RAW_BLOB_STORAGE,
+  STORAGE_BUCKET,
+  STORAGE_CLIENT,
+  STORAGE_PUBLIC_CLIENT,
+} from './storage.constants.js';
 import { S3BlobStorage } from './s3-blob-storage.js';
 import { StorageKeyGenerator } from './storage-key-generator.js';
 
@@ -119,13 +125,14 @@ export function buildS3PublicClientConfig(config: ConfigService): S3ClientConfig
       inject: [ConfigService],
     },
     {
-      provide: BLOB_STORAGE,
+      provide: RAW_BLOB_STORAGE,
       useFactory: (client: S3Client, bucket: string, publicClient: S3Client | null) =>
         new S3BlobStorage(client, bucket, publicClient),
       inject: [STORAGE_CLIENT, STORAGE_BUCKET, STORAGE_PUBLIC_CLIENT],
     },
+    { provide: BLOB_STORAGE, useExisting: RAW_BLOB_STORAGE },
     StorageKeyGenerator,
   ],
-  exports: [STORAGE_CLIENT, STORAGE_BUCKET, BLOB_STORAGE, StorageKeyGenerator],
+  exports: [STORAGE_CLIENT, STORAGE_BUCKET, BLOB_STORAGE, RAW_BLOB_STORAGE, StorageKeyGenerator],
 })
 export class StorageModule {}

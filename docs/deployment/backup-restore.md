@@ -7,6 +7,62 @@ Compose 명령은 실제 배포의 `-f` 조합을 사용한다.
 예를 들어 `-f docker-compose.yml -f docker-compose.versitygw.yml`을 붙인다.
 조합이 다르면 `backup`·`restore`가 다른 DB·스토리지를 사용한다.
 
+온라인 PUT와 multipart 회수의 배포 전환은 [api ADR-0045](../../apps/api/docs/adr/0045-gc-incomplete-multipart-upload.md)를 따른다.
+
+## PUT 소유권 schema 전환
+
+PUT 소유권 schema를 처음 적용할 때 다음 순서를 따른다.
+
+1. 모든 API writer와 GC를 중단한다.
+2. API 프로세스뿐 아니라 VersityGW 등 storage worker의 진행 중 요청도 끝났는지 외부에서 확인한다.
+3. API migration을 실행한다.
+
+   ```bash
+   docker compose run --rm migrate
+   ```
+
+4. API와 GC를 시작한다.
+5. API·GC 시작 로그의 storage PUT 실행 식별자를 운영 기록에 남긴다.
+
+이전 버전이 만든 multipart에는 소유권 행이 없다.
+새 GC는 해당 upload의 자동 abort를 보류한다.
+기존 multipart는 모든 writer와 GC를 중단한 유지보수 시간에 `storage-put:list-legacy`로 목록을 만들고 운영자가 확인한 manifest만 `storage-put:abort-legacy`로 회수한다.
+CLI 명령은 api ADR-0045와 `apps/api` 패키지의 `storage-put:admin` 스크립트를 따른다.
+
+유지보수 예:
+
+```bash
+pnpm --filter @cp949/storix-api storage-put:admin -- list-legacy > /tmp/storix-legacy-multipart.json
+cat /tmp/storix-legacy-multipart.json
+pnpm --filter @cp949/storix-api storage-put:admin -- abort-legacy \
+  --manifest /tmp/storix-legacy-multipart.json \
+  --sha256 "$(jq -r .sha256 /tmp/storix-legacy-multipart.json)" \
+  --all-writers-and-gc-stopped
+```
+
+운영자는 manifest의 각 `key`, `uploadId`, `initiated`와 `sha256`를 검토한다.
+abort 명령은 SHA-256이 일치하고 현재도 owner 미등록인 목록만 처리한다.
+writer와 GC는 abort 명령이 끝날 때까지 중단 상태를 유지한다.
+
+프로세스 종료 확인은 로그의 실제 실행 식별자를 사용한다.
+
+```bash
+pnpm --filter @cp949/storix-api storage-put:admin -- confirm-stopped <execution-id> \
+  --writer-and-storage-worker-stopped
+```
+
+명령 실행자는 해당 API·GC 실행과 그 storage worker가 끝났음을 외부에서 확인해야 한다.
+CLI는 프로세스 종료 상태를 자동 감지하지 않는다.
+
+schema migration을 되돌리면 PUT 소유권 기록도 제거된다.
+활성 writer가 있을 때 migration을 되돌리지 않는다.
+롤백 뒤에는 기존 upload가 owner unknown으로 처리되어 자동 회수가 보류된다.
+
+```txt
+위험도: 높음
+롤백: migration down으로 테이블을 제거할 수 있다. 소유권 기록은 복원되지 않으므로 모든 writer·GC를 중단한 상태에서만 수행한다.
+```
+
 `docker-compose.override.yml` 또는 `COMPOSE_FILE`로 조합을 고정하면 아래 명령을 그대로 쓸 수 있다.
 설정 방법은 [README](../../README.md)의 "실행"을 따른다.
 
@@ -62,6 +118,7 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 ## 복구
 
 1. 모든 API 인스턴스와 GC를 정지한다.
+   - storage PUT worker가 끝났는지 외부에서 확인한다. API 프로세스 종료만으로 gateway worker 종료를 판정하지 않는다.
    - Postgres 복구는 대상의 Storix 테이블을 모두 삭제하고 백업 시점 스키마로 다시 만든다.
    - single-instance Compose의 API 정지 명령은 다음과 같다.
 
@@ -116,6 +173,7 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 
 4. migration 성공을 확인한 뒤 `app`을 시작한다.
    - GC도 복구·migration 완료 뒤에 재개한다.
+   - 복원된 process 실행을 자동으로 종료 확인하지 않는다. owner 상태가 불명확한 multipart는 유지보수 목록으로 별도 확인한다.
 
    ```bash
    docker compose start app

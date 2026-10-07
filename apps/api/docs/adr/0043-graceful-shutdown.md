@@ -21,11 +21,11 @@
 - 이 변경 이후 이미지에서 유휴 상태 `docker stop`은 0.27초 뒤 exit 0으로 끝났다.
 - `STORIX_SHUTDOWN_TIMEOUT_SECONDS=3`에서 본문을 반쯤 보낸 요청이 열려 있을 때 `docker stop`은 3.3초 뒤 exit 1로 끝났고 그 요청은 연결 재설정(`ECONNRESET`)을 받았다.
 
-강제 종료로 남는 상태는 GC 1회로 복구된다.
+강제 종료로 남는 상태는 다음 GC 실행이나 명시된 운영 복구 절차로 정리한다.
 
 - 업로드 세션의 RESERVED part와 FINALIZING 세션은 GC가 되돌리거나 만료시킨다.
 - 객체만 올라가고 DB에 커밋되지 않은 orphan 객체는 GC가 `STORIX_ORPHAN_GRACE_PERIOD` 뒤 삭제한다.
-- 완료되지 않은 multipart upload의 조각은 orphan 객체 단계가 보지 못한다. 별도 GC 단계가 abort한다(api ADR-0045).
+- 완료되지 않은 multipart upload의 조각은 orphan 객체 단계가 보지 못한다. 별도 GC가 PUT 소유권과 실행 종료 확인을 검사한 뒤 abort한다(api ADR-0045). owner unknown은 자동 abort하지 않고 유지보수 절차로 회수한다.
 - Postgres advisory lock은 연결이 끊기면 서버가 해제한다.
 - SQLite 쿼리 게이트(api ADR-0025)는 메모리 상태뿐이라 디스크에 남는 상태가 없다.
 
@@ -61,7 +61,7 @@
 - 상한보다 오래 걸리는 요청은 끊긴다.
   - 조건부 raw 업로드와 재개 업로드 조각 요청은 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 86400초)까지 걸릴 수 있다.
   - 끊긴 요청의 클라이언트는 응답을 받지 못한다. 조건부 요청은 같은 `Idempotency-Key`로 다시 보낸다.
-  - 서버에 남은 상태는 위 GC가 정리한다.
+  - 서버에 남은 상태는 위 GC나 api ADR-0045에 정한 유지보수 절차로 정리한다.
 - 상한을 넘겨 종료하면 `DataSource.destroy()`가 실행되지 않을 수 있다. 연결 정리는 프로세스 종료와 소켓 close에 맡겨진다.
 - 이 결정은 API 서버(`main.ts`)에만 적용한다. 아래 "대안"의 잡 진입점은 범위 밖이다.
 

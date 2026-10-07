@@ -13,6 +13,9 @@ import { GcJob } from '../../src/jobs/gc.job.js';
 import { RestoreJobModule } from '../../src/jobs/restore-job.module.js';
 import { RestoreJob } from '../../src/jobs/restore.job.js';
 import { ObservabilityModule } from '../../src/observability/observability.module.js';
+import { DataSource } from 'typeorm';
+import { ALL_ENTITIES } from '../../src/persistence/entities/all-entities.js';
+import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 
 // 세 진입점(gc-main/backup-main/restore-main)의 루트 모듈 구성을 그대로 복제한다.
 // 진입점 파일은 import만 해도 bootstrap()이 실행돼 테스트에서 재사용할 수 없다.
@@ -106,6 +109,15 @@ describe('job 진입점 모듈 부팅 통합', () => {
       new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start(),
       startS3Container(),
     ]);
+    const migrationDataSource = await new DataSource({
+      type: 'postgres',
+      url: pgContainer.getConnectionUri(),
+      synchronize: false,
+      entities: ALL_ENTITIES,
+      migrations: ALL_MIGRATIONS,
+    }).initialize();
+    await migrationDataSource.runMigrations();
+    await migrationDataSource.destroy();
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'storix-job-boot-test-'));
     savedEnv = { ...process.env };
   }, 180000);

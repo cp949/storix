@@ -25,6 +25,8 @@ import { encodeRevision } from '../../src/vfs/revision.js';
 import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
 import { CreateMultipartUploadCommand, type S3Client, UploadPartCommand } from '@aws-sdk/client-s3';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
+import { StoragePutOwnershipRepository } from '../../src/persistence/storage-put-ownership.repository.js';
+import { PutProtectedBlobStorage } from '../../src/storage/put-protected-blob-storage.js';
 
 export interface GcJobTestContext {
   readonly dataSource: DataSource;
@@ -608,31 +610,125 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     }
     const staleKey = `blobs/ab/${randomUUID()}`;
     const stagingKey = `upload-staging/${randomUUID()}`;
+    const activeOldKey = `blobs/ab/${randomUUID()}`;
+    const settledKey = `blobs/ab/${randomUUID()}`;
     const foreignKey = `foreign/${randomUUID()}`;
     await startUpload(staleKey);
     await startUpload(stagingKey);
+    await startUpload(settledKey);
     const foreignUploadId = await startUpload(foreignKey);
-    // 유예 1초 + 최대 업로드 1초가 지나도록 기다린 뒤 시작한 upload는 아직 소유 요청이 있을 수 있어 남아야 한다.
+    const queryFailureKey = `blobs/ab/${randomUUID()}`;
+    await startUpload(queryFailureKey);
+    const ownership = new StoragePutOwnershipRepository(getContext().dataSource);
+    const writerExecutionId = randomUUID();
+    const gcExecutionId = randomUUID();
+    const activeExecutionId = randomUUID();
+    await ownership.registerExecution(writerExecutionId);
+    await ownership.registerExecution(gcExecutionId);
+    await ownership.registerExecution(activeExecutionId);
+    await ownership.beginPut(staleKey, writerExecutionId);
+    await ownership.beginPut(stagingKey, writerExecutionId);
+    await ownership.beginPut(queryFailureKey, writerExecutionId);
+    await ownership
+      .beginPut(settledKey, writerExecutionId)
+      .then((attemptId) => ownership.settlePut(attemptId));
+
+    let releaseBody!: () => void;
+    const bodyGate = new Promise<void>((resolve) => {
+      releaseBody = resolve;
+    });
+    async function* activeBody(): AsyncGenerator<Buffer> {
+      yield Buffer.alloc(17 * 1024 * 1024);
+      await bodyGate;
+      yield Buffer.from('tail');
+    }
+    const activePutStorage = new PutProtectedBlobStorage(storage, ownership, activeExecutionId);
+    const activePut = activePutStorage.put(activeOldKey, Readable.from(activeBody()));
+    const uploadReadyBy = Date.now() + 10_000;
+    let activeMultipartVisible = false;
+    while (Date.now() < uploadReadyBy) {
+      const activeUploads = await storage.listIncompleteUploadsPage('blobs/ab/', { limit: 1000 });
+      if (activeUploads.items.some((upload) => upload.key === activeOldKey)) {
+        activeMultipartVisible = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (!activeMultipartVisible) {
+      releaseBody();
+      await activePut;
+      await storage.delete(activeOldKey);
+    }
+    expect(activeMultipartVisible).toBe(true);
+
+    // 활성 SDK PUT를 cutoff보다 오래 열어 둔다.
     await new Promise((resolve) => setTimeout(resolve, 2200));
-    const freshKey = `blobs/ab/${randomUUID()}`;
-    const freshUploadId = await startUpload(freshKey);
+    const realClaim = ownership.claimForGc.bind(ownership);
+    ownership.claimForGc = async (key, claimId, executionId) => {
+      if (key === queryFailureKey) throw new Error('injected ownership database read failure');
+      return realClaim(key, claimId, executionId);
+    };
     const values: Record<string, string> = {
       STORIX_ORPHAN_GRACE_PERIOD: '1',
       STORIX_MUTATION_MAX_UPLOAD_SECONDS: '1',
     };
     const config = { get: (key: string) => values[key] } as unknown as ConfigService;
 
-    const result = await new GcJob(storage, blobRepository, config).run();
+    const result = await new GcJob(
+      storage,
+      blobRepository,
+      config,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ownership,
+      gcExecutionId,
+    ).run();
 
-    expect(result.abortedIncompleteUploads).toBeGreaterThanOrEqual(2);
+    expect(result.abortedIncompleteUploads).toBe(1);
     const remaining = async (prefix: string) =>
       (await storage.listIncompleteUploadsPage(prefix, { limit: 1000 })).items.map((item) => item.key);
-    expect(await remaining('blobs/')).toContain(freshKey);
-    expect(await remaining('blobs/')).not.toContain(staleKey);
-    expect(await remaining('upload-staging/')).not.toContain(stagingKey);
+    expect(await remaining('blobs/')).toContain(activeOldKey);
+    expect(await remaining('blobs/')).toContain(queryFailureKey);
+    expect(await remaining('blobs/')).toContain(staleKey);
+    expect(await remaining('blobs/')).not.toContain(settledKey);
+    expect(await remaining('upload-staging/')).toContain(stagingKey);
     expect(await remaining('foreign/')).toContain(foreignKey);
 
-    await storage.abortIncompleteUpload(freshKey, freshUploadId);
+    releaseBody();
+    await activePut;
+    await storage.delete(activeOldKey);
+    ownership.claimForGc = realClaim;
+    expect(await ownership.confirmExecutionStopped(writerExecutionId)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    const recovery = await new GcJob(
+      storage,
+      blobRepository,
+      config,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ownership,
+      gcExecutionId,
+    ).run();
+    expect(recovery.abortedIncompleteUploads).toBeGreaterThanOrEqual(3);
+    expect(await remaining('blobs/')).not.toContain(activeOldKey);
+    expect(await remaining('blobs/')).not.toContain(queryFailureKey);
+    expect(await remaining('blobs/')).not.toContain(staleKey);
+    expect(await remaining('upload-staging/')).not.toContain(stagingKey);
+
     await storage.abortIncompleteUpload(foreignKey, foreignUploadId);
   });
 

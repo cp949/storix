@@ -41,6 +41,7 @@ describe('ALL_MIGRATIONS', () => {
       'WidenVfsNodeVersion1791700000023',
       'AddTrashEntryCreatedAt1791700000024',
       'AddUploadLastCompleteFailure1791700000025',
+      'AddStoragePutOwnership1791700000026',
     ]);
   });
 });

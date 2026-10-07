@@ -187,6 +187,10 @@ PUT 정착과 예약량 해제:
 - GC는 key를 반복 정리하지만 과금 해제 근거는 만들지 않는다.
 - 이 정리에는 GC 잡 실행이 필요하다.
 
+온라인 PUT와 multipart GC 소유권은 [api ADR-0045](../../apps/api/docs/adr/0045-gc-incomplete-multipart-upload.md)를 따른다.
+part lease 만료는 storage worker 종료 근거가 아니다.
+GC는 `key + uploadId` abort 뒤에도 staging 예약량을 정산하지 않는다.
+
 ## 검증과 운영 경계
 
 검증 코드와 재현 절차:

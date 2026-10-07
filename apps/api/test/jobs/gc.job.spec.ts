@@ -489,6 +489,15 @@ describe('GcJob', () => {
       storage: PagedStorage,
       extra: Record<string, string> = {},
       cursors?: GcCursorRepository,
+      ownership: {
+        claimForGc: (...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>;
+        releaseGcClaim: (...args: string[]) => Promise<void>;
+      } = {
+        claimForGc: jest
+          .fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>()
+          .mockResolvedValue({ kind: 'claimed' }),
+        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockResolvedValue(undefined),
+      },
     ) {
       const values: Record<string, string> = {
         STORIX_ORPHAN_GRACE_PERIOD: '3600',
@@ -507,6 +516,10 @@ describe('GcJob', () => {
         undefined,
         undefined,
         cursors,
+        undefined,
+        undefined,
+        ownership as never,
+        'gc-execution',
       );
     }
 
@@ -542,6 +555,51 @@ describe('GcJob', () => {
         'blobs/',
         'upload-staging/',
       ]);
+    });
+
+    it('소유권 조회가 실패하면 key를 abort하지 않고 다음 후보를 처리한다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'blobs/ab/unknown', uploadId: 'u1', initiated: ago(5) },
+        { key: 'blobs/ab/known', uploadId: 'u2', initiated: ago(5) },
+      ]);
+      const ownership = {
+        claimForGc: jest.fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>(
+          async (key) => {
+            if (key.endsWith('/unknown')) throw new Error('database unavailable');
+            return { kind: 'claimed' as const };
+          },
+        ),
+        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+      const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const result = await makeJob(storage, {}, undefined, ownership).run();
+        expect(result.abortedIncompleteUploads).toBe(1);
+        expect(storage.aborted).toEqual([{ key: 'blobs/ab/known', uploadId: 'u2' }]);
+        expect(ownership.releaseGcClaim).toHaveBeenCalledTimes(1);
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('미등록 key는 후보 나이가 cutoff를 넘겨도 abort하지 않는다', async () => {
+      const storage = new PagedStorage().withIncompleteUploads([
+        { key: 'blobs/ab/unregistered', uploadId: 'u1', initiated: ago(5) },
+      ]);
+      const ownership = {
+        claimForGc: jest
+          .fn<(...args: string[]) => Promise<{ kind: 'claimed' | 'protected' | 'unknown' }>>()
+          .mockResolvedValue({ kind: 'unknown' }),
+        releaseGcClaim: jest.fn<(...args: string[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const result = await makeJob(storage, {}, undefined, ownership).run();
+        expect(result.abortedIncompleteUploads).toBe(0);
+        expect(storage.aborted).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('abort에 실패한 upload는 집계하지 않고 나머지를 계속 abort한다', async () => {

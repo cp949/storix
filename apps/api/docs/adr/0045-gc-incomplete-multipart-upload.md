@@ -1,59 +1,68 @@
-# GC가 시작 뒤 일정 기간이 지난 미완료 multipart upload를 abort한다
+# GC가 소유권과 종료 확인을 기준으로 미완료 multipart upload를 abort한다
 
 ## 상태
 
-승인됨 (2026-10-06)
+승인됨 (2026-10-06, 2026-10-07 보완)
 
 ## 배경
 
 `S3BlobStorage.put`은 `@aws-sdk/lib-storage`의 `Upload`로 multipart upload를 연다.
-오류가 나면 `leavePartsOnError: false`로 SDK가 `AbortMultipartUpload`를 보낸다.
-프로세스가 강제 종료되면(SIGKILL, OOM, 전원 차단, 종료 대기 초과 뒤 `closeAllConnections()`) 이 정리가 실행되지 않는다.
-올라간 조각은 스토리지에 남는다.
+프로세스가 강제 종료되면 SDK의 abort 정리가 실행되지 않을 수 있다.
+남은 upload는 완성 object가 아니므로 `ListObjectsV2` 기반 orphan 정리에서 보이지 않는다.
 
-- 미완료 upload는 완성 object가 아니다. `ListObjectsV2`에 나오지 않는다. 기존 orphan object 단계(`orphan-objects-blobs`, `orphan-objects-staging`)가 보지 못한다.
-- bucket lifecycle의 `AbortIncompleteMultipartUpload` 규칙으로도 회수할 수 없다. VersityGW v1.8.0(posix)은 `PutBucketLifecycleConfiguration`에 501 `NotImplemented`를 반환한다.
-- api ADR-0043은 "강제 종료로 남는 상태는 GC 1회로 복구된다"고 적었다. 완성 object는 맞고 미완료 multipart upload는 이 결정 전까지 복구되지 않았다.
+VersityGW v1.8.0 posix에서 `ListMultipartUploads`와 `AbortMultipartUpload`를 실측했다.
+같은 gateway에서 `UploadIdMarker`는 유효한 값도 `InvalidArgument`로 거부했다.
+`KeyMarker` 이어 읽기는 지원했다.
+또한 진행 중인 complete가 multipart 목록에서 빠진 뒤 abort에 `NoSuchUpload`를 반환하고, worker가 나중에 object를 공개한 사례가 있다.
 
-실측(2026-10-06, `versity/versitygw:v1.8.0`, posix):
-
-- `ListMultipartUploads`: 지원한다. `Initiated`를 돌려준다.
-- `AbortMultipartUpload`: 지원한다. 이미 abort한 upload를 다시 abort한 결과는 통합 테스트로 확인했다.
-- `KeyMarker`만 주면 다음 page가 정상 반환된다.
-- `UploadIdMarker`를 주면 유효한 값이어도 `InvalidArgument: Invalid uploadId marker`다. `NextUploadIdMarker`를 그대로 넘겨도 같다.
-
-Storix는 multipart를 `put` 한 번 안에서만 연다. 요청 사이에 열어 두지 않는다.
-upload는 `STORIX_MUTATION_MAX_UPLOAD_SECONDS` 안에 끝난다(HTTP `requestTimeout`도 이 값을 따른다).
+업로드 요청의 deadline과 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`는 전체 storage worker 종료 시각의 상한이 아니다.
+heartbeat나 업무 lease 만료도 storage PUT Promise의 정착을 증명하지 않는다.
 
 ## 결정
 
-- `BlobStorage`에 `listIncompleteUploadsPage(prefix, { after?, limit })`와 `abortIncompleteUpload(key, uploadId)`를 추가한다. S3 구현은 `ListMultipartUploads`와 `AbortMultipartUpload`다.
-- GC가 단계 `incomplete-uploads-blobs`(`blobs/`)와 `incomplete-uploads-staging`(`upload-staging/`)을 `orphan-blobs` 뒤에 실행한다. Storix prefix 밖의 upload는 조회하지 않는다.
-- `Initiated`가 `STORIX_MUTATION_MAX_UPLOAD_SECONDS + STORIX_ORPHAN_GRACE_PERIOD`(기본 2일)보다 오래된 upload만 abort한다.
-  - 정상 upload는 최대 업로드 시간 안에 끝난다. 그 뒤 유예까지 지났으면 소유한 요청이 없다.
-  - 새 환경변수는 만들지 않는다.
-  - gc 서비스에 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`를 전달한다. app보다 작은 값을 gc가 쓰면 진행 중 upload를 abort할 수 있다.
-- 이어 읽는 위치는 key 하나다(`KeyMarker`). 단계는 재개 위치를 두는 단계이며 `gc_cursor`에 key를 저장한다. 단위는 읽은 upload 수다.
-- abort는 20개씩 병렬로 보낸다. 실패한 upload는 집계하지 않고 로그를 남긴다. 다음 실행에서 다시 후보가 된다.
-- `NoSuchUpload`는 성공으로 본다. 완료되었거나 다른 GC 실행이 먼저 지운 upload는 목표 상태에 이미 도달했다.
-- GC 결과에 `abortedIncompleteUploads`를 추가한다.
+- 공통 온라인 `BlobStorage.put` 래퍼가 storage 호출 전에 durable PUT 시도 기록을 확정한다.
+- 기록 확정이 실패하면 storage PUT를 시작하지 않는다.
+- 기록에는 key, 시도 식별자, 프로세스 실행 식별자, 정착 상태를 저장한다.
+- PUT Promise가 성공하거나 실패로 정착한 뒤 시도 상태를 `SETTLED`로 기록한다.
+- 정착 기록 저장이 실패하면 재시도하고 오류를 로그로 남긴다.
+- 시도 기록과 process 종료 확인 기록은 자동 삭제하지 않는다.
+- 소유권 테이블에 없는 multipart key는 owner unknown으로 보고 abort를 보류한다.
+- owner 조회 오류도 abort를 보류하고 원인을 로그로 남긴다.
+- owner가 `SETTLED`이거나 해당 실행의 종료 확인이 있어야 GC 회수 claim을 받을 수 있다.
+- PUT 등록과 GC claim은 key별 같은 DB 행을 잠가 원자적으로 배제한다.
+- claim을 얻은 동안 새 PUT를 시작하지 않는다.
+- GC 프로세스가 종료돼 claim이 남으면 해당 GC 실행의 종료 확인 뒤에만 claim을 넘겨받는다.
+- multipart의 age cutoff는 후보를 줄이는 조건으로만 쓴다. worker 종료 증거로 쓰지 않는다.
+- `abort` 성공, `NoSuchUpload`, multipart 목록 부재는 resumable staging 예약량 해제 근거가 아니다.
+- SQLite는 단일 writer 전제를 따른다. PostgreSQL은 여러 API와 독립 GC의 key claim 경합을 지원한다.
+- `confirm-stopped` 운영 CLI는 관리자가 실제 writer와 storage worker 종료를 외부에서 확인한 실행 식별자만 기록한다.
+- CLI 확인은 자동 감지가 아니라 관리자 attestation이다.
+- 실행 식별자는 API·GC 시작 로그에 출력한다. 공개 HTTP API는 추가하지 않는다.
+- backup은 owner 기록을 DB dump에 보존한다. restore는 API·GC 중단 전제를 유지한다.
+- 복원된 이전 실행은 자동 종료 확인하지 않는다.
+- restore가 기록을 복원하지 못했거나 이전 배포가 owner 기록을 만들지 않은 multipart는 별도 유지보수 절차로만 회수한다.
+- legacy 유지보수는 전체 writer와 GC를 중단한 뒤 `key + uploadId` manifest를 출력한다.
+- 운영자는 manifest 목록과 SHA-256을 확인하고 같은 manifest만 abort한다.
+- legacy 회수는 staging 예약량을 변경하지 않는다.
 
-## 대안
+## 배포 전환
 
-- bucket lifecycle `AbortIncompleteMultipartUpload`: VersityGW가 구현하지 않는다(501). 기각.
-- `UploadIdMarker`로 같은 key의 upload까지 정확히 이어 읽기: VersityGW가 거부한다. 기각.
-- 종료 시 진행 중 upload를 추적해 abort: 강제 종료에서는 실행되지 않는다. 기각.
-- 별도 유예 환경변수: 기존 두 값의 합으로 의미가 정해진다. 설정이 늘어난다. 기각.
+- schema migration을 적용하기 전에 기존 API writer와 GC를 모두 중단한다.
+- gateway의 진행 중 요청·worker도 외부에서 종료됐음을 확인한다.
+- 새 API·GC를 시작한 뒤 시작 로그의 실행 식별자를 보존한다.
+- migration 전 multipart는 owner unknown이므로 자동 GC가 회수하지 않는다.
+- legacy upload 회수는 전체 writer·GC가 중단된 유지보수 절차로 수행한다.
 
 ## 한계
 
-- 같은 key의 미완료 upload가 둘 이상이고 page(1000개) 경계에 걸리면 나머지는 그 실행에서 건너뛴다. Storix는 업로드마다 새 UUID key를 만들어 같은 key의 upload가 둘 이상 생기지 않는다. 건너뛴 upload는 다음 실행에서 다시 후보가 된다.
-- 스토리지 계정에 `s3:ListBucketMultipartUploads`와 `s3:AbortMultipartUpload` 권한이 필요하다(`README.s3.md`의 정책 예시에 있다). 권한이 없으면 단계가 실패하고 GC 실행이 오류로 끝난다.
-- AWS S3와 다른 S3 호환 백엔드는 실측하지 않았다. VersityGW(posix) 기준이다.
-- `put`이 진행 중인 upload의 조각이 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`를 넘겨 계속 올라가는 경우는 없다고 본다. HTTP `requestTimeout`이 같은 값이지만 스토리지 쪽 전송은 요청 수신보다 늦게 끝날 수 있다. 유예(기본 1일)가 이 여유다.
+- 관리자가 실행 또는 gateway worker 종료를 잘못 확인하면 활성 upload를 보호하지 못할 수 있다.
+- owner unknown 및 종료 확인되지 않은 multipart는 저장 공간 회수가 지연된다.
+- process 종료만으로 gateway worker 종료를 증명하지 않는다.
+- 기록 테이블은 자동 정리하지 않아 행이 계속 증가한다.
+- 실측은 VersityGW v1.8.0 posix 단일 gateway 기준이다. NAS, 다중 gateway, AWS 실제 API 동작을 보장하지 않는다.
 
-## 결과
+## 검증
 
-- 강제 종료로 남은 multipart 조각이 GC 실행으로 회수된다.
-- VersityGW(posix) 통합 테스트로 목록·page 이어 읽기·abort·재abort를 확인했다.
-- GC 통합 테스트(PostgreSQL, SQLite)로 오래된 upload만 abort하고 최근 upload와 Storix prefix 밖 upload는 남는 것을 확인했다.
+- `test/persistence/storage-put-ownership.integration-spec.ts`는 PostgreSQL 상태 전이와 동시 PUT 등록·GC claim 경쟁을 검증한다.
+- `test/persistence/storage-put-ownership.sqlite.integration-spec.ts`는 SQLite 상태 전이를 검증한다.
+- `test/jobs/gc.job.shared-tests.ts`는 VersityGW 기반 오래된 upload의 소유자 종료 확인 회수와 활성 소유자 보류를 검증한다.
