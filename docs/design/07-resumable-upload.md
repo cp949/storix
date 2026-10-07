@@ -86,6 +86,10 @@
 - `namespaces`는 선택 override다.
 - namespace ID 키별로 필수 `maxStagedBytes`와 `maxActiveSessions`를 갖고 각각 전역 상한 이하여야 한다.
 - namespace 항목은 선택 `partSizeBytes`(양의 안전한 정수, 최대 2147483647)를 가질 수 있다. 전역 `partSizeBytes`보다 커도 되고, 없으면 전역 값을 쓴다. `partSizeBytes`만 있는 항목은 시작 오류다.
+- 전역 유효 `partSizeBytes`는 `global.maxStagedBytes` 이하여야 한다. namespace 유효 `partSizeBytes`는 해당 항목의 `maxStagedBytes` 이하여야 한다. 비교는 `BigInt(partSizeBytes) > maxStagedBytes`로 한다.
+- 기본 조각 크기와 namespace 상속값도 검사한다. 설정 파일에 명시한 namespace는 capability 비활성 여부와 관계없이 검사한다. 값이 같으면 허용한다.
+- 초과 설정은 시작 오류다. 오류에는 정책 파일 경로, scope, 유효 조각 크기와 staging 한도, 조각 크기의 기본값·상속 출처를 표시한다.
+- 조각 크기를 staging 한도 이하로 낮추거나 staging 한도를 정책에 맞게 높여야 한다. 이 검사는 업로드 완료 가능성을 보장하지 않는다.
 - 새 세션의 조각 크기는 `resolveNamespaceUploadPartSize`가 정하고 생성 시점 값으로 세션에 고정한다. 정책을 바꿔도 기존 세션의 `partSizeBytes`·`partCount`는 바뀌지 않으며 같은 생성 key의 재생도 저장된 값을 돌려준다.
 - namespace 항목이 없으면 그 namespace에는 전역 `maxStagedBytes`·`maxActiveSessions`를 쓴다.
 - 신규 namespace를 기본 활성 목록으로 켜는 배포가 namespace마다 항목을 만들지 않도록 한 규칙이다.

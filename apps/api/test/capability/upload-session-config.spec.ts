@@ -4,7 +4,7 @@ import {
 } from '../../src/vfs/upload-session-config.js';
 
 const NS = '123e4567-e89b-42d3-a456-426614174000';
-const GLOBAL = { maxStagedBytes: '1000', maxActiveSessions: 10 };
+const GLOBAL = { maxStagedBytes: '1000', maxActiveSessions: 10, partSizeBytes: 4 };
 
 describe('업로드 세션 정책', () => {
   it('namespace 항목이 없어도 정책을 받는다', () => {

@@ -71,6 +71,20 @@ function bytes(value: unknown, name: string): bigint {
   return parsed;
 }
 
+function assertPartSizeFitsStaging(
+  partSizeBytes: number,
+  maxStagedBytes: bigint,
+  scope: string,
+  partSizeSource: string,
+): void {
+  if (BigInt(partSizeBytes) > maxStagedBytes) {
+    throw new Error(
+      `Upload session part size exceeds staging limit: ${scope}.partSizeBytes=${partSizeBytes} ` +
+        `(source=${partSizeSource}), ${scope}.maxStagedBytes=${maxStagedBytes}`,
+    );
+  }
+}
+
 function limits(value: unknown, name: string): UploadSessionLimits {
   const row = object(
     value,
@@ -132,6 +146,9 @@ export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
   };
   if (global.partSizeBytes > MAX_PART_SIZE_BYTES)
     throw new Error('Upload session part size exceeds database integer range');
+  const globalPartSizeSource =
+    globalRow.partSizeBytes === undefined ? 'default(16777216)' : 'global.partSizeBytes';
+  assertPartSizeFitsStaging(global.partSizeBytes, global.maxStagedBytes, 'global', globalPartSizeSource);
   if (global.inactivitySeconds > global.maxLifetimeSeconds)
     throw new Error('Upload session inactivity exceeds lifetime');
   const maxDateMs = 8_640_000_000_000_000;
@@ -167,6 +184,12 @@ export function parseUploadSessionPolicy(value: unknown): UploadSessionPolicy {
     ) {
       throw new Error(`Upload session namespace limit exceeds global: ${id}`);
     }
+    const effectivePartSizeBytes = parsed.partSizeBytes ?? global.partSizeBytes;
+    const partSizeSource =
+      parsed.partSizeBytes === undefined
+        ? `global.partSizeBytes (source=${globalPartSizeSource})`
+        : `${name}.partSizeBytes`;
+    assertPartSizeFitsStaging(effectivePartSizeBytes, parsed.maxStagedBytes, name, partSizeSource);
     namespaces[id] = parsed;
   }
   return { global, namespaces };
@@ -200,5 +223,15 @@ export async function loadUploadSessionPolicy(
   }
   // JSON.parse는 중복 key를 마지막 값으로 덮어쓰므로 문법이 유효한 텍스트에서 따로 검사한다.
   assertNoDuplicateJsonKeys(contents);
-  return parseUploadSessionPolicy(value);
+  try {
+    return parseUploadSessionPolicy(value);
+  } catch (cause) {
+    if (
+      cause instanceof Error &&
+      cause.message.startsWith('Upload session part size exceeds staging limit:')
+    ) {
+      throw new Error(`Invalid upload session policy at ${path}: ${cause.message}`, { cause });
+    }
+    throw cause;
+  }
 }

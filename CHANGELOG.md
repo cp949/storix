@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- 재개 업로드 정책에서 전역 또는 namespace의 유효 조각 크기가 같은 범위의 `maxStagedBytes`를 넘으면 서버 시작을 거부한다. 기본 조각 크기·namespace 상속값·비활성 namespace도 검사하며, 오류에 정책 경로와 값의 출처를 표시한다. 기존 설정은 조각 크기를 낮추거나 staging 한도를 높여야 할 수 있다.
+
 - `uploadSessions`의 OpenAPI 한도 필드 설명이 YAML 키로 분리되는 오류를 수정했다.
 
 ## [1.2.0] - 2026-10-06

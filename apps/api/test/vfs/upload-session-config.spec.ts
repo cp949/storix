@@ -78,13 +78,44 @@ describe('upload session policy', () => {
     });
   });
 
+  it('전역 조각 크기가 staging 한도를 넘으면 설정 경로와 유효값을 표시한다', async () => {
+    const path = join(dir, 'upload.json');
+    await writeFile(
+      path,
+      JSON.stringify({
+        global: { maxStagedBytes: '1048576', maxActiveSessions: 10, partSizeBytes: 16777216 },
+        namespaces: {},
+      }),
+    );
+    await expect(
+      loadUploadSessionPolicy(new ConfigService({ STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH: path }), {
+        globalAllowedCapabilities: [],
+        namespaceAllowedCapabilities: {},
+      }),
+    ).rejects.toThrow(
+      new RegExp(`${path}.*global\\.partSizeBytes=16777216.*global\\.maxStagedBytes=1048576`),
+    );
+  });
+
+  it('기본 조각 크기도 전역 staging 한도와 비교한다', async () => {
+    await expect(
+      load({ global: { maxStagedBytes: '1048576', maxActiveSessions: 10 }, namespaces: {} }),
+    ).rejects.toThrow(/16777216.*default/);
+  });
+
+  it('전역 조각 크기와 staging 한도가 같으면 허용한다', async () => {
+    await expect(
+      load({ global: { maxStagedBytes: '4', maxActiveSessions: 10, partSizeBytes: 4 }, namespaces: {} }),
+    ).resolves.toMatchObject({ global: { partSizeBytes: 4, maxStagedBytes: 4n } });
+  });
+
   describe('namespace 조각 크기', () => {
     const global = { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 };
-    const limits = { maxStagedBytes: '10', maxActiveSessions: 1 };
+    const limits = { maxStagedBytes: '64', maxActiveSessions: 1 };
 
     it('생략하면 전역 조각 크기를 사용한다', async () => {
       const policy = (await load({ global, namespaces: { [NS]: limits } }))!;
-      expect(policy.namespaces[NS]).toEqual({ maxStagedBytes: 10n, maxActiveSessions: 1 });
+      expect(policy.namespaces[NS]).toEqual({ maxStagedBytes: 64n, maxActiveSessions: 1 });
       expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(4);
       expect(resolveNamespaceUploadPartSize(policy, '223e4567-e89b-42d3-a456-426614174000')).toBe(4);
     });
@@ -96,12 +127,80 @@ describe('upload session policy', () => {
 
     it('한도 resolver는 조각 크기를 섞지 않는다', async () => {
       const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes: 64 } } }))!;
-      expect(resolveNamespaceUploadLimits(policy, NS)).toEqual({ maxStagedBytes: 10n, maxActiveSessions: 1 });
+      expect(resolveNamespaceUploadLimits(policy, NS)).toEqual({ maxStagedBytes: 64n, maxActiveSessions: 1 });
     });
 
     it.each([1, 2147483647])('경계값 %d를 허용한다', async (partSizeBytes) => {
-      const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes } } }))!;
+      const policy = (await load({
+        global: { ...global, maxStagedBytes: String(Math.max(global.partSizeBytes, partSizeBytes)) },
+        namespaces: { [NS]: { ...limits, maxStagedBytes: String(partSizeBytes), partSizeBytes } },
+      }))!;
       expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(partSizeBytes);
+    });
+
+    it('namespace 조각 크기가 한도와 같으면 전역보다 큰 override를 허용한다', async () => {
+      const policy = (await load({ global, namespaces: { [NS]: { ...limits, partSizeBytes: 64 } } }))!;
+      expect(resolveNamespaceUploadPartSize(policy, NS)).toBe(64);
+    });
+
+    it('명시한 namespace 조각 크기가 staging 한도를 넘으면 거부한다', async () => {
+      await expect(
+        load({ global, namespaces: { [NS]: { ...limits, maxStagedBytes: '10', partSizeBytes: 64 } } }),
+      ).rejects.toThrow(new RegExp(`namespaces\\.${NS}.*64.*10`));
+    });
+
+    it('전역에서 상속한 조각 크기가 namespace 한도를 넘으면 출처를 표시한다', async () => {
+      await expect(
+        load({
+          global: { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 16 },
+          namespaces: { [NS]: { maxStagedBytes: '10', maxActiveSessions: 1 } },
+        }),
+      ).rejects.toThrow(new RegExp(`namespaces\\.${NS}.*16.*global\\.partSizeBytes`));
+    });
+
+    it('기본 전역 조각 크기의 namespace 상속 출처를 표시한다', async () => {
+      await expect(
+        load({
+          global: { maxStagedBytes: '33554432', maxActiveSessions: 2 },
+          namespaces: { [NS]: { maxStagedBytes: '1048576', maxActiveSessions: 1 } },
+        }),
+      ).rejects.toThrow(new RegExp(`namespaces\\.${NS}.*16777216.*global\\.partSizeBytes.*default`));
+    });
+
+    it('비활성 namespace 정책도 검사한다', async () => {
+      await expect(
+        load(
+          {
+            global: { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 },
+            namespaces: { [NS]: { maxStagedBytes: '10', maxActiveSessions: 1, partSizeBytes: 64 } },
+          },
+          { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NS]: [] } },
+        ),
+      ).rejects.toThrow(/partSizeBytes=64/);
+    });
+
+    it('모든 capability가 비활성이어도 제공된 정책을 검사한다', async () => {
+      await expect(
+        load(
+          {
+            global: { maxStagedBytes: '100', maxActiveSessions: 2, partSizeBytes: 4 },
+            namespaces: { [NS]: { maxStagedBytes: '10', maxActiveSessions: 1, partSizeBytes: 64 } },
+          },
+          { globalAllowedCapabilities: [], namespaceAllowedCapabilities: { [NS]: [] } },
+        ),
+      ).rejects.toThrow(/partSizeBytes=64/);
+    });
+
+    it('int64 staging 한도를 정밀도 손실 없이 유지한다', async () => {
+      const policy = (await load({
+        global: {
+          maxStagedBytes: '9223372036854775807',
+          maxActiveSessions: 2,
+          partSizeBytes: 2147483647,
+        },
+        namespaces: {},
+      }))!;
+      expect(policy.global.maxStagedBytes).toBe(9223372036854775807n);
     });
 
     it.each([0, -1, 1.5, '4', null, 2147483648, Number.MAX_SAFE_INTEGER + 1])(
@@ -130,7 +229,7 @@ describe('upload session policy', () => {
 
   it('namespace 항목이 없어도 enabled namespace의 정책을 받아들인다(전역 한도를 쓴다)', async () => {
     const policy = await load({
-      global: { maxStagedBytes: '100', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '100', maxActiveSessions: 1, partSizeBytes: 4 },
       namespaces: {},
     });
     expect(policy?.namespaces).toEqual({});
@@ -139,15 +238,15 @@ describe('upload session policy', () => {
 
   it.each([
     {
-      global: { maxStagedBytes: '0', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '0', maxActiveSessions: 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1 } },
     },
     {
-      global: { maxStagedBytes: '9223372036854775808', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '9223372036854775808', maxActiveSessions: 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1 } },
     },
     {
-      global: { maxStagedBytes: '100', maxActiveSessions: Number.MAX_SAFE_INTEGER + 1 },
+      global: { maxStagedBytes: '100', maxActiveSessions: Number.MAX_SAFE_INTEGER + 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1 } },
     },
     {
@@ -163,15 +262,15 @@ describe('upload session policy', () => {
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1 } },
     },
     {
-      global: { maxStagedBytes: '100', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '100', maxActiveSessions: 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '101', maxActiveSessions: 1 } },
     },
     {
-      global: { maxStagedBytes: '100', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '100', maxActiveSessions: 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 2 } },
     },
     {
-      global: { maxStagedBytes: '100', maxActiveSessions: 1 },
+      global: { maxStagedBytes: '100', maxActiveSessions: 1, partSizeBytes: 1 },
       namespaces: { [NS]: { maxStagedBytes: '1', maxActiveSessions: 1, extra: true } },
     },
   ])('rejects invalid or missing finite policy limits: %j', async (value) => {
@@ -182,7 +281,7 @@ describe('upload session policy', () => {
     await expect(
       load({
         global: {
-          maxStagedBytes: '100',
+          maxStagedBytes: '16777216',
           maxActiveSessions: 1,
           inactivitySeconds: 1,
           maxLifetimeSeconds: Number.MAX_SAFE_INTEGER,

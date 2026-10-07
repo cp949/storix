@@ -26,6 +26,40 @@ describe('main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', () =>
     rmSync(workDir, { recursive: true, force: true });
   });
 
+  function preparePolicyBoot(policy: unknown): {
+    readonly env: NodeJS.ProcessEnv;
+    readonly policyPath: string;
+  } {
+    const sqlitePath = path.join(workDir, 'storix.sqlite');
+    const policyPath = path.join(workDir, 'upload-sessions.json');
+    runMigrations(sqlitePath);
+    writeFileSync(policyPath, JSON.stringify(policy));
+    writeFileSync(
+      path.join(workDir, '.env'),
+      [
+        'STORIX_DB_DRIVER=sqlite',
+        `STORIX_DB_SQLITE_PATH=${sqlitePath}`,
+        'STORIX_API_KEY=test-key-0123456789',
+        'STORIX_STORAGE_ENDPOINT=127.0.0.1',
+        'STORIX_STORAGE_ACCESS_KEY=test-access',
+        'STORIX_STORAGE_SECRET_KEY=test-secret',
+        'STORIX_STORAGE_BUCKET=test-bucket',
+        `STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH=${policyPath}`,
+        'STORIX_PORT=0',
+        '',
+      ].join('\n'),
+    );
+    const env = {
+      ...stripSecretEnv(process.env),
+      STORIX_DB_DRIVER: undefined,
+      STORIX_DB_SQLITE_PATH: undefined,
+      STORIX_PORT: undefined,
+      STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH: undefined,
+      STORIX_VFS_CAPABILITIES_CONFIG_PATH: undefined,
+    };
+    return { env, policyPath };
+  }
+
   it('STORIX_DB_DRIVER를 쉘에 export하지 않고 .env 파일에만 설정해도 정상 부팅된다', async () => {
     const sqlitePath = path.join(workDir, 'storix.sqlite');
     runMigrations(sqlitePath);
@@ -89,5 +123,62 @@ describe('main.ts 부팅 순서 (.env 파일 전용 드라이버 설정)', () =>
     expect(output).toContain('잘못된 정수 환경변수 값: 3000abc');
     expect(exitCode).toBe(1);
     expect(existsSync(path.join(workDir, '3000abc'))).toBe(false);
+  }, 30000);
+
+  it('전역 조각 크기가 staging 한도를 넘으면 실제 main 시작을 거부한다', async () => {
+    const { env, policyPath } = preparePolicyBoot({
+      global: { maxStagedBytes: '1048576', maxActiveSessions: 10, partSizeBytes: 16777216 },
+      namespaces: {},
+    });
+    const { output, exitCode } = await runProcess({
+      cwd: workDir,
+      distFile: 'main.js',
+      env,
+      timeoutMs: 20000,
+      untilOutputIncludes: 'Nest application successfully started',
+    });
+    expect(exitCode).toBe(1);
+    expect(output).not.toContain('Nest application successfully started');
+    expect(output).toContain(policyPath);
+    expect(output).toContain('global.partSizeBytes=16777216');
+    expect(output).toContain('global.maxStagedBytes=1048576');
+  }, 30000);
+
+  it('capability가 비활성인 namespace의 상속 조각 크기가 한도를 넘으면 시작을 거부한다', async () => {
+    const namespaceId = '123e4567-e89b-42d3-a456-426614174000';
+    const { env, policyPath } = preparePolicyBoot({
+      global: { maxStagedBytes: '100', maxActiveSessions: 10, partSizeBytes: 16 },
+      namespaces: { [namespaceId]: { maxStagedBytes: '10', maxActiveSessions: 2 } },
+    });
+    const { output, exitCode } = await runProcess({
+      cwd: workDir,
+      distFile: 'main.js',
+      env,
+      timeoutMs: 20000,
+      untilOutputIncludes: 'Nest application successfully started',
+    });
+    expect(exitCode).toBe(1);
+    expect(output).not.toContain('Nest application successfully started');
+    expect(output).toContain(policyPath);
+    expect(output).toContain(`namespaces.${namespaceId}.partSizeBytes=16`);
+    expect(output).toContain('global.partSizeBytes');
+    expect(output).toContain(`namespaces.${namespaceId}.maxStagedBytes=10`);
+  }, 30000);
+
+  it('전역보다 큰 namespace 조각 크기가 자체 한도 이하이면 실제 main이 시작된다', async () => {
+    const namespaceId = '123e4567-e89b-42d3-a456-426614174000';
+    const { env } = preparePolicyBoot({
+      global: { maxStagedBytes: '100', maxActiveSessions: 10, partSizeBytes: 4 },
+      namespaces: { [namespaceId]: { maxStagedBytes: '64', maxActiveSessions: 2, partSizeBytes: 64 } },
+    });
+    const { output } = await runProcess({
+      cwd: workDir,
+      distFile: 'main.js',
+      env,
+      timeoutMs: 20000,
+      untilOutputIncludes: 'Nest application successfully started',
+    });
+    expect(output).toContain('Nest application successfully started');
+    expect(output).not.toContain('Upload session part size exceeds staging limit');
   }, 30000);
 });

@@ -692,6 +692,7 @@ Capability 파일:
 - namespace override가 없으면 `global` 한도를 쓴다.
 - namespace별 두 필수 한도는 각각 해당 전역 한도 이하여야 한다.
 - namespace 항목은 선택 필드 `partSizeBytes`(2147483647 bytes 이하의 양의 안전한 정수)를 가질 수 있다. 전역 값보다 커도 되고, 없으면 `global.partSizeBytes`를 쓴다. 세션 생성 시점의 값으로 고정한다.
+- 전역과 각 namespace의 유효 `partSizeBytes`는 같은 범위의 `maxStagedBytes` 이하여야 한다. 전역 생략값과 namespace 상속값도 검사하며, 설정 파일에 적힌 namespace는 capability 활성 여부와 관계없이 검사한다. 초과하면 설정 경로·유효값·출처를 표시하고 시작을 거부한다.
 - Namespace ID는 원래 표기를 쓴다.
 - 대소문자·하이픈 변형은 정규화하지 않는다.
 - 추가 필드·잘못된 ID·잘못된 값은 시작 오류다.
@@ -703,6 +704,8 @@ Capability 파일:
 | `partSizeBytes`      | 선택      | 16777216 bytes | 2147483647 bytes 이하의 양의 안전한 정수     |
 | `inactivitySeconds`  | 선택      | 86400초        | `maxLifetimeSeconds` 이하의 양의 안전한 정수 |
 | `maxLifetimeSeconds` | 선택      | 604800초       | 양의 안전한 정수                             |
+
+조각 크기가 staging 한도를 넘으면 서버가 시작하지 않는다. 조각 크기를 낮추거나 정책상 허용할 수 있는 staging 한도를 높인다. `maxStagedBytes`는 누적 staging 사용량 한도이며 파일 크기나 업로드 완료 가능성을 보장하지 않는다.
 
 요청·정리 규칙:
 
