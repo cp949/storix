@@ -468,8 +468,8 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 | `STORIX_ARCHIVE_MAX_ENTRIES`              | 선택   | `1000`                | app     | 요청당 FILE 수 상한(최대 65534)                                                                                                                          |
 | `STORIX_ARCHIVE_MAX_SOURCE_BYTES`         | 선택   | `1073741824`          | app     | 평문 원본 합계 상한(byte, 최대 1 GiB)                                                                                                                    |
 | `STORIX_ARCHIVE_MAX_RESULT_BYTES`         | 선택   | `2147483648`          | app     | ZIP 결과 상한(byte, 최대 2 GiB)                                                                                                                          |
-| `STORIX_ARCHIVE_MAX_SECONDS`              | 선택   | `600`                 | app     | capture부터 commit까지 실행 상한(초). grace보다 60초 이상 짧아야 한다                                                                                    |
-| `STORIX_ARCHIVE_RETRY_AFTER_SECONDS`      | 선택   | `10`                  | app     | gate 포화 응답의 Retry-After(초)                                                                                                                         |
+| `STORIX_ARCHIVE_MAX_SECONDS`              | 선택   | `600`                 | app     | capture부터 commit까지 실행 상한(1~86400초). grace보다 60초 이상 짧아야 하며 `archive` 전역 허용 시 위반이면 시작 거부                                   |
+| `STORIX_ARCHIVE_RETRY_AFTER_SECONDS`      | 선택   | `10`                  | app     | gate 포화 응답의 Retry-After(1~3600초)                                                                                                                   |
 | `STORIX_ARCHIVE_COMPRESSION_LEVEL`        | 선택   | `1`                   | app     | ZIP DEFLATE 수준(0~9)                                                                                                                                    |
 | `STORIX_GC_MIN_INTERVAL`                  | 선택   | `3600`                | gc      | 멀티 인스턴스에서 중복 실행을 막는 최소 재실행 간격(초)                                                                                                  |
 | `STORIX_GC_MAX_ROWS_PER_STAGE`            | 선택   | `200000`              | gc      | 한 실행에서 단계마다 처리하는 행 수 예산                                                                                                                 |
@@ -518,7 +518,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
     - `namespaceAllowedCapabilities`: namespace ID를 키로 하는 문자열 목록 객체.
     - `defaultEnabledCapabilities`: 개별 항목이 없는 namespace에 적용할 선택적 기본 활성 목록.
   - 파일·구문·schema·namespace 존재·미등록 capability 검증이 실패하면 시작을 거부한다.
-  - `resumable-upload`·`change-feed`는 기본 비활성이다.
+  - `resumable-upload`·`change-feed`·`archive`는 기본 비활성이다.
   - 활성 상태는 서비스 Bearer 인증으로 `GET /api/v2/namespaces/{id}/capabilities`에서 조회한다.
 - `STORIX_VFS_CHANGE_RETENTION_DAYS`:
   - GC가 DB 시각으로 오래된 이벤트를 정리한다.
@@ -761,6 +761,37 @@ snapshot 규칙:
 - 백업 잡은 쓰기를 자동 중지하지 않는다.
 - DB 마이그레이션의 `down()`만 실행하면 이후 생성된 snapshot 데이터는 보존되지 않는다.
 - 절차는 `docs/deployment/backup-restore.md`를 따른다.
+
+### 선택 FILE archive
+
+`POST /api/v2/namespaces/{namespaceId}/fs/archive`는 같은 namespace의 FILE ID 목록을 ZIP FILE로 저장한다.
+서비스 Bearer key로 인증하고 `Idempotency-Key`·`X-Mutation-Scope`가 필수다. `archive` capability는 기본 비활성이다.
+
+활성화 순서:
+
+1. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`의 시작 JSON 설정에서 전역과 해당 namespace(또는 `defaultEnabledCapabilities`)에 `archive`를 허용한다.
+2. `STORIX_ORPHAN_GRACE_PERIOD`가 `STORIX_ARCHIVE_MAX_SECONDS + 60` 이상인지 확인한다. `archive`를 전역 허용한 app은 위반 시 시작을 거부한다.
+3. app을 재시작한다. API와 GC에 같은 `STORIX_ORPHAN_GRACE_PERIOD`를 준다.
+
+설정 예:
+
+```json
+{
+  "globalAllowedCapabilities": ["archive"],
+  "defaultEnabledCapabilities": ["archive"],
+  "namespaceAllowedCapabilities": {}
+}
+```
+
+규칙:
+
+- 요청당 FILE 수는 기본 1000개(설정 최대 65534), 평문 합계 1 GiB, ZIP 결과 2 GiB, JSON 본문 8 MiB가 상한이다.
+- 요청은 동기이며 `STORIX_ARCHIVE_MAX_SECONDS`(기본 600초)까지 걸릴 수 있다. 프록시 timeout과 `STORIX_SHUTDOWN_TIMEOUT_SECONDS`를 이보다 길게 두거나, 끊긴 요청을 같은 key로 재시도한다.
+- entry 단위 오류(400 revision, 404 원본 부재, 412 revision 충돌)는 실패한 index를 `archiveEntry`로 돌려준다.
+- 프로세스 gate(기본 동시 1개)가 차면 503 `VFS_ARCHIVE_BUSY`와 `Retry-After`다.
+- 실행 중 원본 보존은 GC grace에 기대며 보장이 아니다. 결정은 [api ADR-0048](apps/api/docs/adr/0048-archive-source-grace.md)이다.
+
+상세 계약은 [설계 문서](docs/design/16-file-archive.md)와 [OpenAPI](apps/api/openapi.yaml)를 따른다.
 
 ## 개발
 

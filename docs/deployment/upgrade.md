@@ -85,6 +85,7 @@ Compose 명령에는 실제 배포의 `-f` 조합을 붙인다.
 - 종료 중 신호가 다시 오면 기다리지 않고 종료 코드 1로 끝난다.
 - compose `app`의 `stop_grace_period`는 30초다. `STORIX_SHUTDOWN_TIMEOUT_SECONDS`를 올리면 함께 올린다.
 - 업로드 요청은 `STORIX_MUTATION_MAX_UPLOAD_SECONDS`(기본 24시간)까지 걸릴 수 있어 상한을 넘기면 끊긴다. 1단계에서 쓰기를 중단하면 업로드가 끝난 뒤 갱신한다.
+- archive 요청은 `STORIX_ARCHIVE_MAX_SECONDS`(기본 600초)까지 걸릴 수 있어 기본 상한 25초를 넘기면 끊긴다. 끊긴 요청의 receipt는 lease(기본 60초) 동안 RESERVED로 남고 같은 key 재시도가 takeover한다. 끊기지 않게 하려면 `STORIX_SHUTDOWN_TIMEOUT_SECONDS`와 `stop_grace_period`를 archive 상한 이상으로 올리거나, 1단계에서 archive capability를 끄고 상한만큼 기다린다.
 - 강제 종료로 남은 업로드 세션과 orphan 객체는 GC가 정리한다.
 - `gc`·`backup`·`restore` 잡은 이 동작의 대상이 아니다. 이 잡들은 `pnpm run`으로 실행되고, `pnpm run`은 SIGTERM을 자식 node에 전달하지 않는다(pnpm 10.28.0 실측). 잡 실행 중에는 갱신하지 않는다.
 

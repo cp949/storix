@@ -2,7 +2,7 @@
 
 ## 상태
 
-채택. Archive는 grace 기반 원본 보호를 사용한다.
+승인됨 (2026-10-11). Archive는 grace 기반 원본 보호를 사용한다.
 
 ## 배경
 
@@ -10,7 +10,8 @@ Archive는 capture 뒤 원본 Blob을 읽고 별도 ZIP Blob을 만든다. 원�
 
 ## 결정
 
-- API는 `STORIX_ARCHIVE_MAX_SECONDS + 60 <= STORIX_ORPHAN_GRACE_PERIOD`를 시작 시 검사한다.
+- API는 `STORIX_ARCHIVE_MAX_SECONDS + 60 <= STORIX_ORPHAN_GRACE_PERIOD`를 시작 시 검사한다. `archive`가 capability 설정의 `globalAllowedCapabilities`에 있으면 위반 시 시작을 거부하고, 없으면 어떤 namespace도 archive를 실행할 수 없으므로 경고만 남긴다. archive를 쓰지 않는 기존 배포가 짧은 grace 때문에 업그레이드 뒤 멈추지 않게 하기 위해서다.
+- ZIP은 `node:zlib`와 stream `pipeline`으로 작성하는 제한 범위의 ZIP32 writer를 쓴다. 외부 ZIP 라이브러리를 제품 dependency에 추가하지 않는다. Zip64·빈 디렉터리는 지원하지 않는다. 외부 reader(`unzip`, Python `zipfile`) 호환은 테스트로 고정한다.
 - 60초는 DB·GC 시계 차이와 정리 지연을 덮는다고 가정한 여유다.
 - 모든 API·GC 실행에 같은 grace를 설정한다.
 - 진행 중 archive가 있을 때 grace를 줄이지 않는다.
@@ -21,4 +22,4 @@ Archive는 capture 뒤 원본 Blob을 읽고 별도 ZIP Blob을 만든다. 원�
 
 영속 read hold는 source 참조·정리·crash recovery·GC 상호 배제 상태를 추가한다. 필요한 보존 수준이 입증되지 않아 현재 채택하지 않는다.
 
-ZIP 직접 writer는 고정한 포맷 범위와 외부 reader 검증을 갖는다. 별도 ZIP 라이브러리를 제품 dependency에 추가하지 않는다. Zip64 지원은 제외한다.
+yazl 같은 외부 ZIP writer는 lazy 순차 열기와 STORED 호환은 맞지만 source 오류가 `uncaughtException`으로 새고 output destroy만으로 source가 닫히지 않아 취소·수명 계약을 어댑터로 다시 감싸야 한다. 직접 writer가 외부 reader 호환에 두 번 실패하면 이 어댑터로 전환한다.

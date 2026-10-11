@@ -26,6 +26,7 @@
 | `POST /fs/content/conditional` | `X-Expires-In` 헤더, 선행 0 없는 10진 정수 초 | `X-If-Absent: true`       |
 | `POST /fs/upload-sessions`     | JSON integer `expiresInSeconds`               | `ifAbsent: true`          |
 | `POST /fs/mutations`의 `copy`  | JSON integer `expiresInSeconds`               | `destinationAbsent: true` |
+| `POST /fs/archive`             | `X-Expires-In` 헤더, 선행 0 없는 10진 정수 초 | 없음(항상 새 FILE)        |
 
 - `ConditionalContentService`는 잘못된 헤더 형식(10진 정수 아님, 저장 가능 범위 초과)과 조건 조합을 본문 소비와 receipt 생성 전에 400 `VFS_INVALID_EXPIRY`로 거부한다.
 - 설정 범위(`STORIX_VFS_EXPIRY_MIN_SECONDS`·`STORIX_VFS_EXPIRY_MAX_SECONDS`) 밖의 값은 receipt를 처리한 뒤 판정한다.

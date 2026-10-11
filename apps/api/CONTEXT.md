@@ -58,3 +58,10 @@ Storix에 요청을 보내는 쪽이 감사 로그용으로 요청마다 자기�
 API 키 비교, 통과/실패만 판단)과는 별개 개념이고, 최종 사용자와도 다르다(최종
 사용자 식별·인증은 호출 서버 책임이며 Storix 도메인 밖).
 _Avoid_: 사용자, 클라이언트, 인증된 주체
+
+**Archive**:
+같은 Namespace의 FILE 목록을 한 DB snapshot에서 capture해 ZIP FILE 하나로 저장하는
+동기 조건부 변경. 원본 Blob 참조 수를 바꾸지 않고 읽으며, 평문 길이·SHA-256이 capture
+값과 다르면 결과 FILE을 만들지 않는다. 결과는 보통의 FILE Node이고 ZIP 안의 entry
+이름은 요청이 정한 상대 경로다. 선택 capability `archive`가 켜진 Namespace에서만 쓴다.
+_Avoid_: 압축 작업, 백업, export
