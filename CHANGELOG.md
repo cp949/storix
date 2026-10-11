@@ -8,9 +8,15 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-11
+
 ### Added
 
 - 기본 비활성 `archive` capability와 `POST /fs/archive`를 추가했다. 선택 FILE을 동기 ZIP FILE로 만들며 source ID·선택 revision·입력/출력 상한·checksum 검증·완료 receipt replay를 적용한다. entry 단위 오류(400 revision, 404 원본 부재, 412 revision 충돌)는 실패한 index를 `archiveEntry`로 돌려준다. `STORIX_ARCHIVE_*`로 동시성·상한·deadline·압축 수준을 설정한다. API와 GC는 같은 `STORIX_ORPHAN_GRACE_PERIOD`를 사용해야 하며, `archive`를 `globalAllowedCapabilities`에 넣은 배포는 `STORIX_ARCHIVE_MAX_SECONDS + 60 <= STORIX_ORPHAN_GRACE_PERIOD`가 아니면 시작을 거부한다(허용하지 않은 배포는 경고만 남긴다). grace 검사는 원본 보존을 보장하지 않는다. 설계는 [파일 archive](docs/design/16-file-archive.md), 결정은 api ADR-0048이다.
+
+### Fixed
+
+- archive 업로드 완료 뒤 client가 끊기면 FILE·receipt 커밋을 차단한다. 취소 정리는 원본 stream의 비동기 종료까지 기다린다.
 
 ## [1.3.0] - 2026-10-08
 
@@ -26,8 +32,6 @@
 - AWS Secrets Manager `SecretString`을 읽는 독립 SecretSource 어댑터 예제, 실제 LocalStack 실행 시나리오, AWS 역할·권한 설정 가이드를 추가했다. AWS SDK는 Storix 코어와 기본 이미지에 포함하지 않는다.
 
 ### Fixed
-
-- archive 업로드 완료 뒤 client가 끊기면 FILE·receipt 커밋을 차단한다. 취소 정리는 원본 stream의 비동기 종료까지 기다린다.
 
 - 재개 업로드 staging 진단에서 미저장 조각 전체를 열거하지 않아 큰 조각 수의 조회가 메모리를 과도하게 할당하지 않는다.
 - 계약 러너가 정책 파일 부분 쓰기 실패 뒤 기준 정책을 복원하고, 정책 복원 실패 시에도 완료한 계약 결과를 보존한다.
