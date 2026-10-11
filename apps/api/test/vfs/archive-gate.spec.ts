@@ -1,4 +1,5 @@
 // 단일 프로세스 gate의 즉시 획득·거부와 중복 release를 검증한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { ArchiveGate } from '../../src/vfs/archive-gate.js';
 
 // 입력과 호출 순서를 고정해 허용·거부 계약을 재현한다.

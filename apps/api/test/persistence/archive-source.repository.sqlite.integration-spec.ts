@@ -1,5 +1,6 @@
 // 실제 in-memory SQLite와 migration으로 archive capture·오류·DB deadline을 검증한다.
 // 원본 참조 수와 요청 순서 유지, namespace 제한, Nest provider 주입을 확인한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { DataSource, IsNull } from 'typeorm';

@@ -7,7 +7,7 @@
 ## 1. 범위와 용어
 
 - receipt identity는 `namespace/scope/key`다. 완료된 receipt는 method, fingerprint, 응답 status·body·헤더를 저장한다.
-- 네 서비스(`mutation.service.ts`, `conditional-content.service.ts`, `vfs-snapshot.service.ts`, `archive.service.ts`)는 저장·재생 규칙을 `vfs/mutation-receipt.ts` 한 모듈에서 공유한다. 서비스별로 다른 규칙을 두지 않는다.
+- 서비스(`mutation.service.ts`, `conditional-content.service.ts`, `vfs-snapshot.service.ts`, `archive.service.ts`)는 저장·재생 규칙을 `vfs/mutation-receipt.ts` 한 모듈에서 공유한다. 서비스별로 다른 규칙을 두지 않는다.
 - receipt 상태는 `RESERVED`(claim 소유 중, lease 보유)와 `COMPLETE`(응답 확정)다.
   - `RESERVED` lease 기본값은 60초 (`STORIX_MUTATION_LEASE_SECONDS`)다.
   - lease의 만료 비교와 새 만료 시각은 DB 시계로 계산한다.

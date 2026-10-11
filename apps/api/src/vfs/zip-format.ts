@@ -1,16 +1,17 @@
 // ZIP32 record(local header·data descriptor·central directory·EOCD)의 byte를 만드는 순수 인코더다.
 // 필드 위치·폭은 PKWARE APPNOTE 6.3.x를 따른다. stream 수명은 zip-writer.ts가 맡는다.
 
-// APPNOTE 4.4.5 compression method.
+/** APPNOTE 4.4.5의 비압축 저장 방식이다. */
 export const ZIP_METHOD_STORED = 0;
+/** APPNOTE 4.4.5의 DEFLATE 압축 방식이다. */
 export const ZIP_METHOD_DEFLATED = 8;
 
-// APPNOTE 4.4.4 general purpose bit flag. bit 3은 크기·CRC를 data descriptor에 뒤따라 쓴다는 뜻이고,
-// bit 11은 이름이 UTF-8이라는 뜻이다. 둘 다 stream 작성에 필요하다.
+/** APPNOTE 4.4.4의 크기·CRC를 후속 data descriptor에 기록하는 flag다. */
 export const ZIP_FLAG_DATA_DESCRIPTOR = 1 << 3;
+/** APPNOTE 4.4.4의 UTF-8 이름 flag다. */
 export const ZIP_FLAG_UTF8 = 1 << 11;
 
-// APPNOTE 4.4.3 version needed to extract. 2.0은 DEFLATE와 data descriptor를 읽는 최소 버전이다.
+/** APPNOTE 4.4.3의 DEFLATE·data descriptor 추출 최소 버전 2.0이다. */
 export const ZIP_VERSION_NEEDED = 20;
 
 /** DOS 날짜와 시각 필드다. */

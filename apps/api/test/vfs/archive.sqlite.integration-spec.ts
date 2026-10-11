@@ -1,5 +1,5 @@
 // SQLite migration, 실제 VFS repository, HTTP route와 메모리 BlobStorage로 archive 생성·receipt 재생을 확인한다.
-// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절를 따른다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';

@@ -1,4 +1,5 @@
 // 가짜 환경변수 조회와 warning spy로 archive 설정 파싱·grace 검사 경계를 검증한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 원본 보존 전제를 따른다.
 import { jest } from '@jest/globals';
 import { createArchiveConfig } from '../../src/vfs/archive-config.js';
 

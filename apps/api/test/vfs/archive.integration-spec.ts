@@ -1,4 +1,5 @@
 // PostgreSQL·S3 Testcontainers에서 archive HTTP 생성과 receipt 재생을 확인한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
@@ -12,7 +13,8 @@ import { VfsNodeEntity } from '../../src/persistence/entities/vfs-node.entity.js
 import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
 import { createFsHttpFixture } from './fs-http-fixture.test-support.js';
 
-describe('archive HTTP (PostgreSQL)', () => {
+// 실제 PostgreSQL·S3 fixture에서 archive 생성과 평문 다운로드를 검증한다.
+describe('archive HTTP PostgreSQL 계약 검증', () => {
   const ctx = createFsHttpFixture({ enableArchive: true });
 
   it('ZIP FILE을 만들고 동일 key 재시도에서 receipt를 재생한다', async () => {

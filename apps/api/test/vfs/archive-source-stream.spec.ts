@@ -1,5 +1,5 @@
 // 가짜 Readable에서 archive source 무결성 검증과 destroy 전파를 확인한다.
-// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절를 따른다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { verifiedArchiveSource } from '../../src/vfs/archive-source-stream.js';

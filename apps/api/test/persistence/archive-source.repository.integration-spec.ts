@@ -1,4 +1,5 @@
 // 실제 PostgreSQL과 migration으로 snapshot capture·DB wall-clock·과거 zero_since 경합을 검증한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { randomUUID } from 'node:crypto';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { DataSource, IsNull } from 'typeorm';

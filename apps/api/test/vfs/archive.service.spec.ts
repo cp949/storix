@@ -1,4 +1,5 @@
 // archive service의 receipt 순서와 ZIP FILE 생성 흐름을 단위 테스트한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import { jest } from '@jest/globals';
 import { ArchiveService } from '../../src/vfs/archive.service.js';
 import type { CapabilityService } from '../../src/capability/capability.service.js';
@@ -10,7 +11,8 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ArchiveGate } from '../../src/vfs/archive-gate.js';
 
-describe('ArchiveService', () => {
+// receipt 재생과 신규 실행을 구분한다. 취소·gate 포화는 claim을 반환해야 한다.
+describe('ArchiveService 실행 흐름', () => {
   it('capability 비활성 신규 요청은 receipt claim을 해제한다', async () => {
     const identity = {
       namespaceId: '11111111-1111-4111-8111-111111111111',

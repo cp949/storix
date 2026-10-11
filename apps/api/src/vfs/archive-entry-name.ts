@@ -2,7 +2,7 @@
 // 이름을 정규화하거나 재배열하지 않는다. 원본 FILE 종류·개수 검증은 capture 계층이 맡는다.
 import { VfsArchiveInvalidRequestError } from './vfs.errors.js';
 
-// Unicode property\ub85c \ub450\uba74 Bidi_Control \uc9d1\ud569\uc774 \uac31\uc2e0\ub3fc\ub3c4 \ub204\ub77d\uc774 \uc5c6\ub2e4. path-resolver.ts\uc640 \uac19\uc740 \ud45c\uae30\ub2e4.
+// Unicode property로 Bidi_Control 집합을 검사한다. path-resolver.ts와 같은 표기다.
 const BIDI = /\p{Bidi_Control}/u;
 
 /** ZIP FILE 상대 경로를 검사하고 입력 문자열을 그대로 반환한다. */

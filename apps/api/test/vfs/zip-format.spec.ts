@@ -1,4 +1,5 @@
 // ZIP record 인코더의 바이트 계약을 고정한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절을 따른다.
 import {
   ZIP_FLAG_DATA_DESCRIPTOR,
   ZIP_FLAG_UTF8,
