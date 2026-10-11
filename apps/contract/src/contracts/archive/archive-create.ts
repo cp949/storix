@@ -62,6 +62,7 @@ export default defineContract({
     assert.equal(stale.status, 412, stale.text());
     assert.equal((await ctx.client.getStat(ns, '/stale.zip')).status, 404);
 
+    // 구현 상수를 참조하지 않고 기본 공개 상한 1000개 초과 거부를 고정한다.
     const tooMany = await ctx.client.createArchive(ns, {
       target: '/too-many.zip',
       entries: Array.from({ length: 1001 }, (_, index) => ({
