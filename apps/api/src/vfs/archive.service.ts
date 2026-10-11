@@ -172,6 +172,7 @@ export class ArchiveService {
             maxSeconds: this.archiveConfig.maxSeconds,
           },
         );
+        controller.signal.throwIfAborted();
         if (limits.encryptionPolicy === 'ENCRYPTED' && !this.masterKey)
           throw new Error('ENCRYPTED namespace master key missing');
         const maxFileBytes = resolveMaxFileSizeBytes(
@@ -214,13 +215,16 @@ export class ArchiveService {
           controller.signal,
         );
         await zip.settled;
+        controller.signal.throwIfAborted();
         if (lease.lost || !(await this.receipts.renew(identity, claim.generation)))
           throw new Error('VFS mutation claim lost');
+        controller.signal.throwIfAborted();
         const result = await this.nodes.withMutation(
           namespaceId,
           root.id,
           async (tx) => {
             await this.sources.assertDeadline(tx.manager, capture.deadlineAt);
+            controller.signal.throwIfAborted();
             return this.nodes.putConditionalContent(
               tx,
               targetSegments,
@@ -236,6 +240,7 @@ export class ArchiveService {
           },
           async (tx, applied) => {
             await this.sources.assertDeadline(tx.manager, capture.deadlineAt);
+            controller.signal.throwIfAborted();
             await this.receipts.complete(
               tx,
               identity,

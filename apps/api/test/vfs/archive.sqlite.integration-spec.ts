@@ -1,4 +1,5 @@
 // SQLite migration, 실제 VFS repository, HTTP route와 메모리 BlobStorage로 archive 생성·receipt 재생을 확인한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절를 따른다.
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -29,6 +30,7 @@ import { configureBodyParsers } from '../../src/common/body-parser.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
+import { ArchiveService } from '../../src/vfs/archive.service.js';
 
 /**
  * 자식 프로세스는 빌드 산출물(dist)을 import한다. dist가 없거나 소스보다 오래되면 옛 코드를 검증하므로
@@ -57,7 +59,8 @@ import type { ArchiveConfig } from '../../src/vfs/archive-config.js';
 
 const API_KEY = 'archive-sqlite-integration-key';
 
-describe('archive HTTP (SQLite)', () => {
+// 실제 SQLite transaction에서 FILE·receipt 원자성과 실패 후 재시도를 검증한다.
+describe('archive HTTP SQLite 계약 검증', () => {
   let directory: string;
   let app: INestApplication;
   let dataSource: DataSource;
@@ -1049,6 +1052,72 @@ describe('archive HTTP (SQLite)', () => {
       .send({ target: '/get-stall.zip', entries: [{ id: source.id, name: 'source.txt' }] })
       .expect(201);
   });
+
+  // 비동기 DB 호출이 끝난 뒤의 취소도 최종 FILE·receipt transaction을 롤백해야 한다.
+  it.each(['capture', 'renew', 'work', 'receipt'] as const)(
+    '%s 완료 시 client가 끊기면 FILE 없이 claim을 해제하고 같은 key 재시도를 허용한다',
+    async (stage) => {
+      const db = app.get(DataSource);
+      const source = await db
+        .getRepository(VfsNodeEntity)
+        .findOneByOrFail({ namespaceId, name: 'source.txt' });
+      const sources = app.get(ArchiveSourceRepository);
+      const receipts = app.get(VfsMutationReceiptRepository);
+      const closed = new AbortController();
+      const key = randomUUID();
+      const target = `/cancel-${stage}.zip`;
+      const body = { target, entries: [{ id: source.id, name: 'source.txt' }] };
+      const capture = sources.capture.bind(sources);
+      const renew = receipts.renew.bind(receipts);
+      const assertDeadline = sources.assertDeadline.bind(sources);
+      let deadlineChecks = 0;
+      const captureSpy = jest.spyOn(sources, 'capture').mockImplementation(async (...args) => {
+        const result = await capture(...args);
+        if (stage === 'capture') closed.abort();
+        return result;
+      });
+      const renewSpy = jest.spyOn(receipts, 'renew').mockImplementation(async (...args) => {
+        const result = await renew(...args);
+        if (stage === 'renew') closed.abort();
+        return result;
+      });
+      const deadlineSpy = jest.spyOn(sources, 'assertDeadline').mockImplementation(async (...args) => {
+        await assertDeadline(...args);
+        deadlineChecks += 1;
+        if ((stage === 'work' && deadlineChecks === 1) || (stage === 'receipt' && deadlineChecks === 2))
+          closed.abort();
+      });
+      try {
+        await expect(
+          app
+            .get(ArchiveService)
+            .execute(
+              namespaceId,
+              'archive-test',
+              key,
+              Buffer.from(JSON.stringify(body)),
+              undefined,
+              'cancel-test',
+              closed.signal,
+            ),
+        ).resolves.toMatchObject({ status: 499 });
+        await expect(
+          db.getRepository(VfsNodeEntity).findOneBy({ namespaceId, name: `cancel-${stage}.zip` }),
+        ).resolves.toBeNull();
+      } finally {
+        captureSpy.mockRestore();
+        renewSpy.mockRestore();
+        deadlineSpy.mockRestore();
+      }
+      await request(app.getHttpServer())
+        .post(`/api/v2/namespaces/${namespaceId}/fs/archive`)
+        .set('Authorization', `Bearer ${API_KEY}`)
+        .set('X-Mutation-Scope', 'archive-test')
+        .set('Idempotency-Key', key)
+        .send(body)
+        .expect(201);
+    },
+  );
 
   it('동시 실행 gate가 찬 요청은 HTTP 503과 Retry-After를 반환한다', async () => {
     const db = app.get(DataSource);

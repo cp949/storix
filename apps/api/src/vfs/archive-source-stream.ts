@@ -4,6 +4,7 @@
 // 원본이 다음 chunk 도착까지 열린 채 남는다(s3-blob-storage.ts 머리 주석과 같은 함정). 그래서 쓰지 않는다.
 import { createHash } from 'node:crypto';
 import { pipeline, Readable, Transform } from 'node:stream';
+import { waitForClose } from '../common/stream-close.js';
 
 /** source를 순차 소비하면서 평문 길이와 digest를 확인하는 stream이다. */
 export function verifiedArchiveSource(
@@ -14,6 +15,11 @@ export function verifiedArchiveSource(
   const hash = createHash('sha256');
   let size = 0n;
   const verifier = new Transform({
+    destroy(error, callback) {
+      // writer가 wrapper 종료를 관측할 때 원본의 비동기 정리도 완료돼 있어야 한다.
+      source.destroy(error ?? undefined);
+      void waitForClose(source).then(() => callback(error));
+    },
     transform(chunk: Buffer, _encoding, callback) {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += BigInt(bytes.length);

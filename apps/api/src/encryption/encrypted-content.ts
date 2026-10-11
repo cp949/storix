@@ -1,5 +1,6 @@
+import { waitForClose } from '../common/stream-close.js';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { pipeline, Transform } from 'node:stream';
+import { pipeline, PassThrough, Transform } from 'node:stream';
 import type { Duplex, Readable } from 'node:stream';
 import type { BlobRange, BlobStorage } from '../storage/blob-storage.js';
 
@@ -28,10 +29,19 @@ export function incrementCounter(iv: Buffer, blocks: number): Buffer {
 // uncaughtException이 되어 프로세스를 죽인다. 반대로 소비자가 결과 스트림을 파괴해도
 // source는 살아남아 스토리지 HTTP 소켓이 샌다. pipeline()은 양방향으로 오류를 전파하고
 // 한쪽이 끝나거나 파괴되면 나머지도 파괴하므로 두 문제를 모두 없앤다.
-// 콜백은 비워둔다 — 오류는 destination에도 그대로 전파되므로 호출자가 처리한다.
-function pipeThrough<T extends Duplex>(source: Readable, destination: T): T {
-  pipeline(source, destination, () => undefined);
-  return destination;
+// pipeline 오류는 반환 output에도 전파된다. 호출자가 처리한다.
+/** 원본·변환 stream의 종료까지 소유하는 output을 반환한다. */
+function pipeThrough(source: Readable, destination: Duplex): Readable {
+  const output = new PassThrough({
+    destroy(error, callback) {
+      // 복호화·range wrapper도 내부 Blob source가 닫힌 뒤 종료한다.
+      source.destroy(error ?? undefined);
+      destination.destroy(error ?? undefined);
+      void Promise.all([waitForClose(source), waitForClose(destination)]).then(() => callback(error));
+    },
+  });
+  pipeline(source, destination, output, () => undefined);
+  return output;
 }
 
 function dropLeadingBytes(source: Readable, count: number): Readable {

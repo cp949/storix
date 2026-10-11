@@ -38,6 +38,8 @@ ZIP 내부 이름은 UTF-8 NFC 상대 경로다. 전체 4095 byte, segment 255 b
 
 Capture는 source metadata와 target 조건을 한 DB snapshot에서 확인한다. 원본 Blob 참조 수는 바꾸지 않는다. 각 source stream의 평문 길이와 SHA-256을 ZIP writer 앞에서 확인한다. 누락·무결성 오류·취소·deadline·quota 오류는 target FILE을 만들지 않는다. 실패한 업로드 object는 확정된 4xx면 즉시 지우고, 5xx·취소면 orphan GC에 맡긴다. 취소된 multipart PUT은 `AbortMultipartUpload`를 보내 조각을 바로 정리하며, 프로세스가 그 전에 죽으면 GC가 회수한다.
 
+취소 신호는 capture 종료, 업로드 완료, lease 갱신 뒤와 최종 transaction의 FILE 등록·receipt 완료 SQL 전에 검사한다. 검증·복호화·S3 응답 wrapper는 내부 source의 비동기 destroy callback 완료까지 기다린다. Writer 정착 뒤에 gate 슬롯을 반환한다.
+
 ZIP writer는 순차 DEFLATE/STORED 기록, data descriptor, central directory를 직접 작성한다. Zip64와 빈 디렉터리는 지원하지 않는다. 결과 상한은 ZIP 구조 전체 byte를 포함한다. 기본 압축 수준은 1이다.
 
 Gate는 API 프로세스 내부 동시 실행 수(기본 1)만 제한한다. 분산 공정성이나 cluster 전체 한도는 제공하지 않는다. 포화 요청은 503과 `Retry-After`(기본 10초)를 받는다. 요청 처리 전에 이미 끊긴 client는 원본을 읽지 않고 gate 슬롯과 claim을 바로 돌려준다.

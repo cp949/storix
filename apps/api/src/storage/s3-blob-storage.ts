@@ -1,3 +1,4 @@
+import { waitForClose } from '../common/stream-close.js';
 import {
   AbortMultipartUploadCommand,
   DeleteObjectCommand,
@@ -59,12 +60,17 @@ function clientWithAbortSignal(client: S3Client, signal: AbortSignal): S3Client 
 // generator)로 감싸면 generator가 원본의 다음 chunk를 기다리는 동안 destroy가 미뤄져, S3가 멈춘 채
 // 클라이언트가 끊겨도 소켓과 요청 처리가 다음 chunk 도착까지 남는다.
 function classifyReturnedStream(source: Readable): Readable {
-  const out = new PassThrough();
+  const out = new PassThrough({
+    destroy(error, callback) {
+      // 반환 stream의 종료는 SDK 응답 본문의 비동기 정리 완료까지 포함한다.
+      source.destroy();
+      void waitForClose(source).then(() => callback(error));
+    },
+  });
   // 정상 종료는 pipe가 out.end()로 전달한다. 오류와 중간 닫힘은 분류한 오류로 out을 끝낸다.
   finished(source, (error) => {
     if (error) out.destroy(sdkFailure(error) as Error);
   });
-  out.once('close', () => source.destroy());
   source.pipe(out);
   return out;
 }

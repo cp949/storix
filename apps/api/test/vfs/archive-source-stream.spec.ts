@@ -1,14 +1,17 @@
 // 가짜 Readable에서 archive source 무결성 검증과 destroy 전파를 확인한다.
+// 검증 규칙은 docs/design/16-file-archive.md의 "공개 계약", "실행과 실패 경계" 절를 따른다.
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { verifiedArchiveSource } from '../../src/vfs/archive-source-stream.js';
 
+/** 검증 stream의 전체 출력 byte를 읽어 무결성 오류도 관측한다. */
 async function collect(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk as Buffer));
   return Buffer.concat(chunks);
 }
 
+// 길이·digest 오류와 소비자 취소가 원본 stream 종료까지 전파돼야 한다.
 describe('검증된 archive source', () => {
   it('길이와 SHA-256이 맞으면 같은 byte를 그대로 내보내고 정상 종료한다', async () => {
     const content = Buffer.from('archive source payload');
@@ -57,4 +60,30 @@ describe('검증된 archive source', () => {
     await new Promise<void>((resolve) => inner.once('close', resolve));
     expect(inner.destroyed).toBe(true);
   });
+  // wrapper 종료가 실제 Blob source의 비동기 정리보다 앞서면 gate 슬롯을 너무 일찍 반환한다.
+  it.each([true, false])(
+    'emitClose=%s 원본의 destroy callback이 끝날 때까지 wrapper 종료를 기다린다',
+    async (emitClose) => {
+      let finishDestroy: (() => void) | undefined;
+      const inner = new Readable({
+        emitClose,
+        read: () => undefined,
+        destroy(error, callback) {
+          finishDestroy = () => callback(error);
+        },
+      });
+      const source = verifiedArchiveSource(inner, 100n, '0'.repeat(64));
+      const closed = new Promise<void>((resolve) => source.once('close', resolve));
+      source.destroy(new Error('consumer stopped'));
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(inner.destroyed).toBe(true);
+        expect(source.closed).toBe(false);
+      } finally {
+        finishDestroy?.();
+        await closed;
+      }
+      expect(inner.closed).toBe(true);
+    },
+  );
 });

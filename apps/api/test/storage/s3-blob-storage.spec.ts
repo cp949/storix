@@ -510,3 +510,38 @@ describe('S3BlobStorage', () => {
     });
   });
 });
+
+// GET wrapper가 닫힐 때 내부 Blob source의 비동기 정리도 완료돼 있어야 한다.
+describe('GET 원본 종료 대기', () => {
+  it.each([true, false])(
+    'emitClose=%s 원본 정리가 끝날 때까지 반환 stream 종료를 기다린다',
+    async (emitClose) => {
+      let finishDestroy: (() => void) | undefined;
+      const inner = new Readable({
+        emitClose,
+        read: () => undefined,
+        destroy(error, callback) {
+          finishDestroy = () => callback(error);
+        },
+      });
+      const storage = new S3BlobStorage(
+        { send: async () => ({ Body: inner }) } as unknown as S3Client,
+        'bucket',
+        null,
+      );
+      const result = await storage.get('key');
+      result.on('error', () => undefined);
+      const closed = new Promise<void>((resolve) => result.once('close', resolve));
+      result.destroy(new Error('consumer stopped'));
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(inner.destroyed).toBe(true);
+        expect(result.closed).toBe(false);
+      } finally {
+        finishDestroy?.();
+        await closed;
+      }
+      expect(inner.closed).toBe(true);
+    },
+  );
+});

@@ -4,6 +4,7 @@
 import { crc32, createDeflateRaw } from 'node:zlib';
 import { PassThrough, Readable, Transform, Writable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
+import { waitForClose } from '../common/stream-close.js';
 import {
   ZIP_METHOD_DEFLATED,
   ZIP_METHOD_STORED,
@@ -272,25 +273,5 @@ function waitForDrain(stream: PassThrough, signal: AbortSignal): Promise<void> {
     stream.once('error', onError);
     stream.once('close', onClose);
     signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-/** close 이벤트 또는 closed 상태로 비동기 destroy callback 완료를 기다린다. */
-function waitForClose(stream: Readable | Writable): Promise<void> {
-  if (stream.closed) return Promise.resolve();
-  return new Promise((resolve) => {
-    let timer: ReturnType<typeof setTimeout>;
-    const complete = (): void => {
-      clearTimeout(timer);
-      stream.off('close', complete);
-      resolve();
-    };
-    const checkClosed = (): void => {
-      if (stream.closed) complete();
-      else timer = setTimeout(checkClosed, 10);
-    };
-    stream.once('close', complete);
-    // emitClose: false인 source도 destroy callback 종료를 closed로 관측한다.
-    timer = setTimeout(checkClosed, 10);
   });
 }
