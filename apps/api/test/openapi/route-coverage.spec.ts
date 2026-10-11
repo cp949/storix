@@ -718,3 +718,55 @@ it('노드·폴더·quota 상한 413 코드를 던질 수 있는 operation은 41
       expect({ suffix, code, found: description!.includes(code) }).toEqual({ suffix, code, found: true });
   }
 });
+
+// archive는 428이 없고 400 `VFS_INVALID_MUTATION_REQUEST`를 쓰며, 409 Retry-After와 archiveEntry 스키마를 문서화한다.
+it('archive 계약은 실제 오류 응답·헤더·archiveEntry 스키마를 문서화한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const operation = spec.paths['/api/v2/namespaces/{namespaceId}/fs/archive'].post;
+  expect(operation.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+      expect.objectContaining({
+        name: 'X-Mutation-Scope',
+        in: 'header',
+        required: true,
+        schema: expect.objectContaining({ 'x-maxHeaderBytes': 128 }),
+      }),
+      expect.objectContaining({
+        name: 'X-Expires-In',
+        in: 'header',
+        required: false,
+        schema: { type: 'string', pattern: '^[1-9][0-9]*$' },
+      }),
+    ]),
+  );
+  expect(Object.keys(operation.responses).sort()).toEqual(
+    ['201', '400', '401', '404', '409', '412', '413', '500', '503'].sort(),
+  );
+  expect(operation.responses['400'].description).toContain('VFS_INVALID_MUTATION_REQUEST');
+  for (const code of [
+    'VFS_INVALID_ARCHIVE_REQUEST',
+    'VFS_INVALID_REVISION',
+    'VFS_INVALID_PATH',
+    'VFS_INVALID_EXPIRY',
+  ])
+    expect(operation.responses['400'].description).toContain(code);
+  expect(operation.responses['404'].description).toContain('archiveEntry');
+  expect(operation.responses['409']).toHaveProperty('headers.Retry-After.schema.type', 'integer');
+  expect(operation.responses['409'].description).toContain('VFS_FEATURE_DISABLED');
+  expect(operation.responses['412'].content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/ArchivePreconditionFailedResponse',
+  });
+  for (const code of ['VFS_ARCHIVE_TOO_LARGE', 'VFS_FILE_TOO_LARGE', 'VFS_QUOTA_EXCEEDED', 'BAD_REQUEST'])
+    expect(operation.responses['413'].description).toContain(code);
+  for (const code of ['VFS_ARCHIVE_BUSY', 'VFS_ARCHIVE_TIMEOUT'])
+    expect(operation.responses['503'].description).toContain(code);
+  expect(operation.description).toContain('오류 재생');
+
+  const archiveError = spec.components.schemas.ArchiveErrorResponse;
+  expect(archiveError.allOf[0]).toEqual({ $ref: '#/components/schemas/ErrorResponse' });
+  expect(archiveError.allOf[1].properties.archiveEntry).toEqual({ type: 'integer', minimum: 0 });
+  const archivePrecondition = spec.components.schemas.ArchivePreconditionFailedResponse;
+  expect(archivePrecondition.allOf[0]).toEqual({ $ref: '#/components/schemas/PreconditionFailedResponse' });
+  expect(archivePrecondition.allOf[1].properties.archiveEntry).toEqual({ type: 'integer', minimum: 0 });
+});
