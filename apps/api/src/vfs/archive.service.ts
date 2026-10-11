@@ -19,7 +19,11 @@ import { ARCHIVE_CONFIG, type ArchiveConfig } from './archive-config.js';
 import { ArchiveGate } from './archive-gate.js';
 import { PathResolver } from './path-resolver.js';
 import { requireRootWithLimits } from './require-root.js';
-import { VfsArchiveDeadlineExceededError, VfsArchiveInvalidRequestError } from './vfs.errors.js';
+import {
+  VfsArchiveBusyError,
+  VfsArchiveDeadlineExceededError,
+  VfsArchiveInvalidRequestError,
+} from './vfs.errors.js';
 import { DomainError } from '../common/domain-error.js';
 import {
   assertExpiryWithinBounds,
@@ -29,6 +33,7 @@ import {
 import { identityOf, hashParts, type MutationHttpResult } from './mutation.service.js';
 import {
   busyResponse,
+  errorResponse,
   replayReceipt,
   storeErrorReceipt,
   type ErrorReceiptOwner,
@@ -46,7 +51,7 @@ const ROUTE = 'fs/archive';
 export class ArchiveService {
   private readonly pathResolver = new PathResolver();
   private readonly fileSizeLimits: ReturnType<typeof resolveFileSizeLimits>;
-  private readonly expiryBounds;
+  private readonly expiryBounds: ReturnType<typeof resolveFileExpiryBounds>;
 
   constructor(
     private readonly nodes: VfsNodeRepository,
@@ -122,31 +127,37 @@ export class ArchiveService {
     try {
       if (parseError) return await storeErrorReceipt(this.receipts, owner, parseError, requestId);
       this.capabilities.requireEnabled(namespaceId, 'archive');
-      const gateLease = this.gate.tryAcquire();
-      if (!gateLease) {
-        await this.receipts.release(identity, claim.generation);
-        return {
-          status: 503,
-          body: { code: 'VFS_ARCHIVE_BUSY', message: 'archive 실행 한도 초과', requestId },
-          headers: { 'retry-after': String(this.archiveConfig.retryAfterSeconds), 'x-request-id': requestId },
-        };
-      }
       const controller = new AbortController();
       const abortFromResponse = () => {
         clientClosed = true;
         controller.abort(new Error('archive response closed'));
       };
-      responseSignal?.addEventListener('abort', abortFromResponse, { once: true });
-      const timeout = setTimeout(
-        () => controller.abort(new VfsArchiveDeadlineExceededError()),
-        this.archiveConfig.maxSeconds * 1000,
-      );
-      timeout.unref();
-      const lease = startLeaseRenewal(this.receipts, identity, claim.generation);
+      const gateLease = this.gate.tryAcquire();
+      if (!gateLease) {
+        await this.receipts.release(identity, claim.generation);
+        const busy = new VfsArchiveBusyError(this.archiveConfig.retryAfterSeconds);
+        const response = errorResponse(busy, requestId);
+        return {
+          ...response,
+          headers: { ...response.headers, 'retry-after': String(busy.retryAfterSeconds) },
+        };
+      }
+      // gate 슬롯을 얻은 뒤에는 어떤 경로로 나가도 finally가 슬롯을 돌려준다.
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let lease: ReturnType<typeof startLeaseRenewal> | undefined;
       let storageKey: string | undefined;
       let zipExecution: ReturnType<typeof createZipWriter> | undefined;
-      let ownerForError = owner;
       try {
+        // claim·capability 검사 중에 이미 끊긴 client의 signal은 abort 이벤트를 다시 내지 않는다.
+        if (responseSignal?.aborted) abortFromResponse();
+        else responseSignal?.addEventListener('abort', abortFromResponse, { once: true });
+        timeout = setTimeout(
+          () => controller.abort(new VfsArchiveDeadlineExceededError()),
+          this.archiveConfig.maxSeconds * 1000,
+        );
+        timeout.unref();
+        lease = startLeaseRenewal(this.receipts, identity, claim.generation);
+        if (controller.signal.aborted) throw controller.signal.reason;
         const normalizedRequest = request!;
         const capture = await this.sources.capture(
           namespaceId,
@@ -203,7 +214,6 @@ export class ArchiveService {
           controller.signal,
         );
         await zip.settled;
-        ownerForError = { ...owner, fingerprint, requestBodyBytes: body.length };
         if (lease.lost || !(await this.receipts.renew(identity, claim.generation)))
           throw new Error('VFS mutation claim lost');
         const result = await this.nodes.withMutation(
@@ -260,11 +270,11 @@ export class ArchiveService {
         zipExecution?.abort(error instanceof Error ? error : new Error('archive failed'));
         await zipExecution?.settled.catch(() => undefined);
         if (storageKey) await deleteUnreferencedUpload(this.blobs, this.storage, storageKey, error);
-        return await storeErrorReceipt(this.receipts, ownerForError, error, requestId);
+        return await storeErrorReceipt(this.receipts, owner, error, requestId);
       } finally {
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         responseSignal?.removeEventListener('abort', abortFromResponse);
-        await lease.stop();
+        await lease?.stop();
         gateLease.release();
       }
     } catch (error) {

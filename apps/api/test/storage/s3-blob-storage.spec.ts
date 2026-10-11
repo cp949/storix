@@ -104,8 +104,91 @@ describe('S3BlobStorage', () => {
     await requestStarted;
     expect(sdkSignal).toBeDefined();
     controller.abort(new Error('cancel PUT'));
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(pending).rejects.toThrow('cancel PUT');
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('multipart PUT을 취소하면 AbortMultipartUpload를 살아 있는 signal로 보낸다', async () => {
+    const controller = new AbortController();
+    const seen: Array<{ kind: string; aborted: boolean | null }> = [];
+    let partStarted!: () => void;
+    const partStartedPromise = new Promise<void>((resolve) => (partStarted = resolve));
+    const xml = (body: string) => ({
+      response: {
+        statusCode: 200,
+        headers: { 'content-type': 'application/xml' },
+        body: Readable.from([Buffer.from(body)]),
+      },
+    });
+    const client = new S3Client({
+      endpoint: 'http://stub.invalid:9000',
+      region: 'us-east-1',
+      credentials: { accessKeyId: 'a', secretAccessKey: 'b' },
+      forcePathStyle: true,
+      maxAttempts: 1,
+      requestHandler: {
+        metadata: { handlerProtocol: 'http/1.1' },
+        destroy: () => undefined,
+        handle: async (
+          request: { method: string; query?: Record<string, unknown> },
+          options?: { abortSignal?: AbortSignal },
+        ) => {
+          const query = request.query ?? {};
+          const kind =
+            request.method === 'POST' && 'uploads' in query
+              ? 'CreateMultipartUpload'
+              : request.method === 'PUT' && 'partNumber' in query
+                ? 'UploadPart'
+                : request.method === 'DELETE' && 'uploadId' in query
+                  ? 'AbortMultipartUpload'
+                  : request.method;
+          seen.push({ kind, aborted: options?.abortSignal?.aborted ?? null });
+          if (kind === 'CreateMultipartUpload') {
+            return xml(
+              '<InitiateMultipartUploadResult><Bucket>bucket</Bucket><Key>key</Key><UploadId>UP1</UploadId></InitiateMultipartUploadResult>',
+            );
+          }
+          if (kind === 'UploadPart') {
+            partStarted();
+            return new Promise<never>((_resolve, reject) => {
+              options?.abortSignal?.addEventListener(
+                'abort',
+                () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+                { once: true },
+              );
+            });
+          }
+          if (kind === 'AbortMultipartUpload') {
+            return { response: { statusCode: 204, headers: {}, body: Readable.from([]) } };
+          }
+          throw new Error(`unexpected request ${kind}`);
+        },
+      } as never,
+    });
+    const storage = new S3BlobStorage(client, 'bucket', null);
+    // part 크기(16 MiB)를 넘겨 multipart 경로를 강제한다.
+    const body = Readable.from(
+      (function* () {
+        for (let index = 0; index < 17; index += 1) yield Buffer.alloc(1024 * 1024, 1);
+      })(),
+    );
+    const pending = storage.put('key', body, 'application/zip', controller.signal);
+    await partStartedPromise;
+    controller.abort(new Error('cancel multipart'));
+    await expect(pending).rejects.toThrow('cancel multipart');
+
+    // lib-storage는 put이 끝난 뒤 배경에서 AbortMultipartUpload를 보낸다.
+    const deadline = Date.now() + 2000;
+    while (!seen.some((entry) => entry.kind === 'AbortMultipartUpload') && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(seen.map((entry) => entry.kind)).toEqual([
+      'CreateMultipartUpload',
+      'UploadPart',
+      'AbortMultipartUpload',
+    ]);
+    // signal을 붙이지 않으므로 null이다. 이미 abort된 signal(true)이 붙으면 handler가 전송 없이 거부한다.
+    expect(seen.find((entry) => entry.kind === 'AbortMultipartUpload')?.aborted).not.toBe(true);
   });
 
   describe('get이 반환한 stream', () => {

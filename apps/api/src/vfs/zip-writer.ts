@@ -17,6 +17,9 @@ import { VfsArchiveResultTooLargeError } from './vfs.errors.js';
 const ZIP32_MAX = 0xffff_ffff;
 const ZIP32_ENTRY_MAX = 65_534;
 
+/** writer가 받는 결과 상한의 최댓값(2 GiB)이다. archive 설정 ceiling도 이 값을 쓴다. */
+export const ZIP_MAX_RESULT_BYTES = 2_147_483_648;
+
 /** ZIP archive에 쓸 entry metadata다. */
 export interface ZipWriterEntry {
   /** ZIP 안의 UTF-8 상대 경로다. */
@@ -74,8 +77,8 @@ export function createZipWriter<T extends ZipWriterEntry>(
   ) {
     throw new RangeError('ZIP compression level must be between 0 and 9');
   }
-  if (options.maxResultBytes <= 0n || options.maxResultBytes > 2_147_483_648n) {
-    throw new RangeError('ZIP result limit must be between 1 and 2147483648 bytes');
+  if (options.maxResultBytes <= 0n || options.maxResultBytes > BigInt(ZIP_MAX_RESULT_BYTES)) {
+    throw new RangeError(`ZIP result limit must be between 1 and ${ZIP_MAX_RESULT_BYTES} bytes`);
   }
 
   const output = new PassThrough();
@@ -152,7 +155,6 @@ export function createZipWriter<T extends ZipWriterEntry>(
           method === ZIP_METHOD_DEFLATED ? createDeflateRaw({ level: options.compressionLevel }) : undefined;
         const stages = deflater ? [source, integrity, deflater, sink] : [source, integrity, sink];
         // 공유 output을 pipeline에 반복 연결하지 않는다. 각 entry는 전용 sink를 소유한다.
-        const closed = stages.map(waitForClose);
         try {
           throwIfAborted(controller.signal);
           if (deflater) {
@@ -164,7 +166,8 @@ export function createZipWriter<T extends ZipWriterEntry>(
           for (const stage of stages) {
             if (!stage.destroyed) stage.destroy();
           }
-          await Promise.all(closed);
+          // 종료 관측은 destroy 뒤에 시작한다. 전송 내내 polling timer를 돌리지 않는다.
+          await Promise.all(stages.map(waitForClose));
           activeSource = undefined;
         }
 

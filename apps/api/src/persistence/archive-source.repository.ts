@@ -9,6 +9,7 @@ import {
   VfsArchiveInvalidRequestError,
   VfsArchiveInvalidRevisionError,
   VfsArchivePreconditionFailedError,
+  VfsArchiveSourceNotFoundError,
   VfsArchiveTooLargeError,
   VfsNamespaceNotFoundError,
   VfsNodeNotFoundError,
@@ -92,6 +93,8 @@ export interface ArchiveSourceCapture {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ID_CHUNK_SIZE = 400;
+// 조상 순환 같은 손상 데이터에서 무한 조회를 막는 상한이다. 정상 경로 깊이보다 훨씬 크다.
+const MAX_PATH_DEPTH = 4096;
 
 /** archive 원본을 읽기 전용 DB snapshot으로 고정한다. */
 @Injectable()
@@ -159,7 +162,7 @@ export class ArchiveSourceRepository {
       for (let archiveEntry = 0; archiveEntry < command.entries.length; archiveEntry += 1) {
         const requested = command.entries[archiveEntry];
         const node = nodesById.get(requested.id.toLowerCase());
-        if (!node) throw new VfsNodeNotFoundError('/');
+        if (!node) throw new VfsArchiveSourceNotFoundError(archiveEntry);
         if (node.type !== 'FILE') throw new VfsArchiveInvalidRequestError();
         if (requested.revision !== undefined) {
           let expected: { id: string; version: number };
@@ -169,9 +172,11 @@ export class ArchiveSourceRepository {
             throw new VfsArchiveInvalidRevisionError(archiveEntry);
           }
           if (expected.id !== node.id.toLowerCase() || expected.version !== node.version) {
+            // 412 body의 path·current.path는 다른 endpoint와 같은 VFS 절대 경로다. 같은 snapshot에서 읽는다.
+            const nodePath = await this.resolveNodePath(manager, namespaceId, rootId, node);
             throw new VfsArchivePreconditionFailedError(
-              requested.name,
-              toPreconditionCurrent(node, requested.name),
+              nodePath,
+              toPreconditionCurrent(node, nodePath),
               archiveEntry,
             );
           }
@@ -216,6 +221,26 @@ export class ArchiveSourceRepository {
 
   private get isSqlite(): boolean {
     return isSqliteDataSource(this.dataSource.options);
+  }
+
+  /** 조상을 root까지 거슬러 올라 node의 VFS 절대 경로를 만든다. 오류 응답 경로에서만 쓴다. */
+  private async resolveNodePath(
+    manager: EntityManager,
+    namespaceId: string,
+    rootId: string,
+    node: VfsNodeEntity,
+  ): Promise<string> {
+    const nodeRepository = manager.getRepository(VfsNodeEntity);
+    const names: string[] = [];
+    let current = node;
+    while (current.id !== rootId && current.parentId !== null) {
+      names.unshift(current.name);
+      if (names.length > MAX_PATH_DEPTH) throw new Error('VFS 경로 깊이 초과 — 데이터 일관성 위반');
+      const parent = await nodeRepository.findOneBy({ namespaceId, id: current.parentId });
+      if (!parent) throw new Error('FILE node의 조상이 없음 — 데이터 일관성 위반');
+      current = parent;
+    }
+    return `/${names.join('/')}`;
   }
 
   private async assertTarget(

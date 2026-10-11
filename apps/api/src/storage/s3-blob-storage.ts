@@ -37,12 +37,18 @@ function sdkFailure(error: unknown): unknown {
   return classifyBlobFailure(error) ?? error;
 }
 
+// lib-storage는 취소 뒤 AbortMultipartUpload를 같은 client로 보낸다. 이 요청에도 이미 abort된 signal을
+// 붙이면 node-http-handler가 전송 없이 거부해 조각이 GC 회수(grace + 업로드 상한)까지 남는다.
+// 그래서 AbortMultipartUpload만 signal 없이 보낸다. 이 정리는 put이 끝난 뒤 배경에서 완료되며,
+// 프로세스가 그 전에 죽으면 GC가 회수한다.
 function clientWithAbortSignal(client: S3Client, signal: AbortSignal): S3Client {
   return new Proxy(client, {
     get(target, property) {
       if (property === 'send') {
         return (command: unknown, options?: Record<string, unknown>) =>
-          target.send(command as never, { ...options, abortSignal: signal });
+          command instanceof AbortMultipartUploadCommand
+            ? target.send(command as never, options)
+            : target.send(command as never, { ...options, abortSignal: signal });
       }
       return Reflect.get(target, property, target) as unknown;
     },
@@ -129,6 +135,9 @@ export class S3BlobStorage implements BlobStorage {
       }).done();
     } catch (error) {
       if (sourceError !== undefined) throw sourceError;
+      // lib-storage의 AbortError보다 호출자가 넘긴 취소 사유가 먼저다. stream.destroy의 error 이벤트는
+      // 다음 tick이라 sourceError에 아직 담기지 않는다.
+      if (signal?.aborted && signal.reason instanceof Error) throw signal.reason;
       throw sdkFailure(error);
     } finally {
       stream.off('error', rememberSourceError);

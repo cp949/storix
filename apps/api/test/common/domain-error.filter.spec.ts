@@ -14,6 +14,7 @@ import type { ErrorReporter } from '../../src/observability/error-reporter.js';
 import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors.js';
 import {
   VfsArchivePreconditionFailedError,
+  VfsArchiveSourceNotFoundError,
   VfsPreconditionFailedError,
   VfsNodeNotFoundError,
 } from '../../src/vfs/vfs.errors.js';
@@ -155,6 +156,16 @@ describe('DomainErrorFilter', () => {
     const { host, json } = createHost();
     filter.catch(new VfsArchivePreconditionFailedError('/source.txt', CURRENT, 2), host);
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ current: CURRENT, archiveEntry: 2 }));
+  });
+
+  it('archive 원본 부재 404는 path 없이 archive entry index를 담는다', () => {
+    const { host, status, json } = createHost();
+    filter.catch(new VfsArchiveSourceNotFoundError(3), host);
+    expect(status).toHaveBeenCalledWith(404);
+    const body = json.mock.calls[0][0] as Record<string, unknown>;
+    expect(body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', archiveEntry: 3 });
+    // 직렬화 뒤 body에 path가 없어야 한다. 필터는 키를 undefined로 두고 JSON 직렬화가 생략한다.
+    expect(body.path).toBeUndefined();
   });
 
   it('412 오류의 current가 null이면 null을 body에 유지한다', () => {

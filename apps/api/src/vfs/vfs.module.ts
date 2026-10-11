@@ -3,7 +3,8 @@ import { VfsSnapshotService } from './vfs-snapshot.service.js';
 import { VfsSnapshotController } from './vfs-snapshot.controller.js';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { RequestContextMiddleware } from '../common/request-context.middleware.js';
-import { CapabilityModule } from '../capability/capability.module.js';
+import { CAPABILITY_CONFIG, CapabilityModule } from '../capability/capability.module.js';
+import type { CapabilityConfig } from '../capability/capability-config.js';
 import { EncryptionModule } from '../encryption/encryption.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { OnlineStorageModule } from '../storage/online-storage.module.js';
@@ -59,7 +60,15 @@ import { ArchiveGate } from './archive-gate.js';
       useFactory: (config: ReturnType<typeof createArchiveConfig>) => new ArchiveGate(config.maxConcurrency),
       inject: [ARCHIVE_CONFIG],
     },
-    { provide: ARCHIVE_CONFIG, useFactory: () => createArchiveConfig() },
+    {
+      provide: ARCHIVE_CONFIG,
+      // archive를 전역 허용하지 않은 배포는 grace 불변식 위반을 경고로만 남긴다(archive-config.ts 참고).
+      useFactory: (capabilities: CapabilityConfig) =>
+        createArchiveConfig(undefined, undefined, {
+          archiveGloballyAllowed: capabilities.globalAllowedCapabilities.includes('archive'),
+        }),
+      inject: [CAPABILITY_CONFIG],
+    },
   ],
 })
 export class VfsModule implements NestModule {

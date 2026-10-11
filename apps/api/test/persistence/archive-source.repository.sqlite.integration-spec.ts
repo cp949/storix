@@ -9,7 +9,8 @@ import { ALL_ENTITIES } from '../../src/persistence/entities/all-entities.js';
 import { ALL_MIGRATIONS } from '../../src/persistence/migrations/all-migrations.js';
 import { NamespaceProvisioningRepository } from '../../src/persistence/namespace-provisioning.repository.js';
 import { ArchiveSourceRepository } from '../../src/persistence/archive-source.repository.js';
-import { VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
+import { NamespaceEntity } from '../../src/persistence/entities/namespace.entity.js';
+import { VfsArchiveSourceNotFoundError } from '../../src/vfs/vfs.errors.js';
 import { encodeRevision } from '../../src/vfs/revision.js';
 import { installSqliteGate } from '../../src/persistence/sqlite-gate.js';
 
@@ -205,7 +206,53 @@ describe('ArchiveSourceRepository SQLite capture 검증', () => {
         },
         limits,
       ),
-    ).rejects.toMatchObject({ archiveEntry: 0, status: 412 });
+    ).rejects.toMatchObject({
+      archiveEntry: 0,
+      status: 412,
+      path: '/source.txt',
+      current: { id: file.id, path: '/source.txt', revision: encodeRevision(file) },
+    });
+  });
+
+  it('하위 디렉터리 원본의 revision 충돌은 조상을 거슬러 VFS 절대 경로를 돌려준다', async () => {
+    const { namespace, root, blob } = await fixture();
+    const nodes = dataSource.getRepository(VfsNodeEntity);
+    const directory = await nodes.save(
+      nodes.create({ namespaceId: namespace.id, parentId: root.id, type: 'DIRECTORY', name: 'docs' }),
+    );
+    const nested = await nodes.save(
+      nodes.create({
+        namespaceId: namespace.id,
+        parentId: directory.id,
+        type: 'FILE',
+        name: 'nested.txt',
+        blobId: blob.id,
+        size: '7',
+        mimeType: 'text/plain',
+      }),
+    );
+    await expect(
+      repository.capture(
+        namespace.id,
+        root.id,
+        {
+          target: '/result.zip',
+          entries: [
+            {
+              id: nested.id,
+              name: 'renamed/in-zip.txt',
+              revision: encodeRevision({ id: nested.id, version: nested.version + 1 }),
+            },
+          ],
+        },
+        limits,
+      ),
+    ).rejects.toMatchObject({
+      archiveEntry: 0,
+      status: 412,
+      path: '/docs/nested.txt',
+      current: { path: '/docs/nested.txt' },
+    });
   });
 
   it('revision 형식 오류에 archive entry index를 붙인다', async () => {
@@ -238,20 +285,41 @@ describe('ArchiveSourceRepository SQLite capture 검증', () => {
     ).rejects.toMatchObject({ status: 400, code: 'VFS_INVALID_ARCHIVE_REQUEST' });
   });
 
-  it('다른 namespace의 ID는 존재 여부를 숨기고 404로 거부한다', async () => {
+  it('다른 namespace의 ID는 존재 여부를 숨기고 entry index만 담은 404로 거부한다', async () => {
     const first = await fixture('first');
     const second = await fixture('second');
+    const rejection = repository.capture(
+      first.namespace.id,
+      first.root.id,
+      {
+        target: '/result.zip',
+        entries: [
+          { id: first.file.id, name: 'own.txt' },
+          { id: second.file.id, name: 'foreign.txt' },
+        ],
+      },
+      limits,
+    );
+    await expect(rejection).rejects.toBeInstanceOf(VfsArchiveSourceNotFoundError);
+    await expect(rejection).rejects.toMatchObject({
+      status: 404,
+      code: 'VFS_NODE_NOT_FOUND',
+      archiveEntry: 1,
+    });
+    await expect(rejection).rejects.not.toHaveProperty('path');
+  });
+
+  it('삭제 중인 namespace는 원본이 있어도 404로 거부한다', async () => {
+    const { namespace, root, file } = await fixture();
+    await dataSource.getRepository(NamespaceEntity).update({ id: namespace.id }, { status: 'DELETING' });
     await expect(
       repository.capture(
-        first.namespace.id,
-        first.root.id,
-        {
-          target: '/result.zip',
-          entries: [{ id: second.file.id, name: 'source.txt' }],
-        },
+        namespace.id,
+        root.id,
+        { target: '/result.zip', entries: [{ id: file.id, name: 'source.txt' }] },
         limits,
       ),
-    ).rejects.toBeInstanceOf(VfsNodeNotFoundError);
+    ).rejects.toMatchObject({ status: 404, code: 'NAMESPACE_NOT_FOUND' });
   });
 
   it('원본 합계가 bigint 상한을 넘으면 capture를 거부한다', async () => {

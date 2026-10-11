@@ -78,16 +78,18 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
       .expect(201, { isBuffer: true, body });
   });
 
-  it('archive는 8 MiB 미만 JSON 원문을 보존하고 초과 본문을 BAD_REQUEST 413으로 거부한다', async () => {
+  it('archive는 정확히 8 MiB JSON 원문을 보존하고 1 byte 초과 본문을 BAD_REQUEST 413으로 거부한다', async () => {
+    // `{"value":"` + value + `"}` 형태라 JSON 전체 길이는 value 길이 + 12다.
+    const limit = 8 * 1024 * 1024;
     const accepted = await request(app.getHttpServer())
       .post('/api/v2/namespaces/abc/fs/archive')
-      .send({ value: 'x'.repeat(7_000_000) })
+      .send({ value: 'x'.repeat(limit - 12) })
       .expect(201);
-    expect(accepted.body).toEqual({ isBuffer: true, size: expect.any(Number) });
+    expect(accepted.body).toEqual({ isBuffer: true, size: limit });
     const rejected = await request(app.getHttpServer())
       .post('/api/v2/namespaces/abc/fs/archive')
-      .send({ value: 'x'.repeat(8_500_000) })
+      .send({ value: 'x'.repeat(limit - 11) })
       .expect(413);
-    expect(rejected.body).toMatchObject({ code: 'BAD_REQUEST' });
+    expect(rejected.body).toMatchObject({ code: 'BAD_REQUEST', requestId: expect.any(String) });
   });
 });

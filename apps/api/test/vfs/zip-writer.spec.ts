@@ -8,6 +8,10 @@ import { PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createZipWriter, toZip32Number } from '../../src/vfs/zip-writer.js';
 
+function* chunked(buffer: Buffer, size: number): Generator<Buffer> {
+  for (let offset = 0; offset < buffer.length; offset += size) yield buffer.subarray(offset, offset + size);
+}
+
 // 외부 reader와 실제 stream으로 형식 호환·취소 시 소유 자원 종료를 확인한다.
 describe('ZIP stream 작성기', () => {
   it.each([0, 1, 6])('level %i로 한글·공백·빈 파일을 외부 reader에서 연다', async (compressionLevel) => {
@@ -23,9 +27,10 @@ describe('ZIP stream 작성기', () => {
       Buffer.from('x'.repeat(200_000)),
       randomBytes(64_000),
     ];
+    // 여러 chunk로 나눠 증분 CRC와 multi-chunk DEFLATE까지 외부 reader로 고정한다.
     const writer = createZipWriter(
       entries,
-      async (entry) => Readable.from([contents[entries.indexOf(entry)]]),
+      async (entry) => Readable.from(chunked(contents[entries.indexOf(entry)], 4093)),
       {
         compressionLevel,
         maxResultBytes: 2_000_000n,
@@ -123,8 +128,7 @@ describe('ZIP stream 작성기', () => {
       { compressionLevel: 0, maxResultBytes: 80n, signal: new AbortController().signal },
     );
 
-    await expect(collect(writer.output)).rejects.toThrow(/maximum ZIP result size/i);
-    await expect(writer.settled).rejects.toThrow(/maximum ZIP result size/i);
+    await expect(collect(writer.output)).rejects.toMatchObject({ code: 'VFS_ARCHIVE_TOO_LARGE' });
     await expect(writer.settled).rejects.toMatchObject({ code: 'VFS_ARCHIVE_TOO_LARGE', status: 413 });
     expect(writer.outputBytes).toBeLessThanOrEqual(80);
     expect(writer.output.destroyed).toBe(true);

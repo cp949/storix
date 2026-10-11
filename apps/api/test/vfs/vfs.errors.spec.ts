@@ -14,9 +14,10 @@ describe('VfsFeatureDisabledError', () => {
 
 // gate 거부가 기존 오류와 구별되는 503임을 확인한다.
 describe('VfsArchiveBusyError gate 초과 응답', () => {
-  it('gate 한도 초과를 재시도 가능한 503 오류로 나타낸다', () => {
-    const error = new VfsArchiveBusyError();
+  it('gate 한도 초과를 Retry-After 초를 담은 재시도 가능한 503 오류로 나타낸다', () => {
+    const error = new VfsArchiveBusyError(10);
     expect(error.status).toBe(503);
     expect(error.code).toBe('VFS_ARCHIVE_BUSY');
+    expect(error.retryAfterSeconds).toBe(10);
   });
 });

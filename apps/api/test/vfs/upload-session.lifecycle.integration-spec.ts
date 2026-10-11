@@ -107,8 +107,7 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
     process.env.STORIX_STORAGE_BUCKET = 'storix-upload-lifecycle';
     process.env.STORIX_ENCRYPTION_MASTER_KEY = 'a'.repeat(64);
     process.env.STORIX_API_KEY = API_KEY;
-    process.env.STORIX_ORPHAN_GRACE_PERIOD = '61';
-    process.env.STORIX_ARCHIVE_MAX_SECONDS = '1';
+    process.env.STORIX_ORPHAN_GRACE_PERIOD = '1';
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     delete process.env.STORIX_VFS_UPLOAD_SESSIONS_CONFIG_PATH;
 
@@ -230,7 +229,6 @@ describe('upload session lifecycle (PostgreSQL + S3)', () => {
       })
       .mockImplementation(originalDelete);
     const gc = app.get(GcJob);
-    (gc as unknown as { gracePeriodSeconds: number }).gracePeriodSeconds = 1;
     await gc.run();
     expect((await repo.findForStatus(namespaceId, id))?.session.state).toBe('CANCELLED');
     expect((await repo.findKnownStagingKeys([stagingKey])).has(stagingKey)).toBe(true);

@@ -246,4 +246,107 @@ describe('ArchiveService', () => {
     expect(uploaded.subarray(0, 4).toString('hex')).toBe('504b0304');
     expect(receipts.complete).toHaveBeenCalledTimes(1);
   });
+
+  /** gate·capture·receipt 동작만 관측하는 최소 의존성으로 service를 만든다. */
+  function createMinimalService(overrides: {
+    receipts: Partial<VfsMutationReceiptRepository>;
+    sources?: Partial<ArchiveSourceRepository>;
+    gate: ArchiveGate;
+  }) {
+    const nodes = {
+      getRootWithLimits: async () => ({
+        root: { id: 'root' },
+        limits: { maxFileSizeBytes: null, encryptionPolicy: 'PLAIN' },
+      }),
+    } as unknown as VfsNodeRepository;
+    return new ArchiveService(
+      nodes,
+      overrides.receipts as VfsMutationReceiptRepository,
+      (overrides.sources ?? {}) as ArchiveSourceRepository,
+      { requireEnabled: () => undefined } as unknown as CapabilityService,
+      overrides.gate,
+      {} as never,
+      {} as never,
+      {} as never,
+      { get: () => undefined } as never,
+      {
+        maxConcurrency: 1,
+        maxEntries: 10,
+        maxSourceBytes: 100n,
+        maxResultBytes: 1000n,
+        maxSeconds: 60,
+        orphanGraceSeconds: 86400,
+        assumedOrphanGrace: false,
+        retryAfterSeconds: 7,
+        compressionLevel: 1,
+      },
+      null,
+      {} as never,
+    );
+  }
+
+  const requestBody = Buffer.from(
+    JSON.stringify({
+      target: '/result.zip',
+      entries: [{ id: '00000000-0000-4000-8000-000000000002', name: 'file.txt' }],
+    }),
+  );
+
+  it('claim 전에 이미 끊긴 응답은 원본을 읽지 않고 499로 끝내며 claim과 gate 슬롯을 돌려준다', async () => {
+    const receipts = {
+      claim: async () => ({ kind: 'owner' as const, generation: 1 }),
+      renew: async () => true,
+      release: jest.fn(async () => undefined),
+      namespaceIsActive: async () => true,
+    };
+    const sources = { capture: jest.fn(async () => undefined) };
+    const gate = new ArchiveGate(1);
+    const service = createMinimalService({ receipts, sources: sources as never, gate });
+    const closed = new AbortController();
+    closed.abort(new Error('client went away'));
+
+    await expect(
+      service.execute(
+        '11111111-1111-4111-8111-111111111111',
+        'scope',
+        '00000000-0000-4000-8000-000000000001',
+        requestBody,
+        undefined,
+        'request',
+        closed.signal,
+      ),
+    ).resolves.toMatchObject({ status: 499 });
+    expect(sources.capture).not.toHaveBeenCalled();
+    expect(receipts.release).toHaveBeenCalledTimes(1);
+    expect(gate.tryAcquire()).not.toBeNull();
+  });
+
+  it('gate가 찼으면 claim을 해제하고 오류 필터와 같은 503 body에 Retry-After를 붙인다', async () => {
+    const receipts = {
+      claim: async () => ({ kind: 'owner' as const, generation: 1 }),
+      release: jest.fn(async () => undefined),
+    };
+    const gate = new ArchiveGate(1);
+    const held = gate.tryAcquire();
+    const service = createMinimalService({ receipts, gate });
+    try {
+      await expect(
+        service.execute(
+          '11111111-1111-4111-8111-111111111111',
+          'scope',
+          '00000000-0000-4000-8000-000000000001',
+          requestBody,
+          undefined,
+          'request',
+        ),
+      ).resolves.toEqual({
+        status: 503,
+        body: { code: 'VFS_ARCHIVE_BUSY', message: 'archive 실행 한도 초과', requestId: 'request' },
+        headers: { 'x-request-id': 'request', 'retry-after': '7' },
+      });
+      expect(receipts.release).toHaveBeenCalledTimes(1);
+    } finally {
+      held?.release();
+    }
+  });
 });

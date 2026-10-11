@@ -151,7 +151,18 @@ export class VfsArchiveResultTooLargeError extends DomainError {
   readonly status = 413;
 
   constructor() {
-    super('maximum ZIP result size exceeded');
+    super('archive 결과 상한 초과');
+  }
+}
+
+/** 요청한 archive 원본 FILE이 namespace에 없다. 부재·다른 namespace·휴지통을 구분하지 않는다. */
+export class VfsArchiveSourceNotFoundError extends DomainError {
+  readonly code = 'VFS_NODE_NOT_FOUND';
+  readonly status = 404;
+
+  /** 실패한 entries 배열의 0부터 시작하는 index다. */
+  constructor(readonly archiveEntry: number) {
+    super(`존재하지 않는 archive 원본: entry ${archiveEntry}`);
   }
 }
 
@@ -170,7 +181,8 @@ export class VfsArchiveBusyError extends DomainError {
   readonly code = 'VFS_ARCHIVE_BUSY';
   readonly status = 503;
 
-  constructor() {
+  /** 응답 `Retry-After` 초다. 필터와 service가 같은 값을 쓴다. */
+  constructor(readonly retryAfterSeconds: number) {
     super('archive 실행 한도 초과');
   }
 }

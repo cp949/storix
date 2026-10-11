@@ -1,5 +1,6 @@
 // SQLite migration, 실제 VFS repository, HTTP route와 메모리 BlobStorage로 archive 생성·receipt 재생을 확인한다.
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, statSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -28,6 +29,24 @@ import { configureBodyParsers } from '../../src/common/body-parser.js';
 import { BLOB_STORAGE } from '../../src/storage/storage.constants.js';
 import type { BlobStorage } from '../../src/storage/blob-storage.js';
 import { VfsModule } from '../../src/vfs/vfs.module.js';
+
+/**
+ * 자식 프로세스는 빌드 산출물(dist)을 import한다. dist가 없거나 소스보다 오래되면 옛 코드를 검증하므로
+ * 조용히 통과시키지 않고 빌드 명령과 함께 실패한다.
+ */
+function requireApiDist(): string {
+  const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  const dist = resolve(apiRoot, 'dist');
+  const built = resolve(dist, 'vfs/archive.service.js');
+  const source = resolve(apiRoot, 'src/vfs/archive.service.ts');
+  if (!existsSync(built)) {
+    throw new Error(`apps/api/dist가 없다. 먼저 빌드한다: pnpm --filter @cp949/storix-api build (${built})`);
+  }
+  if (statSync(source).mtimeMs > statSync(built).mtimeMs) {
+    throw new Error('apps/api/dist가 src보다 오래됐다. 다시 빌드한다: pnpm --filter @cp949/storix-api build');
+  }
+  return dist;
+}
 import { ArchiveSourceRepository } from '../../src/persistence/archive-source.repository.js';
 import { VfsArchiveDeadlineExceededError } from '../../src/vfs/vfs.errors.js';
 import { GcJobModule } from '../../src/jobs/gc-job.module.js';
@@ -457,7 +476,7 @@ describe('archive HTTP (SQLite)', () => {
   it('receipt owner child process가 강제 종료되면 lease 만료 뒤 takeover하고 이전 generation을 차단한다', async () => {
     const key = randomUUID();
     const scope = 'archive-process-kill';
-    const apiDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist');
+    const apiDist = requireApiDist();
     const childCode = `
       import { DataSource } from 'typeorm';
       import { NamespaceEntity } from ${JSON.stringify(pathToFileURL(resolve(apiDist, 'persistence/entities/namespace.entity.js')).href)};
@@ -504,8 +523,9 @@ describe('archive HTTP (SQLite)', () => {
       ]);
     } finally {
       if (readyTimer) clearTimeout(readyTimer);
+      // 준비 대기가 실패해도 setInterval로 살아 있는 자식을 남기지 않는다.
+      child.kill('SIGKILL');
     }
-    child.kill('SIGKILL');
     const [exitCode, signal] = (await once(child, 'exit')) as [number | null, NodeJS.Signals | null];
     expect(exitCode).toBeNull();
     expect(signal).toBe('SIGKILL');
@@ -558,7 +578,7 @@ describe('archive HTTP (SQLite)', () => {
       const scope = `archive-kill-${stage.toLowerCase()}`;
       const target = `/process-kill-${stage.toLowerCase()}.zip`;
       const body = JSON.stringify({ target, entries: [{ id: source.id, name: 'source.txt' }] });
-      const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist');
+      const dist = requireApiDist();
       const uri = (path: string) => JSON.stringify(pathToFileURL(resolve(dist, path)).href);
       const childCode = `
       import { Test } from '@nestjs/testing';

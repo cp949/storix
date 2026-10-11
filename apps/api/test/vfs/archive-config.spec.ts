@@ -60,4 +60,43 @@ describe('createArchiveConfig 설정 검증', () => {
       ),
     ).toThrow();
   });
+
+  it('archive가 전역 허용되지 않으면 grace 위반을 경고로만 남기고 부팅을 허용한다', () => {
+    const warning = jest.fn();
+    const result = createArchiveConfig(
+      (key) => ({ STORIX_ARCHIVE_MAX_SECONDS: '600', STORIX_ORPHAN_GRACE_PERIOD: '1' })[key],
+      warning,
+      { archiveGloballyAllowed: false },
+    );
+    expect(result.orphanGraceSeconds).toBe(1);
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('전역 허용되지 않아'));
+  });
+
+  it('archive가 전역 허용되면 같은 설정을 거부한다', () => {
+    expect(() =>
+      createArchiveConfig(
+        (key) => ({ STORIX_ARCHIVE_MAX_SECONDS: '600', STORIX_ORPHAN_GRACE_PERIOD: '1' })[key],
+        ignoreWarning,
+        { archiveGloballyAllowed: true },
+      ),
+    ).toThrow(/STORIX_ORPHAN_GRACE_PERIOD/);
+  });
+
+  it('grace 미설정 상태의 위반 메시지는 기본값 가정을 밝힌다', () => {
+    expect(() =>
+      createArchiveConfig((key) => ({ STORIX_ARCHIVE_MAX_SECONDS: '86400' })[key], ignoreWarning),
+    ).toThrow(/미설정, GC 기본값 86400 가정/);
+  });
+
+  it('grace를 명시하면 기본값 가정 경고를 내지 않는다', () => {
+    const warning = jest.fn();
+    createArchiveConfig((key) => ({ STORIX_ORPHAN_GRACE_PERIOD: '86400' })[key], warning);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('실행 상한은 86400초를 넘지 못한다', () => {
+    expect(() =>
+      createArchiveConfig((key) => ({ STORIX_ARCHIVE_MAX_SECONDS: '86401' })[key], ignoreWarning),
+    ).toThrow();
+  });
 });
