@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { PassThrough, Readable } from 'node:stream';
+import { jest } from '@jest/globals';
 import type { BlobRange, BlobStorage } from '../../src/storage/blob-storage.js';
 import {
   EncryptingPutTarget,
@@ -189,6 +190,16 @@ describe('EncryptingPutTarget / getEncrypted 왕복', () => {
 describe('getEncrypted 스트림 오류 전파', () => {
   const masterKey = randomBytes(32);
   const iv = randomBytes(16);
+
+  it('AbortSignal을 원본 storage GET에 전달한다', async () => {
+    const controller = new AbortController();
+    const get = jest.fn(async (_key: string, _range?: BlobRange, signal?: AbortSignal) => {
+      expect(signal).toBe(controller.signal);
+      return Readable.from(Buffer.from('encrypted'));
+    });
+    await getEncrypted({ get }, 'blobs/00/signal', iv, masterKey, undefined, controller.signal);
+    expect(get).toHaveBeenCalledWith('blobs/00/signal', undefined, controller.signal);
+  });
 
   it('range 없이 읽는 도중 source가 실패하면 반환 스트림도 error를 낸다', async () => {
     const storage = new FailingBlobStorage(new Error('스토리지 연결 끊김'));

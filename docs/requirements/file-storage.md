@@ -1275,6 +1275,29 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 
 - 필드 validation·권한·ceiling·부분 갱신·reset·동일 key 재생·다른 요청 충돌·삭제 경합을 PostgreSQL·SQLite에서 확인한다.
 
+### RQ-035 선택 FILE archive
+
+- [x] **진행 상태:** PostgreSQL·SQLite 공개 계약·통합 검증 완료
+
+**요구사항:**
+
+- 호출자는 같은 namespace에서 선택한 FILE을 ZIP FILE로 저장할 수 있어야 한다.
+- 각 입력 FILE은 ID와 선택적 revision으로 지정하며, ZIP 내부 상대 이름은 입력 요청에 고정한다.
+- 결과는 기존 파일 생성·quota·expiry·암호화 정책을 따라야 한다.
+- 반복 요청은 완료 결과를 재생해야 한다.
+
+**수용 조건:**
+
+- 두 DB에서 바이트 내용·이름·revision 거부·입력 상한·동일 key 재생·암호화 namespace의 결과를 공개 HTTP 계약으로 확인한다.
+- archive 실행은 원본을 보존하지 않으며 설정된 GC grace가 실행 중 원본 보호에 충분하다는 운영 전제를 문서화한다.
+
+**판정 근거:**
+
+- `archive-create` 공개 계약은 PostgreSQL·SQLite에서 각각 1/1 통과했다. 계약은 성공·expiry·동일 key 재생·stale revision·1001개 입력 거부·암호화 namespace의 ZIP 응답을 확인한다.
+- API PostgreSQL·SQLite archive HTTP 통합은 L2에서 통과했다. ZIP reader로 평문 내용을 대조하고 source 무결성·상한·expiry·receipt·취소·재시도를 확인했다.
+- 일반 PostgreSQL 통합은 50 suites/946 tests, SQLite 통합은 36 suites/707 tests가 통과했다.
+- 이 검증은 실제 배포 환경의 grace 일치·시계 오차·삭제 transaction 지연을 증명하지 않는다.
+
 ## 소비자 어댑터 책임과 범위 제외
 
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.

@@ -12,7 +12,11 @@ import { StorageFailureError, StorageUnavailableError } from '../../src/common/s
 import { DomainErrorFilter } from '../../src/common/domain-error.filter.js';
 import type { ErrorReporter } from '../../src/observability/error-reporter.js';
 import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors.js';
-import { VfsPreconditionFailedError, VfsNodeNotFoundError } from '../../src/vfs/vfs.errors.js';
+import {
+  VfsArchivePreconditionFailedError,
+  VfsPreconditionFailedError,
+  VfsNodeNotFoundError,
+} from '../../src/vfs/vfs.errors.js';
 import { InvalidApiKeyError } from '../../src/auth/auth.errors.js';
 import type { AuditLogRepository } from '../../src/persistence/audit-log.repository.js';
 import {
@@ -145,6 +149,12 @@ describe('DomainErrorFilter', () => {
       current: CURRENT,
       requestId: 'req-1',
     });
+  });
+
+  it('archive source 충돌은 current와 archive entry index를 body에 포함한다', () => {
+    const { host, json } = createHost();
+    filter.catch(new VfsArchivePreconditionFailedError('/source.txt', CURRENT, 2), host);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ current: CURRENT, archiveEntry: 2 }));
   });
 
   it('412 오류의 current가 null이면 null을 body에 유지한다', () => {

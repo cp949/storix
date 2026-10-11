@@ -796,6 +796,7 @@ export function runGcJobSharedTests(getContext: () => GcJobTestContext): void {
     };
     const values: Record<string, string> = {
       STORIX_ORPHAN_GRACE_PERIOD: '1',
+      STORIX_ARCHIVE_MAX_SECONDS: '1',
       STORIX_MUTATION_MAX_UPLOAD_SECONDS: '1',
     };
     const config = { get: (key: string) => values[key] } as unknown as ConfigService;

@@ -52,8 +52,10 @@ export interface IncompleteUploadPage {
 }
 
 export interface BlobStorage {
-  put(key: string, stream: Readable, contentType?: string): Promise<void>;
-  get(key: string, range?: BlobRange): Promise<Readable>;
+  /** PUT 전송을 선택한 AbortSignal로 취소한다. */
+  put(key: string, stream: Readable, contentType?: string, signal?: AbortSignal): Promise<void>;
+  /** GET 응답 본문을 반환하고, 선택한 AbortSignal로 응답 대기와 stream 소비를 취소한다. */
+  get(key: string, range?: BlobRange, signal?: AbortSignal): Promise<Readable>;
   delete(key: string): Promise<void>;
   list(prefix?: string): AsyncIterable<BlobObjectInfo>;
 

@@ -1,5 +1,6 @@
 import { GetObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import { jest } from '@jest/globals';
+import { getEventListeners } from 'node:events';
 import { Readable } from 'node:stream';
 import { S3BlobStorage } from '../../src/storage/s3-blob-storage.js';
 import { VfsInvalidRangeError } from '../../src/storage/storage.errors.js';
@@ -37,6 +38,74 @@ describe('S3BlobStorage', () => {
     await expect(async () => {
       for await (const chunk of result) void chunk;
     }).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', status: 503 });
+  });
+
+  it('응답 헤더를 기다리는 GET에 AbortSignal을 전달한다', async () => {
+    const controller = new AbortController();
+    const send = jest.fn(
+      (_command: unknown, options?: { abortSignal?: AbortSignal }) =>
+        new Promise<unknown>((_resolve, reject) => {
+          options?.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const storage = new S3BlobStorage({ send } as unknown as S3Client, 'bucket', null);
+    const pending = storage.get('key', undefined, controller.signal);
+    controller.abort(new Error('cancel GET'));
+    await expect(pending).rejects.toThrow('cancel GET');
+  });
+
+  it('응답 본문이 멈춘 GET을 취소하면 원본 stream을 닫는다', async () => {
+    const controller = new AbortController();
+    const body = new Readable({ read: () => undefined });
+    body.push(Buffer.from('first'));
+    const send = jest.fn<(command: unknown, options?: { abortSignal?: AbortSignal }) => Promise<unknown>>();
+    send.mockResolvedValue({ Body: body });
+    const storage = new S3BlobStorage({ send } as unknown as S3Client, 'bucket', null);
+    const result = await storage.get('key', undefined, controller.signal);
+    await new Promise<void>((resolve) => result.once('data', () => resolve()));
+
+    controller.abort(new Error('cancel body'));
+
+    await new Promise<void>((resolve) => body.once('close', resolve));
+    expect(body.destroyed).toBe(true);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('응답을 기다리는 PUT에 AbortSignal을 전달해 SDK 요청을 취소한다', async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const requestStarted = new Promise<void>((resolve) => (started = resolve));
+    let sdkSignal: AbortSignal | undefined;
+    const client = new S3Client({
+      endpoint: 'http://stub.invalid:9000',
+      region: 'us-east-1',
+      credentials: { accessKeyId: 'a', secretAccessKey: 'b' },
+      forcePathStyle: true,
+      maxAttempts: 1,
+      requestHandler: {
+        metadata: { handlerProtocol: 'http/1.1' },
+        destroy: () => undefined,
+        handle: async (_request: unknown, options?: { abortSignal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            sdkSignal = options?.abortSignal;
+            started();
+            sdkSignal?.addEventListener(
+              'abort',
+              () => reject(sdkSignal?.reason ?? new Error('PUT aborted')),
+              { once: true },
+            );
+          }),
+      } as never,
+    });
+    const storage = new S3BlobStorage(client, 'bucket', null);
+    const pending = storage.put('key', Readable.from([Buffer.from('payload')]), undefined, controller.signal);
+    await requestStarted;
+    expect(sdkSignal).toBeDefined();
+    controller.abort(new Error('cancel PUT'));
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
   describe('get이 반환한 stream', () => {

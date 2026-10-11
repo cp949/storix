@@ -10,12 +10,8 @@ import {
   parseExpiresInHeader,
   resolveFileExpiryBounds,
 } from './file-expiry-policy.js';
-import {
-  mutationLeaseSeconds,
-  VfsMutationReceiptRepository,
-} from '../persistence/vfs-mutation-receipt.repository.js';
+import { VfsMutationReceiptRepository } from '../persistence/vfs-mutation-receipt.repository.js';
 import { BlobRepository } from '../persistence/blob.repository.js';
-import type { ReceiptIdentity } from '../persistence/vfs-mutation-receipt.repository.js';
 import { ContentPrecondition, VfsNodeRepository } from '../persistence/vfs-node.repository.js';
 import type { BlobStorage } from '../storage/blob-storage.js';
 import { BLOB_STORAGE } from '../storage/storage.constants.js';
@@ -36,6 +32,7 @@ import {
 } from './vfs.errors.js';
 import { ContentIngressService } from './content-ingress.service.js';
 import { deleteUnreferencedUpload } from './unreferenced-upload-cleanup.js';
+import { startLeaseRenewal } from './receipt-lease-renewal.js';
 
 function parsePrecondition(
   ifAbsent: string | undefined,
@@ -192,7 +189,9 @@ export class ConditionalContentService {
 
       if (claim.kind === 'complete' || parseError) {
         const lease =
-          claim.kind === 'owner' && parseError ? this.startLeaseRenewal(identity, claim.generation) : null;
+          claim.kind === 'owner' && parseError
+            ? startLeaseRenewal(this.receipts, identity, claim.generation)
+            : null;
         try {
           const replayed = await this.contentIngress.hash(source, replayMaxBytes);
           const currentFingerprint = fingerprint(
@@ -228,7 +227,7 @@ export class ConditionalContentService {
 
       const validCondition = condition as ContentPrecondition;
       const storageKey = this.keys.generate();
-      const lease = this.startLeaseRenewal(identity, claim.generation);
+      const lease = startLeaseRenewal(this.receipts, identity, claim.generation);
       const durationTimer = setTimeout(
         () => source.destroy(new Error('mutation upload duration exceeded')),
         this.maxUploadDurationMs,
@@ -300,38 +299,5 @@ export class ConditionalContentService {
       if (claim.kind === 'owner') await this.receipts.release(identity, claim.generation);
       throw error;
     }
-  }
-
-  private startLeaseRenewal(identity: ReceiptIdentity, generation: number) {
-    let lost = false;
-    let renewal: Promise<void> | null = null;
-    const timer = setInterval(
-      () => {
-        if (renewal) return;
-        renewal = this.receipts
-          .renew(identity, generation)
-          .then((ok) => {
-            if (!ok) lost = true;
-          })
-          .catch(() => {
-            lost = true;
-          })
-          .finally(() => {
-            renewal = null;
-          });
-      },
-      Math.max(250, Math.floor((mutationLeaseSeconds() * 1000) / 3)),
-    );
-    timer.unref();
-
-    return {
-      get lost() {
-        return lost;
-      },
-      async stop() {
-        clearInterval(timer);
-        if (renewal) await renewal;
-      },
-    };
   }
 }

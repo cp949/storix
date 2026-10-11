@@ -17,10 +17,11 @@ const feature: CapabilityDefinition = {
 };
 
 describe('capability registry', () => {
-  it('resumable-upload와 change-feed는 기본 비활성 namespace capability로 등록된다', () => {
+  it('archive·resumable-upload·change-feed는 기본 비활성 namespace capability로 등록된다', () => {
     expect(CAPABILITY_REGISTRY).toEqual([
       { ...feature, id: 'change-feed' },
       { ...feature, id: 'resumable-upload' },
+      { ...feature, id: 'archive' },
     ]);
     const namespaceId = '11111111-1111-4111-8111-111111111111';
     const disabled = new CapabilityService({
@@ -30,13 +31,34 @@ describe('capability registry', () => {
     expect(disabled.listEnabled(namespaceId)).toEqual([]);
     expect(disabled.isEnabled(namespaceId, 'resumable-upload')).toBe(false);
     expect(disabled.isEnabled(namespaceId, 'change-feed')).toBe(false);
+    expect(disabled.isEnabled(namespaceId, 'archive')).toBe(false);
     expect(() => disabled.requireEnabled(namespaceId, 'resumable-upload')).toThrow(/resumable-upload/);
     const enabled = new CapabilityService({
-      globalAllowedCapabilities: ['resumable-upload', 'change-feed'],
-      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload', 'change-feed'] },
+      globalAllowedCapabilities: ['resumable-upload', 'change-feed', 'archive'],
+      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload', 'change-feed', 'archive'] },
     });
-    expect(enabled.listEnabled(namespaceId)).toEqual(['change-feed', 'resumable-upload']);
+    expect(enabled.listEnabled(namespaceId)).toEqual(['archive', 'change-feed', 'resumable-upload']);
   });
+
+  it.each([
+    [false, false, false],
+    [true, false, false],
+    [false, true, false],
+    [true, true, true],
+  ])(
+    'archive 전역 허용 %s·namespace opt-in %s의 유효 상태는 %s다',
+    (globalAllowed, namespaceAllowed, expected) => {
+      const namespaceId = '11111111-1111-4111-8111-111111111111';
+      const service = new CapabilityService({
+        globalAllowedCapabilities: globalAllowed ? ['archive'] : [],
+        namespaceAllowedCapabilities: { [namespaceId]: namespaceAllowed ? ['archive'] : [] },
+      });
+      expect(service.isEnabled(namespaceId, 'archive')).toBe(expected);
+      expect(service.listEnabled(namespaceId)).toEqual(expected ? ['archive'] : []);
+      if (expected) expect(() => service.requireEnabled(namespaceId, 'archive')).not.toThrow();
+      else expect(() => service.requireEnabled(namespaceId, 'archive')).toThrow(/archive/);
+    },
+  );
 
   it('필수 메타데이터 누락과 잘못된 값을 거부한다', () => {
     for (const key of Object.keys(feature) as (keyof CapabilityDefinition)[]) {

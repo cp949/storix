@@ -33,6 +33,7 @@ interface DomainErrorShape {
   readonly status?: unknown;
   readonly path?: unknown;
   readonly current?: unknown;
+  readonly archiveEntry?: unknown;
   readonly retryAfterSeconds?: unknown;
 }
 
@@ -81,6 +82,12 @@ export function resolveErrorPath(exception: unknown): string | undefined {
 export function resolveErrorCurrent(exception: unknown): { current: unknown } | undefined {
   const current = (exception as DomainErrorShape)?.current;
   return current === undefined ? undefined : { current };
+}
+
+/** 숫자로 지정된 entries의 0-based index를 반환하고 필드가 없으면 생략한다. */
+export function resolveErrorArchiveEntry(exception: unknown): { archiveEntry: number } | undefined {
+  const archiveEntry = (exception as DomainErrorShape)?.archiveEntry;
+  return typeof archiveEntry === 'number' ? { archiveEntry } : undefined;
 }
 
 // 재시도로 성공할 수 있는 오류(503 등)가 대기 시간을 알리는 필드다. 값이 없으면 헤더를 붙이지 않는다.
@@ -178,6 +185,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       message: resolveErrorMessage(exception, status),
       path: resolveErrorPath(exception),
       ...resolveErrorCurrent(exception),
+      ...resolveErrorArchiveEntry(exception),
       requestId: request.requestId,
     });
   }

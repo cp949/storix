@@ -24,6 +24,9 @@ import { VfsTrashController } from './vfs-trash.controller.js';
 import { VfsTrashService } from './vfs-trash.service.js';
 import { AdminApiKeyGuard } from '../auth/admin-api-key.guard.js';
 import { ContentIngressService } from './content-ingress.service.js';
+import { ARCHIVE_CONFIG, createArchiveConfig } from './archive-config.js';
+import { ArchiveService } from './archive.service.js';
+import { ArchiveGate } from './archive-gate.js';
 
 @Module({
   imports: [PersistenceModule, OnlineStorageModule, EncryptionModule, CapabilityModule],
@@ -50,6 +53,13 @@ import { ContentIngressService } from './content-ingress.service.js';
     VfsTrashService,
     ContentIngressService,
     AdminApiKeyGuard,
+    ArchiveService,
+    {
+      provide: ArchiveGate,
+      useFactory: (config: ReturnType<typeof createArchiveConfig>) => new ArchiveGate(config.maxConcurrency),
+      inject: [ARCHIVE_CONFIG],
+    },
+    { provide: ARCHIVE_CONFIG, useFactory: () => createArchiveConfig() },
   ],
 })
 export class VfsModule implements NestModule {

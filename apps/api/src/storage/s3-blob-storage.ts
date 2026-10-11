@@ -37,6 +37,18 @@ function sdkFailure(error: unknown): unknown {
   return classifyBlobFailure(error) ?? error;
 }
 
+function clientWithAbortSignal(client: S3Client, signal: AbortSignal): S3Client {
+  return new Proxy(client, {
+    get(target, property) {
+      if (property === 'send') {
+        return (command: unknown, options?: Record<string, unknown>) =>
+          target.send(command as never, { ...options, abortSignal: signal });
+      }
+      return Reflect.get(target, property, target) as unknown;
+    },
+  });
+}
+
 // 반환 stream은 소비자가 destroy하면 원본(SDK 응답)도 바로 destroy해야 한다. Readable.from(async
 // generator)로 감싸면 generator가 원본의 다음 chunk를 기다리는 동안 destroy가 미뤄져, S3가 멈춘 채
 // 클라이언트가 끊겨도 소켓과 요청 처리가 다음 chunk 도착까지 남는다.
@@ -67,13 +79,23 @@ export class S3BlobStorage implements BlobStorage {
     private readonly presignClient: S3Client | null,
   ) {}
 
-  async put(key: string, stream: Readable, contentType?: string): Promise<void> {
+  async put(key: string, stream: Readable, contentType?: string, signal?: AbortSignal): Promise<void> {
     const ContentType = contentType ?? 'application/octet-stream';
+    const uploadAbortController = signal ? new AbortController() : undefined;
     let sourceError: unknown;
     const rememberSourceError = (error: Error): void => {
       sourceError = error;
     };
+    const abortUpload = () => {
+      const reason = signal?.reason;
+      uploadAbortController?.abort(reason);
+      if (!stream.destroyed) stream.destroy(reason instanceof Error ? reason : new Error('PUT aborted'));
+    };
     stream.on('error', rememberSourceError);
+    if (signal) {
+      if (signal.aborted) abortUpload();
+      else signal.addEventListener('abort', abortUpload, { once: true });
+    }
     try {
       const iterator = (stream as AsyncIterable<Buffer>)[Symbol.asyncIterator]();
 
@@ -85,12 +107,15 @@ export class S3BlobStorage implements BlobStorage {
       if (first.done) {
         await this.client.send(
           new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: Buffer.alloc(0), ContentType }),
+          uploadAbortController ? { abortSignal: uploadAbortController.signal } : undefined,
         );
         return;
       }
 
       await new Upload({
-        client: this.client,
+        client: uploadAbortController
+          ? clientWithAbortSignal(this.client, uploadAbortController.signal)
+          : this.client,
         params: {
           Bucket: this.bucket,
           Key: key,
@@ -100,16 +125,18 @@ export class S3BlobStorage implements BlobStorage {
         partSize: PART_SIZE,
         queueSize: QUEUE_SIZE,
         leavePartsOnError: false,
+        ...(uploadAbortController ? { abortController: uploadAbortController } : {}),
       }).done();
     } catch (error) {
       if (sourceError !== undefined) throw sourceError;
       throw sdkFailure(error);
     } finally {
       stream.off('error', rememberSourceError);
+      signal?.removeEventListener('abort', abortUpload);
     }
   }
 
-  async get(key: string, range?: BlobRange): Promise<Readable> {
+  async get(key: string, range?: BlobRange, signal?: AbortSignal): Promise<Readable> {
     let Range: string | undefined;
     if (range) {
       if (range.start < 0 || (range.end !== undefined && range.end < range.start)) {
@@ -118,8 +145,24 @@ export class S3BlobStorage implements BlobStorage {
       Range = `bytes=${range.start}-${range.end ?? ''}`;
     }
     try {
-      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key, Range }));
-      return classifyReturnedStream(response.Body as Readable);
+      const response = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key, Range }),
+        signal ? { abortSignal: signal } : undefined,
+      );
+      const body = classifyReturnedStream(response.Body as Readable);
+      if (signal) {
+        const abort = () =>
+          body.destroy(signal.reason instanceof Error ? signal.reason : new Error('GET aborted'));
+        const cleanup = () => signal.removeEventListener('abort', abort);
+        if (signal.aborted) abort();
+        else {
+          signal.addEventListener('abort', abort, { once: true });
+          body.once('end', cleanup);
+          body.once('close', cleanup);
+          body.once('error', cleanup);
+        }
+      }
+      return body;
     } catch (error) {
       throw sdkFailure(error);
     }

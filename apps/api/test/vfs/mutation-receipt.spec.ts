@@ -9,6 +9,7 @@ import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors
 import { VfsFileTooLargeError } from '../../src/storage/storage.errors.js';
 import {
   busyResponse,
+  errorResponse,
   isReplayableMutationError,
   replayReceipt,
   storeErrorReceipt,
@@ -292,6 +293,20 @@ describe('storeErrorReceipt', () => {
       storeErrorReceipt(repository, owner, new VfsNodeNotFoundError('/a'), 'req-1'),
     ).rejects.toThrow('receipt write failed');
     expect(namespaceIsActive).not.toHaveBeenCalled();
+  });
+});
+
+describe('errorResponse', () => {
+  it('archive revision 오류 receipt에도 entry index를 보존한다', () => {
+    const error = new (class extends DomainError {
+      readonly code = 'VFS_PRECONDITION_FAILED';
+      readonly status = 412;
+      readonly archiveEntry = 2;
+      constructor() {
+        super('conflict');
+      }
+    })();
+    expect(errorResponse(error, 'request')).toMatchObject({ body: { archiveEntry: 2 } });
   });
 });
 

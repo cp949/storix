@@ -26,6 +26,7 @@ import { MutationService } from './mutation.service.js';
 import { ConditionalContentService } from './conditional-content.service.js';
 import { VfsInvalidExpiryError } from './vfs.errors.js';
 import { optionalConsistencyParam, optionalCursorParam, optionalNameFilterParam } from './query-params.js';
+import { ArchiveService } from './archive.service.js';
 
 @Controller('api/v2/namespaces/:namespaceId/fs')
 @UseFilters(DomainErrorFilter)
@@ -36,7 +37,41 @@ export class FsController {
     private readonly contentService: ContentService,
     private readonly mutationService: MutationService,
     private readonly conditionalContentService: ConditionalContentService,
+    private readonly archiveService: ArchiveService,
   ) {}
+
+  @Post('archive')
+  async archive(
+    @Param('namespaceId') namespaceId: string,
+    @Headers('x-mutation-scope') scope: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Headers('x-expires-in') expiresIn: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableFinished) controller.abort(new Error('archive response closed'));
+    };
+    res.once('close', onClose);
+    try {
+      const result = await this.archiveService.execute(
+        namespaceId,
+        scope,
+        key,
+        Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
+        expiresIn,
+        req.requestId,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      res.status(result.status);
+      for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+      return result.body;
+    } finally {
+      res.off('close', onClose);
+    }
+  }
 
   @Post('content/conditional')
   async putConditionalContent(

@@ -69,10 +69,10 @@ export class EncryptingPutTarget {
     private readonly masterKey: Buffer,
   ) {}
 
-  async put(key: string, stream: Readable, contentType?: string): Promise<void> {
+  async put(key: string, stream: Readable, contentType?: string, signal?: AbortSignal): Promise<void> {
     const iv = randomBytes(IV_LENGTH);
     const cipher = createCipheriv(ALGORITHM, this.masterKey, iv);
-    await this.inner.put(key, pipeThrough(stream, cipher), contentType);
+    await this.inner.put(key, pipeThrough(stream, cipher), contentType, signal);
     this.iv = iv;
   }
 
@@ -88,21 +88,23 @@ export class EncryptingPutTarget {
   }
 }
 
+/** Blob을 읽고 선택한 range를 복호화하며 AbortSignal을 내부 GET에 전달한다. */
 export async function getEncrypted(
   inner: Pick<BlobStorage, 'get'>,
   key: string,
   iv: Buffer,
   masterKey: Buffer,
   range?: BlobRange,
+  signal?: AbortSignal,
 ): Promise<Readable> {
   if (!range) {
-    const cipherStream = await inner.get(key);
+    const cipherStream = await inner.get(key, undefined, signal);
     return pipeThrough(cipherStream, createDecipheriv(ALGORITHM, masterKey, iv));
   }
 
   const blockOffset = Math.floor(range.start / BLOCK_SIZE) * BLOCK_SIZE;
   const discard = range.start - blockOffset;
-  const cipherStream = await inner.get(key, { start: blockOffset, end: range.end });
+  const cipherStream = await inner.get(key, { start: blockOffset, end: range.end }, signal);
   const counter = incrementCounter(iv, blockOffset / BLOCK_SIZE);
   const decrypted = pipeThrough(cipherStream, createDecipheriv(ALGORITHM, masterKey, counter));
   return dropLeadingBytes(decrypted, discard);

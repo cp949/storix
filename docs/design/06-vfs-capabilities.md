@@ -3,7 +3,7 @@
 - 기존 VFS-01 파일 API는 항상 활성이다.
 - 선택 기능은 소비자 사용 사례를 완성하는 연산 묶음을 하나의 capability로 등록한다.
 - 선택 capability의 기본 상태는 비활성이다.
-- 현재 production registry에는 `resumable-upload`와 `change-feed`가 등록되어 있다.
+- 현재 registry에는 `resumable-upload`, `change-feed`, `archive`가 등록되어 있다.
 - 인증된 `GET /api/v2/namespaces/{id}/capabilities`는 ACTIVE namespace의 실제 활성 선택 capability ID를 조회한다.
 
 ## 시작 설정
@@ -70,6 +70,7 @@ capability 활성 조건은 모두 충족해야 한다:
 - 비활성이면 HTTP 409 `VFS_FEATURE_DISABLED`다.
 - 같은 생성 key·fingerprint의 기존 세션 응답 재생, 상태 조회, 취소, 모든 조각이 저장된 기존 세션의 완료와 cleanup은 비활성화 뒤에도 가능하다.
 - 선택 기능별 재생 경계는 해당 API 계약을 따른다.
+- `POST /fs/archive`는 `archive`가 활성화된 namespace만 허용한다. 완료 요청 receipt는 같은 요청에서 capability 비활성화 뒤에도 재생한다.
 
 - 기능을 비활성화해도 이미 저장한 데이터를 삭제하거나 숨기지 않는다.
 - 기존 파일 API에는 capability 전역 차단을 적용하지 않는다.

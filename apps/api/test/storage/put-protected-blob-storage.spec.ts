@@ -53,4 +53,13 @@ describe('PutProtectedBlobStorage', () => {
     await expect(storage.put('blobs/key', source)).rejects.toThrow('storage unavailable');
     expect(settlePut).toHaveBeenCalledWith('attempt-id');
   });
+
+  it('PUT AbortSignal을 소유권 래퍼에서 raw storage로 전달한다', async () => {
+    const controller = new AbortController();
+
+    await storage.put('blobs/key', source, 'text/plain', controller.signal);
+
+    expect(rawPut).toHaveBeenCalledWith('blobs/key', source, 'text/plain', controller.signal);
+    expect(settlePut).toHaveBeenCalledWith('attempt-id');
+  });
 });

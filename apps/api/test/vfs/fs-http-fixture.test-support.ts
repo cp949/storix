@@ -1,5 +1,8 @@
 import { MASTER_KEY } from '../../src/encryption/encryption.constants.js';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { once } from 'node:events';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { INestApplication } from '@nestjs/common';
@@ -117,7 +120,8 @@ export function startHeldUpload(
   return { req, response };
 }
 
-export function createFsHttpFixture() {
+/** archive capability를 선택적으로 활성화하는 HTTP 통합 fixture를 만든다. */
+export function createFsHttpFixture(options: { enableArchive?: boolean } = {}) {
   const previousCapabilityConfigPath = process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
   let postgresContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
@@ -125,6 +129,7 @@ export function createFsHttpFixture() {
   let app: INestApplication;
   let httpServer: ReturnType<INestApplication['getHttpServer']>;
   let serverPort: number;
+  let capabilityDirectory: string | undefined;
 
   async function bootstrap() {
     const moduleRef = await Test.createTestingModule({
@@ -144,6 +149,19 @@ export function createFsHttpFixture() {
 
   beforeAll(async () => {
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
+    if (options.enableArchive) {
+      capabilityDirectory = await mkdtemp(join(tmpdir(), 'storix-fs-capabilities-'));
+      const capabilitiesPath = join(capabilityDirectory, 'capabilities.json');
+      await writeFile(
+        capabilitiesPath,
+        JSON.stringify({
+          globalAllowedCapabilities: ['archive'],
+          defaultEnabledCapabilities: ['archive'],
+          namespaceAllowedCapabilities: {},
+        }),
+      );
+      process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH = capabilitiesPath;
+    }
     postgresContainer = await new PostgreSqlContainer('docker.io/library/postgres:16-alpine').start();
     s3Container = await startS3Container();
 
@@ -184,6 +202,7 @@ export function createFsHttpFixture() {
     await migrationDataSource.destroy();
     await postgresContainer.stop();
     await s3Container.stop();
+    if (capabilityDirectory) await rm(capabilityDirectory, { recursive: true, force: true });
     if (previousCapabilityConfigPath === undefined) delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
     else process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH = previousCapabilityConfigPath;
   });

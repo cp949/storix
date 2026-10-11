@@ -24,7 +24,15 @@ class SnapshotMutationProbeController {
   }
 }
 
-@Module({ controllers: [ProbeController, SnapshotMutationProbeController] })
+@Controller('api/v2/namespaces/:namespaceId/fs')
+class ArchiveProbeController {
+  @Post('archive')
+  echo(@Req() req: Request) {
+    return { isBuffer: Buffer.isBuffer(req.body), size: Buffer.isBuffer(req.body) ? req.body.length : 0 };
+  }
+}
+
+@Module({ controllers: [ProbeController, SnapshotMutationProbeController, ArchiveProbeController] })
 class ProbeModule {}
 
 describe('configureBodyParsers의 요청 바디 크기 상한', () => {
@@ -68,5 +76,18 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
       .set('Content-Type', 'application/json')
       .send(body)
       .expect(201, { isBuffer: true, body });
+  });
+
+  it('archive는 8 MiB 미만 JSON 원문을 보존하고 초과 본문을 BAD_REQUEST 413으로 거부한다', async () => {
+    const accepted = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/archive')
+      .send({ value: 'x'.repeat(7_000_000) })
+      .expect(201);
+    expect(accepted.body).toEqual({ isBuffer: true, size: expect.any(Number) });
+    const rejected = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/archive')
+      .send({ value: 'x'.repeat(8_500_000) })
+      .expect(413);
+    expect(rejected.body).toMatchObject({ code: 'BAD_REQUEST' });
   });
 });

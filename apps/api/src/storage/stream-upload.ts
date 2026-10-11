@@ -27,13 +27,14 @@ export async function uploadStream(
   source: Readable,
   contentType: string,
   maxBytes: number,
+  signal?: AbortSignal,
 ): Promise<StreamedUpload> {
   const sink = new PassThrough();
   const hash = createHash('sha256');
   let total = 0;
   let exceeded = false;
 
-  const putPromise = storage.put(key, sink, contentType);
+  const putPromise = storage.put(key, sink, contentType, signal);
   const putSettled = putPromise.then(
     () => undefined,
     (error: unknown) => error,

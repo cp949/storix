@@ -23,17 +23,17 @@ export class PutProtectedBlobStorage implements BlobStorage {
     private readonly executionId: string,
   ) {}
 
-  async put(key: string, stream: Readable, contentType?: string): Promise<void> {
+  async put(key: string, stream: Readable, contentType?: string, signal?: AbortSignal): Promise<void> {
     const attemptId = await this.ownership.beginPut(key, this.executionId);
     try {
-      await this.raw.put(key, stream, contentType);
+      await this.raw.put(key, stream, contentType, signal);
     } finally {
       await this.settleUntilRecorded(attemptId, key);
     }
   }
 
-  get(key: string, range?: BlobRange): Promise<Readable> {
-    return this.raw.get(key, range);
+  get(key: string, range?: BlobRange, signal?: AbortSignal): Promise<Readable> {
+    return this.raw.get(key, range, signal);
   }
 
   delete(key: string): Promise<void> {

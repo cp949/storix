@@ -3,6 +3,7 @@ import {
   dropParserErrorCode,
   hasUnparsedBody,
   isMutationJsonRoute,
+  isArchiveJsonRoute,
   isRawUploadRoute,
   isSnapshotJsonMutationRoute,
 } from '../../src/common/body-parser.js';
@@ -47,6 +48,16 @@ describe('isMutationJsonRoute', () => {
     expect(isMutationJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/mutations' })).toBe(true);
     expect(isMutationJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/mkdir' })).toBe(false);
     expect(isMutationJsonRoute({ method: 'GET', path: '/api/v2/namespaces/abc/fs/mutations' })).toBe(false);
+  });
+});
+
+// archive 전용 상한이 POST route에만 적용되는 분류를 검증한다.
+describe('isArchiveJsonRoute 경로 분류', () => {
+  it('archive POST만 고정 대용량 JSON 경로로 분류한다', () => {
+    expect(isArchiveJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/archive' })).toBe(true);
+    expect(isArchiveJsonRoute({ method: 'post', path: '/api/v2/namespaces/abc/FS/ARCHIVE/' })).toBe(true);
+    expect(isArchiveJsonRoute({ method: 'GET', path: '/api/v2/namespaces/abc/fs/archive' })).toBe(false);
+    expect(isArchiveJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/mkdir' })).toBe(false);
   });
 });
 

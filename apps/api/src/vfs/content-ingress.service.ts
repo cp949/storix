@@ -39,9 +39,10 @@ export class ContentIngressService {
     contentType: string,
     maxBytes: number,
     encrypted: boolean,
+    signal?: AbortSignal,
   ): Promise<ContentIngressResult> {
     const target = encrypted ? new EncryptingPutTarget(this.storage, this.requireMasterKey()) : this.storage;
-    const uploaded = await uploadStream(target, key, source, contentType, maxBytes);
+    const uploaded = await uploadStream(target, key, source, contentType, maxBytes, signal);
     return {
       ...uploaded,
       encryptionIv: target instanceof EncryptingPutTarget ? target.getIv() : null,

@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 기본 비활성 `archive` capability와 `POST /fs/archive`를 추가했다. 선택 FILE을 동기 ZIP FILE로 만들며 source ID·선택 revision·입력/출력 상한·checksum 검증·완료 receipt replay를 적용한다. `STORIX_ARCHIVE_*`로 동시성·상한·deadline·압축 수준을 설정한다. API와 GC는 같은 `STORIX_ORPHAN_GRACE_PERIOD`를 사용해야 한다. grace 검사는 원본 보존을 보장하지 않는다. 설계는 [파일 archive](docs/design/16-file-archive.md), 결정은 api ADR-0048이다.
+
 ## [1.3.0] - 2026-10-08
 
 ### Added

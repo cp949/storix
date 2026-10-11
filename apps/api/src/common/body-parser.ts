@@ -20,6 +20,13 @@ export function isMutationJsonRoute(req: Pick<Request, 'method' | 'path'>): bool
   return req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/mutations');
 }
 
+/** archive 본문은 항목 수에 맞춰 고정 8 MiB JSON 상한을 쓴다. */
+export function isArchiveJsonRoute(req: Pick<Request, 'method' | 'path'>): boolean {
+  return (
+    req.method.toUpperCase() === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/archive')
+  );
+}
+
 export function isSnapshotJsonMutationRoute(req: Pick<Request, 'method' | 'path'>): boolean {
   const path = req.path.toLowerCase().replace(/\/+$/, '');
   return (
@@ -70,6 +77,13 @@ export function configureBodyParsers(app: INestApplication): void {
   );
   httpAdapter.use(
     raw({
+      limit: '8mb',
+      type: (req: IncomingMessage) =>
+        isArchiveJsonRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
+    }),
+  );
+  httpAdapter.use(
+    raw({
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         (isMutationJsonRoute(req as Request) || isSnapshotJsonMutationRoute(req as Request)) &&
@@ -81,6 +95,7 @@ export function configureBodyParsers(app: INestApplication): void {
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
+        !isArchiveJsonRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
         !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/json'),
@@ -92,6 +107,7 @@ export function configureBodyParsers(app: INestApplication): void {
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
+        !isArchiveJsonRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
         !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),

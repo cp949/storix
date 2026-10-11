@@ -102,6 +102,79 @@ export class VfsPreconditionFailedError extends DomainError {
   }
 }
 
+/** archive 입력 구조 또는 원본 종류가 요청 조건을 만족하지 않는다. */
+export class VfsArchiveInvalidRequestError extends DomainError {
+  readonly code = 'VFS_INVALID_ARCHIVE_REQUEST';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 archive 요청');
+  }
+}
+
+/** 요청한 archive 원본 revision 형식이 잘못됐다. */
+export class VfsArchiveInvalidRevisionError extends DomainError {
+  readonly code = 'VFS_INVALID_REVISION';
+  readonly status = 400;
+
+  /** 실패한 entries 배열의 0부터 시작하는 index다. */
+  constructor(readonly archiveEntry: number) {
+    super(`유효하지 않은 archive entry revision: ${archiveEntry}`);
+  }
+}
+
+/** archive 항목의 revision이 capture 시점과 다르다. */
+export class VfsArchivePreconditionFailedError extends VfsPreconditionFailedError {
+  /** 실패한 entries 배열의 0부터 시작하는 index다. target 충돌이면 없다. */
+  constructor(
+    path: string,
+    current: VfsPreconditionCurrentDto | null,
+    readonly archiveEntry?: number,
+  ) {
+    super(path, current);
+  }
+}
+
+/** archive 입력의 FILE 수 또는 원본 byte 합계가 상한을 넘었다. */
+export class VfsArchiveTooLargeError extends DomainError {
+  readonly code = 'VFS_ARCHIVE_TOO_LARGE';
+  readonly status = 413;
+
+  constructor() {
+    super('archive 입력 상한 초과');
+  }
+}
+
+/** 생성 중인 ZIP 전체 byte 수가 archive 결과 상한을 넘었다. */
+export class VfsArchiveResultTooLargeError extends DomainError {
+  readonly code = 'VFS_ARCHIVE_TOO_LARGE';
+  readonly status = 413;
+
+  constructor() {
+    super('maximum ZIP result size exceeded');
+  }
+}
+
+/** archive의 최종 mutation 시각이 고정 deadline을 넘었다. */
+export class VfsArchiveDeadlineExceededError extends DomainError {
+  readonly code = 'VFS_ARCHIVE_TIMEOUT';
+  readonly status = 503;
+
+  constructor() {
+    super('archive 실행 deadline 초과');
+  }
+}
+
+/** 프로세스 archive 동시 실행 한도에 도달했다. */
+export class VfsArchiveBusyError extends DomainError {
+  readonly code = 'VFS_ARCHIVE_BUSY';
+  readonly status = 503;
+
+  constructor() {
+    super('archive 실행 한도 초과');
+  }
+}
+
 export class VfsRevisionExhaustedError extends DomainError {
   readonly code = 'VFS_REVISION_EXHAUSTED';
   readonly status = 409;
