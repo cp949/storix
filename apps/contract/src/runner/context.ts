@@ -42,6 +42,7 @@ export async function createApiNamespace(
   contractId: string,
   accessPolicy?: 'PRIVATE' | 'PUBLIC',
   idPrefix?: string,
+  encryptionPolicy?: 'NONE' | 'ENCRYPTED',
 ): Promise<NamespaceInfo> {
   const name = `${contractId}-${randomBytes(3).toString('hex')}`;
   const response = await client.request('POST', '/api/v2/namespaces', {
@@ -49,6 +50,7 @@ export async function createApiNamespace(
     body: JSON.stringify({
       name,
       ...(accessPolicy === undefined ? {} : { accessPolicy }),
+      ...(encryptionPolicy === undefined ? {} : { encryptionPolicy }),
       ...(idPrefix ? { idPrefix } : {}),
     }),
   });
@@ -95,6 +97,7 @@ export function createContractContext(
       if (
         options?.withoutCapabilities !== true &&
         options?.accessPolicy === undefined &&
+        options?.encryptionPolicy === undefined &&
         input.provisioned !== undefined
       ) {
         const next = input.provisioned.shift();
@@ -103,7 +106,13 @@ export function createContractContext(
         }
         return next;
       }
-      return createApiNamespace(client, input.contractId, options?.accessPolicy);
+      return createApiNamespace(
+        client,
+        input.contractId,
+        options?.accessPolicy,
+        undefined,
+        options?.encryptionPolicy,
+      );
     },
   };
   return context;

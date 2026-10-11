@@ -141,6 +141,22 @@ export function createApiClient(
       });
     },
 
+    createArchive(
+      namespaceId: string,
+      body: object,
+      options: MutationOptions & { readonly expiresInSeconds?: number } = {},
+    ) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/archive`, {
+        headers: {
+          ...jsonHeaders(options),
+          ...(options.expiresInSeconds === undefined
+            ? {}
+            : { 'X-Expires-In': String(options.expiresInSeconds) }),
+        },
+        body: JSON.stringify(body),
+      });
+    },
+
     getNamespace(namespaceId: string) {
       return request('GET', `/api/v2/namespaces/${namespaceId}`);
     },

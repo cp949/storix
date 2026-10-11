@@ -11,7 +11,8 @@ export type ProfileName =
   | 'change-feed'
   | 'resumable-upload'
   | 'change-feed-prefix'
-  | 'resumable-upload-prefix';
+  | 'resumable-upload-prefix'
+  | 'archive';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -63,6 +64,13 @@ export interface ApiClient {
 
   /** `POST /fs/snapshots`로 snapshot을 만든다. `body`는 `{ kind, path, sourceRevision? }`다. */
   createSnapshot(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
+
+  /** `POST /fs/archive`로 선택한 FILE을 ZIP FILE로 저장한다. `body`는 `{ target, entries }`다. */
+  createArchive(
+    namespaceId: string,
+    body: object,
+    options?: MutationOptions & { readonly expiresInSeconds?: number },
+  ): Promise<ApiResponse>;
 
   /** `GET /fs/snapshots/{id}`로 snapshot 메타데이터를 읽는다. */
   getSnapshot(namespaceId: string, snapshotId: string): Promise<ApiResponse>;
@@ -276,6 +284,8 @@ export interface ContractContext {
 export interface CreateNamespaceOptions {
   readonly withoutCapabilities?: boolean;
   readonly accessPolicy?: 'PRIVATE' | 'PUBLIC';
+  /** 새 namespace에서 사용할 저장 암호화 정책이다. */
+  readonly encryptionPolicy?: 'NONE' | 'ENCRYPTED';
 }
 
 /** `defineContract`에 넘기는 입력. */

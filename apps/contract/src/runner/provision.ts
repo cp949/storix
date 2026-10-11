@@ -80,6 +80,9 @@ export interface ProvisionInput {
   /** 각 사전 준비 namespace에 붙일 ID prefix */
   readonly idPrefix?: string;
 
+  /** 사전 준비 namespace에 적용할 암호화 정책이다. */
+  readonly encryptionPolicy?: 'NONE' | 'ENCRYPTED';
+
   /** 서버가 읽는 설정 파일 경로. 이 파일을 덮어쓴다. */
   readonly configPath: string;
 
@@ -111,7 +114,9 @@ export async function provisionCapabilityNamespaces(
   const namespaces: NamespaceInfo[] = [];
   for (let index = 0; index < input.count; index += 1) {
     input.signal.throwIfAborted();
-    namespaces.push(await createApiNamespace(client, 'provisioned', undefined, input.idPrefix));
+    namespaces.push(
+      await createApiNamespace(client, 'provisioned', undefined, input.idPrefix, input.encryptionPolicy),
+    );
   }
   const config = buildCapabilitiesConfig(
     input.capabilities,
