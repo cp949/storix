@@ -1058,6 +1058,7 @@ describe('archive HTTP (SQLite)', () => {
         .send({ target: '/busy-rejected.zip', entries: [{ id: source.id, name: 'source.txt' }] })
         .expect(503);
       expect(busy.body.code).toBe('VFS_ARCHIVE_BUSY');
+      // 기본 응답의 10초를 고정해 운영값 변경을 탐지한다.
       expect(busy.headers['retry-after']).toBe('10');
     } finally {
       config.maxSeconds = originalMaxSeconds;

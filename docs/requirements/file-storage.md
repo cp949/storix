@@ -1294,6 +1294,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 **판정 근거:**
 
 - `archive-create` 공개 계약은 PostgreSQL·SQLite에서 각각 1/1 통과했다. 계약은 성공·expiry·동일 key 재생·stale revision·1001개 입력 거부·암호화 namespace의 ZIP 응답을 확인한다.
+- `archive-content` 공개 계약은 PostgreSQL·SQLite에서 각각 1/1 통과했다. 암호화 namespace의 ZIP 내부 이름·순서·원본 평문 바이트·결과 SHA-256과 기존 target의 412를 확인한다.
 - API PostgreSQL·SQLite archive HTTP 통합은 L2에서 통과했다. ZIP reader로 평문 내용을 대조하고 source 무결성·상한·expiry·receipt·취소·재시도를 확인했다.
 - 일반 PostgreSQL 통합은 50 suites/946 tests, SQLite 통합은 36 suites/707 tests가 통과했다.
 - 이 검증은 실제 배포 환경의 grace 일치·시계 오차·삭제 transaction 지연을 증명하지 않는다.

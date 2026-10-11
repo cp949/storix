@@ -4,7 +4,7 @@
 
 `POST /api/v2/namespaces/{namespaceId}/fs/archive`는 같은 namespace의 FILE ID 목록을 ZIP FILE로 저장한다. 요청의 `target`은 새 FILE 경로이고 `entries`는 순서가 있는 `{ id, name, revision? }` 목록이다. revision은 선택 조건이며 capture 시점 값과 달라지면 412다.
 
-요청은 1~1000개 FILE, 평문 원본 합계 최대 1 GiB, JSON 본문 최대 8 MiB다. 실행 설정은 더 낮은 상한을 둘 수 있다. ZIP 내부 이름은 UTF-8 NFC 상대 경로다. 입력 순서를 유지하고 동일 이름과 FILE/부모 충돌을 거부한다. OS별 이름 변환은 하지 않는다.
+요청의 FILE 수 상한은 기본 1000개이며 설정으로 최대 65534개까지 허용한다. 최소 1개 FILE이 필요하다. 평문 원본 합계는 최대 1 GiB이며 JSON 본문은 최대 8 MiB다. 실제 FILE 수·평문 byte 상한은 실행 설정을 따른다. 운영 상한은 측정 없이 올리지 않는다. ZIP 내부 이름은 UTF-8 NFC 상대 경로다. 입력 순서를 유지하고 동일 이름과 FILE/부모 충돌을 거부한다. OS별 이름 변환은 하지 않는다.
 
 성공은 201 JSON이며 `resource`는 `application/zip` FILE metadata, `entryCount`는 capture한 항목 수다. 바이트는 기존 content API로 받는다. `Idempotency-Key`와 `X-Mutation-Scope`는 필수다. 성공 receipt는 같은 요청에서 결과를 재생하며 입력 변경은 409다. 기본 capability는 비활성이다.
 
