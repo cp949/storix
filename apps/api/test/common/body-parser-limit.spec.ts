@@ -32,7 +32,26 @@ class ArchiveProbeController {
   }
 }
 
-@Module({ controllers: [ProbeController, SnapshotMutationProbeController, ArchiveProbeController] })
+@Controller('api/v2/namespaces/:namespaceId/fs')
+class ExtractProbeController {
+  @Post('extract')
+  echo(@Req() req: Request) {
+    return {
+      isBuffer: Buffer.isBuffer(req.body),
+      size: Buffer.isBuffer(req.body) ? req.body.length : 0,
+      body: Buffer.isBuffer(req.body) && req.body.length < 100 ? req.body.toString('utf8') : null,
+    };
+  }
+}
+
+@Module({
+  controllers: [
+    ProbeController,
+    SnapshotMutationProbeController,
+    ArchiveProbeController,
+    ExtractProbeController,
+  ],
+})
 class ProbeModule {}
 
 describe('configureBodyParsers의 요청 바디 크기 상한', () => {
@@ -91,5 +110,37 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
       .send({ value: 'x'.repeat(limit - 11) })
       .expect(413);
     expect(rejected.body).toMatchObject({ code: 'BAD_REQUEST', requestId: expect.any(String) });
+  });
+
+  it('extract는 JSON 원문을 raw Buffer로 보존하고 정확히 64 KiB까지 받으며 1 byte 초과는 BAD_REQUEST 413이다', async () => {
+    const raw = '{"mode":"clean",  "source":"/a.zip"}';
+    const echoed = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/extract')
+      .set('Content-Type', 'application/json')
+      .send(raw)
+      .expect(201);
+    // 공백과 키 순서가 그대로여야 receipt fingerprint가 원문 기준으로 정해진다.
+    expect(echoed.body).toEqual({ isBuffer: true, size: raw.length, body: raw });
+    // `{"value":"` + value + `"}` 형태라 JSON 전체 길이는 value 길이 + 12다.
+    const limit = 64 * 1024;
+    const accepted = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/extract')
+      .send({ value: 'x'.repeat(limit - 12) })
+      .expect(201);
+    expect(accepted.body).toMatchObject({ isBuffer: true, size: limit });
+    const rejected = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/extract')
+      .send({ value: 'x'.repeat(limit - 11) })
+      .expect(413);
+    expect(rejected.body).toMatchObject({ code: 'BAD_REQUEST', requestId: expect.any(String) });
+  });
+
+  it('JSON이 아닌 Content-Type의 extract 본문은 파서가 건너뛰어 빈 본문처럼 도달한다', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v2/namespaces/abc/fs/extract')
+      .set('Content-Type', 'text/plain')
+      .send('hello')
+      .expect(201);
+    expect(response.body).toMatchObject({ isBuffer: false, size: 0 });
   });
 });

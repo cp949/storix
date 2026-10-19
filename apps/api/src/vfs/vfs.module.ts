@@ -28,6 +28,8 @@ import { ContentIngressService } from './content-ingress.service.js';
 import { ARCHIVE_CONFIG, createArchiveConfig } from './archive-config.js';
 import { ArchiveService } from './archive.service.js';
 import { ArchiveGate } from './archive-gate.js';
+import { EXTRACT_CONFIG, EXTRACT_GATE, createExtractConfig, type ExtractConfig } from './extract-config.js';
+import { ExtractService } from './extract.service.js';
 
 @Module({
   imports: [PersistenceModule, OnlineStorageModule, EncryptionModule, CapabilityModule],
@@ -59,6 +61,21 @@ import { ArchiveGate } from './archive-gate.js';
       provide: ArchiveGate,
       useFactory: (config: ReturnType<typeof createArchiveConfig>) => new ArchiveGate(config.maxConcurrency),
       inject: [ARCHIVE_CONFIG],
+    },
+    ExtractService,
+    {
+      provide: EXTRACT_GATE,
+      useFactory: (config: ExtractConfig) => new ArchiveGate(config.maxConcurrency),
+      inject: [EXTRACT_CONFIG],
+    },
+    {
+      provide: EXTRACT_CONFIG,
+      // extract를 전역 허용하지 않은 배포는 grace 불변식 위반을 경고로만 남긴다(extract-config.ts 참고).
+      useFactory: (capabilities: CapabilityConfig) =>
+        createExtractConfig(undefined, undefined, {
+          extractGloballyAllowed: capabilities.globalAllowedCapabilities.includes('extract'),
+        }),
+      inject: [CAPABILITY_CONFIG],
     },
     {
       provide: ARCHIVE_CONFIG,

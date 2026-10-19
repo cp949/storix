@@ -27,6 +27,13 @@ export function isArchiveJsonRoute(req: Pick<Request, 'method' | 'path'>): boole
   );
 }
 
+/** extract 본문은 경로·glob·MIME map만 담으므로 고정 64 KiB JSON 상한을 쓴다. */
+export function isExtractJsonRoute(req: Pick<Request, 'method' | 'path'>): boolean {
+  return (
+    req.method.toUpperCase() === 'POST' && req.path.toLowerCase().replace(/\/+$/, '').endsWith('/fs/extract')
+  );
+}
+
 export function isSnapshotJsonMutationRoute(req: Pick<Request, 'method' | 'path'>): boolean {
   const path = req.path.toLowerCase().replace(/\/+$/, '');
   return (
@@ -84,6 +91,13 @@ export function configureBodyParsers(app: INestApplication): void {
   );
   httpAdapter.use(
     raw({
+      limit: '64kb',
+      type: (req: IncomingMessage) =>
+        isExtractJsonRoute(req as Request) && matchesContentType(req as Request, 'application/json'),
+    }),
+  );
+  httpAdapter.use(
+    raw({
       limit: JSON_BODY_LIMIT,
       type: (req: IncomingMessage) =>
         (isMutationJsonRoute(req as Request) || isSnapshotJsonMutationRoute(req as Request)) &&
@@ -96,6 +110,7 @@ export function configureBodyParsers(app: INestApplication): void {
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
         !isArchiveJsonRoute(req as Request) &&
+        !isExtractJsonRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
         !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/json'),
@@ -108,6 +123,7 @@ export function configureBodyParsers(app: INestApplication): void {
       type: (req: IncomingMessage) =>
         !isRawUploadRoute(req as Request) &&
         !isArchiveJsonRoute(req as Request) &&
+        !isExtractJsonRoute(req as Request) &&
         !isMutationJsonRoute(req as Request) &&
         !isSnapshotJsonMutationRoute(req as Request) &&
         matchesContentType(req as Request, 'application/x-www-form-urlencoded'),

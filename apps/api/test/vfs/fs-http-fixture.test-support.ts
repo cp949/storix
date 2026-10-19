@@ -15,6 +15,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
 import { DomainError } from '../../src/common/domain-error.js';
+import { DomainErrorFilter } from '../../src/common/domain-error.filter.js';
 import { NamespaceModule } from '../../src/namespace/namespace.module.js';
 import { BlobEntity } from '../../src/persistence/entities/blob.entity.js';
 import { IdempotencyKeyEntity } from '../../src/persistence/entities/idempotency-key.entity.js';
@@ -120,8 +121,15 @@ export function startHeldUpload(
   return { req, response };
 }
 
-/** archive capability를 선택적으로 활성화하는 HTTP 통합 fixture를 만든다. */
-export function createFsHttpFixture(options: { enableArchive?: boolean } = {}) {
+/** archive·extract capability를 선택적으로 활성화하는 HTTP 통합 fixture를 만든다. */
+export function createFsHttpFixture(
+  options: {
+    enableArchive?: boolean;
+    enableExtract?: boolean;
+    /** 운영 main.ts처럼 전역 DomainErrorFilter를 등록한다. parser 단계 오류도 공개 오류 계약으로 응답하게 한다. */
+    useDomainErrorFilter?: boolean;
+  } = {},
+) {
   const previousCapabilityConfigPath = process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
   let postgresContainer: StartedPostgreSqlContainer;
   let s3Container: StartedS3Container;
@@ -140,6 +148,7 @@ export function createFsHttpFixture(options: { enableArchive?: boolean } = {}) {
       .compile();
 
     app = moduleRef.createNestApplication({ bodyParser: false });
+    if (options.useDomainErrorFilter) app.useGlobalFilters(new DomainErrorFilter());
     configureBodyParsers(app);
     await app.init();
     await app.listen(0);
@@ -149,14 +158,18 @@ export function createFsHttpFixture(options: { enableArchive?: boolean } = {}) {
 
   beforeAll(async () => {
     delete process.env.STORIX_VFS_CAPABILITIES_CONFIG_PATH;
-    if (options.enableArchive) {
+    const enabledCapabilities = [
+      ...(options.enableArchive ? ['archive'] : []),
+      ...(options.enableExtract ? ['extract'] : []),
+    ];
+    if (enabledCapabilities.length > 0) {
       capabilityDirectory = await mkdtemp(join(tmpdir(), 'storix-fs-capabilities-'));
       const capabilitiesPath = join(capabilityDirectory, 'capabilities.json');
       await writeFile(
         capabilitiesPath,
         JSON.stringify({
-          globalAllowedCapabilities: ['archive'],
-          defaultEnabledCapabilities: ['archive'],
+          globalAllowedCapabilities: enabledCapabilities,
+          defaultEnabledCapabilities: enabledCapabilities,
           namespaceAllowedCapabilities: {},
         }),
       );

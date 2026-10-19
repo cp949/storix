@@ -4,6 +4,7 @@ import {
   hasUnparsedBody,
   isMutationJsonRoute,
   isArchiveJsonRoute,
+  isExtractJsonRoute,
   isRawUploadRoute,
   isSnapshotJsonMutationRoute,
 } from '../../src/common/body-parser.js';
@@ -58,6 +59,19 @@ describe('isArchiveJsonRoute 경로 분류', () => {
     expect(isArchiveJsonRoute({ method: 'post', path: '/api/v2/namespaces/abc/FS/ARCHIVE/' })).toBe(true);
     expect(isArchiveJsonRoute({ method: 'GET', path: '/api/v2/namespaces/abc/fs/archive' })).toBe(false);
     expect(isArchiveJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/mkdir' })).toBe(false);
+  });
+});
+
+// extract 전용 64 KiB 상한이 POST route에만 적용되는 분류를 검증한다.
+describe('isExtractJsonRoute 경로 분류', () => {
+  it('extract POST만 고정 64 KiB JSON 경로로 분류하고 대소문자와 끝 /를 무시한다', () => {
+    expect(isExtractJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/extract' })).toBe(true);
+    expect(isExtractJsonRoute({ method: 'post', path: '/api/v2/namespaces/abc/FS/EXTRACT/' })).toBe(true);
+    expect(isExtractJsonRoute({ method: 'GET', path: '/api/v2/namespaces/abc/fs/extract' })).toBe(false);
+    expect(isExtractJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/archive' })).toBe(false);
+    expect(isExtractJsonRoute({ method: 'POST', path: '/api/v2/namespaces/abc/fs/extract/more' })).toBe(
+      false,
+    );
   });
 });
 
