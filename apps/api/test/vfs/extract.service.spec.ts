@@ -1,6 +1,8 @@
-// extract service의 receipt 순서, dryRun 응답, 한도·압축비, 오류 index 규칙, gzip 무결성, 업로드 정리, 취소·deadline을 단위 테스트한다.
-// 가짜 repository와 메모리 storage를 쓰되 ContentIngressService와 tar·zip reader는 실제 구현이다.
-// DB와 HTTP 경로는 extract-http.shared-tests.ts가 두 DB에서 검증한다. 규칙은 docs/design/17-file-extract.md "실행".
+/**
+ * extract service의 receipt·dryRun·한도·오류·무결성·업로드 정리·취소·deadline을 검증한다.
+ * 가짜 repository와 메모리 storage를 쓰되 ContentIngressService와 tar·zip reader는 실제 구현이다.
+ * DB와 HTTP 경로는 extract-http.test-support.ts가 두 DB에서 검증한다. 규칙은 docs/design/17-file-extract.md "실행".
+ */
 import { jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
@@ -268,7 +270,7 @@ describe('ExtractService dryRun과 본 실행', () => {
           blob: { storageKey: 'blobs/extract/0', size: '3', mimeType: 'text/html' },
         },
         { entryIndex: 1, name: 'app.js', type: 'FILE', blob: { storageKey: 'blobs/extract/1', size: '2' } },
-        { entryIndex: 2, name: 'sub', type: 'DIRECTORY', blob: null },
+        { entryIndex: 2, name: 'sub/', type: 'DIRECTORY', blob: null },
       ],
     });
     expect(h.sources.assertDeadline).toHaveBeenCalledTimes(2);
@@ -431,6 +433,64 @@ describe('ExtractService 한도와 압축비', () => {
 });
 
 describe('ExtractService 오류 index와 형식', () => {
+  it('지원 ZIP의 central header 손상은 다음 선택 순번과 빈 이름의 400이다', async () => {
+    const zip = handZip([{ name: 'skip' }, { name: 'bad' }]);
+    const firstCentral = zip.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    zip.writeUInt32LE(0, firstCentral + 46 + 4);
+    const h = harness(zip);
+    expect(await h.run({ exclude: ['skip'] })).toMatchObject({
+      status: 400,
+      body: { code: 'VFS_EXTRACT_INVALID_ENTRY', entryIndex: 0, entryName: '' },
+    });
+  });
+
+  it('커밋 오류에 쓸 tar 원본 이름과 정규화 경로를 함께 넘긴다', async () => {
+    const h = harness(
+      buildTar([
+        { name: './a/', type: '5' },
+        { name: './b', body: Buffer.from('b') },
+      ]),
+    );
+    expect((await h.run()).status).toBe(200);
+    expect((h.applyExtract.mock.calls[0] as unknown[])[1]).toMatchObject({
+      entries: [
+        { name: './a/', segments: ['a'], type: 'DIRECTORY' },
+        { name: './b', segments: ['b'], type: 'FILE' },
+      ],
+    });
+  });
+
+  it.each([false, true])('ZIP descriptor 손상은 dryRun=%s에서도 400으로 저장한다', async (dryRun) => {
+    const h = harness(
+      handZip([
+        { name: 'ok' },
+        {
+          name: 'bad',
+          body: Buffer.from('abc'),
+          descriptor: 'signed',
+          descriptorOverride: { crc: 1 },
+        },
+      ]),
+    );
+    expect(await h.run({ dryRun })).toMatchObject({
+      status: 400,
+      body: { code: 'VFS_EXTRACT_INVALID_ENTRY', entryIndex: 1, entryName: 'bad' },
+    });
+    expect(h.receipts.completeAfterRollback).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      expect.any(String),
+      'POST',
+      expect.objectContaining({ status: 400 }),
+      expect.any(Number),
+    );
+    expect(h.nodes.withMutation).not.toHaveBeenCalled();
+    expect(h.stored.size).toBe(0);
+    const slot = h.gate.tryAcquire();
+    expect(slot).not.toBeNull();
+    slot?.release();
+  });
+
   it('현재 entry의 CRC 오류는 현재 순번과 이름을 쓴다', async () => {
     const h = harness(handZip([{ name: 'ok' }, { name: 'bad', body: Buffer.from('abc'), crc: 1 }]));
     expect(await h.run()).toMatchObject({

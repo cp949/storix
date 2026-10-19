@@ -530,7 +530,7 @@ export class ExtractService {
           size: 0n,
           commit: {
             entryIndex: planned.entryIndex,
-            name: planned.name,
+            name: entry.name,
             segments: planned.segments,
             type: 'DIRECTORY',
             blob: null,
@@ -547,18 +547,15 @@ export class ExtractService {
         throw new VfsExtractTooLargeError('ratio');
 
       let blob: ExtractCommitEntry['blob'] = null;
-      const stream = await entry.open();
+      let stream: Readable | undefined;
       try {
+        stream = await entry.open();
         // 선언 크기가 상한 이하임을 위에서 확인했으므로 cap은 선언 크기다. 실제 길이는 업로드 뒤 대조한다.
         const cap = Number(entry.size);
         if (req.dryRun) {
           const hashed = await this.ingress.hash(stream, cap);
           if (BigInt(hashed.size) !== entry.size)
-            throw new VfsExtractInvalidEntryError(
-              planned.entryIndex,
-              planned.name,
-              '평문 길이가 선언과 다름',
-            );
+            throw new VfsExtractInvalidEntryError(planned.entryIndex, entry.name, '평문 길이가 선언과 다름');
         } else {
           const storageKey = this.keys.generate();
           uploadedKeys.push(storageKey);
@@ -571,11 +568,7 @@ export class ExtractService {
             signal,
           );
           if (BigInt(uploaded.size) !== entry.size)
-            throw new VfsExtractInvalidEntryError(
-              planned.entryIndex,
-              planned.name,
-              '평문 길이가 선언과 다름',
-            );
+            throw new VfsExtractInvalidEntryError(planned.entryIndex, entry.name, '평문 길이가 선언과 다름');
           blob = {
             storageKey,
             size: String(uploaded.size),
@@ -585,17 +578,19 @@ export class ExtractService {
           };
         }
       } catch (error) {
-        throw this.translate(error, planned.entryIndex, planned.name);
+        throw this.translate(error, planned.entryIndex, entry.name);
       } finally {
-        stream.destroy();
-        await waitForClose(stream);
+        if (stream) {
+          stream.destroy();
+          await waitForClose(stream);
+        }
       }
       out.push({
         planned,
         size: entry.size,
         commit: {
           entryIndex: planned.entryIndex,
-          name: planned.name,
+          name: entry.name,
           segments: planned.segments,
           type: 'FILE',
           blob,

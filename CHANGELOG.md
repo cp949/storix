@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- extract가 ZIP descriptor를 DIRECTORY·제외 FILE에서도 검증하고 손상을 `400 VFS_EXTRACT_INVALID_ENTRY`로 저장·재생한다. 지원 ZIP의 header·EOCD 손상도 같은 오류로 분류한다. 종류 충돌의 `entryName`은 tar의 선행 `./`와 DIRECTORY의 끝 `/`를 포함한 원본 이름을 보존한다.
+
 ### Added
 
 - 기본 비활성 `extract` capability와 `POST /fs/extract`를 추가했다. 같은 namespace에 저장된 zip(STORED·DEFLATE)·tar(ustar·PAX·GNU longname)·tar.gz FILE을 대상 DIRECTORY에 한 트랜잭션으로 푼다. 모드는 같은 경로 FILE의 id를 유지하는 `overwrite`와 대상 subtree를 지운 뒤 만드는 `clean`이다. `exclude` glob과 `mimeTypes` map을 받고 `dryRun`으로 선택 entry 목록만 미리 볼 수 있다. source·대상 revision 조건, 이름 규칙, link·장치·sparse entry 거부, CRC·gzip trailer 검증, 완료 receipt replay를 적용한다. entry 단위 오류(400)는 `entryIndex`와 `entryName`을 돌려준다. `STORIX_EXTRACT_*`로 동시성·선택 entry 수·평문 합계·압축비·deadline을 설정한다. `extract`를 `globalAllowedCapabilities`에 넣은 배포는 `STORIX_EXTRACT_MAX_SECONDS + 60 <= STORIX_ORPHAN_GRACE_PERIOD`가 아니면 시작을 거부한다(허용하지 않은 배포는 경고만 남긴다). 이 검사는 원본 보존을 보장하지 않는다. 설계는 [압축 FILE 해제](docs/design/17-file-extract.md), 결정은 api ADR-0049다. 위험: `clean`은 기존 subtree와 그 안의 source를 지운다. 복구: 휴지통이 켜진 namespace는 응답의 `trashId`로 복구하고, 꺼져 있으면 별도 snapshot이나 백업이 없는 한 복구할 수 없다.

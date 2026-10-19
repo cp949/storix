@@ -1,6 +1,8 @@
-// extract HTTP 계약을 두 DB wrapper가 공용으로 실행하는 시나리오다.
-// 실제 body parser, controller, receipt, repository, 트랜잭션을 거치며 source와 대상 부모는 mkdir·content API로 준비한다.
-// 규칙은 docs/design/17-file-extract.md "공개 계약"과 "실행". wrapper는 서버·DB·저장소를 준비해 context로 넘긴다.
+/**
+ * 두 DB wrapper가 실제 HTTP·receipt·트랜잭션을 거쳐 extract 계약을 검증한다.
+ * source와 대상 부모는 mkdir·content API로 준비한다. wrapper가 서버·DB·저장소를 제공한다.
+ * 규칙은 docs/design/17-file-extract.md "공개 계약"과 "실행"을 따른다.
+ */
 import { randomUUID } from 'node:crypto';
 import { jest } from '@jest/globals';
 import request from 'supertest';
@@ -564,6 +566,31 @@ export function registerExtractHttpScenarios(ctx: ExtractHttpContext): void {
       const replay = await extract(namespaceId, body, key);
       expect(replay.body).toEqual(first.body);
     }, 60000);
+
+    it.each([
+      { name: './asset/', type: '5' as const, existing: '/sites/site/asset' },
+      { name: './asset', type: '0' as const, existing: '/sites/site/asset/keep' },
+      { name: './asset/child', type: '0' as const, existing: '/sites/site/asset' },
+    ])(
+      '종류 충돌은 원본 $name 이름과 정규화한 대상 경로를 돌려준다',
+      async ({ name, type, existing }) => {
+        const namespaceId = await ctx.createNamespace();
+        await upload(namespaceId, existing, Buffer.from('keep'));
+        const common = await prepare(namespaceId, buildTar([{ name, type }]));
+        const key = randomUUID();
+        const body = { ...common, destination: '/sites/site', mode: 'overwrite' };
+        const first = await extract(namespaceId, body, key);
+        expect(first.status).toBe(409);
+        expect(first.body).toMatchObject({
+          code: 'VFS_EXTRACT_TYPE_CONFLICT',
+          entryIndex: 0,
+          entryName: name,
+          path: '/sites/site/asset',
+        });
+        expect((await extract(namespaceId, body, key)).body).toEqual(first.body);
+      },
+      60000,
+    );
 
     it('quota를 넘으면 413이고 대상·올린 object가 남지 않는다', async () => {
       const namespaceId = await ctx.createNamespace();

@@ -25,7 +25,7 @@ export interface ExtractCommitEntry {
   /** 오류 응답에 쓰는 선택 entry 순번이다. */
   readonly entryIndex: number;
 
-  /** 오류 응답에 쓰는 destination 기준 상대 이름이다. */
+  /** 오류 응답에 쓰는 archive 안의 원본 이름이다. */
   readonly name: string;
 
   /** destination 기준 상대 경로 segment다. */
@@ -191,7 +191,7 @@ export class VfsNodeRepositoryExtract extends VfsNodeRepositoryConditionals {
         throw new VfsExtractTypeConflictError(
           entry.entryIndex,
           entry.name,
-          `${destinationPath}/${entry.name}`,
+          `${destinationPath}/${entry.segments.join('/')}`,
         );
       if (existing && existing.version >= MAX_VFS_VERSION) throw new VfsRevisionExhaustedError();
 

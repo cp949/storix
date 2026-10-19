@@ -1,12 +1,15 @@
-// ZIP32 central directory reader의 entry 열거, STORED·DEFLATE 해제, local header·descriptor 대조, 거부 사례,
-// range 호출 방식, stream 소유권을 단위 테스트한다. 메모리 안의 Buffer range와 직접 만든 ZIP 바이트만 쓴다.
-// 규칙은 docs/design/17-file-extract.md "실행"과 "공개 계약"의 entry 거부 목록을 따른다.
+/**
+ * ZIP32 reader의 entry 열거·본문 해제·metadata 대조·거부 사례·range 호출·stream 소유권을 검증한다.
+ * 메모리 안의 Buffer range와 직접 만든 ZIP 바이트를 쓴다.
+ * 규칙은 docs/design/17-file-extract.md "실행"과 "공개 계약"을 따른다.
+ */
 import { jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import { ExtractReaderError } from '../../src/vfs/extract-reader-error.js';
 import { readZipEntries } from '../../src/vfs/zip-reader.js';
 import { bufferRanges, buildZip, centralDirectoryOffset, handZip } from './zip-fixture.test-support.js';
 
+/** 해제한 본문을 모아 fixture의 평문과 대조한다. */
 async function toBuffer(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(chunk as Buffer);
@@ -195,17 +198,21 @@ describe('readZipEntries local header·descriptor 대조', () => {
     await expect(collect(zip, false)).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
   });
 
-  it('descriptor의 CRC·크기가 central과 다르면 본문을 열 때 entry 오류다', async () => {
+  it('descriptor의 CRC·크기가 central과 다르면 순회 중 entry 오류다', async () => {
     for (const kind of ['signed', 'unsigned'] as const) {
       for (const descriptorOverride of [{ crc: 1 }, { compressedSize: 9 }, { uncompressedSize: 9 }]) {
         const zip = handZip([{ name: 'a', body: Buffer.from('abc'), descriptor: kind, descriptorOverride }]);
-        const entry = await firstEntry(zip);
-        await expect(entry.open()).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
+        await expect(collect(zip, false)).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
       }
     }
   });
 
-  it('descriptor가 12 byte보다 짧게 잘렸으면 순회 중, 16 byte signed가 12 byte로 잘렸으면 본문을 열 때 entry 오류다', async () => {
+  it.each(['skip.txt', 'folder/'])('본문을 열지 않는 %s도 손상 descriptor를 거부한다', async (name) => {
+    const zip = handZip([{ name, descriptor: 'signed', descriptorOverride: { crc: 1 } }]);
+    await expect(collect(zip, false)).rejects.toMatchObject({ kind: 'entry', entryName: name });
+  });
+
+  it('descriptor가 12 byte보다 짧거나 16 byte signed가 12 byte로 잘렸으면 순회 중 entry 오류다', async () => {
     const zip = handZip([{ name: 'a', body: Buffer.from('abc'), descriptor: 'signed' }]);
     const cd = centralDirectoryOffset(zip);
     const cutBy = (bytes: number): Buffer => {
@@ -214,8 +221,7 @@ describe('readZipEntries local header·descriptor 대조', () => {
       return cut;
     };
     await expect(collect(cutBy(8))).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
-    const entry = await firstEntry(cutBy(4));
-    await expect(entry.open()).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
+    await expect(collect(cutBy(4), false)).rejects.toMatchObject({ kind: 'entry', entryName: 'a' });
   });
 });
 
@@ -292,14 +298,15 @@ describe('readZipEntries 형식 거부', () => {
     await expect(collect(zip)).rejects.toMatchObject({ kind: 'entry' });
   });
 
-  it('EOCD가 없거나 짧으면 형식 오류다', async () => {
-    await expect(collect(Buffer.alloc(100))).rejects.toMatchObject({ kind: 'format' });
-    await expect(collect(Buffer.alloc(10))).rejects.toMatchObject({ kind: 'format' });
+  it('EOCD가 없거나 짧으면 entry 오류다', async () => {
+    await expect(collect(Buffer.alloc(100))).rejects.toMatchObject({ kind: 'entry', entryName: '' });
+    await expect(collect(Buffer.alloc(10))).rejects.toMatchObject({ kind: 'entry', entryName: '' });
   });
 
-  it('EOCD 필드가 서로 맞지 않으면 형식 오류다', async () => {
+  it('EOCD 필드가 서로 맞지 않으면 entry 오류이고 zip64 sentinel은 형식 오류다', async () => {
     await expect(collect(handZip([{ name: 'a' }], { cdEntriesOverride: 2 }))).rejects.toMatchObject({
-      kind: 'format',
+      kind: 'entry',
+      entryName: '',
     });
     const sentinel = handZip([{ name: 'a' }]);
     sentinel.writeUInt16LE(0xffff, eocdOffset(sentinel) + 10);
@@ -307,34 +314,34 @@ describe('readZipEntries 형식 거부', () => {
     await expect(collect(sentinel)).rejects.toMatchObject({ kind: 'format' });
     const shifted = handZip([{ name: 'a', body: Buffer.from('x') }]);
     shifted.writeUInt32LE(shifted.length, eocdOffset(shifted) + 16);
-    await expect(collect(shifted)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(shifted)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
     const size = handZip([{ name: 'a', body: Buffer.from('x') }]);
     size.writeUInt32LE(size.readUInt32LE(eocdOffset(size) + 12) - 1, eocdOffset(size) + 12);
-    await expect(collect(size)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(size)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
   });
 
-  it('entry 수가 central directory record 수와 다르면 형식 오류다', async () => {
+  it('entry 수가 central directory record 수와 다르면 entry 오류다', async () => {
     const more = handZip([{ name: 'a', body: Buffer.from('x') }]);
     more.writeUInt16LE(2, eocdOffset(more) + 8);
     more.writeUInt16LE(2, eocdOffset(more) + 10);
-    await expect(collect(more)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(more)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
     const fewer = handZip([{ name: 'a', body: Buffer.from('x') }]);
     fewer.writeUInt16LE(0, eocdOffset(fewer) + 8);
     fewer.writeUInt16LE(0, eocdOffset(fewer) + 10);
-    await expect(collect(fewer)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(fewer)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
   });
 
-  it('central record의 가변 필드와 extra TLV가 잘리면 형식 오류다', async () => {
+  it('central record의 가변 필드·extra TLV·signature 손상은 entry 오류다', async () => {
     const name = handZip([{ name: 'a', body: Buffer.from('x') }]);
     name.writeUInt16LE(5000, centralDirectoryOffset(name) + 28);
-    await expect(collect(name)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(name)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
     const extra = handZip([
       { name: 'a', body: Buffer.from('x'), extra: Buffer.from([0x99, 0x00, 0x05, 0x00, 0x01]) },
     ]);
-    await expect(collect(extra)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(extra)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
     const signature = handZip([{ name: 'a', body: Buffer.from('x') }]);
     signature.writeUInt32LE(0, centralDirectoryOffset(signature));
-    await expect(collect(signature)).rejects.toMatchObject({ kind: 'format' });
+    await expect(collect(signature)).rejects.toMatchObject({ kind: 'entry', entryName: '' });
   });
 });
 

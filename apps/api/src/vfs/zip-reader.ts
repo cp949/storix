@@ -69,11 +69,7 @@ async function readExact(
   entryName?: string,
 ): Promise<Buffer> {
   if (start < 0n || start + BigInt(length) > input.size)
-    throw new ExtractReaderError(
-      entryName === undefined ? 'format' : 'entry',
-      `${what} 범위가 FILE 밖`,
-      entryName,
-    );
+    throw new ExtractReaderError('entry', `${what} 범위가 FILE 밖`, entryName ?? '');
   if (length === 0) return Buffer.alloc(0);
   const bytes = await input.readRange(start, length);
   if (bytes.length !== length) throw new Error(`range read 길이 불일치: ${what}`);
@@ -89,7 +85,7 @@ function hasZip64Extra(extra: Buffer): boolean {
   let found = false;
   while (offset < extra.length) {
     if (offset + 4 > extra.length || offset + 4 + extra.readUInt16LE(offset + 2) > extra.length)
-      throw new ExtractReaderError('format', 'extra 필드 잘림');
+      throw new ExtractReaderError('entry', 'extra 필드 잘림', '');
     if (extra.readUInt16LE(offset) === ZIP64_EXTRA_ID) found = true;
     offset += 4 + extra.readUInt16LE(offset + 2);
   }
@@ -98,7 +94,7 @@ function hasZip64Extra(extra: Buffer): boolean {
 
 /** 끝 최대 65557 byte를 읽어 EOCD를 찾고 central directory 위치를 검증한다. */
 async function readEocd(input: ZipInput): Promise<{ entryCount: number; cdSize: number; cdOffset: number }> {
-  if (input.size < BigInt(EOCD_MIN)) throw new ExtractReaderError('format', 'ZIP end record 없음');
+  if (input.size < BigInt(EOCD_MIN)) throw new ExtractReaderError('entry', 'ZIP end record 없음', '');
   const tailLength = Number(
     input.size < BigInt(EOCD_MIN + EOCD_MAX_COMMENT) ? input.size : BigInt(EOCD_MIN + EOCD_MAX_COMMENT),
   );
@@ -115,13 +111,13 @@ async function readEocd(input: ZipInput): Promise<{ entryCount: number; cdSize: 
     const cdOffset = tail.readUInt32LE(offset + 16);
     if (entryCount === 0xffff || cdSize === MAX_U32 || cdOffset === MAX_U32 || entriesOnDisk === 0xffff)
       throw new ExtractReaderError('format', 'zip64');
-    if (entriesOnDisk !== entryCount) throw new ExtractReaderError('format', 'EOCD entry 수 불일치');
+    if (entriesOnDisk !== entryCount) throw new ExtractReaderError('entry', 'EOCD entry 수 불일치', '');
     const eocdStart = input.size - BigInt(tailLength) + BigInt(offset);
     if (BigInt(cdOffset) + BigInt(cdSize) !== eocdStart)
-      throw new ExtractReaderError('format', 'central directory 범위가 EOCD와 맞지 않음');
+      throw new ExtractReaderError('entry', 'central directory 범위가 EOCD와 맞지 않음', '');
     return { entryCount, cdSize, cdOffset };
   }
-  throw new ExtractReaderError('format', 'ZIP end record 없음');
+  throw new ExtractReaderError('entry', 'ZIP end record 없음', '');
 }
 
 /**
@@ -159,10 +155,10 @@ async function readCentralEntry(
   cdEnd: bigint,
 ): Promise<{ entry: CentralEntry; next: bigint }> {
   if (offset + BigInt(CENTRAL_FIXED) > cdEnd)
-    throw new ExtractReaderError('format', 'central directory record 잘림');
+    throw new ExtractReaderError('entry', 'central directory record 잘림', '');
   const fixed = await window.read(offset, CENTRAL_FIXED, 'central directory');
   if (fixed.readUInt32LE(0) !== CENTRAL_SIGNATURE)
-    throw new ExtractReaderError('format', 'central directory signature 없음');
+    throw new ExtractReaderError('entry', 'central directory signature 없음', '');
   const madeBy = fixed.readUInt16LE(4);
   const flags = fixed.readUInt16LE(8);
   const method = fixed.readUInt16LE(10);
@@ -177,7 +173,7 @@ async function readCentralEntry(
   const localHeaderOffset = fixed.readUInt32LE(42);
   const variableStart = offset + BigInt(CENTRAL_FIXED);
   const next = variableStart + BigInt(nameLength + extraLength + commentLength);
-  if (next > cdEnd) throw new ExtractReaderError('format', 'central directory 가변 필드 잘림');
+  if (next > cdEnd) throw new ExtractReaderError('entry', 'central directory 가변 필드 잘림', '');
   if (diskStart !== 0) throw new ExtractReaderError('format', 'multi-disk ZIP');
   if (flags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION | FLAG_MASKED_HEADER))
     throw new ExtractReaderError('format', '암호화 ZIP');
@@ -237,7 +233,7 @@ async function verifyLocalHeader(input: ZipInput, entry: CentralEntry, cdOffset:
   )
     throw new ExtractReaderError('entry', 'local header placeholder가 central과 다름', entry.name);
   const dataStart = start + BigInt(LOCAL_FIXED + nameLength + extraLength);
-  // descriptor는 12 byte(signature 없음) 이상 필요하다. 16 byte 여부는 열 때 확인한다.
+  // descriptor는 12 byte(signature 없음) 이상 필요하다. 정확한 길이와 값은 이어지는 metadata 검증에서 확인한다.
   const tail = hasDescriptor ? 12n : 0n;
   if (dataStart + BigInt(entry.compressedSize) + tail > cdOffset)
     throw new ExtractReaderError('entry', 'entry 본문이 central directory와 겹침', entry.name);
@@ -323,15 +319,8 @@ function translateStreamError(error: Error | null, entryName: string): Error | n
   return error;
 }
 
-/** 본문 stream을 연다. descriptor는 열기 전에 검증한다. */
-async function openEntry(
-  input: ZipInput,
-  entry: CentralEntry,
-  dataStart: bigint,
-  cdOffset: bigint,
-): Promise<Readable> {
-  input.signal.throwIfAborted();
-  await verifyDescriptor(input, entry, dataStart, cdOffset);
+/** header·descriptor 검증을 마친 entry의 본문 stream을 연다. */
+async function openEntry(input: ZipInput, entry: CentralEntry, dataStart: bigint): Promise<Readable> {
   input.signal.throwIfAborted();
   const verify = verifying(entry);
   if (entry.compressedSize === 0) {
@@ -366,7 +355,7 @@ async function openEntry(
 
 /**
  * central directory 순서대로 entry를 돌려준다. 선택 entry 수 한도는 적용하지 않는다.
- * local header 검증은 entry를 돌려주기 전에 끝낸다. DIRECTORY와 제외될 entry도 같다.
+ * local header·descriptor 검증은 entry를 돌려주기 전에 끝낸다. DIRECTORY와 제외될 entry도 같다.
  */
 export async function* readZipEntries(input: ZipInput): AsyncGenerator<ExtractSourceEntry> {
   const eocd = await readEocd(input);
@@ -380,6 +369,7 @@ export async function* readZipEntries(input: ZipInput): AsyncGenerator<ExtractSo
     cursor = next;
     if (entry.isSymlink) throw new ExtractReaderError('entry', 'symlink entry', entry.name);
     const dataStart = await verifyLocalHeader(input, entry, cdOffset);
+    await verifyDescriptor(input, entry, dataStart, cdOffset);
     if (entry.name.endsWith('/')) {
       // 일부 도구는 DIRECTORY를 빈 DEFLATE 스트림(압축 크기 2)으로 저장한다. 평문 크기만 0을 요구한다.
       if (entry.size !== 0)
@@ -402,9 +392,10 @@ export async function* readZipEntries(input: ZipInput): AsyncGenerator<ExtractSo
       open: async () => {
         if (opened) throw new Error('zip entry body opened twice');
         opened = true;
-        return openEntry(input, entry, dataStart, cdOffset);
+        return openEntry(input, entry, dataStart);
       },
     };
   }
-  if (cursor !== cdEnd) throw new ExtractReaderError('format', 'central directory 크기와 record 합이 다름');
+  if (cursor !== cdEnd)
+    throw new ExtractReaderError('entry', 'central directory 크기와 record 합이 다름', '');
 }
