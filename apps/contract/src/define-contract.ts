@@ -12,7 +12,9 @@ export type ProfileName =
   | 'resumable-upload'
   | 'change-feed-prefix'
   | 'resumable-upload-prefix'
-  | 'archive';
+  | 'archive'
+  | 'extract'
+  | 'extract-limits';
 
 /** 계약이 호출한 HTTP 응답. */
 export interface ApiResponse {
@@ -71,6 +73,12 @@ export interface ApiClient {
     body: object,
     options?: MutationOptions & { readonly expiresInSeconds?: number },
   ): Promise<ApiResponse>;
+
+  /**
+   * `POST /fs/extract`로 압축 FILE을 대상 DIRECTORY에 푼다. `body`는 JSON으로 직렬화해 그대로 보낸다.
+   * 필수 필드는 `{ source, sourceRevision, destination, mode }`다.
+   */
+  extract(namespaceId: string, body: object, options?: MutationOptions): Promise<ApiResponse>;
 
   /** `GET /fs/snapshots/{id}`로 snapshot 메타데이터를 읽는다. */
   getSnapshot(namespaceId: string, snapshotId: string): Promise<ApiResponse>;

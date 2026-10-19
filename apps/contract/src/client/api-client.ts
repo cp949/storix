@@ -157,6 +157,13 @@ export function createApiClient(
       });
     },
 
+    extract(namespaceId: string, body: object, options: MutationOptions = {}) {
+      return request('POST', `/api/v2/namespaces/${namespaceId}/fs/extract`, {
+        headers: jsonHeaders(options),
+        body: JSON.stringify(body),
+      });
+    },
+
     getNamespace(namespaceId: string) {
       return request('GET', `/api/v2/namespaces/${namespaceId}`);
     },

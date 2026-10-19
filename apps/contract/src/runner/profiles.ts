@@ -8,6 +8,10 @@ export const PROFILE_ENV: Readonly<Record<ProfileName, Readonly<Record<string, s
   'change-feed-prefix': {},
   'resumable-upload-prefix': {},
   archive: { STORIX_ENCRYPTION_MASTER_KEY: 'a'.repeat(64) },
+  extract: {},
+
+  // 해제 한도 계약용. 선택 entry는 2개, 평문 합계는 32 byte까지 허용한다. 전역 한도라 기동 설정으로 준다.
+  'extract-limits': { STORIX_EXTRACT_MAX_ENTRIES: '2', STORIX_EXTRACT_MAX_TOTAL_BYTES: '32' },
 
   // 한도 초과 계약용. 전역 한도는 프로세스 시작 때 한 번 읽으므로 기동 설정으로 준다(docs/design/04).
   // 700바이트 파일은 모든 한도 안이고, snapshot을 만들면 사용량 1400, 새 경로로 복원하면 2100이라 논리 상한을 넘는다.
@@ -34,6 +38,8 @@ export const PROFILE_CAPABILITIES: Readonly<Partial<Record<ProfileName, readonly
   'resumable-upload': ['resumable-upload'],
   'resumable-upload-prefix': ['resumable-upload'],
   archive: ['archive'],
+  extract: ['extract'],
+  'extract-limits': ['extract'],
 };
 
 /**
