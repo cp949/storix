@@ -6,13 +6,13 @@ import { BlobRepository } from './blob.repository.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
-import { VfsNodeRepositoryConditionals } from './vfs-node.repository.conditionals.js';
+import { VfsNodeRepositoryExtract } from './vfs-node.repository.extract.js';
 import { VfsTrashRepository } from './vfs-trash.repository.js';
 
 export * from './vfs-node.repository.types.js';
 
 @Injectable()
-export class VfsNodeRepository extends VfsNodeRepositoryConditionals {
+export class VfsNodeRepository extends VfsNodeRepositoryExtract {
   constructor(
     @InjectRepository(NamespaceEntity) namespaceRepo: Repository<NamespaceEntity>,
     @InjectRepository(VfsNodeEntity) nodeRepo: Repository<VfsNodeEntity>,

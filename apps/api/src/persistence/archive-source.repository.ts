@@ -17,6 +17,7 @@ import {
 } from '../vfs/vfs.errors.js';
 import { decodeRevision, encodeRevision } from '../vfs/revision.js';
 import { toPreconditionCurrent } from '../vfs/dto/node-response.dto.js';
+import { isDbDeadlinePassed, readDbWallClock } from './db-deadline.js';
 import { BlobEntity } from './entities/blob.entity.js';
 import { NamespaceEntity } from './entities/namespace.entity.js';
 import { VfsNodeEntity } from './entities/vfs-node.entity.js';
@@ -111,12 +112,7 @@ export class ArchiveSourceRepository {
     limits: { readonly maxEntries: number; readonly maxSourceBytes: bigint; readonly maxSeconds: number },
   ): Promise<ArchiveSourceCapture> {
     const work = async (manager: EntityManager): Promise<ArchiveSourceCapture> => {
-      const [{ now }] = (await manager.query(
-        this.isSqlite
-          ? "SELECT strftime('%Y-%m-%d %H:%M:%f', 'now') AS now"
-          : 'SELECT clock_timestamp() AS now',
-      )) as { now: Date | string }[];
-      const dbNow = now instanceof Date ? now : new Date(`${now}${now.endsWith('Z') ? '' : 'Z'}`);
+      const dbNow = await readDbWallClock(manager, this.isSqlite);
       const deadlineAt = new Date(dbNow.getTime() + limits.maxSeconds * 1000);
 
       if (command.entries.length === 0) throw new VfsArchiveInvalidRequestError();
@@ -210,13 +206,8 @@ export class ArchiveSourceRepository {
   /** 최종 mutation transaction에서 DB wall-clock deadline을 검사한다. */
   @classifyPersistenceOperation
   async assertDeadline(manager: EntityManager, deadlineAt: Date): Promise<void> {
-    const [{ expired }] = (await manager.query(
-      this.isSqlite
-        ? "SELECT julianday('now') >= julianday(?) AS expired"
-        : 'SELECT clock_timestamp() >= $1::timestamptz AS expired',
-      [deadlineAt.toISOString()],
-    )) as { expired: boolean | number }[];
-    if (expired === true || expired === 1) throw new VfsArchiveDeadlineExceededError();
+    if (await isDbDeadlinePassed(manager, this.isSqlite, deadlineAt))
+      throw new VfsArchiveDeadlineExceededError();
   }
 
   private get isSqlite(): boolean {

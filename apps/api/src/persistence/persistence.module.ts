@@ -26,6 +26,7 @@ import { VfsTrashRetentionRepository } from './vfs-trash-retention.repository.js
 import { VfsFileExpiryRepository } from './vfs-file-expiry.repository.js';
 import { StoragePutOwnershipRepository } from './storage-put-ownership.repository.js';
 import { ArchiveSourceRepository } from './archive-source.repository.js';
+import { ExtractSourceRepository } from './extract-source.repository.js';
 
 // SQLite는 기본적으로 ASCII 대소문자 무시로 LIKE를 평가한다(Postgres는 대소문자
 // 구분) — findRecursive의 name 필터(contains/prefix/suffix)가 두 드라이버에서
@@ -101,6 +102,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     NamespacePurgeRepository,
     StoragePutOwnershipRepository,
     ArchiveSourceRepository,
+    ExtractSourceRepository,
     SqliteCaseSensitiveLikeInitializer,
   ],
   exports: [
@@ -126,6 +128,7 @@ class SqliteCaseSensitiveLikeInitializer implements OnModuleInit {
     NamespacePurgeRepository,
     StoragePutOwnershipRepository,
     ArchiveSourceRepository,
+    ExtractSourceRepository,
   ],
 })
 export class PersistenceModule {}
