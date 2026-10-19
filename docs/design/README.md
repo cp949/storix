@@ -30,3 +30,4 @@
 | [14-namespace-limits-and-counters.md](./14-namespace-limits-and-counters.md) | namespace별 default·ceiling·counter 제한, quota 구성요소 제외와 관리자 설정 API                                       |
 | [15-secret-sources.md](./15-secret-sources.md)                               | 비밀값 `_FILE`·`_REF` 규약, 해석 위치·규칙·실패 정책, 통신형 어댑터 계약과 자식 프로세스 환경                         |
 | [16-file-archive.md](./16-file-archive.md)                                   | 선택 FILE archive 계약, ZIP writer 범위, 원본 보존 전제와 운영 절차                                                   |
+| [17-file-extract.md](./17-file-extract.md)                                   | 압축 FILE 해제 계약: zip·tar·tar.gz 범위, overwrite·clean, exclude·dryRun, 원자적 반영과 실패 경계, 운영 상한         |

@@ -799,6 +799,29 @@ snapshot 규칙:
 
 상세 계약은 [설계 문서](docs/design/16-file-archive.md)와 [OpenAPI](apps/api/openapi.yaml)를 따른다.
 
+### 압축 FILE 해제
+
+`POST /api/v2/namespaces/{namespaceId}/fs/extract`는 같은 namespace에 저장된 zip·tar·tar.gz FILE을 대상 DIRECTORY에 한 트랜잭션으로 푼다.
+서비스 Bearer key로 인증하고 `Idempotency-Key`·`X-Mutation-Scope`가 필수다. `extract` capability는 기본 비활성이다.
+
+활성화 순서:
+
+1. `STORIX_VFS_CAPABILITIES_CONFIG_PATH`의 시작 JSON 설정에서 전역과 해당 namespace(또는 `defaultEnabledCapabilities`)에 `extract`를 허용한다.
+2. `STORIX_ORPHAN_GRACE_PERIOD`가 `STORIX_EXTRACT_MAX_SECONDS + 60` 이상인지 확인한다. `extract`를 전역 허용한 app은 위반 시 시작을 거부한다.
+3. app을 재시작한다. API와 GC에 같은 `STORIX_ORPHAN_GRACE_PERIOD`를 준다.
+
+규칙:
+
+- 모드는 `overwrite`(같은 경로 FILE의 id를 유지하고 나머지는 남김)와 `clean`(대상 subtree를 지운 뒤 만듦)이다. `clean`은 대상 안에 있는 압축 FILE도 지우며, 휴지통이 꺼진 namespace에서는 복구할 수 없다.
+- `exclude`로 건너뛸 이름을, `mimeTypes`로 확장자별 MIME을 정한다. 서버는 MIME을 추론하지 않는다. `dryRun`으로 선택 entry 목록만 미리 볼 수 있다.
+- 선택 entry 수는 기본 1000개(설정 최대 10000), 제외 FILE을 포함한 평문 합계는 1 GiB, 압축비는 100, JSON 본문은 64 KiB가 상한이다.
+- 요청은 동기이며 `STORIX_EXTRACT_MAX_SECONDS`(기본 600초)까지 걸릴 수 있다. 프록시 timeout과 `STORIX_SHUTDOWN_TIMEOUT_SECONDS`를 이보다 길게 두거나, 끊긴 요청을 같은 key로 재시도한다.
+- entry 단위 오류(400, 409 종류 충돌)는 선택 순번 `entryIndex`와 `entryName`을 돌려준다.
+- 프로세스 gate(기본 동시 1개)가 차면 503 `VFS_EXTRACT_BUSY`와 `Retry-After`다.
+- 실행 중 원본 보존은 GC grace에 기대며 보장이 아니다. 결정은 [api ADR-0049](apps/api/docs/adr/0049-extract-reader-scope.md)와 [api ADR-0048](apps/api/docs/adr/0048-archive-source-grace.md)이다.
+
+상세 계약은 [설계 문서](docs/design/17-file-extract.md)와 [OpenAPI](apps/api/openapi.yaml)를 따른다.
+
 ## 개발
 
 호스트 실행 요구사항:

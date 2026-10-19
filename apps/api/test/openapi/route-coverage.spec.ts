@@ -770,3 +770,102 @@ it('archive 계약은 실제 오류 응답·헤더·archiveEntry 스키마를 �
   expect(archivePrecondition.allOf[0]).toEqual({ $ref: '#/components/schemas/PreconditionFailedResponse' });
   expect(archivePrecondition.allOf[1].properties.archiveEntry).toEqual({ type: 'integer', minimum: 0 });
 });
+
+// extract의 공개 요청·응답·오류 계약은 수기 openapi.yaml이 코드와 어긋나기 쉬운 지점이라 필드 단위로 고정한다.
+it('extract 요청·응답·오류 계약과 receipt 규칙을 명시한다', () => {
+  const spec = parse(readFileSync(join(currentDir, '../../openapi.yaml'), 'utf8'));
+  const operation = spec.paths['/api/v2/namespaces/{namespaceId}/fs/extract'].post;
+  expect(operation.operationId).toBe('extractArchive');
+  expect(operation.parameters).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+      expect.objectContaining({ name: 'X-Mutation-Scope', in: 'header', required: true }),
+    ]),
+  );
+  expect(operation.requestBody.content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/ExtractRequest',
+  });
+
+  const request = spec.components.schemas.ExtractRequest;
+  expect(request.additionalProperties).toBe(false);
+  expect(request.required).toEqual(['source', 'sourceRevision', 'destination', 'mode']);
+  expect(Object.keys(request.properties).sort()).toEqual(
+    [
+      'destination',
+      'destinationRevision',
+      'dryRun',
+      'exclude',
+      'mimeTypes',
+      'mode',
+      'source',
+      'sourceRevision',
+    ].sort(),
+  );
+  expect(request.properties.mode.enum).toEqual(['overwrite', 'clean']);
+  expect(request.properties.exclude).toMatchObject({
+    type: 'array',
+    maxItems: 64,
+    items: { type: 'string', minLength: 1, maxLength: 1024 },
+  });
+  expect(request.properties.mimeTypes).toMatchObject({
+    type: 'object',
+    maxProperties: 256,
+    'x-propertyNamePattern': '^\\.[a-z0-9]{1,32}$',
+  });
+  expect(request.properties.dryRun).toMatchObject({ type: 'boolean', default: false });
+
+  expect(Object.keys(operation.responses)).toEqual(
+    expect.arrayContaining(['200', '201', '400', '401', '404', '409', '412', '413', '500', '503']),
+  );
+  expect(operation.responses['200'].content['application/json'].schema.oneOf).toEqual([
+    { $ref: '#/components/schemas/ExtractApplied' },
+    { $ref: '#/components/schemas/ExtractDryRun' },
+  ]);
+  expect(operation.responses['201'].content['application/json'].schema).toEqual({
+    $ref: '#/components/schemas/ExtractApplied',
+  });
+  expect(operation.responses['503']).toHaveProperty('headers.Retry-After.schema.type', 'integer');
+  expect(operation.responses['409']).toHaveProperty('headers.Retry-After.schema.type', 'integer');
+  for (const code of [
+    'VFS_INVALID_EXTRACT_REQUEST',
+    'VFS_INVALID_REVISION',
+    'VFS_EXTRACT_UNSUPPORTED_FORMAT',
+    'VFS_EXTRACT_INVALID_ENTRY',
+  ])
+    expect(operation.responses['400'].description).toContain(code);
+  expect(operation.responses['404'].description).toContain('VFS_NODE_NOT_FOUND');
+  for (const code of ['VFS_FEATURE_DISABLED', 'VFS_NOT_DIRECTORY', 'VFS_EXTRACT_TYPE_CONFLICT'])
+    expect(operation.responses['409'].description).toContain(code);
+  // 해제 한도 413은 receipt로 재생하고 parser 한도 413은 fingerprint 전이라 receipt가 없다.
+  expect(operation.responses['413'].description).toContain('VFS_EXTRACT_TOO_LARGE');
+  expect(operation.responses['413'].description).toContain('BAD_REQUEST');
+  expect(operation.responses['503'].description).toContain('VFS_EXTRACT_BUSY');
+  expect(operation.responses['503'].description).toContain('VFS_EXTRACT_TIMEOUT');
+
+  const applied = spec.components.schemas.ExtractApplied;
+  expect(applied.required).toEqual(
+    expect.arrayContaining(['resource', 'affectedRevisions', 'entryCount', 'createdCount', 'replacedCount']),
+  );
+  expect(applied.properties).toHaveProperty('trashId');
+  expect(applied.required).not.toContain('trashId');
+  const dryRun = spec.components.schemas.ExtractDryRun;
+  expect(dryRun.required).toEqual(['format', 'entryCount', 'totalBytes', 'entries']);
+  expect(dryRun.properties.format.enum).toEqual(['zip', 'tar', 'tar.gz']);
+  const entryError = spec.components.schemas.ExtractErrorResponse;
+  expect(JSON.stringify(entryError)).toContain('entryIndex');
+  expect(JSON.stringify(entryError)).toContain('entryName');
+  expect(JSON.stringify(entryError)).not.toContain('limit');
+
+  // 공통 오류 표와 capability 안내에 extract가 빠지면 소비자가 코드를 찾지 못한다.
+  for (const code of [
+    'VFS_INVALID_EXTRACT_REQUEST',
+    'VFS_EXTRACT_UNSUPPORTED_FORMAT',
+    'VFS_EXTRACT_INVALID_ENTRY',
+    'VFS_EXTRACT_TYPE_CONFLICT',
+    'VFS_EXTRACT_TOO_LARGE',
+    'VFS_EXTRACT_BUSY',
+    'VFS_EXTRACT_TIMEOUT',
+  ])
+    expect(spec.info.description).toContain(code);
+  expect(spec.info.description).toMatch(/기본 비활성 [^\n]*`extract`/);
+});

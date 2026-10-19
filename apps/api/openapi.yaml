@@ -165,31 +165,32 @@ info:
     | --- | ---: | --- | --- | --- |
     | `UNAUTHORIZED` | 401 | 인증을 갱신한 뒤 가능; receipt 없음 | 인증 문제를 고친 뒤 같은 key 가능 | 없음 |
     | `NAMESPACE_NOT_FOUND`, `NAMESPACE_DELETION_NOT_FOUND`, `VFS_NODE_NOT_FOUND`, `VFS_SNAPSHOT_NOT_FOUND` | 404 | 같은 상태에서는 재평가; 조건부 receipt가 있으면 최초 결과 재생 | 새 key | 없음 |
-    | `VFS_INVALID_PATH`, `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`, `VFS_INVALID_ARCHIVE_REQUEST`, `VFS_INVALID_CURSOR`, `VFS_INVALID_QUERY`, `IDEMPOTENCY_KEY_REQUIRED`, `NAMESPACE_INVALID_NAME`, `NAMESPACE_INVALID_ID_PREFIX`, `NAMESPACE_INVALID_ENCRYPTION_POLICY`, `NAMESPACE_INVALID_ACCESS_POLICY`, `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`, `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, `NAMESPACE_ENCRYPTION_NOT_CONFIGURED`, `NAMESPACE_INVALID_DELETE_REQUEST` | 400 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
-    | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_ALREADY_EXISTS`, `VFS_VERSION_CONFLICT`, `VFS_INVALID_OPERATION`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_REVISION_EXHAUSTED`, `VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`, `VFS_FEATURE_DISABLED` | 409 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
+    | `VFS_INVALID_PATH`, `VFS_INVALID_MUTATION_REQUEST`, `VFS_INVALID_REVISION`, `VFS_INVALID_ARCHIVE_REQUEST`, `VFS_INVALID_EXTRACT_REQUEST`, `VFS_EXTRACT_UNSUPPORTED_FORMAT`, `VFS_EXTRACT_INVALID_ENTRY`, `VFS_INVALID_CURSOR`, `VFS_INVALID_QUERY`, `IDEMPOTENCY_KEY_REQUIRED`, `NAMESPACE_INVALID_NAME`, `NAMESPACE_INVALID_ID_PREFIX`, `NAMESPACE_INVALID_ENCRYPTION_POLICY`, `NAMESPACE_INVALID_ACCESS_POLICY`, `NAMESPACE_PUBLIC_ENCRYPTION_CONFLICT`, `NAMESPACE_INVALID_TOTAL_LOGICAL_BYTES`, `NAMESPACE_QUOTA_LIMIT_EXCEEDS_GLOBAL`, `NAMESPACE_ENCRYPTION_NOT_CONFIGURED`, `NAMESPACE_INVALID_DELETE_REQUEST` | 400 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
+    | `VFS_NOT_DIRECTORY`, `VFS_IS_DIRECTORY`, `VFS_ALREADY_EXISTS`, `VFS_VERSION_CONFLICT`, `VFS_INVALID_OPERATION`, `VFS_DIRECTORY_NOT_EMPTY`, `VFS_REVISION_EXHAUSTED`, `VFS_PRESIGNED_ENCRYPTED_UNSUPPORTED`, `VFS_EXTRACT_TYPE_CONFLICT`, `VFS_FEATURE_DISABLED` | 409 | 조건부 receipt가 저장한 요청이면 최초 오류 재생; 그 외 재평가 | 새 key | 없음 |
     | `NAMESPACE_ALREADY_EXISTS` | 409 | namespace idempotency receipt가 저장한 409를 같은 key에서 반환 | name/body를 고치려면 새 key | 없음 |
     | `MUTATION_IN_PROGRESS` | 409 | 같은 key로 재시도 | 해당 없음 | 있으면 대기 |
     | `MUTATION_KEY_REUSED` | 409 | 기존 mutation receipt와 fingerprint가 다름; 기존 receipt를 변경하지 않음 | 새 key | 없음 |
     | `IDEMPOTENCY_KEY_REUSED` | 422 | namespace idempotency key에 다른 본문이 저장되어 있음 | 새 key | 없음 |
     | `VFS_PRECONDITION_FAILED` | 412 | 저장된 최초 충돌 응답 재생 | 최신 revision/조건으로 새 key | 없음 |
-    | `VFS_FILE_TOO_LARGE`, `VFS_UPLOAD_STAGING_FILE_TOO_LARGE`, `VFS_ARCHIVE_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key; 세션 생성은 같은 key, 조각 PUT은 같은 세션·index로 재평가 | 없음 |
+    | `VFS_FILE_TOO_LARGE`, `VFS_UPLOAD_STAGING_FILE_TOO_LARGE`, `VFS_ARCHIVE_TOO_LARGE`, `VFS_EXTRACT_TOO_LARGE`, `VFS_DELETE_LIMIT_EXCEEDED`, `VFS_COPY_LIMIT_EXCEEDED`, `VFS_MOVE_LIMIT_EXCEEDED`, `VFS_SNAPSHOT_LIMIT_EXCEEDED`, `VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED` | 413 | 조건부 receipt가 저장한 오류는 재생; 업로드 크기 초과는 재평가 | 상한/입력을 고친 뒤 새 key; 세션 생성은 같은 key, 조각 PUT은 같은 세션·index로 재평가 | 없음 |
     | `VFS_PRECONDITION_REQUIRED` | 428 | 저장된 조건부 오류는 재생 | 조건을 추가한 뒤 새 key | 없음 |
     | `VFS_INVALID_RANGE`, `VFS_RANGE_NOT_SATISFIABLE` | 416 | 조회를 다시 평가 | range 입력을 고친 뒤 조회 재시도 | 없음 |
     | `DB_BUSY` | 503 | 같은 key로 재시도; receipt 없음 | 해당 없음 | 통상 `1` |
     | `VFS_ARCHIVE_BUSY`, `VFS_ARCHIVE_TIMEOUT` | 503 | 같은 key로 재시도; receipt 없음. 재시도 횟수는 호출자가 제한 | 해당 없음 | `VFS_ARCHIVE_BUSY`만 제공 |
+    | `VFS_EXTRACT_BUSY`, `VFS_EXTRACT_TIMEOUT` | 503 | 같은 key로 재시도; receipt 없음. 재시도 횟수는 호출자가 제한 | 해당 없음 | `VFS_EXTRACT_BUSY`만 제공 |
     | `STORAGE_UNAVAILABLE` | 503 | 같은 key로 재시도; 완료 receipt가 있으면 재생 | 해당 없음 | 있을 때만 준수 |
     | `STORAGE_FAILURE` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
     | `INTERNAL_ERROR` | 500 | 자동 재시도하지 말고 원인 조사; 결과 불명확 시 안전성 확인 후 같은 key로 평가 | 원인을 해결한 뒤 판단 | 없음 |
 
     **변경 요청 헤더 오류.** `content/conditional`, `mutations`, `snapshots`(생성·복원·삭제), `upload-sessions` 생성,
-    휴지통 `restore`, `archive`는 `Idempotency-Key`(UUID 형식)와 `X-Mutation-Scope`(비어 있지 않고 헤더로 전송된 128 byte 이하) 중 하나라도
+    휴지통 `restore`, `archive`, `extract`는 `Idempotency-Key`(UUID 형식)와 `X-Mutation-Scope`(비어 있지 않고 헤더로 전송된 128 byte 이하) 중 하나라도
     없거나 형식이 틀리면 400 `VFS_INVALID_MUTATION_REQUEST`다. 이 요청은 receipt를 남기지 않으므로 헤더를 고쳐 같은
     key로 다시 보낼 수 있다. `IDEMPOTENCY_KEY_REQUIRED`는 이 endpoint들이 아니라 namespace 생성, 관리자 PATCH,
     namespace 삭제 접수가 key를 보내지 않았을 때의 코드이며, namespace 생성은 key 형식을 검증하지 않는다.
     namespace 삭제 접수는 비어 있지 않은 문자열이면 형식을 제한하지 않고, UTF-8 255바이트를 넘으면
     400 `NAMESPACE_INVALID_DELETE_REQUEST`다.
 
-    `VFS_FEATURE_DISABLED`의 메시지에는 비활성 capability ID가 포함된다. 현재 등록된 선택 capability는 기본 비활성 `resumable-upload`, `change-feed`, `archive`이며, 활성 상태는 `GET /api/v2/namespaces/{id}/capabilities`로 조회한다.
+    `VFS_FEATURE_DISABLED`의 메시지에는 비활성 capability ID가 포함된다. 현재 등록된 선택 capability는 기본 비활성 `resumable-upload`, `change-feed`, `archive`, `extract`이며, 활성 상태는 `GET /api/v2/namespaces/{id}/capabilities`로 조회한다.
 
     5xx body의 `message`는 고정된 안전 문구이며 내부 예외 메시지, 저장소 주소, 파일 바이트, 키·자격 증명을 포함하지
     않는다. 미분류 예외는 `INTERNAL_ERROR`다. 다운로드 객체를 열기 전 실패는 표의 JSON 오류다. 응답 헤더/바이트 전송
@@ -1526,6 +1527,163 @@ paths:
             동시 실행 gate 포화(`VFS_ARCHIVE_BUSY`, Retry-After 포함), 실행 상한 초과(`VFS_ARCHIVE_TIMEOUT`, Retry-After
             없음), 일시적 DB/storage 장애(`DB_BUSY`, `STORAGE_UNAVAILABLE`). 모두 receipt에 저장하지 않으며 같은 key로
             재시도할 수 있다.
+          headers:
+            Retry-After: { schema: { type: integer, minimum: 1 } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v2/namespaces/{namespaceId}/fs/extract:
+    post:
+      operationId: extractArchive
+      tags: [fs]
+      summary: 압축 FILE을 대상 DIRECTORY에 풀기
+      description: |
+        서비스 Bearer key가 필요하다. `extract` capability는 기본 비활성이며 capability 설정 파일의
+        `globalAllowedCapabilities`와 namespace 허용(`namespaceAllowedCapabilities` 또는 `defaultEnabledCapabilities`)이
+        모두 있어야 한다. 비활성이면 409 `VFS_FEATURE_DISABLED`이며 receipt를 남기지 않는다.
+
+        같은 namespace에 이미 저장된 압축 FILE(`source`)을 `destination` DIRECTORY에 푼다. 업로드와 동시에 풀지 않는다.
+        지원 형식은 zip(STORED·DEFLATE, ZIP32, bit 3 data descriptor 포함), tar(ustar·PAX `x`/`g`·GNU longname), tar.gz다.
+        형식은 확장자나 MIME이 아니라 source 앞 byte로 판별한다. bzip2·7z·xz, zip64, 암호화 ZIP, 다중 볼륨, V7 tar,
+        link·장치·FIFO·sparse tar entry, symlink 속성의 ZIP entry는 거부한다. 외부 압축 라이브러리를 쓰지 않는다.
+
+        **mode.** `overwrite`는 같은 경로 FILE의 node id를 유지하고 Blob만 바꾸며 archive에 없는 FILE은 남긴다.
+        `clean`은 `destination` subtree를 먼저 지운 뒤 새로 만든다. 두 모드 모두 한 DB 트랜잭션이라 중간 실패는
+        대상을 바꾸지 않는다. `destination`의 부모 사슬은 있어야 하고 `destination` 자신은 없으면 만든다.
+        커밋 직전에 대상이 없었으면 201, 있었으면 200이다. `clean`으로 지우고 다시 만들어도 200이다.
+        **위험: 높음.** `clean`은 기존 subtree와 그 안에 있는 `source`까지 지운다. 복구: 휴지통이 켜진 namespace는
+        응답의 `trashId`로 복구한다. 꺼져 있으면 별도 snapshot이나 백업이 없는 한 복구할 수 없다.
+        `destinationRevision`을 보내면 capture와 최종 커밋에서 대상 DIRECTORY의 revision을 검사한다(불일치 412, 대상 부재 404).
+        생략하면 커밋 시점의 대상에 mode를 적용한다.
+
+        **entry 규칙.** 이름은 NFC UTF-8 상대 경로로 전체 4095 byte, segment 255 byte, `destination`을 합친 절대 경로 4096 byte
+        이하다. 제어·Bidi 문자, 빈 segment, `.`/`..`, 선행 `/`, `\`, drive prefix, NFD, 중복, FILE과 조상 디렉터리의 충돌을
+        거부한다. tar의 선행 `./`는 벗기고 DIRECTORY `./`는 건너뛴다. 이름이 `/`로 끝나거나 tar typeflag `5`인 entry는
+        빈 DIRECTORY를 만든다. ZIP은 central directory와 local header의 이름·method·flags를 대조하고 CRC-32와 평문 길이를
+        검증한다. tar.gz는 gzip trailer까지 검증한 뒤에만 성공한다.
+
+        **exclude.** 최대 64개 glob이다. 문법은 `*`(한 segment 안), `**`(완전한 segment, 0개 이상 segment), 리터럴뿐이다.
+        `a**b`·`***`와 빈 segment는 400이다. 이름 검증을 마친 상대 이름에 적용하고 디렉터리가 맞으면 그 아래를 모두 건너뛴다.
+        위험한 이름을 제외 패턴으로 숨길 수 없다. 제외한 entry는 선택 entry 수·응답·`entryIndex`에서 빠지지만 FILE 해제 합과
+        gzip 압축비에는 포함한다.
+
+        **mimeTypes.** 확장자(`.html`) → MIME map이며 최대 256개다. 서버는 확장자로 MIME을 추론하지 않으므로 필요한 호출자가 보낸다.
+        map에 없는 확장자·`.env`·확장자 없음은 `application/octet-stream`이다.
+
+        **dryRun.** `true`면 대상을 바꾸지 않고 선택 entry 목록과 실제 크기·CRC 검증 결과만 200으로 돌려준다. 성공한 dryRun은
+        receipt를 남기지 않고 claim을 해제하므로 같은 key로 본 실행을 보낼 수 있다. 결정적 4xx로 실패한 dryRun은 본 실행처럼
+        receipt에 저장된다. 기존 대상과의 종류 충돌과 최종 quota를 보장하는 사전 승인은 아니다.
+
+        **한도.** 선택 entry 수 기본 1000개(설정 최대 10000), 제외 FILE을 포함한 평문 FILE 크기 합 최대 1 GiB, entry 하나는
+        namespace의 FILE 상한, 압축비 기본 100(해제 크기 1 MiB 이상일 때 적용), JSON 본문 64 KiB다. 실행은 동기이며 기본
+        600초까지 걸린다. proxy·호출자 timeout은 이 상한에 응답 전송 여유를 더한 값보다 길어야 한다.
+
+        **receipt.** `Idempotency-Key`와 `X-Mutation-Scope` 규칙은 `content/conditional`과 같다. fingerprint에는 method, route
+        `fs/extract`, 정규화한 요청, raw body SHA-256이 들어간다. 같은 key·같은 fingerprint 재시도는 완료 시점부터 30일간
+        최초 status·body·`X-Request-Id`를 재생하고 source를 다시 읽거나 capability·gate를 검사하지 않는다. 본 실행의 재생은
+        최초 `resource`·`affectedRevisions`·`trashId`를 그대로 돌려준다. 입력이 다른 key 재사용은 409 `MUTATION_KEY_REUSED`다.
+
+        **오류 재생.** 결정적 4xx는 receipt로 저장되어 같은 key에서 재생된다: 400 `VFS_INVALID_EXTRACT_REQUEST`·
+        `VFS_INVALID_REVISION`·`VFS_EXTRACT_UNSUPPORTED_FORMAT`·`VFS_EXTRACT_INVALID_ENTRY`, 404 `VFS_NODE_NOT_FOUND`,
+        409 `VFS_NOT_DIRECTORY`·`VFS_EXTRACT_TYPE_CONFLICT`·`VFS_REVISION_EXHAUSTED`, 412, 413 `VFS_EXTRACT_TOO_LARGE`와 기존 한도 오류.
+        상태나 입력을 고친 뒤에는 새 key를 쓴다. 재생하지 않는 응답: 400 `VFS_INVALID_MUTATION_REQUEST`, 404 `NAMESPACE_NOT_FOUND`,
+        409 `VFS_FEATURE_DISABLED`·`MUTATION_IN_PROGRESS`·`MUTATION_KEY_REUSED`, 503 전부, 5xx, fingerprint 전에 끝나는 64 KiB
+        본문 초과 413 `BAD_REQUEST`. 이 응답 뒤에는 같은 key로 다시 평가한다. 오류 우선순위는 구조(400) → capability(409) →
+        gate(503) → source 조건(404·412) → destination 조건(404·409·412) → 형식(400) → entry 순서대로 검증·한도(400·413) →
+        커밋(409·413)이다.
+
+        **원본과 정리.** source는 보존 참조를 늘리지 않고 읽는다. 삭제와 GC grace에 기대며 보존을 보장하지 않는다. 확정 4xx로
+        끝나면 올린 object를 지우고, 5xx·취소·불확정 commit이면 보존해 GC가 회수한다. 단일 API 프로세스의 동시 실행 gate가 찬 경우
+        503 `VFS_EXTRACT_BUSY`와 `Retry-After`를 반환한다. 실행 상한을 넘기면 503 `VFS_EXTRACT_TIMEOUT`이며 같은 key로 재시도할 수 있다.
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Mutation-Scope
+          in: header
+          required: true
+          description: 호출자 scope. 헤더로 전송된 최대 128 byte. 서버는 헤더를 latin1로 읽으므로 문자 수가 byte 수와 같다.
+          schema: { type: string, minLength: 1, x-maxHeaderBytes: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExtractRequest' }
+      responses:
+        '200':
+          description: |
+            본 실행: 커밋 직전에 대상이 있었음(`clean`으로 지우고 다시 만든 경우 포함) 또는 완료 결과 재생.
+            `dryRun: true`: 선택 entry 목록. dryRun 응답은 receipt를 남기지 않는다.
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ExtractApplied'
+                  - $ref: '#/components/schemas/ExtractDryRun'
+        '201':
+          description: 커밋 직전에 대상이 없어 새로 만들었음 또는 완료 결과 재생
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtractApplied' }
+        '400':
+          description: |
+            요청 구조·알 수 없는 키·mode·경로·glob·MIME 오류(`VFS_INVALID_EXTRACT_REQUEST`), revision 형식 오류
+            (`VFS_INVALID_REVISION`), 지원하지 않는 형식(`VFS_EXTRACT_UNSUPPORTED_FORMAT`: magic 불일치, gzip 안이 tar가 아님,
+            zip64·암호화·미지원 method, V7 tar), entry 오류(`VFS_EXTRACT_INVALID_ENTRY`: 이름 규칙·link·장치·중복·조상 충돌·잘린 데이터·
+            CRC·checksum·gzip trailer·header 불일치, `entryIndex`와 `entryName` 포함). 모두 receipt로 재생된다.
+            `Idempotency-Key`/`X-Mutation-Scope` 누락·형식 오류는 `VFS_INVALID_MUTATION_REQUEST`이며 receipt가 없다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtractErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: |
+            namespace 비활성(`NAMESPACE_NOT_FOUND`, receipt 없음). source 부재·DIRECTORY·FILE 조상 아래·휴지통, `destination`의
+            부모 부재, `destinationRevision`을 지정했는데 대상이 없음은 `VFS_NODE_NOT_FOUND`이며 `path`를 담고 receipt로 재생된다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: |
+            capability 비활성(`VFS_FEATURE_DISABLED`, receipt 없음), 진행 중인 claim(`MUTATION_IN_PROGRESS`, Retry-After 반환),
+            key 재사용(`MUTATION_KEY_REUSED`), `destination` 또는 그 조상이 FILE(`VFS_NOT_DIRECTORY`), overwrite에서 entry와 기존
+            node의 종류가 다름(`VFS_EXTRACT_TYPE_CONFLICT`, `entryIndex`·`entryName`·`path` 포함), 변경할 node의 version 상한
+            (`VFS_REVISION_EXHAUSTED`). 마지막 셋은 receipt로 재생된다.
+          headers:
+            Retry-After:
+              description: 진행 중인 claim의 재시도 대기 시간(초). 그 외 409에는 생략.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtractErrorResponse' }
+        '412':
+          description: |
+            source revision이 capture 시점과 다름: `path`와 `current`에 source FILE의 VFS 절대 경로와 충돌 시점 metadata를 담는다.
+            `destinationRevision`이 대상과 다름(capture 또는 최종 커밋): `path`와 `current`에 대상 DIRECTORY를 담는다.
+            둘 다 receipt로 재생된다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreconditionFailedResponse' }
+        '413':
+          description: |
+            해제 한도(`VFS_EXTRACT_TOO_LARGE`): 선택 entry 수, 제외 FILE을 포함한 평문 합, entry 하나의 크기, 압축비 중 무엇인지는
+            `message`에 `entries`·`bytes`·`entryBytes`·`ratio`로 적는다. namespace/전역 FILE 상한(`VFS_FILE_TOO_LARGE`)과 커밋 시 기존 한도
+            (`VFS_QUOTA_EXCEEDED`, `VFS_FOLDER_FILE_LIMIT_EXCEEDED`, `VFS_NAMESPACE_NODE_LIMIT_EXCEEDED`, `VFS_DELETE_LIMIT_EXCEEDED`,
+            `VFS_TRASH_LIMIT_EXCEEDED`)은 receipt로 재생된다. 64 KiB 본문 초과는 fingerprint 전 `BAD_REQUEST`이며 receipt가 없다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '503':
+          description: |
+            동시 실행 gate 포화(`VFS_EXTRACT_BUSY`, Retry-After 포함), 실행 상한 초과(`VFS_EXTRACT_TIMEOUT`, Retry-After 없음), 일시적
+            DB/storage 장애(`DB_BUSY`, `STORAGE_UNAVAILABLE`). 모두 receipt에 저장하지 않으며 같은 key로 재시도할 수 있다.
           headers:
             Retry-After: { schema: { type: integer, minimum: 1 } }
           content:
@@ -3664,6 +3822,94 @@ components:
               path: { type: string }
               revision: { type: string, pattern: '^r1\.' }
         entryCount: { type: integer, minimum: 1 }
+    ExtractRequest:
+      type: object
+      additionalProperties: false
+      required: [source, sourceRevision, destination, mode]
+      properties:
+        source: { type: string, description: 풀 압축 FILE의 절대 경로. root와 DIRECTORY는 거부한다. }
+        sourceRevision:
+          { type: string, pattern: '^r1\.', description: source FILE이 일치해야 하는 revision. 불일치는 412. }
+        destination:
+          type: string
+          description: 풀 대상 DIRECTORY의 절대 경로. root는 거부한다. 부모 사슬은 있어야 하고 자신은 없으면 만든다.
+        mode:
+          type: string
+          enum: [overwrite, clean]
+          description: '`overwrite`는 같은 경로 FILE의 id를 유지하고 나머지는 남긴다. `clean`은 대상 subtree를 지운 뒤 만든다.'
+        destinationRevision:
+          type: string
+          pattern: '^r1\.'
+          description: 지정하면 capture와 최종 커밋에서 대상 DIRECTORY가 일치해야 한다. 생략하면 커밋 시점의 대상에 mode를 적용한다.
+        exclude:
+          type: array
+          maxItems: 64
+          default: []
+          description: 제외할 상대 경로 glob. `*`, 완전한 segment의 `**`, 리터럴만 쓴다.
+          items: { type: string, minLength: 1, maxLength: 1024 }
+        mimeTypes:
+          type: object
+          maxProperties: 256
+          x-propertyNamePattern: '^\.[a-z0-9]{1,32}$'
+          description: 확장자(`.html`) → MIME. 키는 소문자 확장자, 값은 엄격한 MIME이다. 없는 확장자는 `application/octet-stream`.
+          additionalProperties: { type: string, maxLength: 255 }
+        dryRun:
+          type: boolean
+          default: false
+          description: '`true`면 대상을 바꾸지 않고 선택 entry 목록만 돌려준다.'
+    ExtractErrorResponse:
+      description: |
+        extract 오류 body. `entryIndex`(제외한 entry를 세지 않는 0부터의 선택 순번)와 `entryName`은
+        `VFS_EXTRACT_INVALID_ENTRY`와 `VFS_EXTRACT_TYPE_CONFLICT`에만 있다. reader가 이름을 읽기 전에 손상되면 `entryName`은 빈
+        문자열이고 `entryIndex`는 다음 선택 entry 순번이다. 현재 FILE의 CRC 오류는 그 FILE의 순번이다. 해제 한도 413의 종류는
+        `message`에만 적는다.
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            entryIndex: { type: integer, minimum: 0 }
+            entryName: { type: string }
+    ExtractApplied:
+      type: object
+      required: [resource, affectedRevisions, entryCount, createdCount, replacedCount]
+      properties:
+        resource:
+          $ref: '#/components/schemas/VfsNode'
+        affectedRevisions:
+          type: array
+          description: 변경된 node의 최종 revision. `destination` 경로의 revision은 이후 `GET /fs/stat`의 revision과 같다.
+          items:
+            type: object
+            required: [path, revision]
+            properties:
+              path: { type: string }
+              revision: { type: string, pattern: '^r1\.' }
+        entryCount:
+          type: integer
+          minimum: 0
+          description: 선택한 FILE과 명시적 DIRECTORY entry 수. 암시적 부모는 세지 않는다.
+        createdCount: { type: integer, minimum: 0, description: 새로 만든 FILE 수 }
+        replacedCount: { type: integer, minimum: 0, description: Blob을 교체한 기존 FILE 수 }
+        trashId:
+          type: string
+          format: uuid
+          description: '`clean`이 휴지통이 켜진 namespace의 기존 대상을 지웠을 때만 있다.'
+    ExtractDryRun:
+      type: object
+      required: [format, entryCount, totalBytes, entries]
+      properties:
+        format: { type: string, enum: [zip, tar, tar.gz] }
+        entryCount: { type: integer, minimum: 0 }
+        totalBytes: { type: integer, minimum: 0, description: 선택한 FILE의 크기 합 }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [name, type, size]
+            properties:
+              name: { type: string, description: 선행 `./`와 DIRECTORY 끝 `/`를 벗긴 상대 이름 }
+              type: { type: string, enum: [FILE, DIRECTORY] }
+              size: { type: integer, minimum: 0 }
     VfsNode:
       type: object
       description: Namespace 안의 파일 또는 디렉터리 하나(`apps/api/CONTEXT.md`의 VFS Node).

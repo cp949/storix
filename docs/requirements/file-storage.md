@@ -1299,6 +1299,29 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 - 일반 PostgreSQL 통합은 50 suites/946 tests, SQLite 통합은 36 suites/707 tests가 통과했다.
 - 이 검증은 실제 배포 환경의 grace 일치·시계 오차·삭제 transaction 지연을 증명하지 않는다.
 
+### RQ-036 압축 FILE 해제
+
+- [ ] **진행 상태:** 구현 완료, 공개 계약 검증 대기
+
+**요구사항:**
+
+- 호출자는 같은 namespace에 저장된 zip·tar·tar.gz FILE을 대상 DIRECTORY에 풀 수 있어야 한다.
+- 대상에는 같은 경로 FILE을 교체하며 나머지를 남기는 `overwrite`와 대상 subtree를 지운 뒤 만드는 `clean`을 지원해야 한다.
+- 반영은 한 트랜잭션이며 중간 실패는 대상을 바꾸지 않아야 한다.
+- 호출자는 `exclude`로 건너뛸 이름을 정하고 `dryRun`으로 선택 entry를 미리 확인할 수 있어야 한다.
+- 반복 요청은 완료 결과를 재생해야 한다.
+
+**수용 조건:**
+
+- 두 DB에서 overwrite·clean·dryRun·형식 오류·receipt 재생·한도·원자성을 공개 HTTP 계약으로 확인한다.
+- 이름 규칙 위반, link·장치·sparse entry, CRC·gzip trailer 손상은 대상을 바꾸지 않고 entry 순번과 이름을 담은 400으로 끝난다.
+- 암호화 namespace의 source와 결과가 평문 내용을 보존한다.
+- extract 실행은 원본을 보존하지 않으며 설정된 GC grace가 실행 중 원본 보호에 충분하다는 운영 전제를 문서화한다.
+
+**판정 근거:**
+
+- 검증 전이다.
+
 ## 소비자 어댑터 책임과 범위 제외
 
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.
