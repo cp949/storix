@@ -187,6 +187,89 @@ export class VfsArchiveBusyError extends DomainError {
   }
 }
 
+/** extract 요청 구조·키·mode·glob·경로가 유효하지 않다. */
+export class VfsExtractInvalidRequestError extends DomainError {
+  readonly code = 'VFS_INVALID_EXTRACT_REQUEST';
+  readonly status = 400;
+
+  constructor() {
+    super('유효하지 않은 extract 요청');
+  }
+}
+
+/** 압축 형식이 지원 범위 밖이다. magic 불일치, zip64, 암호화, 미지원 method, V7 tar가 해당한다. */
+export class VfsExtractUnsupportedFormatError extends DomainError {
+  readonly code = 'VFS_EXTRACT_UNSUPPORTED_FORMAT';
+  readonly status = 400;
+
+  constructor(reason: string) {
+    super(`지원하지 않는 압축 형식: ${reason}`);
+  }
+}
+
+/** 압축 entry 하나가 이름 규칙·종류·무결성 검사를 통과하지 못했다. */
+export class VfsExtractInvalidEntryError extends DomainError {
+  readonly code = 'VFS_EXTRACT_INVALID_ENTRY';
+  readonly status = 400;
+
+  /**
+   * @param entryIndex exclude로 건너뛴 entry를 세지 않는 0부터의 순번이다.
+   * @param entryName reader가 이름을 읽기 전에 손상되면 빈 문자열이다.
+   */
+  constructor(
+    readonly entryIndex: number,
+    readonly entryName: string,
+    reason: string,
+  ) {
+    super(`유효하지 않은 압축 entry: ${reason}`);
+  }
+}
+
+/** overwrite에서 entry와 기존 node의 종류가 다르다. */
+export class VfsExtractTypeConflictError extends DomainError {
+  readonly code = 'VFS_EXTRACT_TYPE_CONFLICT';
+  readonly status = 409;
+
+  constructor(
+    readonly entryIndex: number,
+    readonly entryName: string,
+    readonly path: string,
+  ) {
+    super(`extract entry와 기존 node의 종류가 다름: ${path}`);
+  }
+}
+
+/** extract 한도를 넘었다. 어느 한도인지는 message에만 적는다. */
+export class VfsExtractTooLargeError extends DomainError {
+  readonly code = 'VFS_EXTRACT_TOO_LARGE';
+  readonly status = 413;
+
+  constructor(limit: 'entries' | 'bytes' | 'entryBytes' | 'ratio') {
+    super(`extract 상한 초과: ${limit}`);
+  }
+}
+
+/** 프로세스 extract 동시 실행 한도에 도달했다. */
+export class VfsExtractBusyError extends DomainError {
+  readonly code = 'VFS_EXTRACT_BUSY';
+  readonly status = 503;
+
+  /** 응답 `Retry-After` 초다. 필터와 service가 같은 값을 쓴다. */
+  constructor(readonly retryAfterSeconds: number) {
+    super('extract 실행 한도 초과');
+  }
+}
+
+/** extract의 deadline이 지났다. */
+export class VfsExtractDeadlineExceededError extends DomainError {
+  readonly code = 'VFS_EXTRACT_TIMEOUT';
+  readonly status = 503;
+
+  constructor() {
+    super('extract 실행 deadline 초과');
+  }
+}
+
 export class VfsRevisionExhaustedError extends DomainError {
   readonly code = 'VFS_REVISION_EXHAUSTED';
   readonly status = 409;

@@ -17,11 +17,12 @@ const feature: CapabilityDefinition = {
 };
 
 describe('capability registry', () => {
-  it('archive·resumable-upload·change-feed는 기본 비활성 namespace capability로 등록된다', () => {
+  it('archive·extract·resumable-upload·change-feed는 기본 비활성 namespace capability로 등록된다', () => {
     expect(CAPABILITY_REGISTRY).toEqual([
       { ...feature, id: 'change-feed' },
       { ...feature, id: 'resumable-upload' },
       { ...feature, id: 'archive' },
+      { ...feature, id: 'extract' },
     ]);
     const namespaceId = '11111111-1111-4111-8111-111111111111';
     const disabled = new CapabilityService({
@@ -32,12 +33,20 @@ describe('capability registry', () => {
     expect(disabled.isEnabled(namespaceId, 'resumable-upload')).toBe(false);
     expect(disabled.isEnabled(namespaceId, 'change-feed')).toBe(false);
     expect(disabled.isEnabled(namespaceId, 'archive')).toBe(false);
+    expect(disabled.isEnabled(namespaceId, 'extract')).toBe(false);
     expect(() => disabled.requireEnabled(namespaceId, 'resumable-upload')).toThrow(/resumable-upload/);
     const enabled = new CapabilityService({
-      globalAllowedCapabilities: ['resumable-upload', 'change-feed', 'archive'],
-      namespaceAllowedCapabilities: { [namespaceId]: ['resumable-upload', 'change-feed', 'archive'] },
+      globalAllowedCapabilities: ['resumable-upload', 'change-feed', 'archive', 'extract'],
+      namespaceAllowedCapabilities: {
+        [namespaceId]: ['resumable-upload', 'change-feed', 'archive', 'extract'],
+      },
     });
-    expect(enabled.listEnabled(namespaceId)).toEqual(['archive', 'change-feed', 'resumable-upload']);
+    expect(enabled.listEnabled(namespaceId)).toEqual([
+      'archive',
+      'change-feed',
+      'extract',
+      'resumable-upload',
+    ]);
   });
 
   it.each([
@@ -57,6 +66,26 @@ describe('capability registry', () => {
       expect(service.listEnabled(namespaceId)).toEqual(expected ? ['archive'] : []);
       if (expected) expect(() => service.requireEnabled(namespaceId, 'archive')).not.toThrow();
       else expect(() => service.requireEnabled(namespaceId, 'archive')).toThrow(/archive/);
+    },
+  );
+
+  it.each([
+    [false, false, false],
+    [true, false, false],
+    [false, true, false],
+    [true, true, true],
+  ])(
+    'extract 전역 허용 %s·namespace opt-in %s의 유효 상태는 %s다',
+    (globalAllowed, namespaceAllowed, expected) => {
+      const namespaceId = '11111111-1111-4111-8111-111111111111';
+      const service = new CapabilityService({
+        globalAllowedCapabilities: globalAllowed ? ['extract'] : [],
+        namespaceAllowedCapabilities: { [namespaceId]: namespaceAllowed ? ['extract'] : [] },
+      });
+      expect(service.isEnabled(namespaceId, 'extract')).toBe(expected);
+      expect(service.listEnabled(namespaceId)).toEqual(expected ? ['extract'] : []);
+      if (expected) expect(() => service.requireEnabled(namespaceId, 'extract')).not.toThrow();
+      else expect(() => service.requireEnabled(namespaceId, 'extract')).toThrow(/extract/);
     },
   );
 

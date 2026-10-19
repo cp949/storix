@@ -3,6 +3,7 @@ import {
   resolveErrorCode,
   resolveErrorCurrent,
   resolveErrorArchiveEntry,
+  resolveErrorExtractEntry,
   resolveErrorMessage,
   resolveErrorPath,
 } from '../common/domain-error.filter.js';
@@ -69,6 +70,7 @@ export function errorResponse(error: DomainError, requestId: string): ReceiptRes
       ...(path ? { path } : {}),
       ...resolveErrorCurrent(error),
       ...resolveErrorArchiveEntry(error),
+      ...resolveErrorExtractEntry(error),
       requestId,
     },
     headers: { 'x-request-id': requestId },

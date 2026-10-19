@@ -19,6 +19,13 @@ import {
   VfsAlreadyExistsError,
   VfsCopyLimitExceededError,
   VfsDeleteLimitExceededError,
+  VfsExtractBusyError,
+  VfsExtractDeadlineExceededError,
+  VfsExtractInvalidEntryError,
+  VfsExtractInvalidRequestError,
+  VfsExtractTooLargeError,
+  VfsExtractTypeConflictError,
+  VfsExtractUnsupportedFormatError,
   VfsFeatureDisabledError,
   VfsInvalidMutationRequestError,
   VfsInvalidPathError,
@@ -307,6 +314,48 @@ describe('errorResponse', () => {
       }
     })();
     expect(errorResponse(error, 'request')).toMatchObject({ body: { archiveEntry: 2 } });
+  });
+
+  it('extract entry 오류 receipt에 entryIndex와 entryName을 저장한다', () => {
+    expect(
+      errorResponse(new VfsExtractInvalidEntryError(3, 'a/../b', '상위 경로 참조'), 'request'),
+    ).toMatchObject({
+      status: 400,
+      body: { code: 'VFS_EXTRACT_INVALID_ENTRY', entryIndex: 3, entryName: 'a/../b' },
+    });
+    expect(
+      errorResponse(new VfsExtractTypeConflictError(1, 'assets/app.js', '/site/assets'), 'request'),
+    ).toMatchObject({
+      status: 409,
+      body: {
+        code: 'VFS_EXTRACT_TYPE_CONFLICT',
+        entryIndex: 1,
+        entryName: 'assets/app.js',
+        path: '/site/assets',
+      },
+    });
+  });
+
+  it('entry 필드가 없는 오류 body에는 entryIndex와 entryName 키가 없다', () => {
+    const body = errorResponse(new VfsExtractTooLargeError('bytes'), 'request').body as Record<
+      string,
+      unknown
+    >;
+    expect(body).not.toHaveProperty('entryIndex');
+    expect(body).not.toHaveProperty('entryName');
+    expect(body).not.toHaveProperty('limit');
+  });
+});
+
+describe('extract 오류의 receipt 저장 대상', () => {
+  it('결정적 4xx는 저장하고 503 busy·timeout은 저장하지 않는다', () => {
+    expect(isReplayableMutationError(new VfsExtractInvalidRequestError())).toBe(true);
+    expect(isReplayableMutationError(new VfsExtractUnsupportedFormatError('magic 불일치'))).toBe(true);
+    expect(isReplayableMutationError(new VfsExtractInvalidEntryError(0, 'a', 'x'))).toBe(true);
+    expect(isReplayableMutationError(new VfsExtractTypeConflictError(0, 'a', '/a'))).toBe(true);
+    expect(isReplayableMutationError(new VfsExtractTooLargeError('entries'))).toBe(true);
+    expect(isReplayableMutationError(new VfsExtractBusyError(10))).toBe(false);
+    expect(isReplayableMutationError(new VfsExtractDeadlineExceededError())).toBe(false);
   });
 });
 

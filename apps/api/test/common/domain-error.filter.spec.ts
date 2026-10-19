@@ -15,6 +15,10 @@ import { SqliteGateTimeoutError } from '../../src/persistence/sqlite-gate.errors
 import {
   VfsArchivePreconditionFailedError,
   VfsArchiveSourceNotFoundError,
+  VfsExtractBusyError,
+  VfsExtractInvalidEntryError,
+  VfsExtractTooLargeError,
+  VfsExtractTypeConflictError,
   VfsPreconditionFailedError,
   VfsNodeNotFoundError,
 } from '../../src/vfs/vfs.errors.js';
@@ -166,6 +170,40 @@ describe('DomainErrorFilter', () => {
     expect(body).toMatchObject({ code: 'VFS_NODE_NOT_FOUND', archiveEntry: 3 });
     // 직렬화 뒤 body에 path가 없어야 한다. 필터는 키를 undefined로 두고 JSON 직렬화가 생략한다.
     expect(body.path).toBeUndefined();
+  });
+
+  it('extract entry 오류는 entryIndex와 entryName을 body에 담고 413에는 limit 필드가 없다', () => {
+    const { host, json, status } = createHost();
+    filter.catch(new VfsExtractInvalidEntryError(3, 'a/../b', '상위 경로 참조'), host);
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: 'VFS_EXTRACT_INVALID_ENTRY', entryIndex: 3, entryName: 'a/../b' }),
+    );
+    filter.catch(new VfsExtractTypeConflictError(1, 'assets/app.js', '/site/assets'), host);
+    expect(json).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        code: 'VFS_EXTRACT_TYPE_CONFLICT',
+        entryIndex: 1,
+        entryName: 'assets/app.js',
+        path: '/site/assets',
+      }),
+    );
+    filter.catch(new VfsExtractTooLargeError('ratio'), host);
+    const tooLarge = json.mock.lastCall![0] as Record<string, unknown>;
+    expect(status).toHaveBeenLastCalledWith(413);
+    expect(tooLarge).toMatchObject({
+      code: 'VFS_EXTRACT_TOO_LARGE',
+      message: expect.stringContaining('ratio'),
+    });
+    expect(tooLarge).not.toHaveProperty('limit');
+    expect(tooLarge).not.toHaveProperty('entryIndex');
+  });
+
+  it('extract busy 오류는 Retry-After 헤더를 붙인다', () => {
+    const { host, setHeader, status } = createHost();
+    filter.catch(new VfsExtractBusyError(10), host);
+    expect(status).toHaveBeenCalledWith(503);
+    expect(setHeader).toHaveBeenCalledWith('Retry-After', '10');
   });
 
   it('412 오류의 current가 null이면 null을 body에 유지한다', () => {
