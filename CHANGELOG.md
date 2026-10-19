@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-19
+
 ### Fixed
 
 - extract가 ZIP descriptor를 DIRECTORY·제외 FILE에서도 검증하고 손상을 `400 VFS_EXTRACT_INVALID_ENTRY`로 저장·재생한다. 지원 ZIP의 header·EOCD 손상도 같은 오류로 분류한다. 종류 충돌의 `entryName`은 tar의 선행 `./`와 DIRECTORY의 끝 `/`를 포함한 원본 이름을 보존한다.
