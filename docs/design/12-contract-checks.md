@@ -102,6 +102,13 @@ API 서버와 migration 프로세스의 env는 러너가 명시적으로 만든�
   - namespace별 상한 재정의(`namespace-quota-override`)는 전역 상한이 2000이라는 전제를 쓴다.
   - 값은 `src/runner/profiles.ts`가 정한다.
 - `archive`는 `archive` capability를 전역·기본 활성으로 켜고 `STORIX_ENCRYPTION_MASTER_KEY`를 준다. 이 프로필의 namespace는 ENCRYPTED로 만들어 암호화 원본과 결과를 함께 검증한다.
+- `extract`는 `extract` capability를 전역·기본 활성으로 켜고 서버 기본 한도를 쓴다.
+  - 해제 계약(`extract-overwrite`, `extract-clean`, `extract-dry-run`, `extract-rejection`)이 쓴다.
+  - 계약이 쓰는 압축 FILE은 `src/support/tar-bytes.ts`와 `src/support/zip-bytes.ts`가 만든다. API 소스를 import하지 않는다.
+- `extract-limits`는 같은 capability를 켜고 선택 entry 수 상한 2개, 평문 합계 상한 32 byte를 준다.
+  - `extract-limits` 계약이 쓴다.
+  - 값은 `src/runner/profiles.ts`가 정한다.
+  - 압축비 상한은 해제 크기 1 MiB 이상에서만 적용되고 평문 합계 상한이 먼저 걸리므로 이 프로필에서는 검증하지 않는다. 압축비는 API 단위 테스트가 검증한다.
 - `change-feed`는 전역과 사전 준비 namespace에 `change-feed` capability를 허용한다.
   - 시작 설정(`STORIX_VFS_CAPABILITIES_CONFIG_PATH`)은 namespace ID의 존재를 검증한다.
   - 러너는 다음 순서로 준비한다.

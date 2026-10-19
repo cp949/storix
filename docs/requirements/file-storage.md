@@ -1301,7 +1301,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 
 ### RQ-036 압축 FILE 해제
 
-- [ ] **진행 상태:** 구현 완료, 공개 계약 검증 대기
+- [x] **진행 상태:** PostgreSQL·SQLite 공개 계약·통합 검증 완료
 
 **요구사항:**
 
@@ -1320,7 +1320,13 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 
 **판정 근거:**
 
-- 검증 전이다.
+- `extract-overwrite`, `extract-clean`, `extract-dry-run`, `extract-rejection`, `extract-limits` 공개 계약은 PostgreSQL·SQLite에서 각각 5/5 통과했다. 전체 계약은 두 DB에서 108/108이다.
+- 계약은 overwrite의 FILE id 유지와 교체·보존, clean의 삭제와 휴지통 복구, dryRun 목록과 본 실행 이어 보내기, 경로 이탈·link·손상·미지원 형식·revision·종류 충돌 거부, 선택 entry 수와 평문 합계 한도, 동일 key 재생과 오류 재생을 확인한다.
+- API HTTP 통합은 PostgreSQL·S3와 SQLite·메모리 저장소에서 각각 28/28 통과했다. 암호화 namespace의 ZIP 비블록 경계 range 읽기와 저장 object 암호화를 포함한다.
+- 영속 계층 공용 시나리오는 두 DB에서 capture 11개, 커밋 27개가 통과했다.
+- Python `tarfile`·`zipfile`이 만든 GNU·PAX tar, tar.gz, DEFLATE·STORED·스트리밍 ZIP의 내용을 그대로 읽는다.
+- 일반 PostgreSQL 통합은 53 suites/1012 tests, SQLite 통합은 39 suites/779 tests가 통과했다.
+- 이 검증은 실제 배포 환경의 grace 일치·시계 오차·삭제 transaction 지연을 증명하지 않는다.
 
 ## 소비자 어댑터 책임과 범위 제외
 
