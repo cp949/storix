@@ -190,8 +190,15 @@ describe('StorixHttpClient', () => {
         await new Promise((resolve) => setImmediate(resolve));
         if (pulledChunks >= totalChunks) {
           // 마지막 청크를 요청하는 시점: 앞서 보낸 본문이 아직 붙들려 있는지 잰다.
-          gc();
-          heldBytes = process.memoryUsage().arrayBuffers - baselineBytes;
+          // gc() 직후에도 V8의 백그라운드 sweep이 끝나기 전에는 이미 버려진 버퍼가 arrayBuffers에 남는다.
+          // CPU 부하가 크면 이 잔여분이 수십 MiB라, 보유 중인 버퍼는 줄지 않고 버려진 버퍼만 줄어드는
+          // 차이를 이용한다. 상한 아래로 내려갈 때까지 gc와 짧은 대기를 반복하고 최솟값을 쓴다.
+          for (let round = 0; round < 25; round += 1) {
+            gc();
+            heldBytes = Math.min(heldBytes, process.memoryUsage().arrayBuffers - baselineBytes);
+            if (heldBytes < heldLimitBytes) break;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
           controller.close();
           return;
         }
