@@ -216,6 +216,7 @@ Docker·Podman에서 같은 파일·옵션을 사용한다.
 
 - `up --build`는 `apps/api/Dockerfile`로 소스 이미지를 빌드한다.
 - 태그 릴리즈는 `ghcr.io/cp949/storix:vX.Y.Z` 사전 빌드 이미지도 제공한다.
+- 외부 시크릿 저장소를 `X_REF`로 읽으려면 어댑터가 들어 있는 `vX.Y.Z-bao`(OpenBao) 또는 `vX.Y.Z-aws`(AWS Secrets Manager) 이미지를 쓴다. 사용법은 `docs/design/15-secret-sources.md`를 따른다.
 - 현재 compose 구성은 사전 빌드 이미지를 직접 pull하도록 연결하지 않았다.
 - 릴리즈 절차는 `docs/deployment/release.md`를 따른다.
 
@@ -624,7 +625,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 
 통신형:
 
-- 어댑터 패키지를 설치한 사용자 이미지가 필요하다. 기본 이미지에는 어댑터가 없다.
+- 어댑터가 들어 있는 이미지가 필요하다. 기본 이미지에는 어댑터가 없다. 릴리즈의 `vX.Y.Z-bao`(OpenBao), `vX.Y.Z-aws`(AWS Secrets Manager) 변형 이미지를 쓴다.
 - `STORIX_SECRET_ADAPTERS`에 어댑터 패키지 이름을 지정한다.
 - 해석 1건의 타임아웃은 `STORIX_SECRET_RESOLVE_TIMEOUT_MS`다. 1~2147483647 ms를 허용하고 넘으면 부팅을 거부한다.
 - 기본 `docker-compose.yml`은 `<비밀 변수>_REF`와 이 두 변수를 컨테이너에 넘기지 않는다. 루트 `.env`에 적어도 무시된다. override의 `environment:`에 직접 적는다.
@@ -632,7 +633,7 @@ Storix 환경변수는 `STORIX_` 접두어를 쓴다(ADR-0005).
 compose에서 파일로 전달하는 절차는 [단일 호스트 private 배포](docs/deployment/scenarios/single-host-private/README.md)의 "비밀값 파일 전달"을 따른다.
 규칙의 상세는 `docs/design/15-secret-sources.md`다.
 
-AWS Secrets Manager 어댑터 사용자 이미지와 LocalStack 실행 예제는 [LocalStack 예제](docs/deployment/scenarios/aws-secrets-localstack/README.md)를 따른다. 실제 AWS 역할·IAM·KMS 설정 예시는 [AWS Secrets Manager 가이드](docs/guides/aws-secrets-manager-secret-source.md)에 있다.
+OpenBao 사용법은 [OpenBao 가이드](docs/guides/openbao-secret-source.md)를 따른다. AWS Secrets Manager의 LocalStack 실행 예제는 [LocalStack 예제](docs/deployment/scenarios/aws-secrets-localstack/README.md)를 따른다. 실제 AWS 역할·IAM·KMS 설정 예시는 [AWS Secrets Manager 가이드](docs/guides/aws-secrets-manager-secret-source.md)에 있다.
 
 ### 재개 업로드 활성화
 
@@ -876,6 +877,7 @@ pnpm --filter @cp949/storix-api test:integration   # testcontainers — Docker/P
 - 시스템 전역 아키텍처 결정: `docs/adr/`, api 컨텍스트 결정: `apps/api/docs/adr/`
 - 배포/운영 절차(reverse-proxy, 백업/복구, 업그레이드, 릴리즈, 멀티 인스턴스): `docs/deployment/`
 - 선택형 배포 시나리오와 실제 설정: `docs/deployment/scenarios/`
+- OpenBao 비밀값 전달: [OpenBao 가이드](docs/guides/openbao-secret-source.md)
 - AWS Secrets Manager 비밀값 전달: [LocalStack 실행 예제](docs/deployment/scenarios/aws-secrets-localstack/README.md), [AWS 운영 설정 가이드](docs/guides/aws-secrets-manager-secret-source.md)
 - 에이전트·기여자 규약: `AGENTS.md`, `docs/agents/`
 - 상용화 로드맵: `docs/ROADMAP.md`

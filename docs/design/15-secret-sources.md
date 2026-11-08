@@ -40,7 +40,7 @@
   - 기본값이 빈 문자열이라 `STORIX_SENTRY_DSN_FILE`을 쓰는 override는 `STORIX_SENTRY_DSN`을 `""`로 비우지 않아도 된다.
 - `X_REF`, `STORIX_SECRET_ADAPTERS`, `STORIX_SECRET_RESOLVE_TIMEOUT_MS`는 기본 compose가 넘기지 않는다.
   - 루트 `.env`에 적어도 컨테이너에 전달되지 않고, 오류 없이 무시된다.
-  - 통신형은 사용자 이미지와 override의 `environment:`에서 지정한다.
+  - 통신형은 변형 이미지(또는 사용자 이미지)를 쓰고 override의 `environment:`에서 지정한다.
 
 ## 해석 위치
 
@@ -150,8 +150,26 @@ export interface SecretSource {
 - 어댑터의 저장소 접근 자격증명은 어댑터가 자기 표준 방식으로 얻는다. Storix 환경변수로 받지 않는다.
 - 코어는 해석값을 로그에 남기지 않는다. 테스트로 고정한다.
 - 어댑터 내부의 로그는 코어가 통제하지 못한다. 어댑터는 해석값과 참조의 비밀 부분을 로그에 쓰지 않는다.
-- 기본 이미지에는 어댑터가 없다. 어댑터 설치는 사용자 이미지 빌드의 책임이다.
+- 기본 이미지에는 어댑터가 없다. 공식 어댑터는 변형 이미지로 받는다(아래 "공식 어댑터 이미지"). 그 밖의 어댑터 설치는 사용자 이미지 빌드의 책임이다.
 - 어댑터를 쓰면 저장소 장애 시 Storix가 기동하지 못한다. 가용성 요구가 높은 배포는 저장소 가용성을 함께 설계한다.
+
+## 공식 어댑터 이미지
+
+릴리즈마다 어댑터가 들어 있는 변형 이미지를 발행한다(ADR-0050).
+
+| 태그         | 어댑터 패키지              | scheme   | 소스                         | 가이드                                             |
+| ------------ | -------------------------- | -------- | ---------------------------- | -------------------------------------------------- |
+| `vX.Y.Z-bao` | `storix-secret-source-bao` | `bao`    | `packages/secret-source-bao` | `docs/guides/openbao-secret-source.md`             |
+| `vX.Y.Z-aws` | `storix-secret-source-aws` | `aws-sm` | `packages/secret-source-aws` | `docs/guides/aws-secrets-manager-secret-source.md` |
+
+- 사용자는 이미지 태그를 고르고 `STORIX_SECRET_ADAPTERS=<패키지명>`, `X_REF`, 제공자 설정(가이드의 환경변수)을 설정한다.
+- 변형 이미지는 이 설계가 들어간 다음 릴리즈부터 있다. 이전 릴리즈 태그에는 없다.
+- 어댑터는 `/repo/apps/api/node_modules/<패키지명>`에 있다. 로더가 이 위치에서 찾는다.
+- 변형 이미지는 같은 릴리즈의 기준 이미지 위에 어댑터만 얹는다. 기준 이미지의 내용은 같다.
+- 한 이미지에 어댑터는 하나다. 두 제공자를 함께 쓰는 배포는 지원하지 않는다.
+- Secrets Manager 클라이언트(`@aws-sdk/client-secrets-manager`)는 `-aws` 이미지에만 있다.
+- 어댑터 패키지는 루트 workspace 밖의 독립 패키지다. bao는 npm 의존성이 없고 aws는 패키지의 lockfile로 의존성을 고정한다.
+- 변형 이미지는 push 전에 이미지 안에서 어댑터 로드와 `X_REF` 해석을 확인한다. 저장소는 가짜 HTTP 서버다.
 
 ## 어댑터 로더
 
@@ -223,7 +241,9 @@ export interface SecretSource {
 - 실행 중 비밀값 교체는 지원하지 않는다.
 - 마스터 키 로테이션과 envelope 암호화는 지원하지 않는다(api ADR-0009).
 - 함께 띄우는 백엔드 컨테이너(Postgres, VersityGW)의 비밀값 전달은 코어 범위 밖이다. 시나리오 문서가 안내한다.
-- 제공자 어댑터는 코어와 기본 이미지에 포함하지 않는다. AWS Secrets Manager 예제 어댑터와 LocalStack 실행 시나리오는 `examples/secret-source-aws/`와 `docs/deployment/scenarios/aws-secrets-localstack/`에 둔다. AWS 운영 설정은 `docs/guides/aws-secrets-manager-secret-source.md`를 따른다.
+- 제공자 어댑터는 코어와 기본 이미지에 포함하지 않는다. 변형 이미지로 발행한다.
+- LocalStack 실행 시나리오(`docs/deployment/scenarios/aws-secrets-localstack/`)는 수동 검증이다. CI는 실행하지 않는다.
+- 실제 OpenBao·AWS 서버에 대한 검증은 upstream CI가 하지 않는다. 어댑터 시험은 가짜 HTTP 서버를 쓴다.
 
 ## 검증
 

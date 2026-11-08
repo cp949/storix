@@ -8,8 +8,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- 릴리즈마다 시크릿 어댑터 변형 이미지 `ghcr.io/cp949/storix:vX.Y.Z-bao`(OpenBao)와 `:vX.Y.Z-aws`(AWS Secrets Manager)를 발행한다. 기준 이미지(`vX.Y.Z`, `latest`)에는 어댑터가 없고 달라지지 않는다. 변형 이미지에서 `STORIX_SECRET_ADAPTERS=storix-secret-source-bao` 또는 `storix-secret-source-aws`, `X_REF`, 제공자 설정(OpenBao는 `BAO_ADDR`·`BAO_ROLE_ID`·`BAO_SECRET_ID_FILE`, AWS는 `AWS_REGION`과 자격 증명)을 설정한다. 변형 이동 태그(`latest-bao` 등)는 없다. 어댑터 소스는 `packages/secret-source-bao`, `packages/secret-source-aws`이고 bao 어댑터는 bbcode-storix에서 옮겼다. 첫 변형 이미지는 이 항목이 들어간 다음 릴리즈에서 나온다. 설계는 [시크릿 소스](docs/design/15-secret-sources.md), 결정은 ADR-0050, OpenBao 사용법은 [OpenBao 가이드](docs/guides/openbao-secret-source.md)다. 위험: 변형 job이 실패하면 기준 이미지와 Release가 먼저 공개되고 변형 태그가 없을 수 있다. 복구: Actions의 "Re-run failed jobs"로 변형 job만 다시 돌린다.
+
+### Removed
+
+- `ghcr.io/cp949/storix:vX.Y.Z-pg16` 이미지 발행을 중단했다. 이미 발행한 `-pg16` 태그는 GHCR에 남는다. Postgres 16 client가 필요하면 `--build-arg PG_CLIENT_MAJOR=16`으로 소스 빌드한다. `PG_CLIENT_MAJOR` 빌드 인자는 그대로다. Postgres 16 서버는 지원 대상으로 선언하지 않는다.
+
 ### Changed
 
+- AWS Secrets Manager 어댑터 패키지명을 `storix-secret-source-aws-example`에서 `storix-secret-source-aws`로 바꿨다. 위치는 `examples/secret-source-aws`에서 `packages/secret-source-aws`로 옮겼다. `STORIX_SECRET_ADAPTERS`에 예전 이름을 쓰는 배포는 새 이름으로 바꾼다. 예전 이름을 그대로 두면 어댑터 로드 오류로 시작이 중단된다.
 - `@sentry/node`를 11.11.0으로 올렸다. 11은 `sendDefaultPii`를 제거하고 `dataCollection` 생략 시 쿠키·클라이언트 IP·요청 본문·DB 쿼리 값을 기본 수집한다. 오류 보고 수집 범위가 넓어지지 않도록 `dataCollection`을 10.x의 `sendDefaultPii: false`와 같은 범위로 명시했다. 기존처럼 Authorization 헤더도 전송 전에 지운다.
 - 의존성을 patch·minor 범위로 갱신했다(NestJS 12.4.0, express 5.3.0, AWS SDK 3.1164.0, typeorm 1.1.2 등). express 5.3.0이 쓰는 body-parser 2.4부터 `Content-Encoding: zstd` 요청 본문을 풀어 읽는다(Node 24.18 이상). 이전에는 415였고, 손상된 zstd 본문은 400 `BAD_REQUEST`다. 그 밖의 지원하지 않는 `Content-Encoding`은 그대로 415 `BAD_REQUEST`다.
 

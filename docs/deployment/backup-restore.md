@@ -198,7 +198,7 @@ rsync -a ./backups/ user@offsite:/backups/storix/
 - client major는 `apps/api/Dockerfile` runtime stage의 `PG_CLIENT_MAJOR`로 정한다.
 - 기본값은 17이다.
 - client major는 서버 major와 맞춘다.
-- Postgres 16 서버는 `-pg16` 이미지 또는 아래 소스 빌드를 사용한다.
+- Postgres 16 서버는 아래 소스 빌드를 사용한다. `-pg16` 이미지는 발행하지 않는다(ADR-0050).
 
 ```bash
 docker build --build-arg PG_CLIENT_MAJOR=16 -f apps/api/Dockerfile -t storix-api:pg16 .

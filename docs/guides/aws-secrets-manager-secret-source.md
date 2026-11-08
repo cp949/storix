@@ -47,25 +47,31 @@ SDK는 설정된 provider chain에서 자격 증명을 찾는다. 환경 변수 
 
 ## Storix 이미지와 설정
 
-어댑터 패키지는 Storix 코어 dependency가 아니다. 예제 Dockerfile은 저장소의 패키지 파일을 격리된 build stage에 복사하고 그 안에서 tarball을 만든 뒤 사용자 이미지에 설치한다.
+어댑터 패키지는 Storix 코어 dependency가 아니다. 릴리즈마다 어댑터가 들어 있는 `-aws` 태그 이미지를 발행한다.
 
-저장소 루트에서 기본 이미지와 어댑터 사용자 이미지를 빌드한다. `ghcr.io/cp949/storix:vX.Y.Z`는 사용할 릴리스 이미지 태그로 바꾼다.
+```sh
+docker pull ghcr.io/cp949/storix:vX.Y.Z-aws
+```
+
+`-aws` 태그는 이 변경이 들어간 릴리즈부터 발행한다. v1.5.0 이하에는 없다. `-aws` 이미지는 같은 릴리즈의 기준 이미지에 `storix-secret-source-aws`만 더한다. `@aws-sdk/client-secrets-manager`는 이 이미지에만 있다.
+
+소스에서 직접 만들려면 저장소 루트에서 기본 이미지와 어댑터 이미지를 빌드한다. 어댑터 Dockerfile은 저장소의 패키지 파일을 격리된 build stage에 복사하고 그 안에서 tarball을 만든 뒤 기준 이미지에 설치한다.
 
 ```sh
 docker build --file apps/api/Dockerfile --tag storix-api:local .
 docker build \
-  --file examples/secret-source-aws/Dockerfile \
+  --file packages/secret-source-aws/Dockerfile \
   --build-arg STORIX_BASE_IMAGE=storix-api:local \
   --tag storix-api:aws-secrets .
 ```
 
-첫 명령 대신 `STORIX_BASE_IMAGE`에 사전 빌드 이미지 `ghcr.io/cp949/storix:vX.Y.Z`를 지정할 수 있다. AWS SDK 전이 dependency는 격리된 adapter stage에서 설치한다. Compose나 배포 설정은 `storix-api:aws-secrets` 이미지를 사용한다.
+첫 명령 대신 `STORIX_BASE_IMAGE`에 사전 빌드 이미지 `ghcr.io/cp949/storix:vX.Y.Z`를 지정할 수 있다. AWS SDK 전이 dependency는 격리된 adapter stage에서 설치한다. `STORIX_BASE_IMAGE`에는 기본값이 없어 지정하지 않으면 빌드가 실패한다.
 
 Storix API 컨테이너의 환경 설정은 다음과 같다.
 
 ```dotenv
 AWS_REGION=ap-northeast-2
-STORIX_SECRET_ADAPTERS=storix-secret-source-aws-example
+STORIX_SECRET_ADAPTERS=storix-secret-source-aws
 STORIX_API_KEY=
 STORIX_API_KEY_REF=aws-sm://arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:storix/api-key-AbCdEf
 ```

@@ -52,7 +52,8 @@ Spec 실행 조건과 한계:
 - client가 서버보다 낮으면 backup이 중단된다.
 - client가 서버보다 높으면 backup이 성공해도 restore가 실패할 수 있다.
 - 기본 이미지의 client major는 17이다.
-- 16 서버는 `-pg16` 이미지 또는 `--build-arg PG_CLIENT_MAJOR=16`을 사용한다(api ADR-0039).
+- 16 서버는 `--build-arg PG_CLIENT_MAJOR=16`으로 소스 빌드한 이미지를 사용한다(api ADR-0039). `-pg16` 이미지는 발행하지 않는다(ADR-0050).
+- Postgres 16 서버는 지원 대상으로 선언하지 않는다.
 - 18 이상 서버는 검증하지 않았다.
 
 ## CI
