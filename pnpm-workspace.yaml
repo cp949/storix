@@ -9,3 +9,11 @@ allowBuilds:
   protobufjs: true
   ssh2: true
   unrs-resolver: true
+
+# audit 대응. 모두 dev 의존성(jest, testcontainers 경로)이라 운영 이미지에는 들어가지 않는다.
+# 취약 범위만 대체하며 패치 범위의 버전은 건드리지 않는다.
+overrides:
+  # 업스트림 deepmerge는 패치 버전이 없다(GHSA-gcqx-w48m-w2h4). cp949 포크 4.3.2가 같은 API로 고쳤다.
+  deepmerge: npm:@cp949/deepmerge@4.3.2
+  "glob@>=9.0.0 <14.0.2": ^14.0.4
+  "minimatch@>=7.0.0 <11.0.1": ^11.0.5
