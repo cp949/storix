@@ -1,5 +1,6 @@
 import { Body, Controller, INestApplication, Module, Post, Req } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { zstdCompressSync } from 'node:zlib';
 import type { Request } from 'express';
 import request from 'supertest';
 import { configureBodyParsers } from '../../src/common/body-parser.js';
@@ -85,6 +86,34 @@ describe('configureBodyParsers의 요청 바디 크기 상한', () => {
       code: 'BAD_REQUEST',
       requestId: expect.any(String),
     });
+  });
+
+  // 압축 요청은 해제 후 크기로 상한을 검사해야 압축 폭탄을 막는다. zstd도 gzip·br과 같은 상한을 받아야 한다.
+  it('zstd로 압축한 16KB 이하 JSON 바디는 정상 처리한다', async () => {
+    const body = zstdCompressSync(JSON.stringify({ value: 'x'.repeat(100) }));
+
+    await request(app.getHttpServer())
+      .post('/probe/echo')
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'zstd')
+      .serialize((b: unknown) => b as string)
+      .send(body)
+      .expect(201, { value: 'x'.repeat(100) });
+  });
+
+  it('압축 전송량은 작아도 해제 후 16KB를 초과하는 zstd JSON 바디는 413을 반환한다', async () => {
+    const body = zstdCompressSync(JSON.stringify({ value: 'x'.repeat(5_000_000) }));
+    expect(body.length).toBeLessThan(1_000);
+
+    const response = await request(app.getHttpServer())
+      .post('/probe/echo')
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'zstd')
+      .serialize((b: unknown) => b as string)
+      .send(body)
+      .expect(413);
+
+    expect(response.body).toMatchObject({ code: 'BAD_REQUEST', requestId: expect.any(String) });
   });
 
   it('UUID 형식이 아닌 snapshot mutation 경로도 JSON 원본 bytes를 raw Buffer로 전달한다', async () => {
