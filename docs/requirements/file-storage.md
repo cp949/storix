@@ -4,13 +4,11 @@
 
 이 문서는 **범용 저장 계약**과 수용 조건을 정의한다.
 특정 편집기·언어·파일 형식에 종속되지 않는다.
-Jupyter Notebook은 소비자 사례 중 하나다.
 
 | 담당                    | 범위                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | Storix                  | 호출 서버가 지정한 namespace의 파일·디렉터리·바이트·메타데이터·revision·snapshot 관리 |
 | 호출 서버·소비자 어댑터 | 최종 사용자 인증·소비자별 권한·파일 파싱과 검증·소비자 응답 형식                      |
-| Jupyter 어댑터          | 노트북 JSON·`nbformat` 정책·Jupyter Contents API 응답                                 |
 
 - Storix는 허용된 파일 바이트를 재해석하거나 정규화하지 않는다.
 - 요구사항에서 지정하지 않은 구현 방식은 제한하지 않는다.
@@ -440,7 +438,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 - PostgreSQL HTTP L1 첫 실행은 stale 오류 기대 2건과 lease-renewal timing assertion 1건으로 141/143, stale 기대를 갱신한 재실행은 142/143이었다.
 - 승인된 단일 timing 실패 재실행 1/1 통과 후 L2 PostgreSQL 전체 27 suites/416 tests와 SQLite 전체 12 suites/217 tests가 통과했다.
 - L2에는 PostgreSQL/SQLite repository, HTTP, migration 검증이 포함된다.
-- 실 Jupyter/WAS 연동은 검증하지 않았다.
+- 실 WAS 연동은 검증하지 않았다.
 - SQLite 계약 검증에서 `snapshot-list`가 통과했다.
   - snapshot 5건을 limit 2로 순회해 누락·중복 없이 조회.
   - 이동과 삭제 후 같은 경로 재생성 뒤에도 소속 유지.
@@ -550,7 +548,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 - 각 사례에 맞춰 대상 파일·snapshot·Blob 참조·root revision·논리 사용량의 무변경을 단언했다.
 - PostgreSQL repository L1은 노드 quota 114/114, snapshot 상한 20/20이 통과했다.
 - `pnpm typecheck`와 `pnpm lint`도 최종 테스트 변경 후 exit 0이다.
-- 실제 배포 설정, WAS/Jupyter 연동은 검증하지 않았다.
+- 실제 배포 설정, WAS 연동은 검증하지 않았다.
 - SQLite 계약 검증(`small-limits` 프로필: 파일 상한 1200, snapshot 상한 800, 논리 상한 2000 바이트)에서 다음 계약이 통과했다:
   - `limits-visible`: namespace 조회가 상한·사용량을 노출하고 저장·snapshot 생성이 사용량에 반영.
   - `file-size-rejection`:
@@ -1333,7 +1331,7 @@ Jupyter Notebook은 소비자 사례 중 하나다.
 - 최종 사용자 인증, 프로젝트 ACL, 사용자·프로젝트와 namespace의 연결, 허용 경로 결정은 호출 서버 책임이다.
 - 소비자별 파일 파싱·검증·입력 정규화 여부·사용자 오류 문구는 소비자 어댑터 책임이다.
 - Storix는 JSON이 아닌 파일도 저장할 수 있어야 한다.
-- Jupyter 어댑터에서는 `nbformat` 지원 범위, Jupyter Contents API 경로·상태 코드·응답 모양, 체크포인트 응답 변환과 WAS 자체 응답 재생을 어댑터가 책임진다.
+- 소비자 어댑터는 파일 형식 지원 범위, 소비자 API 경로·상태 코드·응답 모양, 체크포인트 응답 변환과 WAS 자체 응답 재생을 책임진다.
 - 셀 실행, 커널 관리, 렌더링, 셀 단위 병합, 노트북 신뢰 서명은 Storix 범위에서 제외한다.
 
 ## 관련 문서
