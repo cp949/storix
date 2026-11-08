@@ -2,6 +2,8 @@ packages:
   - "apps/*"
   - "apps/*/*"
   - "packages/*"
+  # 시크릿 어댑터 패키지는 독립 lockfile로 따로 설치한다(변형 이미지 Docker 빌드가 패키지 단위로 설치).
+  - "!packages/secret-source-*"
 allowBuilds:
   "@parcel/watcher": true
   better-sqlite3: true
