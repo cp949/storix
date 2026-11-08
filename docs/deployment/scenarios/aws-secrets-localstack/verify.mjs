@@ -246,8 +246,10 @@ try {
       "--rm",
       "--entrypoint",
       "node",
+      "--volume",
+      `${path.join(root, "docs/deployment/scenarios/aws-secrets-localstack/fixtures/verify-exit.mjs")}:/tmp/verify-exit.mjs:ro`,
       appImage,
-      "/opt/storix-secret-source-aws-example/verify-exit.mjs",
+      "/tmp/verify-exit.mjs",
     ],
     { timeout: 120_000 },
   );

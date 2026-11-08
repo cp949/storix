@@ -1,5 +1,5 @@
 {
-  "name": "storix-secret-source-aws-example",
+  "name": "storix-secret-source-aws",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.28.3",

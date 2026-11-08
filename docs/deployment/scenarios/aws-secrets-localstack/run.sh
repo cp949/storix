@@ -91,7 +91,7 @@ if [[ "$skip_build" -eq 1 ]]; then
 else
   docker build --file apps/api/Dockerfile --tag "$BASE_IMAGE" .
   docker build \
-    --file examples/secret-source-aws/Dockerfile \
+    --file packages/secret-source-aws/Dockerfile \
     --build-arg "STORIX_BASE_IMAGE=$BASE_IMAGE" \
     --tag "$APP_IMAGE" .
 fi
@@ -112,7 +112,7 @@ readonly BASE_URL="http://127.0.0.1:$PORT"
 compose exec -T app node --input-type=module -e '
   import { pathToFileURL } from "node:url";
   const loader = await import(pathToFileURL("/repo/apps/api/dist/secrets/secret-adapter-loader.js"));
-  const [source] = await loader.loadSecretAdapters(["storix-secret-source-aws-example"]);
+  const [source] = await loader.loadSecretAdapters(["storix-secret-source-aws"]);
   if (source.scheme !== "aws-sm") process.exit(1);
 ' >/dev/null
 node --input-type=module - "$BASE_URL" "$API_KEY" <<'NODE'

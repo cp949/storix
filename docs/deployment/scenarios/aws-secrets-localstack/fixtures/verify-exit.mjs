@@ -29,7 +29,7 @@ const childEnvironment = {
   AWS_SECRET_ACCESS_KEY: "test",
   AWS_EC2_METADATA_DISABLED: "true",
   STORIX_AWS_SM_ENDPOINT: endpoint,
-  STORIX_SECRET_ADAPTERS: "storix-secret-source-aws-example",
+  STORIX_SECRET_ADAPTERS: "storix-secret-source-aws",
   STORIX_SECRET_RESOLVE_TIMEOUT_MS: String(timeoutMs),
   STORIX_API_KEY: "",
   STORIX_API_KEY_FILE: "",

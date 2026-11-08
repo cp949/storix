@@ -68,7 +68,7 @@ function respond(response, status, value, headers = {}) {
   response.end(JSON.stringify(value));
 }
 
-/** 예제 어댑터의 기본 export를 불러온다. */
+/** 어댑터의 기본 export를 불러온다. */
 async function loadAdapter() {
   return (await import("../index.js")).default;
 }

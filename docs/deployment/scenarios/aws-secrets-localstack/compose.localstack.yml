@@ -45,7 +45,7 @@ services:
       STORIX_API_KEY_REF: aws-sm://storix/localstack/api-key
       STORIX_API_KEY_PREVIOUS_FILE: ""
       STORIX_API_KEY_PREVIOUS_REF: ""
-      STORIX_SECRET_ADAPTERS: storix-secret-source-aws-example
+      STORIX_SECRET_ADAPTERS: storix-secret-source-aws
       STORIX_SECRET_RESOLVE_TIMEOUT_MS: "10000"
       STORIX_ENCRYPTION_MASTER_KEY: ${STORIX_EXAMPLE_MASTER_KEY:?예제 마스터 키가 필요하다}
       AWS_REGION: us-east-1
