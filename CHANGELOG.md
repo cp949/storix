@@ -10,6 +10,7 @@
 
 ### Changed
 
+- `@sentry/node`를 11.11.0으로 올렸다. 11은 `sendDefaultPii`를 제거하고 `dataCollection` 생략 시 쿠키·클라이언트 IP·요청 본문·DB 쿼리 값을 기본 수집한다. 오류 보고 수집 범위가 넓어지지 않도록 `dataCollection`을 10.x의 `sendDefaultPii: false`와 같은 범위로 명시했다. 기존처럼 Authorization 헤더도 전송 전에 지운다.
 - 의존성을 patch·minor 범위로 갱신했다(NestJS 12.4.0, express 5.3.0, AWS SDK 3.1164.0, typeorm 1.1.2 등). express 5.3.0이 쓰는 body-parser 2.4부터 `Content-Encoding: zstd` 요청 본문을 풀어 읽는다(Node 24.18 이상). 이전에는 415였고, 손상된 zstd 본문은 400 `BAD_REQUEST`다. 그 밖의 지원하지 않는 `Content-Encoding`은 그대로 415 `BAD_REQUEST`다.
 
 ## [1.5.0] - 2026-10-19

@@ -25,7 +25,7 @@ provider를 교체하거나 추가해도 호출부를 유지하기 위한 구조
 - GC job 실패는 `gc-main.ts`의 catch에서 보고한다.
 - 호출부는 `ErrorReporter.report()`를 사용한다.
 - Sentry 구현체가 `@sentry/node`로 예외를 캡처한다.
-- Sentry 초기화에 `sendDefaultPii: false`를 적용한다.
+- Sentry 초기화에 `sendDefaultPii: false`를 적용한다. `@sentry/node` 11부터 이 옵션이 없어 `dataCollection`을 같은 수집 범위로 고정한다(`SENTRY_DATA_COLLECTION`).
 
 `STORAGE-03`의 “서명값 로그 노출 금지” 기준을 에러 리포팅에도 적용하기 위한 결정이다.
 요청 헤더·바디·쿼리스트링은 보고 context에 포함하지 않는다.

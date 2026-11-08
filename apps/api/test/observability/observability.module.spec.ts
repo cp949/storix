@@ -12,6 +12,7 @@ import { ObservabilityModule, resolveErrorReporter } from '../../src/observabili
 import { NoopErrorReporter } from '../../src/observability/noop-error-reporter.js';
 import {
   SentryErrorReporter,
+  SENTRY_DATA_COLLECTION,
   scrubAuthorizationHeader,
   type SentryClient,
 } from '../../src/observability/sentry-error-reporter.js';
@@ -29,7 +30,7 @@ describe('resolveErrorReporter', () => {
     expect(reporter).toBeInstanceOf(SentryErrorReporter);
     expect(client.init).toHaveBeenCalledWith({
       dsn: 'https://public@example.sentry.io/1',
-      sendDefaultPii: false,
+      dataCollection: SENTRY_DATA_COLLECTION,
       beforeSend: scrubAuthorizationHeader,
     });
   });

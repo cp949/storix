@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/node';
 import type { ErrorEvent } from '@sentry/node';
 import {
   SentryErrorReporter,
+  SENTRY_DATA_COLLECTION,
   scrubAuthorizationHeader,
   type SentryClient,
 } from '../../src/observability/sentry-error-reporter.js';
@@ -15,14 +16,14 @@ function createFakeClient(): jest.Mocked<SentryClient> {
 }
 
 describe('SentryErrorReporter', () => {
-  it('생성 시 주어진 DSN으로 Sentry 클라이언트를 초기화하고 기본 PII 전송을 끈다', () => {
+  it('생성 시 주어진 DSN으로 Sentry 클라이언트를 초기화하고 수집 범위를 개인정보 최소 설정으로 고정한다', () => {
     const client = createFakeClient();
 
     new SentryErrorReporter('https://public@example.sentry.io/1', client);
 
     expect(client.init).toHaveBeenCalledWith({
       dsn: 'https://public@example.sentry.io/1',
-      sendDefaultPii: false,
+      dataCollection: SENTRY_DATA_COLLECTION,
       beforeSend: scrubAuthorizationHeader,
     });
   });
@@ -79,7 +80,7 @@ describe('SentryErrorReporter', () => {
       const sent: ErrorEvent[] = [];
       Sentry.init({
         dsn: 'https://public@example.sentry.io/1',
-        sendDefaultPii: false,
+        dataCollection: SENTRY_DATA_COLLECTION,
         beforeSend: (event) => {
           sent.push(scrubAuthorizationHeader(event));
           return null;
@@ -99,6 +100,44 @@ describe('SentryErrorReporter', () => {
       // sdkProcessingMetadata는 SDK가 envelope 직렬화 전에 제거하므로 전송되는 request만 검사한다.
       expect(JSON.stringify(sent[0].request)).not.toContain('secret-key');
       expect(sent[0].request?.headers).toEqual({ host: 'storix.test' });
+    });
+
+    it('쿠키·클라이언트 IP는 SDK 기본 수집값으로 돌아가지 않고 전송 이벤트에 남지 않는다', async () => {
+      const sent: ErrorEvent[] = [];
+      Sentry.init({
+        dsn: 'https://public@example.sentry.io/1',
+        dataCollection: SENTRY_DATA_COLLECTION,
+        beforeSend: (event) => {
+          sent.push(scrubAuthorizationHeader(event));
+          return null;
+        },
+      });
+
+      Sentry.withIsolationScope((scope) => {
+        scope.setSDKProcessingMetadata({
+          normalizedRequest: {
+            method: 'POST',
+            url: 'http://storix.test/api/v2/x',
+            headers: {
+              host: 'storix.test',
+              cookie: 'session=cookie-secret',
+              authorization: 'Bearer secret-key',
+              'x-forwarded-for': '203.0.113.7',
+            },
+            cookies: { session: 'cookie-secret' },
+          },
+          ipAddress: '203.0.113.7',
+        });
+        Sentry.captureException(new Error('boom'));
+      });
+      await Sentry.flush(2000);
+      await Sentry.close(2000);
+
+      expect(sent).toHaveLength(1);
+      const serialized = JSON.stringify({ request: sent[0].request, user: sent[0].user });
+      for (const secret of ['cookie-secret', 'secret-key', '203.0.113.7']) {
+        expect(serialized).not.toContain(secret);
+      }
     });
   });
 });
