@@ -10,7 +10,7 @@ upstream CI는 가짜 OpenBao 서버로만 어댑터를 검증한다. 실제 Ope
 docker pull ghcr.io/cp949/storix:vX.Y.Z-bao
 ```
 
-`-bao` 태그는 이 변경이 들어간 릴리즈부터 발행한다. v1.5.0 이하에는 없다. `-bao` 이미지는 같은 릴리즈의 기준 이미지에 어댑터만 더한다. 어댑터는 npm 의존성이 없다. Node의 `fetch`로 OpenBao를 호출한다.
+`-bao` 태그는 v1.6.0부터 발행한다. v1.5.0 이하에는 없다. `-bao` 이미지는 같은 릴리즈의 기준 이미지에 어댑터만 더한다. 어댑터는 npm 의존성이 없다. Node의 `fetch`로 OpenBao를 호출한다.
 
 ## 참조 형식
 

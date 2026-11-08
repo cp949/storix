@@ -53,7 +53,7 @@ SDK는 설정된 provider chain에서 자격 증명을 찾는다. 환경 변수 
 docker pull ghcr.io/cp949/storix:vX.Y.Z-aws
 ```
 
-`-aws` 태그는 이 변경이 들어간 릴리즈부터 발행한다. v1.5.0 이하에는 없다. `-aws` 이미지는 같은 릴리즈의 기준 이미지에 `storix-secret-source-aws`만 더한다. `@aws-sdk/client-secrets-manager`는 이 이미지에만 있다.
+`-aws` 태그는 v1.6.0부터 발행한다. v1.5.0 이하에는 없다. `-aws` 이미지는 같은 릴리즈의 기준 이미지에 `storix-secret-source-aws`만 더한다. `@aws-sdk/client-secrets-manager`는 이 이미지에만 있다.
 
 소스에서 직접 만들려면 저장소 루트에서 기본 이미지와 어댑터 이미지를 빌드한다. 어댑터 Dockerfile은 저장소의 패키지 파일을 격리된 build stage에 복사하고 그 안에서 tarball을 만든 뒤 기준 이미지에 설치한다.
 
