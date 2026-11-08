@@ -57,9 +57,7 @@ describe('S3BlobStorage 응답 정지 timeout', () => {
     expect(Date.now() - startedAt).toBeLessThan(SOCKET_TIMEOUT_MS * 5);
   });
 
-  // jest ESM(VM)에서는 Node 코어가 만든 오류가 `instanceof Error`가 아니라 분류기가 거르지 못한다. 여기서는
-  // socketTimeout이 stream을 끝내는지만 확인하고, ECONNRESET의 503 분류는 storage-failure.spec이 다룬다.
-  it('응답 본문 도중 멈추면 socketTimeout 안에 stream이 ECONNRESET으로 끝난다', async () => {
+  it('응답 본문 도중 멈추면 socketTimeout 안에 stream이 503 저장 장애로 끝난다', async () => {
     const startedAt = Date.now();
     const stream = await storage.get('mid-body');
 
@@ -67,7 +65,11 @@ describe('S3BlobStorage 응답 정지 timeout', () => {
       (async () => {
         for await (const chunk of stream) void chunk;
       })(),
-    ).rejects.toMatchObject({ code: 'ECONNRESET' });
+    ).rejects.toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+      status: 503,
+      cause: { name: 'TimeoutError' },
+    });
     expect(Date.now() - startedAt).toBeLessThan(SOCKET_TIMEOUT_MS * 5);
   });
 });

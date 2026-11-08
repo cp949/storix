@@ -57,6 +57,10 @@ export function resolveErrorCode(exception: unknown, status: number): string {
   }
   if (status === 500) return 'INTERNAL_ERROR';
   if (exception instanceof HttpException) {
+    // Nest 12.4부터 express 어댑터가 body-parser의 http-errors 오류를 HttpException으로 감싼다.
+    // 이 경우 HttpStatus 이름(PAYLOAD_TOO_LARGE 등)이 아니라 공개 계약대로 BAD_REQUEST를 쓴다.
+    const cause = exception.cause as { statusCode?: unknown } | undefined;
+    if (typeof cause?.statusCode === 'number') return 'BAD_REQUEST';
     // 숫자 enum의 역조회라 HttpStatus에 없는 status는 undefined다.
     return HttpStatus[status] ?? 'BAD_REQUEST';
   }

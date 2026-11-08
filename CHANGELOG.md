@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 의존성을 patch·minor 범위로 갱신했다(NestJS 12.4.0, express 5.3.0, AWS SDK 3.1164.0, typeorm 1.1.2 등). express 5.3.0이 쓰는 body-parser 2.4부터 `Content-Encoding: zstd` 요청 본문을 풀어 읽는다(Node 24.18 이상). 이전에는 415였고, 손상된 zstd 본문은 400 `BAD_REQUEST`다. 그 밖의 지원하지 않는 `Content-Encoding`은 그대로 415 `BAD_REQUEST`다.
+
 ## [1.5.0] - 2026-10-19
 
 ### Fixed

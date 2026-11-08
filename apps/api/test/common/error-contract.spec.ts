@@ -145,6 +145,7 @@ describe('오류 응답 계약 (미들웨어+필터+인터셉터 파이프라인
       ['gzip 잘림', 'gzip', truncatedGzip],
       ['deflate 손상', 'deflate', Buffer.from('garbage garbage')],
       ['br 손상', 'br', Buffer.from('garbage garbage garbage')],
+      ['zstd 손상', 'zstd', Buffer.from('garbage garbage garbage')],
     ])('%s 본문은 압축 라이브러리 code 대신 400 BAD_REQUEST로 응답한다', async (_name, encoding, body) => {
       for (const path of ['/probe/echo', '/probe/fs/mutations']) {
         const response = await post(path, encoding, body).expect(400);
@@ -154,7 +155,8 @@ describe('오류 응답 계약 (미들웨어+필터+인터셉터 파이프라인
     });
 
     it('지원하지 않는 Content-Encoding은 415 BAD_REQUEST를 유지한다', async () => {
-      const response = await post('/probe/echo', 'zstd', Buffer.from(good)).expect(415);
+      // zstd는 body-parser 2.4부터 지원하므로(Node 24.18+) 지원하지 않는 예시로 compress를 쓴다.
+      const response = await post('/probe/echo', 'compress', Buffer.from(good)).expect(415);
 
       expect(response.body).toMatchObject({ code: 'BAD_REQUEST' });
     });
