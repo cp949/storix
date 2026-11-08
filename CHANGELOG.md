@@ -10,7 +10,7 @@
 
 ### Added
 
-- 릴리즈마다 시크릿 어댑터 변형 이미지 `ghcr.io/cp949/storix:vX.Y.Z-bao`(OpenBao)와 `:vX.Y.Z-aws`(AWS Secrets Manager)를 발행한다. 기준 이미지(`vX.Y.Z`, `latest`)에는 어댑터가 없고 달라지지 않는다. 변형 이미지에서 `STORIX_SECRET_ADAPTERS=storix-secret-source-bao` 또는 `storix-secret-source-aws`, `X_REF`, 제공자 설정(OpenBao는 `BAO_ADDR`·`BAO_ROLE_ID`·`BAO_SECRET_ID_FILE`, AWS는 `AWS_REGION`과 자격 증명)을 설정한다. 변형 이동 태그(`latest-bao` 등)는 없다. 어댑터 소스는 `packages/secret-source-bao`, `packages/secret-source-aws`이고 bao 어댑터는 bbcode-storix에서 옮겼다. 첫 변형 이미지는 이 항목이 들어간 다음 릴리즈에서 나온다. 설계는 [시크릿 소스](docs/design/15-secret-sources.md), 결정은 ADR-0050, OpenBao 사용법은 [OpenBao 가이드](docs/guides/openbao-secret-source.md)다. 위험: 변형 job이 실패하면 기준 이미지와 Release가 먼저 공개되고 변형 태그가 없을 수 있다. 복구: Actions의 "Re-run failed jobs"로 변형 job만 다시 돌린다.
+- 릴리즈마다 시크릿 어댑터 변형 이미지 `ghcr.io/cp949/storix:vX.Y.Z-bao`(OpenBao)와 `:vX.Y.Z-aws`(AWS Secrets Manager)를 발행한다. 기준 이미지(`vX.Y.Z`, `latest`)에는 어댑터가 없고 달라지지 않는다. 변형 이미지에서 `STORIX_SECRET_ADAPTERS=storix-secret-source-bao` 또는 `storix-secret-source-aws`, `X_REF`, 제공자 설정(OpenBao는 `BAO_ADDR`·`BAO_ROLE_ID`·`BAO_SECRET_ID_FILE`, AWS는 `AWS_REGION`과 자격 증명)을 설정한다. 변형 이동 태그(`latest-bao` 등)는 없다. 어댑터 소스는 `packages/secret-source-bao`, `packages/secret-source-aws`이다. 첫 변형 이미지는 이 항목이 들어간 다음 릴리즈에서 나온다. 설계는 [시크릿 소스](docs/design/15-secret-sources.md), 결정은 ADR-0050, OpenBao 사용법은 [OpenBao 가이드](docs/guides/openbao-secret-source.md)다. 위험: 변형 job이 실패하면 기준 이미지와 Release가 먼저 공개되고 변형 태그가 없을 수 있다. 복구: Actions의 "Re-run failed jobs"로 변형 job만 다시 돌린다.
 
 ### Removed
 

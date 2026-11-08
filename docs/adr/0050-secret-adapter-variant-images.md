@@ -9,7 +9,7 @@
 - 코어는 `X_REF=<scheme>://<참조>`로 비밀값을 읽고, 제공자 어댑터는 코어 밖 패키지다(api ADR-0040).
 - 기본 이미지에는 어댑터가 없다. 사용자가 어댑터를 넣은 파생 이미지를 직접 만들어야 했다.
 - 지금 쓰는 제공자는 둘이다.
-  - OpenBao: bbcode가 자기 저장소에서 어댑터와 파생 이미지를 만들어 운영한다.
+  - OpenBao: 외부 저장소에서 만든 어댑터와 파생 이미지로 운영 중인 사용처가 있다.
   - AWS Secrets Manager: `examples/`에 LocalStack으로만 검증한 예제가 있었다.
 - 릴리즈마다 `-pg16` 이미지를 발행했지만 쓰는 사용자가 없다.
 
@@ -25,7 +25,7 @@
    - 변형에 `latest-bao` 같은 이동 태그를 두지 않는다.
 
 2. 어댑터를 `packages/secret-source-bao`, `packages/secret-source-aws`로 둔다.
-   - 패키지명은 `storix-secret-source-bao`, `storix-secret-source-aws`다. bao는 bbcode가 쓰는 이름을 유지한다. aws는 예제 이름(`-aws-example`)에서 바꾼다.
+   - 패키지명은 `storix-secret-source-bao`, `storix-secret-source-aws`다. bao는 기존 사용처가 쓰는 이름을 유지한다. aws는 예제 이름(`-aws-example`)에서 바꾼다.
    - 루트 workspace에서 제외하고 패키지마다 독립 lockfile로 설치한다. 어댑터 의존성이 해당 변형 이미지에만 들어간다.
    - npm에 공개하지 않는다.
 3. 변형 Dockerfile은 패키지 디렉터리에 둔다. 빌드 인자 `STORIX_BASE_IMAGE`로 기준 이미지를 받으며 기본값이 없다.
@@ -59,6 +59,6 @@
 - 변형 push가 일부만 성공해도 태그를 지우지 않는다. 재실행이 같은 태그를 덮어쓴다.
 - 보안 게이트는 변형 이미지도 대상에 넣는다. HIGH 이상 취약점은 차단한다.
 - aws 어댑터 패키지명이 바뀌었다. `STORIX_SECRET_ADAPTERS=storix-secret-source-aws-example`을 쓴 배포는 `storix-secret-source-aws`로 바꾼다.
-- bbcode-storix의 파생 이미지 제거는 이 결정에 포함하지 않는다.
+- 기존 사용처의 파생 이미지 제거는 이 결정에 포함하지 않는다.
 - Postgres 16 서버는 지원 대상으로 선언하지 않는다. 16 client가 필요하면 `--build-arg PG_CLIENT_MAJOR=16`으로 소스 빌드한다.
 - GitHub Actions에서 변형 job은 실제 릴리즈 전에 실행해 확인하지 않았다.
