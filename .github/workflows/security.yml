@@ -26,6 +26,13 @@ jobs:
           pnpm install --frozen-lockfile
       - name: HIGH 이상 의존성 취약점 차단
         run: pnpm audit --audit-level=high
+      # aws 어댑터는 루트 workspace 밖의 독립 lockfile을 쓰므로 따로 검사한다. bao 어댑터는 npm 의존성이 없다.
+      - name: aws 어댑터 의존성 설치
+        working-directory: packages/secret-source-aws
+        run: pnpm install --frozen-lockfile
+      - name: aws 어댑터 HIGH 이상 의존성 취약점 차단
+        working-directory: packages/secret-source-aws
+        run: pnpm audit --audit-level=high
 
   container-image-audit:
     name: API 이미지 취약점 검사
@@ -39,6 +46,36 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: storix-api:security
+          format: table
+          exit-code: "1"
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln
+
+  adapter-image-audit:
+    name: 변형 이미지 취약점 검사 (${{ matrix.adapter }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: [bao, aws]
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+      - name: 기준 이미지 빌드
+        run: docker build -t storix-api:security -f apps/api/Dockerfile .
+      - name: 변형 이미지 빌드
+        run: |
+          docker build \
+            --file packages/secret-source-${{ matrix.adapter }}/Dockerfile \
+            --build-arg STORIX_BASE_IMAGE=storix-api:security \
+            --tag storix-api:security-${{ matrix.adapter }} \
+            .
+      - name: HIGH 이상 이미지 취약점 차단
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: storix-api:security-${{ matrix.adapter }}
           format: table
           exit-code: "1"
           ignore-unfixed: false
