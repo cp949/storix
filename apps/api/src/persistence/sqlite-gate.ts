@@ -84,7 +84,7 @@ interface RunnerTransactionState {
 const logger = new Logger('SqliteGate');
 
 // 믹스인 패턴이 요구하는 시그니처다.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 type RunnerConstructor = new (...args: any[]) => QueryRunner;
 
 const installed = new WeakSet<DataSource>();
@@ -108,9 +108,9 @@ function createGatedRunnerClass(
 
     // 소유자 runner는 게이트를 이미 쥐고 있으므로 통과하고, 그 외에는 쿼리마다 한 번 대기한다.
     // QueryRunner.query의 오버로드(일반/structured 결과)를 모두 만족하려면 any가 필요하다.
-    /* eslint-disable @typescript-eslint/no-explicit-any */
+    /* oxlint-disable typescript/no-explicit-any */
     override async query(query: string, parameters?: any, useStructuredResult?: boolean): Promise<any> {
-      /* eslint-enable @typescript-eslint/no-explicit-any */
+      /* oxlint-enable typescript/no-explicit-any */
       const run = () => super.query(query, parameters, useStructuredResult as true);
       if (gate.owner === this) {
         // 트랜잭션이 열려 있어야 하는데 SQLite가 이미 롤백했다면 쿼리가 autocommit으로 실행돼 원자성이 깨진다.

@@ -75,8 +75,8 @@ Turborepo + pnpm workspace. pnpm은 워크스페이스 간 의존성을 엄격�
 - Node.js 엔진 하한: `>=24.18`
 - pnpm: `11`
 - TypeScript: `6.0.3`
-- ESLint: `v10`
-- Prettier: 최신 버전
+- oxlint: `1.92.0` (`apps/*`의 `lint`)
+- oxfmt: `0.77.0` (루트 `format`, `format:check`)
 - 저장소: `https://github.com/cp949/storix` (아직 원격 push 안 함)
 
 ### 테스트 러너

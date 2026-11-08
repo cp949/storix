@@ -1,0 +1,14 @@
+{
+  "printWidth": 80,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "pnpm-lock.yaml",
+    "_works/",
+    ".superpowers/",
+    ".worktrees/",
+    ".scratch/",
+    "docs/superpowers/"
+  ]
+}
