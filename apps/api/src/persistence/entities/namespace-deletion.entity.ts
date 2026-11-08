@@ -10,7 +10,9 @@ export type NamespaceDeletionPhase = 'UPLOADS' | 'METADATA' | 'OBJECTS' | 'COMPL
 
 /** 자동 정리가 진행하지 못한 원인이다. */
 export type NamespaceDeletionBlockedReason =
-  'UPLOAD_SETTLEMENT_UNKNOWN' | 'STORAGE_DELETE_FAILED' | 'DATA_INCONSISTENT';
+  | 'UPLOAD_SETTLEMENT_UNKNOWN'
+  | 'STORAGE_DELETE_FAILED'
+  | 'DATA_INCONSISTENT';
 
 @Entity('namespace_deletion')
 export class NamespaceDeletionEntity {

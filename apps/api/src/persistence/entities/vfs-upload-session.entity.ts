@@ -19,7 +19,8 @@ export class VfsUploadSessionEntity {
   fileExpiresInSeconds: number | null;
   @Column({ name: 'condition_type', type: 'varchar', length: 16 }) conditionType: 'ABSENT' | 'REVISION';
   @Column({ name: 'condition_revision', type: 'varchar', length: 128, nullable: true }) conditionRevision:
-    string | null;
+    | string
+    | null;
   @Column({ name: 'part_size_bytes', type: 'integer' }) partSizeBytes: number;
   @Column({ name: 'part_count', type: 'integer' }) partCount: number;
   @Column({ type: 'varchar', length: 16 }) state: VfsUploadSessionState;

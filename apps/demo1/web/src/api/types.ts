@@ -40,7 +40,12 @@ export interface UploadSessionStatus extends Omit<
   "state"
 > {
   readonly state:
-    "OPEN" | "FINALIZING" | "COMPLETED" | "CANCELLED" | "EXPIRED" | "FAILED";
+    | "OPEN"
+    | "FINALIZING"
+    | "COMPLETED"
+    | "CANCELLED"
+    | "EXPIRED"
+    | "FAILED";
   readonly path: string;
   readonly sizeBytes: string;
   readonly mimeType: string;

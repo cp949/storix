@@ -101,7 +101,8 @@ export interface AffectedRevision {
 }
 
 export type ContentPrecondition =
-  { readonly ifAbsent: true; readonly expiresInSeconds?: number } | { readonly ifRevision: string };
+  | { readonly ifAbsent: true; readonly expiresInSeconds?: number }
+  | { readonly ifRevision: string };
 
 export interface FindRecursiveRow {
   readonly id: string;

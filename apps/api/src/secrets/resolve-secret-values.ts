@@ -50,7 +50,8 @@ export interface ResolveSecretValuesOptions {
 }
 
 type SecretSpec =
-  { readonly method: 'file'; readonly path: string } | { readonly method: 'ref'; readonly ref: string };
+  | { readonly method: 'file'; readonly path: string }
+  | { readonly method: 'ref'; readonly ref: string };
 
 interface ResolvedSecret {
   readonly name: string;

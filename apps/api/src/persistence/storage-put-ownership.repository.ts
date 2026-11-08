@@ -10,7 +10,9 @@ import { isSqliteDataSource } from '../common/db-driver.js';
 
 /** GC가 storage key multipart 회수 권한을 얻었는지 나타낸다. */
 export type StoragePutGcClaimResult =
-  { readonly kind: 'unknown' } | { readonly kind: 'protected' } | { readonly kind: 'claimed' };
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'protected' }
+  | { readonly kind: 'claimed' };
 
 interface AttemptOwnerRow {
   /** PUT Promise가 정착했는지 나타내는 저장 상태다. */

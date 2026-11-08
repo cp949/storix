@@ -86,7 +86,10 @@ export interface UploadPartPolicySnapshot {
 
 /** GET staging 진단에 공개하는 상태다. */
 export type UploadSessionStagingStatus =
-  'PARTS_STORED' | 'PARTS_IN_PROGRESS' | 'FILE_TOO_LARGE' | 'WITHIN_LIMIT';
+  | 'PARTS_STORED'
+  | 'PARTS_IN_PROGRESS'
+  | 'FILE_TOO_LARGE'
+  | 'WITHIN_LIMIT';
 
 /** GET에서 파생하는 만료·staging 진단이다. */
 export interface UploadSessionStagingDiagnosis {

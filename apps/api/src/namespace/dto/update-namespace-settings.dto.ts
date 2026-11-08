@@ -1,7 +1,11 @@
 import { NamespaceInvalidSettingsRequestError } from '../namespace.errors.js';
 
 export type NamespaceSettingsNumberField =
-  'maxTotalLogicalBytes' | 'maxFileSizeBytes' | 'maxFilesPerFolder' | 'maxNodes' | 'maxRetainedTrashBytes';
+  | 'maxTotalLogicalBytes'
+  | 'maxFileSizeBytes'
+  | 'maxFilesPerFolder'
+  | 'maxNodes'
+  | 'maxRetainedTrashBytes';
 
 export interface UpdateNamespaceSettingsRequest {
   readonly maxTotalLogicalBytes?: string | null;

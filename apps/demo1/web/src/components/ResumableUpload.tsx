@@ -28,7 +28,11 @@ type UploadState = "idle" | "uploading" | "paused" | "success" | "error";
 type CancelOutcome =
   | {
       readonly kind:
-        "cancelled" | "unavailable" | "completed" | "finalizing" | "open";
+        | "cancelled"
+        | "unavailable"
+        | "completed"
+        | "finalizing"
+        | "open";
     }
   | { readonly kind: "failed"; readonly cause: unknown };
 

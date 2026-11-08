@@ -87,8 +87,8 @@ type ComposeService = 'app' | 'migrate' | 'gc' | 'backup' | 'restore';
 // `compose`(코드가 읽지 않는 보간 값)는 컨테이너 전달 대상이 아니라서 없다.
 const SERVICES_BY_READER: Record<string, ComposeService[]> = {
   모두: ['app', 'migrate', 'gc', 'backup', 'restore'],
-  'app·잡': ['app', 'gc', 'backup', 'restore'],
-  'app·gc': ['app', 'gc'],
+  app·잡: ['app', 'gc', 'backup', 'restore'],
+  app·gc: ['app', 'gc'],
   app: ['app'],
   gc: ['gc'],
   backup: ['backup'],
