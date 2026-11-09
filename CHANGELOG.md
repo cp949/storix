@@ -8,9 +8,11 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-09
+
 ### Changed
 
-- 빌드 도구 pnpm을 11.28.3에서 12.18.0으로 올렸다(`packageManager`). Docker 이미지가 corepack으로 받는 pnpm이 번들한 `undici`가 6.29.0에서 6.29.1이 되어 `security.yml`의 이미지 스캔 HIGH 3건(CVE-2026-109383, CVE-2026-109869, CVE-2026-87018)이 해소된다. pnpm 12는 `pnpm-lock.yaml`에 자기 자신의 항목(`packageManagerDependencies`)을 기록한다. 로컬에서 독립 설치한 pnpm 12로 `turbo` 명령을 쓰면 `Exec format error`로 실패할 수 있다(TRP-014). 위험: `corepack enable`을 쓰는 환경은 영향이 없다. 롤백: `packageManager`와 lockfile을 되돌린다.
+- 빌드 도구 pnpm을 11.28.3에서 12.18.0으로 올렸다(`packageManager`). Docker 이미지가 corepack으로 받는 pnpm이 번들한 `undici`가 6.29.0에서 6.29.1이 되어 `security.yml`의 이미지 스캔 HIGH 3건(CVE-2026-109383, CVE-2026-109869, CVE-2026-87018)이 해소된다. 이미 발행한 `v1.7.0` 계열 이미지에는 `undici` 6.29.0이 남아 있고 `v1.7.1`부터 6.29.1이다. pnpm 12는 `pnpm-lock.yaml`에 자기 자신의 항목(`packageManagerDependencies`)을 기록한다. 로컬에서 독립 설치한 pnpm 12로 `turbo` 명령을 쓰면 `Exec format error`로 실패할 수 있다(TRP-014). 위험: `corepack enable`을 쓰는 환경은 영향이 없다. 롤백: `packageManager`와 lockfile을 되돌린다.
 
 ## [1.7.0] - 2026-11-09
 
