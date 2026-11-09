@@ -132,6 +132,6 @@ STORIX_API_KEY_REF="aws-sm://storix/credentials#api-key"
 - Secret을 교체해도 실행 중인 Storix 값은 바뀌지 않는다. 새 값을 적용하려면 Storix를 재시작한다.
 - 이 어댑터는 `SecretString`만 지원한다. `SecretBinary` 응답은 시작 실패가 된다.
 - 키를 붙인 참조만 JSON을 파싱한다. 중첩 키 경로와 `VersionStage`·`VersionId` 선택은 지원하지 않는다.
-- 키 선택은 이 기능이 들어간 릴리즈의 `-aws` 이미지부터 쓸 수 있다. `v1.6.0-aws`에는 없다. 포함 릴리즈는 `CHANGELOG.md`에서 확인한다.
+- 키 선택은 `v1.7.0-aws` 이미지부터 쓸 수 있다. `v1.6.0-aws`에는 없다.
 - 조회한 값은 기존 SecretSource 동작에 따라 Storix 프로세스의 `process.env`에 저장된다. 같은 프로세스 권한으로 읽을 수 있다.
 - 실제 AWS IAM·KMS·역할 연결·네트워크 동작은 이 저장소의 LocalStack 검증 범위에 포함되지 않는다.
