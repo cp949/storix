@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- AWS Secrets Manager 어댑터(`storix-secret-source-aws`)가 JSON Secret에서 키 하나를 고른다. `X_REF=aws-sm://<SecretId>#<키>`로 쓰면 `SecretString`을 JSON 객체로 읽어 그 키의 문자열 값만 반환한다. 키 없는 참조(`aws-sm://<SecretId>`)는 이전처럼 `SecretString` 전체를 반환한다. 키는 `A-Z a-z 0-9 _ . -`만 허용한다. JSON이 아니거나 객체가 아니거나 키가 없거나 값이 문자열이 아니면 시작에 실패하고 오류에 Secret 내용을 싣지 않는다. 위험: `.env`에서 따옴표 없이 쓰면 Node `loadEnvFile()`이 `#` 뒤를 주석으로 잘라 키 없는 참조가 되고, JSON 전체가 값으로 쓰이며 오류 없이 시작할 수 있다. 참조를 큰따옴표로 감싼다. 사용법은 [AWS Secrets Manager 가이드](docs/guides/aws-secrets-manager-secret-source.md)다. `v1.6.0-aws` 이미지에는 없고 다음 릴리즈의 `-aws` 이미지부터 포함한다.
+
 ## [1.6.0] - 2026-11-08
 
 ### Added

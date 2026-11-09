@@ -4,7 +4,7 @@
 
 ## Secret 준비
 
-`SecretString`에는 API 키 원문을 저장한다. JSON 객체를 저장해도 어댑터는 필드를 고르지 않고 JSON 문자열 전체를 반환한다.
+`SecretString`에는 API 키 원문을 저장한다. JSON 객체 하나에 여러 값을 저장하고 키를 골라 쓰는 방법은 아래 "JSON Secret에서 키 고르기"를 따른다.
 
 ```sh
 aws secretsmanager create-secret \
@@ -80,11 +80,58 @@ STORIX_API_KEY_REF=aws-sm://arn:aws:secretsmanager:ap-northeast-2:123456789012:s
 
 AWS 설정에는 `STORIX_AWS_SM_ENDPOINT`, LocalStack Auth Token, 가짜 AWS access key를 지정하지 않는다. endpoint는 LocalStack 같은 호환 서버에만 사용한다. 실행 예제는 [LocalStack Secrets Manager 예제](../deployment/scenarios/aws-secrets-localstack/README.md)에서 확인한다.
 
+## JSON Secret에서 키 고르기
+
+참조 끝에 `#<키>`를 붙이면 `SecretString`을 JSON 객체로 읽어 그 키의 문자열 값만 반환한다. 키가 없는 참조는 이전처럼 `SecretString` 전체를 반환한다.
+
+```sh
+aws secretsmanager create-secret \
+  --name storix/credentials \
+  --secret-string '{"db-password":"실제-DB-비밀번호","api-key":"실제-API-키","admin-api-key":"실제-관리자-키"}' \
+  --region ap-northeast-2
+```
+
+```yaml
+# compose의 environment: (YAML)
+environment:
+  STORIX_DB_PASSWORD_REF: aws-sm://storix/credentials#db-password
+  STORIX_API_KEY_REF: aws-sm://storix/credentials#api-key
+  STORIX_ADMIN_API_KEY_REF: aws-sm://storix/credentials#admin-api-key
+```
+
+- 키는 `A-Z a-z 0-9 _ . -`만 허용하고 `#`은 하나만 쓴다. SecretId와 ARN에는 `#`이 들어갈 수 없어 구분이 모호하지 않다.
+- 키 문법 밖의 키(공백, `:`, `@`, 비ASCII 등)는 고를 수 없다. 이런 키가 있는 Secret은 키 이름을 바꾼다.
+- 값은 JSON 문자열이어야 한다. 숫자·불리언·`null`·객체·배열 값은 변환하지 않고 시작 실패로 처리한다.
+- 값이 빈 문자열이면 어댑터는 그대로 돌려주고 코어가 `empty`로 시작을 실패시킨다.
+- 어댑터는 값을 바꾸지 않는다. 끝에 줄바꿈이 붙지 않게 저장한다.
+- `SecretString`이 JSON 객체가 아니거나 키가 없을 때도 시작 실패다. 오류 메시지에는 키 이름만 쓰고 Secret 내용은 쓰지 않는다.
+- 변수마다 `GetSecretValue`를 한 번씩 호출한다. 같은 Secret을 가리키는 변수가 셋이면 세 번 호출하고, 권한은 그 Secret의 ARN 하나에 `GetSecretValue`를 주면 된다.
+- Secret을 교체하는 도중에 시작하면 변수마다 다른 버전을 읽을 수 있다. 값이 서로 짝을 이루면 교체가 끝난 뒤 재시작한다.
+
+**`.env` 파일에서는 참조를 큰따옴표로 감싼다.** Storix는 `.env`를 Node의 `loadEnvFile()`로 읽고, 따옴표 없는 값에서는 `#` 뒤를 주석으로 잘라 낸다. 잘리면 키 없는 참조가 되어 JSON 문자열 전체가 값으로 쓰이고, 오류 없이 시작할 수 있다.
+
+```dotenv
+# .env: 큰따옴표로 감싼다
+STORIX_API_KEY_REF="aws-sm://storix/credentials#api-key"
+```
+
+다른 경로에서의 `#`과 따옴표 처리는 다음과 같다. 이 저장소에서 `docker run`과 `docker compose config`로 확인했다.
+
+| 경로                          | `#`       | 큰따옴표              |
+| ----------------------------- | --------- | --------------------- |
+| Storix `.env` (`loadEnvFile`) | 뒤가 잘림 | 벗겨서 `#`을 보존한다 |
+| compose `environment:`        | 값에 남음 | YAML이 벗긴다         |
+| compose `env_file:`           | 값에 남음 | 벗긴다                |
+| `docker run --env-file`       | 값에 남음 | 벗기지 않고 값에 포함 |
+
+따옴표를 붙인 `.env`를 `docker run --env-file`에 그대로 쓰면 값이 `"aws-sm://…"`가 되어 `invalid-ref`로 시작에 실패한다. 같은 파일을 두 용도로 공유하지 않는다.
+
 ## 갱신과 한계
 
 - Storix는 시작할 때 Secret의 기본 버전인 `AWSCURRENT`를 한 번 조회한다.
 - Secret을 교체해도 실행 중인 Storix 값은 바뀌지 않는다. 새 값을 적용하려면 Storix를 재시작한다.
 - 이 어댑터는 `SecretString`만 지원한다. `SecretBinary` 응답은 시작 실패가 된다.
-- JSON을 파싱하거나 특정 필드를 선택하지 않는다.
+- 키를 붙인 참조만 JSON을 파싱한다. 중첩 키 경로와 `VersionStage`·`VersionId` 선택은 지원하지 않는다.
+- 키 선택은 이 기능이 들어간 릴리즈의 `-aws` 이미지부터 쓸 수 있다. `v1.6.0-aws`에는 없다. 포함 릴리즈는 `CHANGELOG.md`에서 확인한다.
 - 조회한 값은 기존 SecretSource 동작에 따라 Storix 프로세스의 `process.env`에 저장된다. 같은 프로세스 권한으로 읽을 수 있다.
 - 실제 AWS IAM·KMS·역할 연결·네트워크 동작은 이 저장소의 LocalStack 검증 범위에 포함되지 않는다.

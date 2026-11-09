@@ -168,6 +168,11 @@ export interface SecretSource {
 - 변형 이미지는 같은 릴리즈의 기준 이미지 위에 어댑터만 얹는다. 기준 이미지의 내용은 같다.
 - 한 이미지에 어댑터는 하나다. 두 제공자를 함께 쓰는 배포는 지원하지 않는다.
 - Secrets Manager 클라이언트(`@aws-sdk/client-secrets-manager`)는 `-aws` 이미지에만 있다.
+- `aws-sm` 참조는 `aws-sm://<SecretId>` 또는 `aws-sm://<SecretId>#<키>`다.
+  - 키가 없으면 `SecretString` 전체를 돌려준다.
+  - 키가 있으면 `SecretString`을 JSON 객체로 읽어 그 키의 문자열 값만 돌려준다. 키 문법은 `[A-Za-z0-9_.-]+`다.
+  - 파싱 실패, 객체 아님, 키 없음, 문자열 아닌 값은 거부한다. 오류 메시지에 Secret 내용을 쓰지 않는다.
+  - 코어는 REF 전체를 그대로 넘기므로 코어 변경은 없다. `.env`에서는 `#` 뒤가 주석으로 잘리므로 참조를 큰따옴표로 감싼다.
 - 어댑터 패키지는 루트 workspace 밖의 독립 패키지다. bao는 npm 의존성이 없고 aws는 패키지의 lockfile로 의존성을 고정한다.
 - 변형 이미지는 push 전에 이미지 안에서 어댑터 로드와 `X_REF` 해석을 확인한다. 저장소는 가짜 HTTP 서버다.
 
