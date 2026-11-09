@@ -828,7 +828,7 @@ snapshot 규칙:
 호스트 실행 요구사항:
 
 - Node.js `>=24.18`.
-- pnpm 11(`corepack enable`).
+- pnpm 12(`corepack enable`). 독립 설치 pnpm 12로 `turbo` 명령을 쓰면 실패할 수 있다(TRP-014).
 
 호스트 실행 시 `.env`를 쉘로 내보낸다.
 
