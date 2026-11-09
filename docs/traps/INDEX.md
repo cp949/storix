@@ -3,18 +3,19 @@
 `docs/agents/rubber-workflow.md` "함정 → 장기 문서화" 기준(재발 조건 특정 가능, 성공처럼 보이는 신호, 재발 가능성)을 모두
 만족해 승격한 항목이다. ID는 `TRP-NNN`(001부터)이며 삭제한 ID는 재사용하지 않는다.
 
-| ID      | 제목                                                                                      | 상태   | 적용 조건                                                                                                            |
-| ------- | ----------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| TRP-001 | 경합 계약이 한 분기만 실행하고 통과한다                                                   | ACTIVE | 동시 요청 두 개의 "성공이거나 거부"를 허용하는 계약을 쓸 때                                                          |
-| TRP-002 | Node 내장 fetch가 스트림 요청 본문을 요청이 끝날 때까지 보유한다                          | ACTIVE | Node 24.20.0 내장 `fetch`에 스트림 요청 본문을 넘겨 큰 파일을 업로드할 때                                            |
-| TRP-003 | Counter backfill의 correlated query에 parent 인덱스가 필요하다                            | ACTIVE | 부모별 child count를 기존 tree row에 backfill하는 migration을 작성할 때                                              |
-| TRP-004 | GC 없이 잰 arrayBuffers 증가량은 힙 크기와 GC 위상에 따라 흔들린다                        | ACTIVE | `process.memoryUsage().arrayBuffers`의 전후 차이로 버퍼 상한을 단언할 때                                             |
-| TRP-005 | SQLite는 varchar 길이를 강제하지 않아 PostgreSQL 22001을 놓친다                           | ACTIVE | 클라이언트 문자열 입력을 `varchar(N)` 컬럼에 저장하는 코드를 추가·변경할 때                                          |
-| TRP-006 | TypeORM SQLite runner는 자동 롤백 뒤 트랜잭션 상태를 정리하지 않는다                      | ACTIVE | SQLite 쿼리 게이트나 TypeORM 트랜잭션 상태(`isTransactionActive`)에 의존하는 코드를 쓸 때                            |
-| TRP-007 | SQLite 재귀 CTE가 namespace 인덱스를 골라 노드 수에 O(N²)가 된다                          | ACTIVE | `vfs_node`처럼 큰 테이블을 자기 자신에 조인하는 재귀 CTE(SQLite 경로)를 추가·변경할 때                               |
-| TRP-008 | 변경 노드마다 DB를 개별 조회하면 노드 수·깊이에 비례해 왕복이 늘어난다                    | ACTIVE | `withMutation` 안·커밋 직전에 노드 집합을 반복하며 `findOneBy`·`UPDATE`를 노드마다 실행하는 코드를 추가·변경할 때    |
-| TRP-009 | PostgreSQL이 작은 테이블에서 만든 FK 트리거 계획을 테이블이 커진 뒤에도 쓴다              | ACTIVE | 비어 있거나 작은 `vfs_node`에 FK 트리거가 걸린 대량 INSERT(`copyNode` 등)를 PostgreSQL에서 시간 단언하거나 측정할 때 |
-| TRP-010 | TypeORM save()는 같은 밀리초의 Date 변경을 변경 없음으로 보고 UPDATE를 생략한다           | ACTIVE | Date 컬럼만 바꾼 `save()`의 변경 감지로 UPDATE·`@VersionColumn` 증가를 일으키는 코드를 쓸 때                         |
-| TRP-011 | PostgreSQL bigint는 raw SQL 결과에서 문자열이라 엔티티 transformer를 우회한다             | ACTIVE | `vfs_node.version`처럼 PostgreSQL `bigint` 컬럼을 number로 다루는 엔티티를 raw SQL로 읽을 때                         |
-| TRP-012 | Node pipeline은 원래 오류로 모든 stream을 destroy해 콜백의 오류 번역이 무시된다           | ACTIVE | 여러 stream을 `pipeline`으로 묶고 상류 오류(zlib, 저장소)를 공개 오류로 번역해 마지막 stream의 소비자에게 줄 때      |
-| TRP-013 | gc() 직후의 arrayBuffers에는 sweep 전의 버려진 버퍼가 남아 CPU 부하에서 수십 MiB로 보인다 | ACTIVE | 강제 `gc()` 직후 `arrayBuffers`가 상한 미만인지 단언해 버퍼 비보유를 검사할 때                                       |
+| ID      | 제목                                                                                                 | 상태   | 적용 조건                                                                                                            |
+| ------- | ---------------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| TRP-001 | 경합 계약이 한 분기만 실행하고 통과한다                                                              | ACTIVE | 동시 요청 두 개의 "성공이거나 거부"를 허용하는 계약을 쓸 때                                                          |
+| TRP-002 | Node 내장 fetch가 스트림 요청 본문을 요청이 끝날 때까지 보유한다                                     | ACTIVE | Node 24.20.0 내장 `fetch`에 스트림 요청 본문을 넘겨 큰 파일을 업로드할 때                                            |
+| TRP-003 | Counter backfill의 correlated query에 parent 인덱스가 필요하다                                       | ACTIVE | 부모별 child count를 기존 tree row에 backfill하는 migration을 작성할 때                                              |
+| TRP-004 | GC 없이 잰 arrayBuffers 증가량은 힙 크기와 GC 위상에 따라 흔들린다                                   | ACTIVE | `process.memoryUsage().arrayBuffers`의 전후 차이로 버퍼 상한을 단언할 때                                             |
+| TRP-005 | SQLite는 varchar 길이를 강제하지 않아 PostgreSQL 22001을 놓친다                                      | ACTIVE | 클라이언트 문자열 입력을 `varchar(N)` 컬럼에 저장하는 코드를 추가·변경할 때                                          |
+| TRP-006 | TypeORM SQLite runner는 자동 롤백 뒤 트랜잭션 상태를 정리하지 않는다                                 | ACTIVE | SQLite 쿼리 게이트나 TypeORM 트랜잭션 상태(`isTransactionActive`)에 의존하는 코드를 쓸 때                            |
+| TRP-007 | SQLite 재귀 CTE가 namespace 인덱스를 골라 노드 수에 O(N²)가 된다                                     | ACTIVE | `vfs_node`처럼 큰 테이블을 자기 자신에 조인하는 재귀 CTE(SQLite 경로)를 추가·변경할 때                               |
+| TRP-008 | 변경 노드마다 DB를 개별 조회하면 노드 수·깊이에 비례해 왕복이 늘어난다                               | ACTIVE | `withMutation` 안·커밋 직전에 노드 집합을 반복하며 `findOneBy`·`UPDATE`를 노드마다 실행하는 코드를 추가·변경할 때    |
+| TRP-009 | PostgreSQL이 작은 테이블에서 만든 FK 트리거 계획을 테이블이 커진 뒤에도 쓴다                         | ACTIVE | 비어 있거나 작은 `vfs_node`에 FK 트리거가 걸린 대량 INSERT(`copyNode` 등)를 PostgreSQL에서 시간 단언하거나 측정할 때 |
+| TRP-010 | TypeORM save()는 같은 밀리초의 Date 변경을 변경 없음으로 보고 UPDATE를 생략한다                      | ACTIVE | Date 컬럼만 바꾼 `save()`의 변경 감지로 UPDATE·`@VersionColumn` 증가를 일으키는 코드를 쓸 때                         |
+| TRP-011 | PostgreSQL bigint는 raw SQL 결과에서 문자열이라 엔티티 transformer를 우회한다                        | ACTIVE | `vfs_node.version`처럼 PostgreSQL `bigint` 컬럼을 number로 다루는 엔티티를 raw SQL로 읽을 때                         |
+| TRP-012 | Node pipeline은 원래 오류로 모든 stream을 destroy해 콜백의 오류 번역이 무시된다                      | ACTIVE | 여러 stream을 `pipeline`으로 묶고 상류 오류(zlib, 저장소)를 공개 오류로 번역해 마지막 stream의 소비자에게 줄 때      |
+| TRP-013 | gc() 직후의 arrayBuffers에는 sweep 전의 버려진 버퍼가 남아 CPU 부하에서 수십 MiB로 보인다            | ACTIVE | 강제 `gc()` 직후 `arrayBuffers`가 상한 미만인지 단언해 버퍼 비보유를 검사할 때                                       |
+| TRP-014 | 독립 설치 pnpm 12는 자기 설치본의 `pnpm`이 placeholder로 남아 turbo가 `Exec format error`로 실패한다 | ACTIVE | corepack이 아닌 독립 설치 pnpm 12로 `packageManager: pnpm@12.x` 저장소에서 `turbo run` 명령을 실행할 때              |
