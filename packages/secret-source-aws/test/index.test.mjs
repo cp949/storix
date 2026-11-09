@@ -234,3 +234,172 @@ test("알 수 없는 scheme 접두어를 거부한다", async () => {
     adapter.resolve("other://secret", { signal: new AbortController().signal }),
   );
 });
+
+const JSON_SECRET = JSON.stringify({
+  "db-password": "db-pass-value",
+  "api.key": "api-key-value",
+  api_key2: "api-key2-value",
+  "admin-api-key": "  admin\n",
+  count: 3,
+  flag: true,
+  nothing: null,
+  nested: { a: "x" },
+  empty: "",
+});
+
+/** 참조를 해석하고 거부 오류를 돌려준다. */
+async function rejectionOf(ref) {
+  const adapter = await loadAdapter();
+  try {
+    await adapter.resolve(ref, { signal: new AbortController().signal });
+  } catch (error) {
+    return error;
+  }
+  assert.fail("거부되어야 한다");
+}
+
+test("# 뒤 키로 JSON 시크릿의 문자열 값만 반환한다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+  const adapter = await loadAdapter();
+  const signal = new AbortController().signal;
+
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix#db-password", { signal }),
+    "db-pass-value",
+  );
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix#api.key", { signal }),
+    "api-key-value",
+  );
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix#api_key2", { signal }),
+    "api-key2-value",
+  );
+  // 코어는 값을 그대로 쓰므로 공백과 줄바꿈을 바꾸지 않는다.
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix#admin-api-key", { signal }),
+    "  admin\n",
+  );
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix#empty", { signal }),
+    "",
+  );
+});
+
+test("키를 붙여도 SecretId에는 # 앞부분만 보낸다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+  const adapter = await loadAdapter();
+  const arn =
+    "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:ttmo-prd/storix-AbCdEf";
+
+  await adapter.resolve(`aws-sm://${arn}#db-password`, {
+    signal: new AbortController().signal,
+  });
+  assert.equal(requests[0].body.SecretId, arn);
+});
+
+test("키가 없는 참조는 JSON이어도 SecretString 전체를 반환한다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+  const adapter = await loadAdapter();
+
+  assert.equal(
+    await adapter.resolve("aws-sm://ttmo-prd/storix", {
+      signal: new AbortController().signal,
+    }),
+    JSON_SECRET,
+  );
+});
+
+test("JSON에 없는 키는 키 이름만 담아 거부한다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+
+  const error = await rejectionOf("aws-sm://ttmo-prd/storix#missing");
+  assert.match(error.message, /missing/);
+  assert.doesNotMatch(error.message, /db-pass-value/);
+});
+
+test("Object.prototype 속성 이름은 키로 인정하지 않는다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+
+  for (const key of ["__proto__", "constructor", "toString"]) {
+    const error = await rejectionOf(`aws-sm://ttmo-prd/storix#${key}`);
+    // 값 형식 검사가 아니라 키 존재 검사로 거부되어야 한다.
+    assert.match(error.message, /키가 없습니다/);
+  }
+});
+
+test("문자열이 아닌 값은 변환하지 않고 거부한다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+
+  for (const key of ["count", "flag", "nothing", "nested"]) {
+    const error = await rejectionOf(`aws-sm://ttmo-prd/storix#${key}`);
+    assert.match(error.message, new RegExp(key));
+  }
+});
+
+test("JSON 객체가 아닌 SecretString은 내용을 노출하지 않고 거부한다", async () => {
+  for (const secret of [
+    "plain-secret-value",
+    '["leak-array-value"]',
+    "null",
+    '"leak-string-value"',
+    "12345",
+    '{"db-password": "leak-broken',
+  ]) {
+    await startFixture((_request, response) =>
+      respond(response, 200, { SecretString: secret }),
+    );
+    const error = await rejectionOf("aws-sm://ttmo-prd/storix#db-password");
+    assert.doesNotMatch(error.message, /leak|plain-secret|12345/);
+    assert.equal(error.cause, undefined);
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("형식이 틀린 키는 SDK 호출 전에 거부한다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, { SecretString: JSON_SECRET }),
+  );
+
+  for (const ref of [
+    "aws-sm://ttmo-prd/storix#",
+    "aws-sm://#db-password",
+    "aws-sm://ttmo-prd/storix#a#b",
+    "aws-sm://ttmo-prd/storix#db password",
+    "aws-sm://ttmo-prd/storix#a/b",
+    "aws-sm://ttmo-prd/storix#한글",
+    "aws-sm://ttmo-prd/storix#a\n",
+  ]) {
+    await rejectionOf(ref);
+  }
+  assert.equal(requests.length, 0);
+});
+
+test("JSON에 실제로 적힌 키는 이름이 __proto__여도 own 속성으로 읽고 중복 키는 마지막 값을 쓴다", async () => {
+  await startFixture((_request, response) =>
+    respond(response, 200, {
+      SecretString: '{"__proto__":"own-value","dup":"first","dup":"last"}',
+    }),
+  );
+  const adapter = await loadAdapter();
+  const signal = new AbortController().signal;
+
+  assert.equal(
+    await adapter.resolve("aws-sm://s#__proto__", { signal }),
+    "own-value",
+  );
+  assert.equal(await adapter.resolve("aws-sm://s#dup", { signal }), "last");
+});

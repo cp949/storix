@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 
 const ADAPTER = "storix-secret-source-aws";
 const VALUE = "SMOKE-SENTINEL-value";
+const JSON_VALUE = "SMOKE-SENTINEL-json-value";
 const ACCESS_KEY = "SMOKE-SENTINEL-access-key";
 const SECRET_KEY = "SMOKE-SENTINEL-secret-key";
 
@@ -19,7 +20,7 @@ const { resolveSecrets } = await import(
 );
 const requireFromApi = createRequire("/repo/apps/api/package.json");
 
-/** GetSecretValue만 흉내 낸다. SecretId가 example/api-key면 값을, 아니면 ResourceNotFoundException을 답한다. */
+/** GetSecretValue만 흉내 낸다. example/api-key는 평문, example/bundle은 JSON, 그 밖은 ResourceNotFoundException을 답한다. */
 const server = createServer(async (request, response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
@@ -28,12 +29,18 @@ const server = createServer(async (request, response) => {
     "content-type": "application/x-amz-json-1.1",
     "x-amzn-requestid": "smoke",
   };
+  const secretStrings = {
+    "example/api-key": VALUE,
+    "example/bundle": JSON.stringify({ "api-key": JSON_VALUE, count: 3 }),
+  };
   if (
     request.headers["x-amz-target"] === "secretsmanager.GetSecretValue" &&
-    SecretId === "example/api-key"
+    Object.hasOwn(secretStrings, SecretId)
   ) {
     response.writeHead(200, headers);
-    response.end(JSON.stringify({ Name: SecretId, SecretString: VALUE }));
+    response.end(
+      JSON.stringify({ Name: SecretId, SecretString: secretStrings[SecretId] }),
+    );
     return;
   }
   response.writeHead(400, {
@@ -88,7 +95,28 @@ try {
     assert.ok(!String(missing.message).includes(sentinel));
   }
 
-  // 3. 옛 패키지명과 다른 어댑터는 로드 오류로 끝난다.
+  // 3. JSON Secret에서 키를 골라 채운다.
+  const jsonEnv = {
+    ...baseEnv,
+    STORIX_API_KEY_REF: "aws-sm://example/bundle#api-key",
+  };
+  await resolveSecrets(jsonEnv);
+  assert.equal(jsonEnv.STORIX_API_KEY, JSON_VALUE);
+
+  // 4. JSON에 없는 키와 문자열이 아닌 값은 값 없이 실패한다.
+  for (const key of ["missing", "count"]) {
+    const keyFailure = await failureOf({
+      ...baseEnv,
+      STORIX_API_KEY_REF: `aws-sm://example/bundle#${key}`,
+    });
+    assert.equal(keyFailure?.name, "SecretResolutionError");
+    assert.equal(keyFailure.failures[0].kind, "adapter-error");
+    for (const sentinel of [VALUE, JSON_VALUE, ACCESS_KEY, SECRET_KEY]) {
+      assert.ok(!String(keyFailure.message).includes(sentinel));
+    }
+  }
+
+  // 5. 옛 패키지명과 다른 어댑터는 로드 오류로 끝난다.
   for (const specifier of [
     "storix-secret-source-aws-example",
     "storix-secret-source-bao",
@@ -98,7 +126,9 @@ try {
     assert.equal(loadFailure.failures[0].kind, "not-found");
   }
 
-  console.log("aws 이미지 스모크 통과: 참조 해석, 없는 비밀 실패, 로드 오류");
+  console.log(
+    "aws 이미지 스모크 통과: 참조 해석, JSON 키 선택, 없는 비밀·키 실패, 로드 오류",
+  );
 } finally {
   server.closeAllConnections();
   server.close();
