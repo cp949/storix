@@ -1,6 +1,6 @@
 # LocalStack Secrets Manager 예제
 
-이 예제는 `STORIX_API_KEY_REF`를 통해 AWS Secrets Manager API에서 API 키를 읽고 Storix를 시작한다. 실제 AWS 계정은 사용하지 않는다.
+이 예제는 `STORIX_API_KEY_REF`(평문 Secret)와 `STORIX_API_KEY_PREVIOUS_REF`(JSON Secret의 `#previous-api-key` 키)를 통해 AWS Secrets Manager API에서 API 키를 읽고 Storix를 시작한다. 실제 AWS 계정은 사용하지 않는다.
 
 ## 준비
 
@@ -19,9 +19,9 @@
 bash docs/deployment/scenarios/aws-secrets-localstack/run.sh
 ```
 
-스크립트는 기본 Storix 이미지와 AWS 어댑터 사용자 이미지를 만들고, 전용 Compose project에서 LocalStack Secret 생성, SQLite migration, Storix 기동을 진행한다. API 확인은 정상 키 `200`·배열, 다른 키 `401`, 키 없는 요청 `401`을 확인한다. 끝나면 전용 컨테이너와 볼륨을 제거한다.
+스크립트는 기본 Storix 이미지와 AWS 어댑터 사용자 이미지를 만들고, 전용 Compose project에서 LocalStack Secret 생성, SQLite migration, Storix 기동을 진행한다. API 확인은 정상 키 `200`·배열, JSON 키 참조로 받은 이전 키 `200`, 다른 키 `401`, 키 없는 요청 `401`을 확인한다. 끝나면 전용 컨테이너와 볼륨을 제거한다.
 
-LocalStack Auth Token은 LocalStack 서비스에만 전달한다. Storix 컨테이너에는 토큰이나 테스트 API 키를 환경 설정으로 넣지 않는다. API 키는 `secret-init` 서비스가 LocalStack에 저장한다.
+LocalStack Auth Token은 LocalStack 서비스에만 전달한다. Storix 컨테이너에는 토큰이나 테스트 API 키를 환경 설정으로 넣지 않는다. API 키 두 개는 `secret-init` 서비스가 LocalStack에 저장한다.
 
 ## 검증
 
@@ -31,7 +31,7 @@ LocalStack Auth Token은 LocalStack 서비스에만 전달한다. Storix 컨테�
 node docs/deployment/scenarios/aws-secrets-localstack/verify.mjs
 ```
 
-이 검증은 정상 요청, 없는 Secret의 값 없는 시작 실패, Storix 설정·초기 프로세스 환경·컨테이너 로그의 값 비노출, `gc`·`backup`·`restore` timeout 종료, 재실행과 전용 리소스 정리를 확인한다.
+이 검증은 정상 요청, 없는 Secret과 JSON에 없는 키의 값 없는 시작 실패, Storix 설정·초기 프로세스 환경·컨테이너 로그의 값 비노출, `gc`·`backup`·`restore` timeout 종료, 재실행과 전용 리소스 정리를 확인한다.
 
 Dockerfile이나 어댑터 이미지 내용에 변경이 없고 기존 예제 이미지를 재사용할 때는 `node docs/deployment/scenarios/aws-secrets-localstack/verify.mjs --skip-build`을 실행한다.
 

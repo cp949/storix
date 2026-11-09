@@ -12,6 +12,7 @@ const root = path.resolve(
 const baseImage = "storix-secret-source-localstack-base:local";
 const appImage = "storix-secret-source-localstack-app:local";
 const apiKey = "localstack-example-api-key-0123456789abcdef";
+const previousApiKey = "localstack-example-previous-key-fedcba9876543210";
 const masterKey =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const skipBuild = process.argv.includes("--skip-build");
@@ -56,6 +57,11 @@ function assertNoSecretOutput(output, token, phase) {
     `${phase}: API 키가 출력에 나타남`,
   );
   assert.equal(
+    output.includes(previousApiKey),
+    false,
+    `${phase}: 이전 API 키가 출력에 나타남`,
+  );
+  assert.equal(
     output.includes(masterKey),
     false,
     `${phase}: 마스터 키가 출력에 나타남`,
@@ -89,6 +95,7 @@ function cleanComposeEnvironment(token) {
     STORIX_PUBLISH_HOST: "127.0.0.1",
     STORIX_PUBLISH_PORT: "31987",
     STORIX_LOCALSTACK_API_KEY: apiKey,
+    STORIX_LOCALSTACK_PREVIOUS_API_KEY: previousApiKey,
     STORIX_EXAMPLE_MASTER_KEY: masterKey,
     STORIX_STORAGE_ACCESS_KEY: "storix-example",
     STORIX_STORAGE_SECRET_KEY: "storix-example-secret",
@@ -239,6 +246,32 @@ try {
     "값 없는 adapter-error를 확인하지 못했다",
   );
 
+  // JSON Secret에 없는 키를 가리키면 값 없이 시작에 실패한다.
+  const missingKey = run(
+    "docker",
+    [
+      ...compose,
+      "run",
+      "--rm",
+      "--no-deps",
+      "-e",
+      "STORIX_API_KEY_REF=aws-sm://storix/localstack/bundle#missing-key",
+      "--entrypoint",
+      "node",
+      "app",
+      "apps/api/dist/main.js",
+    ],
+    { timeout: 60_000, env: cleanComposeEnvironment(token) },
+  );
+  const missingKeyOutput = `${missingKey.stdout}\n${missingKey.stderr}`;
+  assertNoSecretOutput(missingKeyOutput, token, "없는 JSON 키 시나리오");
+  assert.equal(missingKey.status, 1, "없는 JSON 키는 종료 코드 1이어야 한다");
+  assert.match(
+    missingKeyOutput,
+    /STORIX_API_KEY\(aws-sm\): adapter-error/,
+    "값 없는 adapter-error를 확인하지 못했다",
+  );
+
   const timeout = run(
     "docker",
     [
@@ -287,7 +320,7 @@ try {
   assertNoProjectResources(interruptedProject);
 
   console.log(
-    "통합 검증 통과: 정상 API·없는 Secret·비노출·job timeout·정리·재실행·초기화 뒤 SIGTERM",
+    "통합 검증 통과: 정상 API·JSON 키 참조·없는 Secret·없는 JSON 키·비노출·job timeout·정리·재실행·초기화 뒤 SIGTERM",
   );
 } finally {
   if (keptProject) {

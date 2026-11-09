@@ -21,6 +21,7 @@ services:
     entrypoint: ["/bin/sh", "/usr/local/bin/init-secret.sh"]
     environment:
       STORIX_LOCALSTACK_API_KEY: ${STORIX_LOCALSTACK_API_KEY:?테스트 Secret 값이 필요하다}
+      STORIX_LOCALSTACK_PREVIOUS_API_KEY: ${STORIX_LOCALSTACK_PREVIOUS_API_KEY:?테스트 Secret 값이 필요하다}
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_DEFAULT_REGION: us-east-1
@@ -44,7 +45,7 @@ services:
       STORIX_API_KEY_FILE: ""
       STORIX_API_KEY_REF: aws-sm://storix/localstack/api-key
       STORIX_API_KEY_PREVIOUS_FILE: ""
-      STORIX_API_KEY_PREVIOUS_REF: ""
+      STORIX_API_KEY_PREVIOUS_REF: aws-sm://storix/localstack/bundle#previous-api-key
       STORIX_SECRET_ADAPTERS: storix-secret-source-aws
       STORIX_SECRET_RESOLVE_TIMEOUT_MS: "10000"
       STORIX_ENCRYPTION_MASTER_KEY: ${STORIX_EXAMPLE_MASTER_KEY:?예제 마스터 키가 필요하다}

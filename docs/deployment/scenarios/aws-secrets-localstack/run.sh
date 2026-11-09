@@ -5,6 +5,7 @@ readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 readonly BASE_IMAGE="storix-secret-source-localstack-base:local"
 readonly APP_IMAGE="storix-secret-source-localstack-app:local"
 readonly API_KEY="localstack-example-api-key-0123456789abcdef"
+readonly PREVIOUS_API_KEY="localstack-example-previous-key-fedcba9876543210"
 readonly MASTER_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 skip_build=0
@@ -48,6 +49,7 @@ export STORIX_LOCALSTACK_DEMO_PORT="$PORT"
 export STORIX_PUBLISH_HOST=127.0.0.1
 export STORIX_PUBLISH_PORT="$PORT"
 export STORIX_LOCALSTACK_API_KEY="$API_KEY"
+export STORIX_LOCALSTACK_PREVIOUS_API_KEY="$PREVIOUS_API_KEY"
 export STORIX_EXAMPLE_MASTER_KEY="$MASTER_KEY"
 export STORIX_STORAGE_ACCESS_KEY=storix-example
 export STORIX_STORAGE_SECRET_KEY=storix-example-secret
@@ -115,15 +117,21 @@ compose exec -T app node --input-type=module -e '
   const [source] = await loader.loadSecretAdapters(["storix-secret-source-aws"]);
   if (source.scheme !== "aws-sm") process.exit(1);
 ' >/dev/null
-node --input-type=module - "$BASE_URL" "$API_KEY" <<'NODE'
+node --input-type=module - "$BASE_URL" "$API_KEY" "$PREVIOUS_API_KEY" <<'NODE'
 import assert from 'node:assert/strict';
 
-const [baseUrl, apiKey] = process.argv.slice(2);
+const [baseUrl, apiKey, previousApiKey] = process.argv.slice(2);
 const authorized = await fetch(`${baseUrl}/api/v2/namespaces`, {
   headers: { Authorization: `Bearer ${apiKey}` },
 });
 assert.equal(authorized.status, 200, '정상 키 요청은 200이어야 한다');
 assert.ok(Array.isArray(await authorized.json()), '정상 응답은 배열이어야 한다');
+
+// JSON Secret의 키 선택 참조(#previous-api-key)로 받은 이전 키도 인증된다.
+const previous = await fetch(`${baseUrl}/api/v2/namespaces`, {
+  headers: { Authorization: `Bearer ${previousApiKey}` },
+});
+assert.equal(previous.status, 200, 'JSON 키 참조로 받은 이전 키 요청은 200이어야 한다');
 
 const wrongKey = await fetch(`${baseUrl}/api/v2/namespaces`, {
   headers: { Authorization: 'Bearer localstack-wrong-key' },
@@ -132,12 +140,12 @@ assert.equal(wrongKey.status, 401, '다른 키 요청은 401이어야 한다');
 
 const noKey = await fetch(`${baseUrl}/api/v2/namespaces`);
 assert.equal(noKey.status, 401, '키 없는 요청은 401이어야 한다');
-console.log('인증 확인: 정상 키 200, 다른 키 401, 키 없음 401');
+console.log('인증 확인: 정상 키 200, JSON 키 참조 이전 키 200, 다른 키 401, 키 없음 401');
 NODE
 
 readonly APP_CONTAINER="$(compose ps -q app)"
 readonly APP_ENV="$(docker inspect --format '{{json .Config.Env}}' "$APP_CONTAINER")"
-if [[ "$APP_ENV" == *"STORIX_API_KEY=$API_KEY"* || "$APP_ENV" == *LOCALSTACK_AUTH_TOKEN=* ]]; then
+if [[ "$APP_ENV" == *"STORIX_API_KEY=$API_KEY"* || "$APP_ENV" == *"$PREVIOUS_API_KEY"* || "$APP_ENV" == *LOCALSTACK_AUTH_TOKEN=* ]]; then
   printf 'Storix Config.Env에 테스트 키 또는 Auth Token이 있다\n' >&2
   exit 1
 fi
@@ -160,7 +168,7 @@ if [[ "$proc_environment_result" != "absent" ]]; then
 fi
 
 readonly LOGS="$(compose logs --no-color 2>/dev/null)"
-if [[ "$LOGS" == *"$API_KEY"* || "$LOGS" == *"$LOCALSTACK_AUTH_TOKEN"* ]]; then
+if [[ "$LOGS" == *"$API_KEY"* || "$LOGS" == *"$PREVIOUS_API_KEY"* || "$LOGS" == *"$LOCALSTACK_AUTH_TOKEN"* ]]; then
   printf '예제 컨테이너 로그에 테스트 API 키 또는 Auth Token이 있다\n' >&2
   exit 1
 fi
