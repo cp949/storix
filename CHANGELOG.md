@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 빌드 도구 pnpm을 12.18.0에서 12.21.0으로 올렸다(`packageManager`, `pnpm-lock.yaml`의 `packageManagerDependencies`). 위험: `corepack enable`을 쓰는 환경은 영향이 없다. 롤백: `packageManager`와 lockfile을 되돌린다.
+
 ## [1.7.1] - 2026-11-09
 
 ### Changed
